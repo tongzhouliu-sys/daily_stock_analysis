@@ -11,7 +11,6 @@ and this project adheres to [Semantic Versioning](https://semver.org/).
 
 <!-- 新条目格式：- [类型] 描述（类型取值：新功能/改进/修复/文档/测试/chore）-->
 <!-- 每条独立一行追加到本段末尾，无需分类标题，合并时冲突最小 -->
-- [文档] 新增 `.understand-anything/README.md` 贡献者知识图谱快照，并在中英文贡献指南中明确该目录的受控接收边界。
 
 ## [3.14.1] - 2026-04-26
 

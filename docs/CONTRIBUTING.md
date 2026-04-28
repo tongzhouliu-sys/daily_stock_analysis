@@ -98,15 +98,6 @@ npm run lint
 npm run build
 ```
 
-### 贡献者知识图谱资产（`.understand-anything/`）
-
-仓库可以接收放在 `.understand-anything/` 下的**静态、可审查、可再生成**的贡献者辅助资产，用于帮助新贡献者理解项目入口、目录协作关系和改动影响面。
-
-- 这类 PR 应只影响 `.understand-anything/`，如确有必要，最多附带最小范围的 `docs/` 说明链接。
-- 不应修改 `src/`、`api/`、`apps/`、`bot/`、`data_provider/`、依赖、构建配置、CI/workflow、Docker 或运行时行为。
-- 产物应保持文本化、可 diff，并说明生成来源；不要提交密钥、二进制、大体积截图或环境专属路径。
-- 当前目录用途与边界见 [`../.understand-anything/README.md`](../.understand-anything/README.md)。
-
 ## 📋 优先贡献方向
 
 查看 [Roadmap](README.md#-roadmap) 了解当前需要的功能：

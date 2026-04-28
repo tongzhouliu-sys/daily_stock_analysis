@@ -101,15 +101,6 @@ npm run lint
 npm run build
 ```
 
-### Contributor Knowledge Graph Assets (`.understand-anything/`)
-
-This repository accepts **static, reviewable, regenerable** contributor-support assets under `.understand-anything/` when they help newcomers understand entrypoints, directory relationships, and likely impact surfaces.
-
-- These PRs should stay inside `.understand-anything/`, with at most a minimal supporting link in `docs/` when needed.
-- They must not change `src/`, `api/`, `apps/`, `bot/`, `data_provider/`, dependencies, build config, CI/workflows, Docker, or runtime behavior.
-- Keep the output textual and diff-friendly, and note the generator/source when relevant; do not commit secrets, binaries, large screenshots, or environment-specific paths.
-- See [`../.understand-anything/README.md`](../.understand-anything/README.md) for the current scope and snapshot.
-
 ### Documentation Sync Rule
 
 When modifying a Chinese-language core document (e.g., `docs/full-guide.md`), your PR description **must state** whether the corresponding English document has been updated. If not updated, explain why.
