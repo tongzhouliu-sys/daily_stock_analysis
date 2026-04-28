@@ -99,6 +99,46 @@ class TestAgentConfig(unittest.TestCase):
         self.assertEqual(config.agent_litellm_model, 'openai/gpt-4o-mini')
         self.assertTrue(config.is_agent_available())
 
+    def test_agent_models_to_try_inherit_legacy_provider_models(self):
+        """Legacy provider key/model envs should still produce a non-empty Agent model try list."""
+        from src.config import Config, get_effective_agent_models_to_try
+
+        test_cases = [
+            (
+                {
+                    "GEMINI_API_KEY": "gemini-test-key",
+                    "GEMINI_MODEL": "gemini-2.5-flash",
+                    "AGENT_LITELLM_MODEL": "",
+                },
+                "gemini/gemini-2.5-flash",
+            ),
+            (
+                {
+                    "OPENAI_API_KEY": "sk-test-value",
+                    "OPENAI_MODEL": "gpt-4o-mini",
+                    "AGENT_LITELLM_MODEL": "",
+                },
+                "openai/gpt-4o-mini",
+            ),
+            (
+                {
+                    "ANTHROPIC_API_KEY": "anthropic-test-key",
+                    "ANTHROPIC_MODEL": "claude-3-5-sonnet-20241022",
+                    "AGENT_LITELLM_MODEL": "",
+                },
+                "anthropic/claude-3-5-sonnet-20241022",
+            ),
+        ]
+
+        with patch("src.config.setup_env"), patch.object(Config, "_parse_litellm_yaml", return_value=[]):
+            for env, expected_model in test_cases:
+                with self.subTest(expected_model=expected_model), patch.dict(os.environ, env, clear=True):
+                    Config._instance = None
+                    config = Config._load_from_env()
+                    self.assertEqual(get_effective_agent_models_to_try(config), [expected_model])
+
+        Config._instance = None
+
 
 class TestAgentFactorySkillBaseline(unittest.TestCase):
     """Ensure explicit skill selection does not silently re-apply the default bull-trend baseline."""
@@ -1199,6 +1239,33 @@ class TestAgentConstructionChain(unittest.TestCase):
         self.assertIn("All LLM models failed (rate-limit encountered during fallback).", result.content)
         self.assertIn("window exceeded", result.content)
         mock_sleep.assert_not_called()
+
+    @patch("src.agent.llm_adapter.Router")
+    def test_llm_adapter_reports_missing_configuration_without_generic_none_error(self, _mock_router):
+        """Missing Agent model config should return a stable, actionable error message."""
+        mock_cfg = SimpleNamespace(
+            agent_litellm_model="",
+            litellm_model="",
+            litellm_fallback_models=[],
+            llm_model_list=[],
+            llm_temperature=0.7,
+            gemini_api_keys=[],
+            anthropic_api_keys=[],
+            openai_api_keys=[],
+            deepseek_api_keys=[],
+            openai_base_url=None,
+        )
+
+        from src.agent.llm_adapter import LLMToolAdapter
+        adapter = LLMToolAdapter(config=mock_cfg)
+
+        result = adapter.call_completion(messages=[{"role": "user", "content": "hi"}], tools=[])
+
+        self.assertEqual(result.provider, "error")
+        self.assertEqual(
+            result.content,
+            "No LLM configured. Please set LITELLM_MODEL, LLM_CHANNELS, or provider API keys before using Agent.",
+        )
 
 
 # ============================================================
