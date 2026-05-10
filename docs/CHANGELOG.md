@@ -12,6 +12,8 @@ and this project adheres to [Semantic Versioning](https://semver.org/).
 <!-- 新条目格式：- [类型] 描述（类型取值：新功能/改进/修复/文档/测试/chore）-->
 <!-- 每条独立一行追加到本段末尾，无需分类标题，合并时冲突最小 -->
 
+- [新功能] Web 系统设置页开放 `.env` 配置备份导入/导出，复用键级覆盖、配置版本冲突保护和重载链路；Web 端在 `ADMIN_AUTH_ENABLED=false` 时该入口为禁用状态。
+
 ## [3.16.0] - 2026-05-10
 
 ### 发布亮点
