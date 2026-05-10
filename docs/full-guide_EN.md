@@ -50,7 +50,7 @@ Click the `Fork` button in the upper right corner.
 Go to your forked repo → `Settings` → `Secrets and variables` → `Actions` → `New repository secret`
 
 <div align="center">
-  <img src="../sources/secret_config.png" alt="GitHub Secrets Configuration" width="600">
+  <img src="assets/secret_config.png" alt="GitHub Secrets Configuration" width="600">
 </div>
 
 #### AI Model Configuration (Configure at Least One)

@@ -27,8 +27,8 @@ English | [简体中文](../README.md) | [繁體中文](README_CHT.md)
 
 <div align="center">
   <p align="center">
-    <a href="https://open.anspire.cn/?share_code=QFBC0FYC" target="_blank"><img src="../sources/anspire.png" alt="Anspire Open all-in-one model and search service" width="300" height="141" style="width: 300px; height: 141px; object-fit: contain;"></a>
-    <a href="https://serpapi.com/baidu-search-api?utm_source=github_daily_stock_analysis" target="_blank"><img src="../sources/serpapi_banner_en.png" alt="Easily scrape real-time financial news data from search engines - SerpApi" width="300" height="141" style="width: 300px; height: 141px; object-fit: contain;"></a>
+    <a href="https://open.anspire.cn/?share_code=QFBC0FYC" target="_blank"><img src="assets/anspire.png" alt="Anspire Open all-in-one model and search service" width="300" height="141" style="width: 300px; height: 141px; object-fit: contain;"></a>
+    <a href="https://serpapi.com/baidu-search-api?utm_source=github_daily_stock_analysis" target="_blank"><img src="assets/serpapi_banner_en.png" alt="Easily scrape real-time financial news data from search engines - SerpApi" width="300" height="141" style="width: 300px; height: 141px; object-fit: contain;"></a>
   </p>
 </div>
 
@@ -209,7 +209,7 @@ Full environment variables, model routing, notification channels, data-source pr
 
 ## 🖥️ Web UI
 
-![FastAPI Web UI](../sources/fastapi_server.png)
+![FastAPI Web UI](assets/fastapi_server.png)
 
 The Web workspace supports settings, task monitoring, manual analysis, history reports, backtest, portfolio management, smart import, and light/dark themes.
 
@@ -248,7 +248,7 @@ DSA focuses on daily analysis reports. These sibling projects cover stock screen
       Custom development, private deployment, and integration work
     </td>
     <td align="center" rowspan="3" valign="middle" width="148">
-      <a href="http://xhslink.com/m/tU520DWCKT" target="_blank"><img src="../sources/xiaohongshu_tick.jpg" width="112" alt="Xiaohongshu QR code"></a><br>
+      <a href="http://xhslink.com/m/tU520DWCKT" target="_blank"><img src="assets/xiaohongshu_tick.jpg" width="112" alt="Xiaohongshu QR code"></a><br>
       <sub>Follow on Xiaohongshu</sub>
     </td>
   </tr>

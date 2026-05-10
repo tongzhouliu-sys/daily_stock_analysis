@@ -50,7 +50,7 @@ daily_stock_analysis/
 进入你 Fork 的仓库 → `Settings` → `Secrets and variables` → `Actions` → `New repository secret`
 
 <div align="center">
-  <img src="../sources/secret_config.png" alt="GitHub Secrets 配置示意图" width="600">
+  <img src="assets/secret_config.png" alt="GitHub Secrets 配置示意图" width="600">
 </div>
 
 #### AI 模型配置（至少配置一个）
