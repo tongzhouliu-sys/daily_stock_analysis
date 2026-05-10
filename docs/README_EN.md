@@ -32,22 +32,22 @@ English | [简体中文](../README.md) | [繁體中文](README_CHT.md)
   </p>
 </div>
 
+## 🖥️ Product Preview
+
+<p align="center">
+  <img src="assets/readme_workspace_tour_20260510.gif" alt="DSA Web workspace demo" width="720">
+</p>
+
 ## ✨ Key Features
 
-| Module | Feature | Description |
-|--------|---------|-------------|
-| AI | Decision Dashboard | One-sentence conclusion + score + entry/exit levels + risk alerts + action checklist |
-| Analysis | Multi-dimensional Analysis | Technicals, realtime quotes, chip distribution, news sentiment, announcements, capital flow, and fundamentals |
-| Market | Global Markets | A-shares, Hong Kong stocks, US stocks, US indices, and common ETFs |
-| Strategy | Market Strategy System | A-share review, US regime strategy, moving averages, Chan theory, Elliott wave, and sentiment-cycle support |
-| Review | Market Review | Daily market overview, index performance, breadth, and sector strength (supports cn / hk / us / both) |
-| Web | Dual-theme Workspace | Manual analysis, settings, task progress, history, backtest, and portfolio management |
-| Import | Smart Import & Autocomplete | Image, CSV/Excel, and clipboard import; search by code, name, pinyin, and aliases |
-| History | Report Management | Full Markdown reports, rerun analysis, history browsing, and batch management |
-| Backtest | AI Backtest Validation | Validate historical analysis with directional accuracy and simulated return views |
-| Agent Q&A | Strategy Chat | Multi-turn strategy chat with 11 built-in strategies across Web/Bot/API |
-| Notifications | Multi-channel Push | WeChat Work, Feishu, Telegram, Discord, Slack, Email, and more |
-| Automation | Scheduled Runs | GitHub Actions, Docker, local scheduler, and FastAPI service mode |
+| Capability | Coverage |
+|------------|----------|
+| AI decision reports | Core conclusion, score, trend, entry/exit levels, risk alerts, catalysts, and action checklist |
+| Multi-market data | A-shares, Hong Kong, US stocks, ETFs; quotes, K-lines, technicals, capital flow, chips, news, announcements, and fundamentals |
+| Web / desktop workspace | Manual analysis, task progress, history, full Markdown reports, backtest, portfolio, settings, and light/dark themes |
+| Agent strategy chat | Multi-turn Q&A with 11 built-in strategies across Web/Bot/API |
+| Smart import & autocomplete | Image, CSV/Excel, clipboard import; code/name/pinyin/alias autocomplete |
+| Automation & notifications | GitHub Actions, Docker, local scheduler, FastAPI service, and WeChat Work / Feishu / Telegram / Discord / Slack / Email delivery |
 
 > Detailed fields, fundamental P0 timeout semantics, trading rules, data-source priority, Web/API behavior, and troubleshooting live in the [Full Guide](./full-guide_EN.md).
 
@@ -209,9 +209,7 @@ Full environment variables, model routing, notification channels, data-source pr
 
 ## 🖥️ Web UI
 
-![FastAPI Web UI](assets/fastapi_server.png)
-
-The Web workspace supports settings, task monitoring, manual analysis, history reports, backtest, portfolio management, smart import, and light/dark themes.
+The Web workspace supports settings, task monitoring, manual analysis, history reports, full Markdown reports, Agent strategy chat, backtest, portfolio management, smart import, and light/dark themes.
 
 ```bash
 python main.py --webui
