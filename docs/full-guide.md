@@ -502,14 +502,9 @@ services:
 - `./reports:/app/reports`：生成的分析报告
 - `./strategies:/app/strategies:ro`：自定义策略 YAML（只读挂载）
 
-官方 Docker 镜像默认使用容器内非 root 用户 `dsa`（UID/GID `1000:1000`）运行。首次部署或更换宿主机目录后，请确保 `data`、`logs`、`reports` 对该用户可写，否则文件日志会自动降级到控制台输出，数据库或报告写入仍可能失败：
+官方 Docker 镜像启动时会自动创建并修复 `/app/data`、`/app/logs`、`/app/reports` 的挂载目录权限，然后降权为容器内非 root 用户 `dsa`（UID/GID `1000:1000`）运行应用。普通 Docker / Compose 部署不需要手动 `chown` 或 `chmod` 宿主机目录。
 
-```bash
-mkdir -p data logs reports
-sudo chown -R 1000:1000 data logs reports
-```
-
-如果你通过 `--user` 或 Compose `user:` 指定了其他运行用户，请将上面的 UID/GID 替换为实际容器用户，或使用等价的 ACL / 权限策略授予写入权限。
+如果你通过 `--user` 或 Compose `user:` 指定了其他运行用户，或使用只读挂载、rootless Docker、NFS 等限制 `chown` 的存储环境，自动修复可能无法生效。此时请确保实际运行用户对 `data`、`logs`、`reports` 具备写入权限，或改用可写卷。
 
 如果你需要覆盖内置静态资源，还可以额外挂载：
 

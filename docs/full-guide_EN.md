@@ -467,14 +467,9 @@ Recommended host mappings:
 - `./reports:/app/reports` for generated reports
 - `./strategies:/app/strategies:ro` for custom strategy YAML files
 
-Official Docker images run as the non-root `dsa` user inside the container (UID/GID `1000:1000`). On first deployment or after changing host directories, make sure `data`, `logs`, and `reports` are writable by that user. If `logs` is not writable, file logging falls back to console output; database or report writes may still fail until permissions are fixed:
+Official Docker images automatically create and fix ownership for the `/app/data`, `/app/logs`, and `/app/reports` mounts during startup, then drop privileges to the non-root `dsa` user inside the container (UID/GID `1000:1000`). Normal Docker / Compose deployments do not require manual host-side `chown` or `chmod`.
 
-```bash
-mkdir -p data logs reports
-sudo chown -R 1000:1000 data logs reports
-```
-
-If you override the runtime user with `--user` or Compose `user:`, replace the UID/GID above with the actual container user, or grant write access with an equivalent ACL / permission policy.
+If you override the runtime user with `--user` or Compose `user:`, or use read-only mounts, rootless Docker, NFS, or another storage environment that blocks `chown`, the automatic repair may not apply. In that case, make sure the actual runtime user can write to `data`, `logs`, and `reports`, or use writable volumes.
 
 Optional static asset override:
 
