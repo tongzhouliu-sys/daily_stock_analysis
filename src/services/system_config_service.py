@@ -44,6 +44,7 @@ from src.core.config_registry import (
     get_registered_field_keys,
 )
 from src.notification_noise import validate_notification_timezone
+from src.notification_sender.ntfy_sender import resolve_ntfy_endpoint
 
 logger = logging.getLogger(__name__)
 
@@ -110,6 +111,7 @@ class SystemConfigService:
         "telegram",
         "email",
         "pushover",
+        "ntfy",
         "pushplus",
         "serverchan3",
         "custom",
@@ -134,6 +136,8 @@ class SystemConfigService:
         "EMAIL_RECEIVERS": ("email_receivers", "csv"),
         "PUSHOVER_USER_KEY": ("pushover_user_key", "string"),
         "PUSHOVER_API_TOKEN": ("pushover_api_token", "string"),
+        "NTFY_URL": ("ntfy_url", "string"),
+        "NTFY_TOKEN": ("ntfy_token", "string"),
         "PUSHPLUS_TOKEN": ("pushplus_token", "string"),
         "PUSHPLUS_TOPIC": ("pushplus_topic", "string"),
         "SERVERCHAN3_SENDKEY": ("serverchan3_sendkey", "string"),
@@ -158,6 +162,7 @@ class SystemConfigService:
         "telegram": (("TELEGRAM_BOT_TOKEN", "TELEGRAM_CHAT_ID"),),
         "email": (("EMAIL_SENDER", "EMAIL_PASSWORD"),),
         "pushover": (("PUSHOVER_USER_KEY", "PUSHOVER_API_TOKEN"),),
+        "ntfy": (("NTFY_URL",),),
         "pushplus": (("PUSHPLUS_TOKEN",),),
         "serverchan3": (("SERVERCHAN3_SENDKEY",),),
         "custom": (("CUSTOM_WEBHOOK_URLS",),),
@@ -171,6 +176,7 @@ class SystemConfigService:
         "telegram": ("TELEGRAM_BOT_TOKEN",),
         "email": ("EMAIL_RECEIVERS", "EMAIL_SENDER"),
         "pushover": ("PUSHOVER_USER_KEY",),
+        "ntfy": ("NTFY_URL",),
         "pushplus": ("PUSHPLUS_TOPIC",),
         "serverchan3": ("SERVERCHAN3_SENDKEY",),
         "custom": ("CUSTOM_WEBHOOK_URLS",),
@@ -330,6 +336,20 @@ class SystemConfigService:
                 success=False,
                 message=f"通知渠道配置不完整，缺少: {', '.join(missing)}",
                 error_code="config_missing",
+                stage="config_validation",
+                retryable=False,
+                latency_ms=None,
+                attempts=[],
+            )
+        invalid_message = self._get_invalid_notification_test_config_message(
+            normalized_channel,
+            effective_map,
+        )
+        if invalid_message:
+            return self._build_notification_test_result(
+                success=False,
+                message=invalid_message,
+                error_code="config_invalid",
                 stage="config_validation",
                 retryable=False,
                 latency_ms=None,
@@ -1713,6 +1733,22 @@ class SystemConfigService:
                     }
                 )
 
+        if key == "NTFY_URL" and value.strip():
+            allowed_schemes = tuple(validation.get("allowed_schemes", ["http", "https"]))
+            if SystemConfigService._is_valid_url(value.strip(), allowed_schemes=allowed_schemes):
+                ntfy_server_url, ntfy_topic = resolve_ntfy_endpoint(value)
+                if not ntfy_server_url or not ntfy_topic:
+                    issues.append(
+                        {
+                            "key": key,
+                            "code": "invalid_ntfy_url",
+                            "message": "NTFY_URL must include a topic path, e.g. https://ntfy.sh/my-topic",
+                            "severity": "error",
+                            "expected": "ntfy publish endpoint with topic path",
+                            "actual": value,
+                        }
+                    )
+
         return issues
 
     @staticmethod
@@ -1820,6 +1856,21 @@ class SystemConfigService:
 
         return missing_by_group[0] if missing_by_group else []
 
+    @staticmethod
+    def _get_invalid_notification_test_config_message(
+        channel: str,
+        effective_map: Dict[str, str],
+    ) -> Optional[str]:
+        if channel != "ntfy":
+            return None
+        ntfy_url = (effective_map.get("NTFY_URL") or "").strip()
+        if not ntfy_url:
+            return None
+        ntfy_server_url, ntfy_topic = resolve_ntfy_endpoint(ntfy_url)
+        if ntfy_server_url and ntfy_topic:
+            return None
+        return "NTFY_URL 必须包含 topic path，例如 https://ntfy.sh/my-topic。"
+
     def _build_notification_test_config(self, effective_map: Dict[str, str]) -> Config:
         """Build an isolated Config instance for notification testing."""
         kwargs: Dict[str, Any] = {"stock_list": []}
@@ -1863,6 +1914,7 @@ class SystemConfigService:
             DiscordSender,
             EmailSender,
             FeishuSender,
+            NtfySender,
             PushoverSender,
             PushplusSender,
             Serverchan3Sender,
@@ -1906,6 +1958,7 @@ class SystemConfigService:
             "telegram": lambda: TelegramSender(config).send_to_telegram(titled_content, timeout_seconds=timeout_seconds),
             "email": lambda: EmailSender(config).send_to_email(content, subject=title, timeout_seconds=timeout_seconds),
             "pushover": lambda: PushoverSender(config).send_to_pushover(content, title=title, timeout_seconds=timeout_seconds),
+            "ntfy": lambda: NtfySender(config).send_to_ntfy(content, title=title, timeout_seconds=timeout_seconds),
             "pushplus": lambda: PushplusSender(config).send_to_pushplus(content, title=title, timeout_seconds=timeout_seconds),
             "serverchan3": lambda: Serverchan3Sender(config).send_to_serverchan3(content, title=title, timeout_seconds=timeout_seconds),
             "discord": lambda: DiscordSender(config).send_to_discord(titled_content, timeout_seconds=timeout_seconds),
@@ -2018,12 +2071,19 @@ class SystemConfigService:
 
         safe_netloc = parsed.netloc.rsplit("@", 1)[-1]
         safe_segments: List[str] = []
-        for segment in parsed.path.split("/"):
+        path_segments = parsed.path.split("/")
+        last_non_empty_index = next(
+            (index for index in range(len(path_segments) - 1, -1, -1) if path_segments[index]),
+            -1,
+        )
+        for index, segment in enumerate(path_segments):
             if not segment:
                 safe_segments.append(segment)
                 continue
             lower = segment.lower()
             looks_secret = (
+                (source_key_upper == "NTFY_URL" and index == last_non_empty_index)
+                or
                 len(segment) >= 16
                 or lower.startswith("bot")
                 or "token" in lower
@@ -2105,6 +2165,7 @@ class SystemConfigService:
             "DINGTALK_",
             "WECHAT_",
             "PUSHOVER_",
+            "NTFY_",
             "PUSHPLUS_",
             "SERVERCHAN",
             "CUSTOM_WEBHOOK",
@@ -2130,6 +2191,11 @@ class SystemConfigService:
     @staticmethod
     def _has_any_config_value(effective_map: Dict[str, str], keys: Sequence[str]) -> bool:
         return any((effective_map.get(key) or "").strip() for key in keys)
+
+    @staticmethod
+    def _has_valid_ntfy_endpoint(effective_map: Dict[str, str]) -> bool:
+        ntfy_server_url, ntfy_topic = resolve_ntfy_endpoint(effective_map.get("NTFY_URL"))
+        return bool(ntfy_server_url and ntfy_topic)
 
     @classmethod
     def _anspire_legacy_llm_enabled(cls, effective_map: Dict[str, str]) -> bool:
@@ -2442,6 +2508,7 @@ class SystemConfigService:
                     "ASTRBOT_URL",
                 ),
             )
+            or self._has_valid_ntfy_endpoint(effective_map)
             or (
                 parse_env_bool(effective_map.get("FEISHU_STREAM_ENABLED"), default=False)
                 and self._has_any_config_value(effective_map, ("FEISHU_APP_ID",))

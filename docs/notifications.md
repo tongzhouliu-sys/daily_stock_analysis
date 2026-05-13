@@ -1,6 +1,6 @@
 # 通知能力基线
 
-本文档记录通知能力 P0-P5 基线：渠道、配置 key、GitHub Actions 映射、Web 设置元数据、CLI 诊断口径、Web 一键测试、自定义 Webhook Body 模板语义、通知路由策略、降噪机制和聚合报告失败隔离。P0 只做基线与只读诊断；P1 增加 Web 单渠道真实测试；P2 产品化现有 Body 模板；P3 增加 report / alert / system_error 路由；P4 增加进程内降噪；P5 强化测试诊断和聚合报告逐渠道失败隔离，不包含 per-URL 模板、跨进程持久化、真实每日摘要、重试循环或新增一等渠道。
+本文档记录通知能力 P0-P6-A 基线：渠道、配置 key、GitHub Actions 映射、Web 设置元数据、CLI 诊断口径、Web 一键测试、自定义 Webhook Body 模板语义、通知路由策略、降噪机制、聚合报告失败隔离和 ntfy 一等渠道。P0 只做基线与只读诊断；P1 增加 Web 单渠道真实测试；P2 产品化现有 Body 模板；P3 增加 report / alert / system_error 路由；P4 增加进程内降噪；P5 强化测试诊断和聚合报告逐渠道失败隔离；P6-A 新增 ntfy，不包含 Gotify、WebPush、Apprise、Bark、per-URL 模板、跨进程持久化、真实每日摘要或重试循环。
 
 ## 渠道基线
 
@@ -11,6 +11,7 @@
 | Telegram | 静态配置 | `TELEGRAM_BOT_TOKEN`, `TELEGRAM_CHAT_ID` | `TELEGRAM_MESSAGE_THREAD_ID` | token 与 chat id 必须同时存在 |
 | 邮件 | 静态配置 | `EMAIL_SENDER`, `EMAIL_PASSWORD` | `EMAIL_RECEIVERS`, `EMAIL_SENDER_NAME` | `EMAIL_RECEIVERS` 留空时发给自己 |
 | Pushover | 静态配置 | `PUSHOVER_USER_KEY`, `PUSHOVER_API_TOKEN` | - | 两个 key 必须同时存在 |
+| ntfy | 静态配置 | `NTFY_URL` | `NTFY_TOKEN`, `WEBHOOK_VERIFY_SSL` | `NTFY_URL` 必须包含 topic path，例如 `https://ntfy.sh/my-topic` |
 | PushPlus | 静态配置 | `PUSHPLUS_TOKEN` | `PUSHPLUS_TOPIC` | `PUSHPLUS_TOPIC` 仅在 token 存在时生效 |
 | Server酱3 | 静态配置 | `SERVERCHAN3_SENDKEY` | - | 手机 App 推送 |
 | 自定义 Webhook | 静态配置 | `CUSTOM_WEBHOOK_URLS` | `CUSTOM_WEBHOOK_BEARER_TOKEN`, `CUSTOM_WEBHOOK_BODY_TEMPLATE`, `WEBHOOK_VERIFY_SSL` | 支持多个 URL，逗号分隔 |
@@ -27,7 +28,8 @@
 - Advanced key：只影响认证、安全、格式、线程、群组、证书校验或展示行为，不能单独启用渠道。
 - P3 的 `NOTIFICATION_*_CHANNELS` 属于 Advanced key：只收窄已启用渠道，不会单独启用渠道。
 - P4 的 `NOTIFICATION_DEDUP_TTL_SECONDS`、`NOTIFICATION_COOLDOWN_SECONDS`、`NOTIFICATION_QUIET_HOURS`、`NOTIFICATION_TIMEZONE`、`NOTIFICATION_MIN_SEVERITY`、`NOTIFICATION_DAILY_DIGEST_ENABLED` 属于 Advanced key：只影响已启用静态渠道的发送策略，不会单独启用渠道。
-- 长尾渠道、更细粒度路由、跨进程降噪和真实每日摘要不在 P4 范围内；相关配置如未来引入，应先更新本文档、`.env.example`、Web 元数据与回归测试。
+- `WEBHOOK_VERIFY_SSL` 是读取该配置的 webhook-style HTTPS 通知请求共用的证书校验开关。
+- Gotify、WebPush、Apprise、Bark、更细粒度路由、跨进程降噪和真实每日摘要不在 P6-A 范围内；相关配置如未来引入，应先更新本文档、`.env.example`、Web 元数据与回归测试。
 
 ## GitHub Actions 映射
 
@@ -54,6 +56,11 @@ P4 补齐以下通知降噪映射：
 - `NOTIFICATION_MIN_SEVERITY`
 - `NOTIFICATION_DAILY_DIGEST_ENABLED`
 
+P6-A 补齐以下 ntfy 渠道映射：
+
+- `NTFY_URL`
+- `NTFY_TOKEN`
+
 默认 workflow 仍不映射 `MARKDOWN_TO_IMAGE_CHANNELS` 与 `MERGE_EMAIL_NOTIFICATION`。它们是发送形态或聚合行为开关，不是渠道凭证；在 Actions 中自动开始读取同名 Secret/Variable 会引入额外行为变化。
 
 ## CLI 诊断
@@ -71,7 +78,7 @@ python main.py --check-notify
 
 Web 设置页的“通知渠道”分类提供单渠道测试入口。测试会使用当前页面草稿值合成临时配置，发送一条真实测试通知，但不会保存 `.env`，也不会修改运行时全局配置。
 
-- 测试范围：11 个静态通知渠道，不包含 `UNKNOWN` 和运行时上下文渠道。
+- 测试范围：12 个静态通知渠道，不包含 `UNKNOWN` 和运行时上下文渠道。
 - 普通渠道：返回单次发送结果、耗时和通用错误码。
 - 自定义 Webhook：按 URL 顺序返回 attempts，展示每个 URL 的成功/失败、HTTP 状态、耗时和错误码；多个 URL 部分成功时，顶层 message 会标出成功数 / 总数。
 - 返回结果会脱敏 token、secret、password、Bearer、完整 webhook query 和疑似 path token。
@@ -105,6 +112,13 @@ AstrBot 已是一等通知渠道，优先使用 `ASTRBOT_URL` 和可选的 `ASTR
 CUSTOM_WEBHOOK_BODY_TEMPLATE={"content":$content_json}
 ```
 
+ntfy 已是一等通知渠道，优先使用 `NTFY_URL` 和可选的 `NTFY_TOKEN`。`NTFY_URL` 表示完整 topic endpoint，例如 `https://ntfy.sh/my-topic` 或 `https://self-hosted:port/my-topic`；系统会解析最后一个 path segment 作为 topic，并向 server root 发送 JSON publish：
+
+```env
+NTFY_URL=https://ntfy.sh/my-topic
+NTFY_TOKEN=
+```
+
 NapCat / OneBot HTTP API 需要按实际 endpoint 和目标类型调整。下面只是常见 body 形态示例，`user_id`、`group_id`、URL 路径和鉴权方式都应以你的 NapCat 配置为准：
 
 ```env
@@ -127,7 +141,7 @@ P3 新增三类通知路由配置：
 | `alert` | `NOTIFICATION_ALERT_CHANNELS` | EventMonitor 触发通知 |
 | `system_error` | `NOTIFICATION_SYSTEM_ERROR_CHANNELS` | 预留能力；当前不新增自动系统错误生产者 |
 
-配置值为逗号分隔渠道枚举：`wechat,feishu,telegram,email,pushover,pushplus,serverchan3,custom,discord,slack,astrbot`。
+配置值为逗号分隔渠道枚举：`wechat,feishu,telegram,email,pushover,ntfy,pushplus,serverchan3,custom,discord,slack,astrbot`。
 
 - 留空或未配置：保持旧行为，发送到所有已配置静态渠道。
 - 非空：只发送到路由列表与已配置渠道的交集；交集为空时不会 fallback 到全渠道。

@@ -17,6 +17,8 @@ from email.utils import parseaddr
 from unittest import mock
 from typing import Optional
 
+import requests
+
 sys.path.insert(0, os.path.abspath(os.path.join(os.path.dirname(__file__), "..")))
 
 from src.config import Config
@@ -26,6 +28,7 @@ from src.notification_sender import (
     DiscordSender,
     EmailSender,
     FeishuSender,
+    NtfySender,
     PushoverSender,
     PushplusSender,
     Serverchan3Sender,
@@ -340,6 +343,101 @@ class TestEmailSender(unittest.TestCase):
             "daily_stock_analysis股票分析助手",
         )
         server.quit.assert_called_once()
+
+
+class TestNtfySender(unittest.TestCase):
+    """Unit tests for NtfySender."""
+
+    def test_send_returns_false_when_not_configured(self):
+        cfg = _config()
+        sender = NtfySender(cfg)
+
+        result = sender.send_to_ntfy("hello")
+
+        self.assertFalse(result)
+
+    @mock.patch("src.notification_sender.ntfy_sender.requests.post")
+    def test_send_success_uses_json_publish_with_topic_endpoint(self, mock_post):
+        mock_post.return_value = _response(200)
+        cfg = _config(
+            ntfy_url="https://ntfy.sh/dsa-topic",
+            ntfy_token="secret-token",
+            webhook_verify_ssl=False,
+        )
+        sender = NtfySender(cfg)
+
+        result = sender.send_to_ntfy("正文 **Markdown**", title="中文标题", timeout_seconds=5)
+
+        self.assertTrue(result)
+        mock_post.assert_called_once()
+        self.assertEqual(mock_post.call_args.args[0], "https://ntfy.sh")
+        call_kw = mock_post.call_args.kwargs
+        self.assertEqual(
+            call_kw["json"],
+            {
+                "topic": "dsa-topic",
+                "title": "中文标题",
+                "message": "正文 **Markdown**",
+                "markdown": True,
+            },
+        )
+        self.assertEqual(call_kw["headers"]["Authorization"], "Bearer secret-token")
+        self.assertEqual(call_kw["timeout"], 5)
+        self.assertFalse(call_kw["verify"])
+
+    @mock.patch("src.notification_sender.ntfy_sender.requests.post")
+    def test_send_supports_self_hosted_path_prefix(self, mock_post):
+        mock_post.return_value = _response(200)
+        cfg = _config(ntfy_url="https://example.com/ntfy/dsa-topic")
+        sender = NtfySender(cfg)
+
+        result = sender.send_to_ntfy("body", title="title")
+
+        self.assertTrue(result)
+        self.assertEqual(mock_post.call_args.args[0], "https://example.com/ntfy")
+        self.assertEqual(mock_post.call_args.kwargs["json"]["topic"], "dsa-topic")
+
+    @mock.patch("src.notification_sender.ntfy_sender.requests.post")
+    def test_send_returns_false_when_url_has_no_topic(self, mock_post):
+        cfg = _config(ntfy_url="https://ntfy.sh")
+        sender = NtfySender(cfg)
+
+        result = sender.send_to_ntfy("body")
+
+        self.assertFalse(result)
+        mock_post.assert_not_called()
+
+    @mock.patch("src.notification_sender.ntfy_sender.requests.post")
+    def test_send_returns_false_when_url_scheme_is_not_http(self, mock_post):
+        cfg = _config(ntfy_url="ftp://ntfy.example/dsa-topic")
+        sender = NtfySender(cfg)
+
+        result = sender.send_to_ntfy("body")
+
+        self.assertFalse(result)
+        mock_post.assert_not_called()
+
+    @mock.patch("src.notification_sender.ntfy_sender.requests.post")
+    def test_send_http_error_returns_false(self, mock_post):
+        mock_post.return_value = _response(500)
+        cfg = _config(ntfy_url="https://ntfy.sh/dsa-topic")
+        sender = NtfySender(cfg)
+
+        result = sender.send_to_ntfy("body")
+
+        self.assertFalse(result)
+
+    @mock.patch("src.notification_sender.ntfy_sender.requests.post")
+    def test_send_timeout_does_not_log_token_value(self, mock_post):
+        mock_post.side_effect = requests.exceptions.Timeout("secret-token")
+        cfg = _config(ntfy_url="https://ntfy.sh/dsa-topic", ntfy_token="secret-token")
+        sender = NtfySender(cfg)
+
+        with self.assertLogs("src.notification_sender.ntfy_sender", level="ERROR") as captured:
+            result = sender.send_to_ntfy("body")
+
+        self.assertFalse(result)
+        self.assertNotIn("secret-token", "\n".join(captured.output))
 
 
 class TestAstrbotSender(unittest.TestCase):

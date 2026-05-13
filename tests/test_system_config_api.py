@@ -614,6 +614,17 @@ class SystemConfigApiTestCase(unittest.TestCase):
         self.assertEqual(mock_test.call_args.kwargs["channel"], "wechat")
         self.assertEqual(mock_test.call_args.kwargs["timeout_seconds"], 5)
 
+    def test_test_notification_channel_schema_accepts_ntfy(self) -> None:
+        request = TestNotificationChannelRequest(
+            channel="ntfy",
+            items=[{"key": "NTFY_URL", "value": "https://ntfy.sh/dsa-topic"}],
+            title="DSA 通知测试",
+            content="hello",
+            timeout_seconds=5,
+        )
+
+        self.assertEqual(request.channel, "ntfy")
+
     def test_validate_returns_user_facing_model_message_without_internal_env_key_name(self) -> None:
         validation = self.service.validate(
             items=[
