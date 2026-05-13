@@ -69,7 +69,7 @@ Go to your forked repo → `Settings` → `Secrets and variables` → `Actions` 
 
 #### Notification Channels (Multiple can be configured, all will receive notifications)
 
-> The notification baseline, minimal/advanced key split, Actions mapping, `--check-notify` CLI behavior, and Web one-click notification test are tracked in [Notification Baseline](notifications.md). A complete English notification topic remains a later follow-up.
+> The notification channel matrix, minimal/advanced key split, generated Actions mapping, `--check-notify` CLI behavior, Web one-click notification test, and local / Docker / GitHub Actions / Desktop setup notes are tracked in [Notification Guide](notifications.md).
 
 | Secret Name | Description | Required |
 |------------|------|:----:|
@@ -207,7 +207,7 @@ Default schedule: Every weekday at **18:00 (Beijing Time)** automatic execution.
 
 ### Notification Channel Configuration
 
-For the P0 notification baseline and diagnostics, see [Notification Baseline](notifications.md).
+For the notification baseline, diagnostics, and deployment notes, see [Notification Guide](notifications.md).
 
 | Variable | Description | Required |
 |--------|------|:----:|
@@ -589,7 +589,7 @@ crontab -e
 
 ## Notification Channel Configuration
 
-The P0 notification channel matrix and `--check-notify` CLI details are documented in [Notification Baseline](notifications.md).
+The notification channel matrix and `--check-notify` CLI details are documented in [Notification Guide](notifications.md).
 
 ### WeChat Work
 
