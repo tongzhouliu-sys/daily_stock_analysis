@@ -721,23 +721,38 @@ def stabilize_decision_with_structure(
             price_position.get("resistance_level"),
             _first_list_value(trend_dict.get("resistance_levels")),
         )
-        flow_bias, flow_reason = _capital_flow_bias_with_status(fundamental_context)
-        if flow_bias == "unavailable":
-            if isinstance(fundamental_context, dict) and "capital_flow" in fundamental_context:
-                _set_decision_stability_unavailable(
-                    result,
-                    language,
-                    current_price=current_price,
-                    support=support,
-                    resistance=resistance,
-                    flow_status=flow_reason,
-                )
-            return
         decision_type = infer_decision_type_from_advice(
             getattr(result, "decision_type", ""),
             default=getattr(result, "decision_type", "hold") or "hold",
         )
         decision_type = decision_type if decision_type in {"buy", "hold", "sell"} else "hold"
+        advice_decision_type = infer_decision_type_from_advice(
+            getattr(result, "operation_advice", ""),
+            default="",
+        )
+
+        flow_bias, flow_reason = _capital_flow_bias_with_status(fundamental_context)
+        if flow_bias == "unavailable":
+            if isinstance(fundamental_context, dict) and "capital_flow" in fundamental_context:
+                if decision_type == "buy" or advice_decision_type == "buy":
+                    _downgrade_buy_without_capital_flow(
+                        result,
+                        language,
+                        current_price=current_price,
+                        support=support,
+                        resistance=resistance,
+                        flow_status=flow_reason,
+                    )
+                else:
+                    _set_decision_stability_unavailable(
+                        result,
+                        language,
+                        current_price=current_price,
+                        support=support,
+                        resistance=resistance,
+                        flow_status=flow_reason,
+                    )
+            return
 
         if current_price is None:
             return
@@ -1019,6 +1034,107 @@ def _set_decision_stability_unavailable(
     _sync_stability_dashboard_fields(result)
 
 
+def _bound_hold_watch_sentiment_score(result: "AnalysisResult") -> None:
+    try:
+        score = int(getattr(result, "sentiment_score", 50))
+    except (TypeError, ValueError):
+        score = 50
+    result.sentiment_score = min(59, max(45, score))
+
+
+def _apply_hold_watch_dashboard(
+    result: "AnalysisResult",
+    language: str,
+    *,
+    advice: str,
+    reason: str,
+    current_price: Optional[float],
+    support: Optional[float],
+    resistance: Optional[float],
+    flow_bias: str,
+    no_position: str,
+    has_position: str,
+    capital_flow_status: Optional[str] = None,
+) -> None:
+    result.operation_advice = advice
+
+    dashboard = result.dashboard if isinstance(result.dashboard, dict) else {}
+    result.dashboard = dashboard
+    core = dashboard.get("core_conclusion")
+    if not isinstance(core, dict):
+        core = {}
+        dashboard["core_conclusion"] = core
+    core["signal_type"] = "🟡持有观望" if language == "zh" else "🟡 Hold / Watch"
+    core["one_sentence"] = f"{advice}：{reason}" if language == "zh" else f"{advice}: {reason}"
+
+    position_advice = core.get("position_advice")
+    if not isinstance(position_advice, dict):
+        position_advice = {}
+        core["position_advice"] = position_advice
+    position_advice["no_position"] = no_position
+    position_advice["has_position"] = has_position
+
+    stability = {
+        "applied": True,
+        "reason": reason,
+        "current_price": current_price,
+        "support": support,
+        "resistance": resistance,
+        "capital_flow_bias": flow_bias,
+    }
+    if capital_flow_status is not None:
+        stability["capital_flow_status"] = capital_flow_status
+    dashboard["decision_stability"] = stability
+
+    if reason and reason not in str(result.risk_warning or ""):
+        sep = "；" if language == "zh" else "; "
+        result.risk_warning = f"{result.risk_warning}{sep}{reason}" if result.risk_warning else reason
+    result.buy_reason = reason or result.buy_reason
+
+
+def _downgrade_buy_without_capital_flow(
+    result: "AnalysisResult",
+    language: str,
+    *,
+    current_price: Optional[float],
+    support: Optional[float],
+    resistance: Optional[float],
+    flow_status: str,
+) -> None:
+    status_text = _capital_flow_status_for_stability(flow_status, language)
+    if language == "zh":
+        advice = "持有观察"
+        reason = f"{status_text}，买入结论缺少资金面确认，先按观察处理。"
+        no_position = "空仓先不追买，等待资金流恢复、支撑确认或有效突破后再行动。"
+        has_position = "持仓以关键支撑为风控线，资金流恢复前控制仓位。"
+        confidence = "低"
+    else:
+        advice = "Hold and watch"
+        reason = f"{status_text}; the buy call lacks capital-flow confirmation, so treat it as watch-only."
+        no_position = "Do not chase; wait for capital-flow recovery, support confirmation, or a valid breakout."
+        has_position = "Use key support as the risk line and keep position size controlled until capital flow recovers."
+        confidence = "Low"
+
+    result.decision_type = "hold"
+    result.confidence_level = confidence
+    _bound_hold_watch_sentiment_score(result)
+    _apply_hold_watch_dashboard(
+        result,
+        language,
+        advice=advice,
+        reason=reason,
+        current_price=current_price,
+        support=support,
+        resistance=resistance,
+        flow_bias="unavailable",
+        no_position=no_position,
+        has_position=has_position,
+        capital_flow_status=status_text,
+    )
+    _sync_stability_dashboard_fields(result)
+    logger.info("[decision_stability] Downgraded buy because capital flow is unavailable: %s", flow_status)
+
+
 def _downgrade_to_structural_hold(
     result: "AnalysisResult",
     language: str,
@@ -1031,11 +1147,7 @@ def _downgrade_to_structural_hold(
     flow_bias: str,
 ) -> None:
     result.decision_type = "hold"
-    try:
-        score = int(getattr(result, "sentiment_score", 50))
-    except (TypeError, ValueError):
-        score = 50
-    result.sentiment_score = min(59, max(45, score))
+    _bound_hold_watch_sentiment_score(result)
     _set_structural_hold_wording(
         result,
         language,
@@ -1096,37 +1208,24 @@ def _set_structural_hold_wording(
     elif language == "en" and advice_key == "range":
         result.trend_prediction = "Sideways"
 
-    dashboard = result.dashboard if isinstance(result.dashboard, dict) else {}
-    result.dashboard = dashboard
-    core = dashboard.get("core_conclusion")
-    if not isinstance(core, dict):
-        core = {}
-        dashboard["core_conclusion"] = core
-    core["signal_type"] = "🟡持有观望" if language == "zh" else "🟡 Hold / Watch"
-    core["one_sentence"] = f"{advice}：{reason}" if language == "zh" else f"{advice}: {reason}"
-    position_advice = core.get("position_advice")
-    if not isinstance(position_advice, dict):
-        position_advice = {}
-        core["position_advice"] = position_advice
     if language == "zh":
-        position_advice["no_position"] = "空仓先不追涨杀跌，等待支撑确认、放量突破或资金回流后再行动。"
-        position_advice["has_position"] = "持仓以关键支撑为风控线，未跌破前以观察和分批控仓为主。"
+        no_position = "空仓先不追涨杀跌，等待支撑确认、放量突破或资金回流后再行动。"
+        has_position = "持仓以关键支撑为风控线，未跌破前以观察和分批控仓为主。"
     else:
-        position_advice["no_position"] = "Do not chase or panic; wait for support confirmation, breakout, or renewed inflow."
-        position_advice["has_position"] = "Use key support as the risk line and manage position size unless support fails."
-
-    dashboard["decision_stability"] = {
-        "applied": True,
-        "reason": reason,
-        "current_price": current_price,
-        "support": support,
-        "resistance": resistance,
-        "capital_flow_bias": flow_bias,
-    }
-    if reason and reason not in str(result.risk_warning or ""):
-        sep = "；" if language == "zh" else "; "
-        result.risk_warning = f"{result.risk_warning}{sep}{reason}" if result.risk_warning else reason
-    result.buy_reason = reason or result.buy_reason
+        no_position = "Do not chase or panic; wait for support confirmation, breakout, or renewed inflow."
+        has_position = "Use key support as the risk line and manage position size unless support fails."
+    _apply_hold_watch_dashboard(
+        result,
+        language,
+        advice=advice,
+        reason=reason,
+        current_price=current_price,
+        support=support,
+        resistance=resistance,
+        flow_bias=flow_bias,
+        no_position=no_position,
+        has_position=has_position,
+    )
     logger.info("[decision_stability] Applied structural hold calibration: %s", reason_key)
 
 
