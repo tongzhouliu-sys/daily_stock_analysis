@@ -22,6 +22,7 @@ and this project adheres to [Semantic Versioning](https://semver.org/).
 - [修复] Pytdx 股票名称查询在全部服务器不可达时会短暂冷却，并在冷却期内跳过重复探测，减少无效拨号与告警噪音。
 - [修复] 调度模式未显式设置 `SCHEDULE_RUN_IMMEDIATELY` 时，会继续继承 `RUN_IMMEDIATELY` 的运行时覆盖语义，避免被持久化 `.env` 别名反向覆盖。
 - [文档] 补充 Longbridge 冷却开关与调度启动兼容语义说明。
+- [文档] 明确本轮仅新增市场复盘底层数据源能力（概念排行、人气股、涨停池），未修改模型名、provider、Base URL、LLM 运行时入口或 `.env` 兼容语义；回退路径为回滚本次变更版本，不需要执行配置迁移。
 - [新功能] Windows 桌面安装版接入 electron-updater，发现新版本后可后台下载并在用户确认后重启安装；Release 工作流同步上传自动更新所需元数据。
 - [测试] 完善桌面端更新链路验收说明：补充 `apps/dsa-desktop` 与打包产物元数据的本地验证步骤（Web 构建、桌面测试/构建、`latest.yml` 与 `*.blockmap` 检查），并明确 Windows/NSIS 部分需在 Windows 发布链路复核。
 - [测试] 补充 `docs/desktop-package.md` 对 Windows NSIS 与 `desktop-release` 链路的发布级复核要求：注明 Linux 环境不能直接产出 Windows 安装器，要求在 Windows 环境补齐 `latest.yml`/`*.blockmap` 与 installer 的版本一致性与附件核对。
