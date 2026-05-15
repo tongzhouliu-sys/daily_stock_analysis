@@ -2011,6 +2011,67 @@ class GeminiAnalyzer:
             "total_tokens": _get_value("total_tokens"),
         }
 
+    @staticmethod
+    def _get_response_field(obj: Any, key: str) -> Any:
+        """Read a field from dict-like or object-like LiteLLM payloads."""
+        if isinstance(obj, dict):
+            return obj.get(key)
+        return getattr(obj, key, None)
+
+    def _extract_text_blocks(self, blocks: Any) -> str:
+        """Extract text from OpenAI-compatible content block lists."""
+        if not blocks:
+            return ""
+
+        parts: List[str] = []
+        for block in blocks:
+            if isinstance(block, str):
+                parts.append(block)
+                continue
+
+            text = None
+            if isinstance(block, dict):
+                text = block.get("text")
+                if text is None:
+                    text = block.get("content")
+            else:
+                text = getattr(block, "text", None)
+                if text is None:
+                    text = getattr(block, "content", None)
+
+            if isinstance(text, str) and text:
+                parts.append(text)
+
+        return "".join(parts).strip()
+
+    def _extract_completion_text(self, response: Any) -> str:
+        """Extract text from non-stream LiteLLM completion responses."""
+        choices = self._get_response_field(response, "choices")
+        if not choices:
+            return ""
+
+        choice = choices[0]
+        message = self._get_response_field(choice, "message")
+
+        content_blocks = self._get_response_field(choice, "content_blocks")
+        if content_blocks is None and message is not None:
+            content_blocks = self._get_response_field(message, "content_blocks")
+        block_text = self._extract_text_blocks(content_blocks)
+        if block_text:
+            return block_text
+
+        content = None
+        if message is not None:
+            content = self._get_response_field(message, "content")
+        if content is None:
+            content = self._get_response_field(choice, "content")
+
+        if isinstance(content, list):
+            return self._extract_text_blocks(content)
+        if isinstance(content, str):
+            return content.strip()
+        return str(content).strip() if content is not None else ""
+
     def _extract_stream_text(self, chunk: Any) -> str:
         """Extract provider-agnostic text delta from a LiteLLM streaming chunk."""
         choices = chunk.get("choices") if isinstance(chunk, dict) else getattr(chunk, "choices", None)
@@ -2219,9 +2280,9 @@ class GeminiAnalyzer:
                     router_model_names=router_model_names,
                 )
 
-                if response and response.choices and response.choices[0].message.content:
-                    content = response.choices[0].message.content
-                    usage = self._normalize_usage(getattr(response, "usage", None))
+                content = self._extract_completion_text(response)
+                if content:
+                    usage = self._normalize_usage(self._get_response_field(response, "usage"))
                     last_response_text = content
                     last_model = model
                     last_usage = usage
