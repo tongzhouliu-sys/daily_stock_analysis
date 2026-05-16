@@ -47,8 +47,10 @@ and this project adheres to [Semantic Versioning](https://semver.org/).
 - [修复] 调高基本面聚合默认超时预算，降低 Windows/Docker 环境下整段基本面 timeout 的概率。
 - [修复] 正式分析链路兼容 OpenAI-compatible `content_blocks` 响应，避免 `message.content=null` 时被误判为空回复。
 - [文档] Issue #1279 外部响应兼容补证据：本次修复以 `litellm>=1.80.10,!=1.82.7,!=1.82.8,<2.0.0` 为运行时前提，交叉参照 [LiteLLM OpenAI-compatible](https://docs.litellm.ai/docs/providers/openai_compatible) / [OpenAI Chat Completion API](https://platform.openai.com/docs/api-reference/chat)、并以 `tests/test_market_analyzer_generate_text.py` 的 `content_blocks` 与 `list content` 回归样例为复现依据，保留 `message.content` 回退逻辑避免兼容断层。
+- [文档] Issue #1306 明确本轮仅持久化大盘复盘历史，不改 LLM 模型名、provider、Base URL、LiteLLM 运行时清理逻辑；兼容性依据为本仓库 `requirements.txt` 锁定版本与现有 `docs/LLM_CONFIG_GUIDE*.md` 兼容说明，回退路径为回滚本版本，见 `tests/test_analysis_api_contract.py`、`tests/test_analysis_history.py`、`tests/test_market_review.py`。
 - [改进] 大盘复盘新增 `MARKET_REVIEW_COLOR_SCHEME` 配置，可在指数涨跌幅中选择绿涨红跌或红涨绿跌。
 - [文档] 明确 `MARKET_REVIEW_COLOR_SCHEME` 仅为大盘复盘展示配置，枚举为 `green_up`/`red_up`（默认 `green_up`），属于文案与颜色语义层面变更；本次未调整模型名、provider、Base URL、LLM 运行时迁移或运行时清理逻辑。
+- [修复] 大盘复盘执行结果写入现有分析历史，Web 历史列表可直接查看已生成复盘，避免重复触发分析。
 
 ## [3.16.0] - 2026-05-10
 
