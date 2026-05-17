@@ -18,6 +18,9 @@ and this project adheres to [Semantic Versioning](https://semver.org/).
 - [改进] 告警中心 P2 新增后台评估 worker，schedule 模式可同时评估持久化 active rules 与 legacy JSON 规则，并记录 `triggered` / `skipped` / `degraded` / `failed` 最小评估历史。
 - [修复] 统一 Windows 桌面安装包与自动更新元数据文件名，避免 Release 中出现重复安装包并阻断 `latest.yml` 指向不存在附件。
 - [修复] 桌面端启动 WebUI 时为入口页增加 no-cache 响应头和版本化 cache-busting URL，避免安装新版后 Electron 继续复用旧 WebUI 缓存。
+- [新功能] 新增 Finnhub / AlphaVantage 美股数据源适配器，扩展美股日线 failover 链至 Finnhub(P2) -> AlphaVantage(P3) -> Yfinance(P4) -> Longbridge(P5)。
+- [修复] AlphaVantage 适配器在 newest-first 原始数据下 pct_chg 计算错误：改为先按日期升序排序再计算涨跌幅。
+- [修复] 美股日线路由未包含 Finnhub / AlphaVantage：扩展 `get_daily_data()` 美股分支的 source_order 以覆盖新增数据源。
 
 ## [3.17.1] - 2026-05-16
 
