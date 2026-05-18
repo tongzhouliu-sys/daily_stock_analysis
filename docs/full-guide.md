@@ -1319,6 +1319,8 @@ AGENT_EVENT_ALERT_RULES_JSON=[{"stock_code":"600519","alert_type":"price_cross",
 
 P2 worker 会把 `triggered`、`skipped`、`degraded`、`failed` 写入 `alert_triggers` 作为最小评估历史；正常未触发不写历史。P2 不写 `alert_notifications`，也不执行 `cooldown_policy` / `notification_policy`。
 
+WebUI 的“告警”页面可以管理当前三类持久化规则、执行一次性 dry-run 测试并查看触发历史；详细边界见 [实时告警中心](alerts.md)。
+
 ## 持仓管理说明
 
 ### `/portfolio` 页面可做什么

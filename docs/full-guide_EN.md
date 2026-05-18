@@ -1181,6 +1181,8 @@ AGENT_EVENT_ALERT_RULES_JSON=[{"stock_code":"600519","alert_type":"price_cross",
 
 The P2 worker writes `triggered`, `skipped`, `degraded`, and `failed` rows to `alert_triggers` as minimal evaluation history; normal non-triggered checks do not write history. P2 does not write `alert_notifications` and does not execute `cooldown_policy` / `notification_policy`.
 
+The WebUI "Alerts" page can manage the current three persisted rule types, run one-shot dry-run tests, and view trigger history. See [Real-Time Alert Center](alerts.md) for detailed boundaries.
+
 ---
 
 For more questions, please [submit an Issue](https://github.com/ZhuLinsen/daily_stock_analysis/issues)
