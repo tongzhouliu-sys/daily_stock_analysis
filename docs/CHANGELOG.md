@@ -32,6 +32,8 @@ and this project adheres to [Semantic Versioning](https://semver.org/).
 - [改进] 将 RSI 计算口径从 SMA 调整为 Wilder's EMA / SMMA，统一分析报告与告警阈值口径。
 - [改进] 大盘复盘将红绿灯与盘面温度合并为终端友好的盘面信号分数，移除色块进度条与重复温度行。
 - [改进] 大盘复盘近三日市场线索改为标题与来源链接列表，移除摘要片段，降低中英混排和误读风险。
+- [修复] 为 OpenAI-compatible 渠道补充 MiMo / LiteLLM fallback pricing 注册路径：在 Tool / Analyzer / 系统配置联调测试路径复用 `register_fallback_model_pricing`，避免未知模型因缺失计费信息导致调用失败。
+- [文档] 同步说明 fallback pricing 注册与 MiniMax / 小米 MiMo 兼容配置边界，补充相关 provider 示例与回退触发条件，限定为本次 #1282 修复范围内更新。
 
 ## [3.17.1] - 2026-05-16
 
