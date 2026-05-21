@@ -16,37 +16,17 @@ and this project adheres to [Semantic Versioning](https://semver.org/).
 
 ### 发布亮点
 
-- feat: Web 告警中心从 MVP 扩展到后台评估、真实通知结果、业务冷却、技术指标规则，以及自选股/持仓/账户联动规则。
-- feat: 个股分析能力扩展到策略选择、热点题材/事件驱动/成长质量/预期重估策略，并增强 HK/US 基本面、财务摘要、股东回报和关联板块展示。
+- feat: 告警中心扩展到 P2-P6，补齐后台评估、真实通知结果、业务冷却、技术指标规则，以及自选股 / 持仓 / 账户联动规则。
+- feat: 个股分析支持策略选择，新增热点题材、事件驱动、成长质量和预期重估策略，并为 HK/US 报告补充基本面、财务摘要、股东回报和关联板块。
 - feat: 新增 Finnhub / AlphaVantage 美股数据源适配器，扩展美股日线 failover 链，提升美股行情获取韧性。
-- improve: LiteLLM 生成参数增加严格 temperature 模型适配与一次请求内自愈重试，减少新模型参数兼容问题。
-- improve: 新闻检索、RSI 口径、大盘复盘展示、通知报告表格与 yfinance 分红/币种口径继续收敛，降低误读和跨市场数据偏差。
-- fix: 修复桌面端打包 strategies 缺失、安装包/更新元数据命名不一致、WebUI 旧缓存复用，以及分析状态接口 completed 队列缺少关键字段等发布路径问题。
-- fix: 修复 AlphaVantage 涨跌幅计算、美股日线路由、持仓快照实时估值、告警触发历史去重、数据库冷启动并发初始化和 fallback pricing 注册等稳定性问题。
-- docs/tests: 补齐小白客户端安装指南、Web 设置页帮助、LiteLLM/fallback pricing 兼容边界说明，并增加相关 API、打包和回归测试覆盖。
+- fix: 修复桌面端发布打包、分析状态接口、AlphaVantage 涨跌幅、持仓实时估值、告警历史去重、数据库冷启动和 fallback pricing 注册等稳定性问题。
 
 ### What's Changed
 
-- feat: Add alert-center P2-P6 capabilities, including background evaluation, notification attempt records, business cooldown state, daily technical-indicator rules, and watchlist/portfolio/account linked rules.
-- feat: Add Web strategy selection and new strategy presets for theme momentum, event-driven, growth quality, and expectation rerating analysis.
-- feat: Add yfinance-backed HK/US fundamental context and expose financial summary, shareholder return, and related boards in static notification reports.
-- feat: Add Finnhub and AlphaVantage US-market data adapters and route US daily data through Finnhub -> AlphaVantage -> Yfinance -> Longbridge fallback.
-- improve: Add LiteLLM generation-parameter adaptation, request-local temperature correction, retry, and in-process strategy caching for strict model parameter behavior.
-- improve: Rework yfinance currency handling and dividend TTM yield calculation so financial-report currency, dividend currency, and per-share rendering remain consistent.
-- improve: Improve stock news relevance ranking with direct company, sector-related, and macro-market layers; tighten HK numeric-code and US ticker matching.
-- improve: Align RSI with Wilder's EMA / SMMA, simplify market-review terminal signals, and make recent market clues title/link based.
-- improve: Move Web related boards below action advice, make board labels horizontal, and let report tables collapse or align columns when data is unavailable.
-- chore: Rename the daily analysis workflow to `00-daily-analysis.yml` so the common entry appears first in GitHub Actions.
-- fix: Include built-in `strategies/` in macOS desktop backend packaging and verify strategy YAML files after packaging.
-- fix: Normalize Windows desktop installer and auto-update metadata names, and add no-cache/cache-busting behavior for the desktop WebUI entry page.
-- fix: Populate `query_id` and `created_at` on `/api/v1/analysis/status/{task_id}` completed in-memory queue responses.
-- fix: Sort AlphaVantage data before pct_chg calculation and clear index ambiguity in the fetcher output.
-- fix: Recompute current portfolio snapshot price, market value, and unrealized PnL from realtime quotes during same-day refreshes.
-- fix: Deduplicate alert trigger history for semantically identical DB-backed triggered records and serialize DatabaseManager cold-start initialization.
-- fix: Register MiMo / LiteLLM fallback pricing across tool, analyzer, and system-config integration paths.
-- fix: Normalize missing chip-distribution data to one degradation note instead of repeated placeholder messages.
-- docs: Add beginner client installation/configuration docs and expand settings-help coverage for Agent model, LiteLLM fallback/config/temperature, and LLM channel fields.
-- docs: Document compatibility boundaries and rollback notes for LiteLLM temperature self-healing, fallback pricing, chip-distribution fallback, and news relevance changes.
+- feat: Add alert-center P2-P6, Web strategy selection, HK/US fundamental context, static-report financial sections, and Finnhub / AlphaVantage US-market fallback.
+- improve: Refine LiteLLM parameter recovery, yfinance currency/dividend handling, RSI calculation, market-review presentation, stock-news relevance ranking, and report table rendering.
+- fix: Harden desktop packaging/update assets, completed analysis-status responses, AlphaVantage pct_chg routing, portfolio realtime snapshots, alert trigger dedupe, DatabaseManager cold start, and fallback pricing registration.
+- docs/tests: Add beginner setup and settings-help docs, document compatibility/rollback boundaries, and extend regression coverage for API, alert, packaging, and release paths.
 
 ## [3.17.1] - 2026-05-16
 
