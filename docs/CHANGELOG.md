@@ -11,47 +11,42 @@ and this project adheres to [Semantic Versioning](https://semver.org/).
 
 <!-- 新条目格式：- [类型] 描述（类型取值：新功能/改进/修复/文档/测试/chore）-->
 <!-- 每条独立一行追加到本段末尾，无需分类标题，合并时冲突最小 -->
-- [改进] Web 个股分析详情页将关联板块移至操作建议下方，板块标签改为横向展示并取消 3 个数量限制。
-- [改进] 邮件等静态渠道单股/仪表盘报告补充财务摘要、股东回报和关联板块三块结构化数据，沿用 `fundamental_context` 字段，缺失时自动隐藏，对应小节支持中英双语。
-- [修复] macOS 桌面端后端 PyInstaller 打包补充 `strategies/` 内置策略目录，并在打包后校验策略 YAML 数量，避免 Agent 启动后加载 0 个内置策略。
-- [新功能] 港股/美股基本面接入 yfinance 适配器：`get_fundamental_context` 对 HK/US 返回 `valuation/growth/earnings/belong_boards`（institution/capital_flow/dragon_tiger/boards 暂无对应数据源仍标记 `not_supported`），财务摘要、股东回报与关联板块出现在邮件报告中。
-- [改进] yfinance 适配器拆分财报币种与分红币种：`earnings.financial_report.currency` 来自 `info.financialCurrency`，`earnings.dividend.currency` 来自 `info.currency`；HK ADR 财报 CNY、分红 HKD 不再混淆；通知层 per-share 渲染读取 `dividend.currency`，金额按 USD/HKD/CNY 分别后缀 美元/港元/元。
-- [改进] yfinance 分红 TTM 收益率改为按 `ttm_cash / latest_price * 100`（同币种）重算，仅在 TTM cash 或 latest price 缺失时回退到 `trailingAnnualDividendYield`/`dividendYield`，避免与 TTM cash 口径错位。
-- [改进] 通知报告中关联板块表格在缺少板块涨跌数据时自动收敛为 2 列（板块 / 类型），避免 HK/US 出现成片 "--"；财务摘要与股东回报表加入列对齐标记，数字右对齐、日期居中。
-- [改进] 将每日股票分析 workflow 文件重命名为 `00-daily-analysis.yml`，让 GitHub Actions 列表优先展示用户最常用的每日分析入口。
-- [修复] 抽出 LiteLLM 生成参数适配层，对严格 temperature 模型按请求临时固定或省略参数，避免 GPT-5 / o 系列与 Kimi K2.6 拒绝默认温度请求。
-- [改进] LiteLLM 参数错误支持一次请求内自动修正重试，并在成功后进程内缓存策略，降低新模型参数兼容问题的人工配置成本。
-- [文档] 补充 Issue #1316 参数自愈改动的外部兼容依据、运行时配置清理边界与回滚证据；对应的 `LLM_TEMPERATURE` 保留回归点已在 `tests/test_system_config_service.py` 中存在（既有用例，无额外新增）。
-- [文档] 补充严格 temperature 兼容语义的官方来源、运行时依赖约束与 `LLM_TEMPERATURE` 回退/不回写路径说明。
-- [改进] 告警中心 P2 新增后台评估 worker，schedule 模式可同时评估持久化 active rules 与 legacy JSON 规则，并记录 `triggered` / `skipped` / `degraded` / `failed` 最小评估历史。
-- [修复] 统一 Windows 桌面安装包与自动更新元数据文件名，避免 Release 中出现重复安装包并阻断 `latest.yml` 指向不存在附件。
-- [修复] 桌面端启动 WebUI 时为入口页增加 no-cache 响应头和版本化 cache-busting URL，避免安装新版后 Electron 继续复用旧 WebUI 缓存。
-- [文档] 扩展 Web 设置页帮助信息，补充 Agent 模型、LiteLLM fallback/config/temperature 与 LLM 渠道编辑器字段说明。
-- [新功能] 新增 Finnhub / AlphaVantage 美股数据源适配器，扩展美股日线 failover 链至 Finnhub(P2) -> AlphaVantage(P3) -> Yfinance(P4) -> Longbridge(P5)。
-- [修复] AlphaVantage 适配器在 newest-first 原始数据下 pct_chg 计算错误：改为先按日期升序排序再计算涨跌幅。
-- [修复] 美股日线路由未包含 Finnhub / AlphaVantage：扩展 `get_daily_data()` 美股分支的 source_order 以覆盖新增数据源。
-- [文档] 新增小白客户端安装与配置指南，说明桌面客户端下载、基础模型配置、新闻源配置和常见问题。
-- [新功能] Web 首页个股分析支持选择策略。
-- [新功能] 新增热点题材、事件驱动、成长质量和预期重估策略。
-- [新功能] Web 新增告警中心 MVP，支持现有三类告警规则的创建、列表、启停、删除、dry-run 测试和触发历史查看。
-- [新功能] 告警中心 P4 记录真实通知尝试结果，并为持久化规则新增可查询的业务冷却状态。
-- [修复] 持仓快照在当天刷新时优先使用实时行情重算当前价、市值与未实现盈亏，避免复用旧收盘价导致页面刷新后盈亏不变。
-- [新功能] 告警中心 P5 支持 MA、RSI、MACD、KDJ、CCI 日线技术指标规则，并复用现有触发历史、通知结果和持久化冷却链路。
-- [新功能] 告警中心 P6 支持自选股、持仓标的和持仓账户联动规则，复用现有触发历史、通知结果与业务冷却链路。
-- [改进] 将 RSI 计算口径从 SMA 调整为 Wilder's EMA / SMMA，统一分析报告与告警阈值口径。
-- [改进] 大盘复盘将红绿灯与盘面温度合并为终端友好的盘面信号分数，移除色块进度条与重复温度行。
-- [改进] 大盘复盘近三日市场线索改为标题与来源链接列表，移除摘要片段，降低中英混排和误读风险。
-- [修复] 告警中心对 DB 持久化规则的同一数据点 `triggered` 历史做 best-effort 去重，避免重复轮询刷出语义相同的触发记录。
-- [修复] 修复 DatabaseManager 冷启动并发初始化竞态，避免首批并发请求偶发拿到半初始化数据库实例。
-- [修复] 为 OpenAI-compatible 渠道补充 MiMo / LiteLLM fallback pricing 注册路径：在 Tool / Analyzer / 系统配置联调测试路径复用 `register_fallback_model_pricing`，避免未知模型因缺失计费信息导致调用失败。
-- [文档] 同步说明 fallback pricing 注册与 MiniMax / 小米 MiMo 兼容配置边界，补充相关 provider 示例与回退触发条件，限定为本次 #1282 修复范围内更新。
-- [修复] 个股报告筹码分布缺失或返回占位值时归一为单条降级说明，避免逐字段重复“数据缺失，无法判断”。
-- [文档] 补充 Issue #1367 兼容边界：本轮仅覆盖筹码分布缺失与相关资金流提示文案归一，不变更模型/provider/Base URL/LiteLLM 运行时配置清理语义；回退为恢复 `.env` 或回滚本次变更。
-- [改进] 个股新闻检索新增可解释相关度评分与 direct_company_news / sector_related_news / macro_market_news 分层，优先展示命中股票代码或公司主体的新闻。
-- [修复] 收紧港股新闻相关度中的裸短码匹配，避免将指数点数等普通数字误判为目标股票代码。
-- [修复] 修复个股新闻相关度中美股小写 ticker 后缀识别与 A/HK 弱相关新闻中文优先比较顺序。
-- [文档] Issue #1356 的结构化检测告警为既有上下文误报：本次仅调整个股新闻检索的相关度评分与分层排序（`direct_company_news` / `sector_related_news` / `macro_market_news`），不触及模型名、provider、LiteLLM 参数、Base URL 及运行时配置清理/迁移语义；无配置回写副作用，回退路径为回滚本次提交。
-- [修复] `/api/v1/analysis/status/{task_id}` 在 completed 内存队列路径补齐 `query_id` 与 `created_at`，避免分析结果被解析为空。
+
+## [3.18.0] - 2026-05-21
+
+### 发布亮点
+
+- feat: Web 告警中心从 MVP 扩展到后台评估、真实通知结果、业务冷却、技术指标规则，以及自选股/持仓/账户联动规则。
+- feat: 个股分析能力扩展到策略选择、热点题材/事件驱动/成长质量/预期重估策略，并增强 HK/US 基本面、财务摘要、股东回报和关联板块展示。
+- feat: 新增 Finnhub / AlphaVantage 美股数据源适配器，扩展美股日线 failover 链，提升美股行情获取韧性。
+- improve: LiteLLM 生成参数增加严格 temperature 模型适配与一次请求内自愈重试，减少新模型参数兼容问题。
+- improve: 新闻检索、RSI 口径、大盘复盘展示、通知报告表格与 yfinance 分红/币种口径继续收敛，降低误读和跨市场数据偏差。
+- fix: 修复桌面端打包 strategies 缺失、安装包/更新元数据命名不一致、WebUI 旧缓存复用，以及分析状态接口 completed 队列缺少关键字段等发布路径问题。
+- fix: 修复 AlphaVantage 涨跌幅计算、美股日线路由、持仓快照实时估值、告警触发历史去重、数据库冷启动并发初始化和 fallback pricing 注册等稳定性问题。
+- docs/tests: 补齐小白客户端安装指南、Web 设置页帮助、LiteLLM/fallback pricing 兼容边界说明，并增加相关 API、打包和回归测试覆盖。
+
+### What's Changed
+
+- feat: Add alert-center P2-P6 capabilities, including background evaluation, notification attempt records, business cooldown state, daily technical-indicator rules, and watchlist/portfolio/account linked rules.
+- feat: Add Web strategy selection and new strategy presets for theme momentum, event-driven, growth quality, and expectation rerating analysis.
+- feat: Add yfinance-backed HK/US fundamental context and expose financial summary, shareholder return, and related boards in static notification reports.
+- feat: Add Finnhub and AlphaVantage US-market data adapters and route US daily data through Finnhub -> AlphaVantage -> Yfinance -> Longbridge fallback.
+- improve: Add LiteLLM generation-parameter adaptation, request-local temperature correction, retry, and in-process strategy caching for strict model parameter behavior.
+- improve: Rework yfinance currency handling and dividend TTM yield calculation so financial-report currency, dividend currency, and per-share rendering remain consistent.
+- improve: Improve stock news relevance ranking with direct company, sector-related, and macro-market layers; tighten HK numeric-code and US ticker matching.
+- improve: Align RSI with Wilder's EMA / SMMA, simplify market-review terminal signals, and make recent market clues title/link based.
+- improve: Move Web related boards below action advice, make board labels horizontal, and let report tables collapse or align columns when data is unavailable.
+- chore: Rename the daily analysis workflow to `00-daily-analysis.yml` so the common entry appears first in GitHub Actions.
+- fix: Include built-in `strategies/` in macOS desktop backend packaging and verify strategy YAML files after packaging.
+- fix: Normalize Windows desktop installer and auto-update metadata names, and add no-cache/cache-busting behavior for the desktop WebUI entry page.
+- fix: Populate `query_id` and `created_at` on `/api/v1/analysis/status/{task_id}` completed in-memory queue responses.
+- fix: Sort AlphaVantage data before pct_chg calculation and clear index ambiguity in the fetcher output.
+- fix: Recompute current portfolio snapshot price, market value, and unrealized PnL from realtime quotes during same-day refreshes.
+- fix: Deduplicate alert trigger history for semantically identical DB-backed triggered records and serialize DatabaseManager cold-start initialization.
+- fix: Register MiMo / LiteLLM fallback pricing across tool, analyzer, and system-config integration paths.
+- fix: Normalize missing chip-distribution data to one degradation note instead of repeated placeholder messages.
+- docs: Add beginner client installation/configuration docs and expand settings-help coverage for Agent model, LiteLLM fallback/config/temperature, and LLM channel fields.
+- docs: Document compatibility boundaries and rollback notes for LiteLLM temperature self-healing, fallback pricing, chip-distribution fallback, and news relevance changes.
 
 ## [3.17.1] - 2026-05-16
 
@@ -1517,7 +1512,8 @@ and this project adheres to [Semantic Versioning](https://semver.org/).
 
 ---
 
-[Unreleased]: https://github.com/ZhuLinsen/daily_stock_analysis/compare/v3.17.1...HEAD
+[Unreleased]: https://github.com/ZhuLinsen/daily_stock_analysis/compare/v3.18.0...HEAD
+[3.18.0]: https://github.com/ZhuLinsen/daily_stock_analysis/compare/v3.17.1...v3.18.0
 [3.17.1]: https://github.com/ZhuLinsen/daily_stock_analysis/compare/v3.17.0...v3.17.1
 [3.17.0]: https://github.com/ZhuLinsen/daily_stock_analysis/compare/v3.16.0...v3.17.0
 [3.16.0]: https://github.com/ZhuLinsen/daily_stock_analysis/compare/v3.15.0...v3.16.0
