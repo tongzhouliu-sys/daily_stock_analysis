@@ -11,6 +11,7 @@ and this project adheres to [Semantic Versioning](https://semver.org/).
 
 <!-- 新条目格式：- [类型] 描述（类型取值：新功能/改进/修复/文档/测试/chore）-->
 <!-- 每条独立一行追加到本段末尾，无需分类标题，合并时冲突最小 -->
+- [改进] Web 个股分析详情页将关联板块移至操作建议下方，板块标签改为横向展示并取消 3 个数量限制。
 - [改进] 邮件等静态渠道单股/仪表盘报告补充财务摘要、股东回报和关联板块三块结构化数据，沿用 `fundamental_context` 字段，缺失时自动隐藏，对应小节支持中英双语。
 - [修复] macOS 桌面端后端 PyInstaller 打包补充 `strategies/` 内置策略目录，并在打包后校验策略 YAML 数量，避免 Agent 启动后加载 0 个内置策略。
 - [新功能] 港股/美股基本面接入 yfinance 适配器：`get_fundamental_context` 对 HK/US 返回 `valuation/growth/earnings/belong_boards`（institution/capital_flow/dragon_tiger/boards 暂无对应数据源仍标记 `not_supported`），财务摘要、股东回报与关联板块出现在邮件报告中。
