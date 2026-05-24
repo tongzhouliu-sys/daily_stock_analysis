@@ -357,6 +357,87 @@ test('desktop update backup list includes WAL and SHM artifacts', (t) => {
   assert.ok(files.includes(path.join('logs', 'desktop.log')));
 });
 
+test('macOS packaged runtime state uses userData and migrates old app bundle files', (t) => {
+  const tempRoot = fs.mkdtempSync(path.join(os.tmpdir(), 'dsa-desktop-macos-migrate-'));
+  const oldAppDir = path.join(tempRoot, 'Daily Stock Analysis.app', 'Contents', 'MacOS');
+  const userDataDir = path.join(tempRoot, 'userData');
+  const exePath = path.join(oldAppDir, 'Daily Stock Analysis');
+  const oldDbPath = path.join(oldAppDir, 'data', 'stock_analysis.db');
+  const oldLogPath = path.join(oldAppDir, 'logs', 'desktop.log');
+
+  fs.mkdirSync(path.dirname(oldDbPath), { recursive: true });
+  fs.mkdirSync(path.dirname(oldLogPath), { recursive: true });
+  fs.mkdirSync(userDataDir, { recursive: true });
+  fs.writeFileSync(exePath, '');
+  fs.writeFileSync(path.join(oldAppDir, '.env'), 'OPENAI_API_KEY=old-key\n', 'utf-8');
+  fs.writeFileSync(oldDbPath, 'old-db');
+  fs.writeFileSync(oldLogPath, 'old-log\n', 'utf-8');
+
+  const mainModule = loadMainModule(t, {
+    platform: 'darwin',
+    app: {
+      isPackaged: true,
+      getPath: (name) => {
+        if (name === 'exe') {
+          return exePath;
+        }
+        return userDataDir;
+      },
+    },
+  });
+
+  t.after(() => {
+    fs.rmSync(tempRoot, { recursive: true, force: true });
+  });
+
+  const migrationResult = mainModule.migrateMacPackagedRuntimeState();
+  assert.equal(mainModule.resolveAppDir(), userDataDir);
+  assert.deepEqual(migrationResult.failed, []);
+  assert.deepEqual(
+    [...migrationResult.migrated].sort(),
+    ['.env', path.join('data', 'stock_analysis.db'), path.join('logs', 'desktop.log')].sort()
+  );
+  assert.equal(fs.readFileSync(path.join(userDataDir, '.env'), 'utf-8'), 'OPENAI_API_KEY=old-key\n');
+  assert.equal(fs.readFileSync(path.join(userDataDir, 'data', 'stock_analysis.db'), 'utf-8'), 'old-db');
+  assert.equal(fs.readFileSync(path.join(userDataDir, 'logs', 'desktop.log'), 'utf-8'), 'old-log\n');
+});
+
+test('macOS runtime migration does not overwrite existing userData files', (t) => {
+  const tempRoot = fs.mkdtempSync(path.join(os.tmpdir(), 'dsa-desktop-macos-skip-'));
+  const oldAppDir = path.join(tempRoot, 'Daily Stock Analysis.app', 'Contents', 'MacOS');
+  const userDataDir = path.join(tempRoot, 'userData');
+  const exePath = path.join(oldAppDir, 'Daily Stock Analysis');
+
+  fs.mkdirSync(oldAppDir, { recursive: true });
+  fs.mkdirSync(userDataDir, { recursive: true });
+  fs.writeFileSync(exePath, '');
+  fs.writeFileSync(path.join(oldAppDir, '.env'), 'OPENAI_API_KEY=old-key\n', 'utf-8');
+  fs.writeFileSync(path.join(userDataDir, '.env'), 'OPENAI_API_KEY=new-key\n', 'utf-8');
+
+  const mainModule = loadMainModule(t, {
+    platform: 'darwin',
+    app: {
+      isPackaged: true,
+      getPath: (name) => {
+        if (name === 'exe') {
+          return exePath;
+        }
+        return userDataDir;
+      },
+    },
+  });
+
+  t.after(() => {
+    fs.rmSync(tempRoot, { recursive: true, force: true });
+  });
+
+  const migrationResult = mainModule.migrateMacPackagedRuntimeState();
+  assert.deepEqual(migrationResult.migrated, []);
+  assert.deepEqual(migrationResult.failed, []);
+  assert.deepEqual(migrationResult.skipped, ['.env']);
+  assert.equal(fs.readFileSync(path.join(userDataDir, '.env'), 'utf-8'), 'OPENAI_API_KEY=new-key\n');
+});
+
 test('restorePackagedRuntimeStateFromBackup keeps backup when copy fails', (t) => {
   const tempRoot = fs.mkdtempSync(path.join(os.tmpdir(), 'dsa-desktop-restore-'));
   const appDir = path.join(tempRoot, 'app');

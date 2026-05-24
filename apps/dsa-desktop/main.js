@@ -23,6 +23,7 @@ function resolveWindowBackgroundColor() {
 }
 
 const isWindows = process.platform === 'win32';
+const isMac = process.platform === 'darwin';
 const appRootDev = path.resolve(__dirname, '..', '..');
 const GITHUB_OWNER = 'ZhuLinsen';
 const GITHUB_REPO = 'daily_stock_analysis';
@@ -380,10 +381,13 @@ function resolveEnvExamplePath() {
   return path.join(appRootDev, '.env.example');
 }
 
+function resolvePackagedExeDir() {
+  return path.dirname(app.getPath('exe'));
+}
+
 function resolveAppDir() {
-  if (app.isPackaged) {
-    // exe 所在目录
-    return path.dirname(app.getPath('exe'));
+  if (app.isPackaged && !isMac) {
+    return resolvePackagedExeDir();
   }
   return app.getPath('userData');
 }
@@ -561,6 +565,53 @@ function restorePackagedRuntimeStateFromBackup() {
   return result;
 }
 
+function migrateMacPackagedRuntimeState() {
+  const result = {
+    sourceDir: null,
+    targetDir: null,
+    migrated: [],
+    skipped: [],
+    failed: [],
+  };
+
+  if (!app.isPackaged || !isMac) {
+    return result;
+  }
+
+  const sourceDir = resolvePackagedExeDir();
+  const targetDir = resolveAppDir();
+  result.sourceDir = sourceDir;
+  result.targetDir = targetDir;
+
+  if (sourceDir === targetDir || !fs.existsSync(sourceDir)) {
+    return result;
+  }
+
+  DESKTOP_UPDATE_RUNTIME_RELATIVE_FILES.forEach((relativePath) => {
+    const source = path.join(sourceDir, relativePath);
+    const target = path.join(targetDir, relativePath);
+
+    if (!fs.existsSync(source)) {
+      return;
+    }
+    if (fs.existsSync(target)) {
+      result.skipped.push(relativePath);
+      return;
+    }
+
+    try {
+      ensureDirectory(path.dirname(target));
+      fs.copyFileSync(source, target);
+      result.migrated.push(relativePath);
+    } catch (error) {
+      const message = error instanceof Error ? error.message : String(error);
+      result.failed.push(`${relativePath} (${message})`);
+    }
+  });
+
+  return result;
+}
+
 function resolveBackendPath() {
   if (process.env.DSA_BACKEND_PATH) {
     return process.env.DSA_BACKEND_PATH;
@@ -592,7 +643,7 @@ function ensureDirectory(dirPath) {
 }
 
 function initLogging() {
-  const appDir = app.isPackaged ? path.dirname(app.getPath('exe')) : app.getPath('userData');
+  const appDir = resolveAppDir();
   logFilePath = path.join(appDir, 'logs', 'desktop.log');
   
   // 确保日志目录存在
@@ -1403,7 +1454,17 @@ ipcMain.handle('desktop:open-release-page', async (_event, releaseUrl) => {
 
 async function createWindow() {
   const restoreResult = isWindowsNsisInstalledApp() ? restorePackagedRuntimeStateFromBackup() : null;
+  const macMigrationResult = migrateMacPackagedRuntimeState();
   initLogging();
+  if (macMigrationResult.migrated.length) {
+    logLine(`[migration] migrated macOS runtime files from ${macMigrationResult.sourceDir} to ${macMigrationResult.targetDir}: ${macMigrationResult.migrated.join(', ')}`);
+  }
+  if (macMigrationResult.skipped.length) {
+    logLine(`[migration] skipped existing macOS runtime files: ${macMigrationResult.skipped.join(', ')}`);
+  }
+  if (macMigrationResult.failed.length) {
+    logLine(`[migration] failed to migrate macOS runtime files: ${macMigrationResult.failed.join(', ')}`);
+  }
   const restoreFailed = Boolean(restoreResult && restoreResult.failed.length);
   const restoreIssueDetails = restoreResult
     ? restoreResult.failed.join('；')
@@ -1619,8 +1680,10 @@ module.exports = {
   extractReleaseMetadata,
   fetchLatestReleaseJson,
   buildMainPageUrl,
+  migrateMacPackagedRuntimeState,
   normalizeVersionString,
   parseSemver,
+  resolveAppDir,
   restorePackagedRuntimeStateFromBackup,
   sanitizeReleaseUrl,
   stopBackend,
