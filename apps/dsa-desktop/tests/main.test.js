@@ -278,6 +278,7 @@ test('auto download prompt falls back to error when install path fails', async (
   const envFile = path.join(exeDir, '.env');
   const backupRoot = path.join(userDataDir, '.dsa-desktop-update-backup');
   const originalRemove = fs.rmSync;
+  let quitAndInstallArgs = null;
   const fakeUpdater = {
     autoDownload: true,
     autoInstallOnAppQuit: false,
@@ -293,7 +294,8 @@ test('auto download prompt falls back to error when install path fails', async (
         });
       }
     },
-    quitAndInstall: () => {
+    quitAndInstall: (...args) => {
+      quitAndInstallArgs = args;
       throw new Error('安装进程启动失败');
     },
   };
@@ -339,6 +341,7 @@ test('auto download prompt falls back to error when install path fails', async (
   assert.equal(state.status, mainModule.UPDATE_STATUS.ERROR);
   assert.match(state.message, /更新安装失败/);
   assert.equal(state.updateMode, mainModule.UPDATE_MODE.AUTO);
+  assert.deepEqual(quitAndInstallArgs, [true, true]);
   assert.equal(fs.existsSync(backupRoot), false);
   assert.equal(fs.existsSync(path.join(backupRoot, 'runtime-state.json')), false);
 
@@ -770,7 +773,7 @@ test('createWindow startup path does not throw ReferenceError after restore resu
 });
 
 test('stopBackend waits for backend process exit', async (t) => {
-  const mainModule = loadMainModule(t);
+  const mainModule = loadMainModule(t, { platform: 'linux' });
   const killSignals = [];
   const fakeBackend = new EventEmitter();
 
@@ -801,4 +804,87 @@ test('stopBackend waits for backend process exit', async (t) => {
   ]);
 
   assert.equal(killSignals.includes('SIGTERM'), true);
+  assert.equal(mainModule.__getBackendProcessForTest(), null);
+});
+
+test('stopBackend keeps backend process reference when exit wait times out', async (t) => {
+  const mainModule = loadMainModule(t, { platform: 'linux' });
+  const originalSetTimeout = global.setTimeout;
+  const killSignals = [];
+  const fakeBackend = new EventEmitter();
+
+  fakeBackend.pid = 4321;
+  fakeBackend.killed = false;
+  fakeBackend.exitCode = null;
+  fakeBackend.signalCode = null;
+  fakeBackend.kill = (signal) => {
+    killSignals.push(signal);
+    fakeBackend.killed = true;
+  };
+
+  global.setTimeout = (callback, delay, ...args) => (
+    originalSetTimeout(callback, delay >= 3000 ? 0 : delay, ...args)
+  );
+  mainModule.__setBackendProcessForTest(fakeBackend);
+
+  t.after(() => {
+    global.setTimeout = originalSetTimeout;
+    mainModule.__setBackendProcessForTest(null);
+  });
+
+  await Promise.race([
+    mainModule.stopBackend(),
+    new Promise((_, reject) => originalSetTimeout(() => reject(new Error('stopBackend did not resolve')), 200)),
+  ]);
+
+  assert.equal(killSignals.includes('SIGTERM'), true);
+  assert.equal(mainModule.__getBackendProcessForTest(), fakeBackend);
+});
+
+test('stopBackend uses taskkill on Windows and clears after backend exit', async (t) => {
+  const taskkillCalls = [];
+  const fakeBackend = new EventEmitter();
+  const fakeTaskkill = new EventEmitter();
+  const mainModule = loadMainModule(t, {
+    platform: 'win32',
+    childProcess: {
+      spawn: (command, args, options) => {
+        taskkillCalls.push({ command, args, options });
+        process.nextTick(() => {
+          fakeBackend.exitCode = 0;
+          fakeBackend.emit('exit', 0, null);
+          fakeTaskkill.emit('exit', 0, null);
+        });
+        return fakeTaskkill;
+      },
+    },
+  });
+
+  fakeBackend.pid = 4321;
+  fakeBackend.killed = false;
+  fakeBackend.exitCode = null;
+  fakeBackend.signalCode = null;
+  fakeBackend.kill = () => {
+    throw new Error('Windows stopBackend should use taskkill instead of process.kill');
+  };
+
+  mainModule.__setBackendProcessForTest(fakeBackend);
+
+  t.after(() => {
+    mainModule.__setBackendProcessForTest(null);
+  });
+
+  await Promise.race([
+    mainModule.stopBackend(),
+    new Promise((_, reject) => setTimeout(() => reject(new Error('stopBackend did not resolve')), 200)),
+  ]);
+
+  assert.deepEqual(taskkillCalls, [
+    {
+      command: 'taskkill',
+      args: ['/PID', '4321', '/T', '/F'],
+      options: { windowsHide: true },
+    },
+  ]);
+  assert.equal(mainModule.__getBackendProcessForTest(), null);
 });

@@ -988,28 +988,33 @@ function startBackend({ port, envFile, dbPath, logDir }) {
 
 function waitForBackendExit(processRef, timeoutMs = 5000) {
   if (!processRef || processRef.exitCode !== null || processRef.signalCode) {
-    return Promise.resolve();
+    return Promise.resolve(true);
   }
 
   return new Promise((resolve) => {
     let settled = false;
     let timer = null;
+    let onExit = null;
 
-    const done = () => {
+    const done = (exited) => {
       if (settled) {
         return;
       }
       settled = true;
       clearTimeout(timer);
-      processRef.removeListener('exit', done);
-      resolve();
+      if (onExit) {
+        processRef.removeListener('exit', onExit);
+      }
+      resolve(exited || processRef.exitCode !== null || Boolean(processRef.signalCode));
     };
 
+    onExit = () => done(true);
+
     timer = setTimeout(() => {
-      done();
+      done(false);
     }, timeoutMs);
 
-    processRef.once('exit', done);
+    processRef.once('exit', onExit);
   });
 }
 
@@ -1017,19 +1022,39 @@ function __setBackendProcessForTest(processRef = null) {
   backendProcess = processRef;
 }
 
+function clearBackendProcessIfCurrent(processRef) {
+  if (backendProcess === processRef) {
+    backendProcess = null;
+  }
+}
+
 function stopBackend() {
-  if (!backendProcess || backendProcess.killed) {
+  if (!backendProcess) {
     return Promise.resolve();
   }
   const processToStop = backendProcess;
+  if (processToStop.exitCode !== null || processToStop.signalCode) {
+    clearBackendProcessIfCurrent(processToStop);
+    return Promise.resolve();
+  }
+
+  const waitAndClear = () => waitForBackendExit(processToStop, 10000)
+    .then((exited) => {
+      if (!exited) {
+        return;
+      }
+      clearBackendProcessIfCurrent(processToStop);
+    });
 
   if (isWindows) {
     spawn('taskkill', ['/PID', String(processToStop.pid), '/T', '/F'], { windowsHide: true }).on('error', () => {
     });
-    return waitForBackendExit(processToStop, 10000);
+    return waitAndClear();
   }
 
-  processToStop.kill('SIGTERM');
+  if (!processToStop.killed) {
+    processToStop.kill('SIGTERM');
+  }
   setTimeout(() => {
     if (processToStop.killed || processToStop.exitCode !== null || processToStop.signalCode) {
       return;
@@ -1040,7 +1065,7 @@ function stopBackend() {
     }
   }, 3000);
 
-  return waitForBackendExit(processToStop, 10000);
+  return waitAndClear();
 }
 
 function resolveDesktopVersion() {
@@ -1225,8 +1250,8 @@ async function installDownloadedUpdate() {
       }
     }
 
-    logLine('[update] quit and install requested');
-    updater.quitAndInstall(false, true);
+    logLine('[update] silent quit and install requested');
+    updater.quitAndInstall(true, true);
     return true;
   } catch (error) {
     if (backupRoot) {
@@ -1687,6 +1712,9 @@ module.exports = {
   restorePackagedRuntimeStateFromBackup,
   sanitizeReleaseUrl,
   stopBackend,
+  __getBackendProcessForTest() {
+    return backendProcess;
+  },
   __setBackendProcessForTest,
   __setMainWindowForTest(mainWindowRef = null) {
     mainWindow = mainWindowRef;
