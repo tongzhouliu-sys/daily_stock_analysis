@@ -1102,6 +1102,39 @@ class TestBaseAgentMessageAssembly(unittest.TestCase):
         self.assertEqual(messages[2], {"role": "assistant", "content": "old answer"})
         self.assertEqual(messages[-1], {"role": "user", "content": "current turn"})
 
+    def test_build_messages_injects_market_phase_before_cached_data(self):
+        agent = self._make_agent()
+        ctx = AgentContext(query="hello", stock_code="600519")
+        ctx.meta["market_phase_context"] = {
+            "market": "cn",
+            "phase": "intraday",
+            "market_local_time": "2026-03-27T10:00:00+08:00",
+            "effective_daily_bar_date": "2026-03-26",
+            "is_partial_bar": True,
+            "minutes_to_close": 300,
+        }
+        ctx.set_data("realtime_quote", {"price": 1880.0})
+
+        messages = agent._build_messages(ctx)
+
+        phase_indexes = [
+            idx for idx, message in enumerate(messages)
+            if "市场阶段上下文" in message.get("content", "")
+        ]
+        cached_indexes = [
+            idx for idx, message in enumerate(messages)
+            if "[Pre-fetched: realtime_quote]" in message.get("content", "")
+        ]
+        self.assertEqual(len(phase_indexes), 1)
+        self.assertEqual(len(cached_indexes), 1)
+        self.assertLess(phase_indexes[0], cached_indexes[0])
+        phase_message = messages[phase_indexes[0]]
+        self.assertEqual(phase_message["role"], "user")
+        self.assertIn("盘中", phase_message["content"])
+        self.assertIn("不得当作完整日线复盘", phase_message["content"])
+        self.assertNotIn("market_phase_context", phase_message["content"])
+        self.assertNotIn("is_partial_bar", phase_message["content"])
+
 
 # ============================================================
 # EventMonitor serialization

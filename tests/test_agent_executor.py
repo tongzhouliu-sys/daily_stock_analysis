@@ -732,18 +732,27 @@ class TestBuildUserMessage(unittest.TestCase):
         self.assertIn("股票代码: 600519", msg)
         self.assertIn("报告类型: daily", msg)
 
-    def test_message_does_not_render_market_phase_context(self):
+    def test_message_renders_readable_market_phase_context_without_raw_keys(self):
         msg = self.executor._build_user_message(
             "Analyze",
             context={
                 "stock_code": "600519",
+                "report_language": "zh",
                 "market_phase_context": {
                     "phase": "intraday",
+                    "market": "cn",
+                    "market_local_time": "2026-03-27T10:00:00+08:00",
+                    "effective_daily_bar_date": "2026-03-26",
                     "is_partial_bar": True,
                 },
+                "realtime_quote": {"price": 1880.0},
             },
         )
         self.assertIn("股票代码: 600519", msg)
+        self.assertIn("市场阶段上下文", msg)
+        self.assertIn("盘中", msg)
+        self.assertIn("不得当作完整日线复盘", msg)
+        self.assertLess(msg.index("市场阶段上下文"), msg.index("[系统已获取的实时行情]"))
         self.assertNotIn("market_phase_context", msg)
         self.assertNotIn("is_partial_bar", msg)
         self.assertNotIn("is_market_open_now", msg)

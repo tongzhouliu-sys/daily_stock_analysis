@@ -24,6 +24,7 @@ from src.agent.runner import run_agent_loop, parse_dashboard_json
 from src.agent.tools.registry import ToolRegistry
 from src.report_language import normalize_report_language
 from src.market_context import get_market_role, get_market_guidelines
+from src.market_phase_prompt import format_market_phase_prompt_section
 
 logger = logging.getLogger(__name__)
 
@@ -661,6 +662,13 @@ class AgentExecutor:
                 parts.append("输出语言: English（所有 JSON 键名保持不变，所有面向用户的文本值使用英文）")
             else:
                 parts.append("输出语言: 中文（所有 JSON 键名保持不变，所有面向用户的文本值使用中文）")
+
+            market_phase_section = format_market_phase_prompt_section(
+                context.get("market_phase_context"),
+                report_language=report_language,
+            )
+            if market_phase_section:
+                parts.append(market_phase_section)
 
             # Inject pre-fetched context data to avoid redundant fetches
             if context.get("realtime_quote"):
