@@ -71,8 +71,11 @@ def normalize_stock_code(stock_code: str) -> str:
     Accepted formats and their normalized results:
     - '600519'      -> '600519'   (already clean)
     - 'SH600519'    -> '600519'   (strip SH prefix)
+    - 'SH.600519'   -> '600519'   (strip SH. prefix)
     - 'SZ000001'    -> '000001'   (strip SZ prefix)
+    - 'SZ.000001'   -> '000001'   (strip SZ. prefix)
     - 'BJ920748'    -> '920748'   (strip BJ prefix, BSE)
+    - 'BJ.920748'   -> '920748'   (strip BJ. prefix, BSE)
     - 'sh600519'    -> '600519'   (case-insensitive)
     - '600519.SH'   -> '600519'   (strip .SH suffix)
     - '000001.SZ'   -> '000001'   (strip .SZ suffix)
@@ -100,9 +103,21 @@ def normalize_stock_code(stock_code: str) -> str:
         if candidate.isdigit() and len(candidate) in (5, 6):
             return candidate
 
+    # Strip dotted SH/SZ prefix (e.g. SH.600519 -> 600519)
+    if upper.startswith(('SH.', 'SZ.')):
+        candidate = code[3:]
+        if candidate.isdigit() and len(candidate) in (5, 6):
+            return candidate
+
     # Strip BJ prefix (e.g. BJ920748 -> 920748)
     if upper.startswith('BJ') and not upper.startswith('BJ.'):
         candidate = code[2:]
+        if candidate.isdigit() and len(candidate) == 6:
+            return candidate
+
+    # Strip dotted BJ prefix (e.g. BJ.920748 -> 920748)
+    if upper.startswith('BJ.'):
+        candidate = code[3:]
         if candidate.isdigit() and len(candidate) == 6:
             return candidate
 
