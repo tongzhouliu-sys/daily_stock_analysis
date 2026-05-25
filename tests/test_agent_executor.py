@@ -87,6 +87,44 @@ SAMPLE_DASHBOARD = {
 class TestAgentExecutor(unittest.TestCase):
     """Test the ReAct loop logic."""
 
+    def test_chat_injects_compressed_history_before_report_context_and_current_user(self):
+        registry = _make_registry_with_echo()
+        adapter = _make_mock_adapter()
+        adapter._config = MagicMock()
+        executor = AgentExecutor(registry, adapter, max_steps=2)
+        captured = {}
+
+        def fake_run_loop(messages, tool_decls, parse_dashboard, progress_callback=None):
+            captured["messages"] = messages
+            return AgentResult(success=True, content="assistant reply")
+
+        compressed_history = [
+            {"role": "user", "content": "[系统生成的历史对话摘要，仅供延续本会话]\n旧摘要"},
+            {"role": "assistant", "content": "最近回复"},
+        ]
+
+        with patch.object(executor, "_run_loop", side_effect=fake_run_loop):
+            with patch("src.agent.executor.build_visible_chat_history", return_value=compressed_history):
+                with patch("src.agent.conversation.conversation_manager.get_or_create"):
+                    with patch("src.agent.conversation.conversation_manager.add_message"):
+                        executor.chat(
+                            "当前问题",
+                            "session-1",
+                            context={
+                                "stock_code": "600519",
+                                "stock_name": "贵州茅台",
+                                "previous_price": 1800,
+                            },
+                        )
+
+        messages = captured["messages"]
+        assert messages[0]["role"] == "system"
+        assert messages[1:3] == compressed_history
+        assert messages[3]["role"] == "user"
+        assert messages[3]["content"].startswith("[系统提供的历史分析上下文，可供参考对比]")
+        assert messages[4]["role"] == "assistant"
+        assert messages[-1] == {"role": "user", "content": "当前问题"}
+
     def test_prompt_omits_hardcoded_trend_baseline_when_default_policy_is_empty(self):
         """Explicit skill runs should not silently keep the legacy trend baseline."""
         registry = _make_registry_with_echo()

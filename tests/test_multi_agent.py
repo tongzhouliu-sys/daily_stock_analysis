@@ -891,12 +891,27 @@ class TestOrchestratorExecution(unittest.TestCase):
             return OrchestratorResult(success=True, content="assistant reply")
 
         with patch.object(orch, "_execute_pipeline", side_effect=fake_execute):
-            with patch("src.agent.conversation.conversation_manager.get_or_create") as get_or_create:
-                get_or_create.return_value.get_history.return_value = history
-                with patch("src.agent.conversation.conversation_manager.add_message"):
-                    orch.chat("hello", "session-1")
+            with patch("src.agent.orchestrator.build_visible_chat_history", return_value=history):
+                with patch("src.agent.conversation.conversation_manager.get_or_create"):
+                    with patch("src.agent.conversation.conversation_manager.add_message"):
+                        orch.chat("hello", "session-1")
 
         self.assertEqual(captured["history"], history)
+
+    def test_chat_uses_compressed_history_builder(self):
+        from src.agent.orchestrator import OrchestratorResult
+
+        orch = self._make_orchestrator()
+
+        with patch.object(orch, "_execute_pipeline", return_value=OrchestratorResult(success=True, content="ok")):
+            with patch("src.agent.orchestrator.build_visible_chat_history", return_value=[]) as build_history:
+                with patch("src.agent.conversation.conversation_manager.get_or_create"):
+                    with patch("src.agent.conversation.conversation_manager.add_message"):
+                        orch.chat("hello", "session-1")
+
+        build_history.assert_called_once()
+        self.assertEqual(build_history.call_args.args[0], "session-1")
+        self.assertIs(build_history.call_args.args[1], orch.llm_adapter)
 
     def test_chat_persists_user_and_assistant_messages(self):
         from src.agent.orchestrator import OrchestratorResult
