@@ -1362,6 +1362,85 @@ class DatabaseManager(metaclass=_DatabaseManagerMeta):
             logger.error(f"保存分析历史失败: {e}")
             return 0
 
+    def update_analysis_history_diagnostics(
+        self,
+        *,
+        query_id: str,
+        code: Optional[str] = None,
+        diagnostics: Optional[Dict[str, Any]] = None,
+        notification_runs: Optional[List[Dict[str, Any]]] = None,
+    ) -> int:
+        """
+        更新已保存分析历史的运行诊断快照。
+
+        通知结果通常在分析历史落库后才产生，因此这里仅补写
+        context_snapshot.diagnostics，不改变报告正文或其它历史字段。
+        """
+        if not query_id or (diagnostics is None and not notification_runs):
+            return 0
+
+        try:
+            def _write(session: Session) -> int:
+                conditions = [AnalysisHistory.query_id == query_id]
+                if code:
+                    conditions.append(AnalysisHistory.code == code)
+
+                row = session.execute(
+                    select(AnalysisHistory)
+                    .where(and_(*conditions))
+                    .order_by(desc(AnalysisHistory.created_at))
+                    .limit(1)
+                ).scalars().first()
+                if row is None:
+                    return 0
+
+                context_snapshot: Dict[str, Any] = {}
+                if row.context_snapshot:
+                    try:
+                        parsed = json.loads(row.context_snapshot)
+                        if isinstance(parsed, dict):
+                            context_snapshot = parsed
+                    except Exception:
+                        context_snapshot = {}
+
+                if diagnostics is not None:
+                    context_snapshot["diagnostics"] = diagnostics
+                else:
+                    existing_diagnostics = context_snapshot.get("diagnostics")
+                    if not isinstance(existing_diagnostics, dict):
+                        existing_diagnostics = {
+                            "query_id": query_id,
+                            "stock_code": code,
+                            "notification_runs": [],
+                        }
+                    runs = existing_diagnostics.get("notification_runs")
+                    if not isinstance(runs, list):
+                        runs = []
+                    trace_id = existing_diagnostics.get("trace_id")
+                    for run in notification_runs or []:
+                        if isinstance(run, dict):
+                            run_payload = dict(run)
+                            if trace_id and not run_payload.get("trace_id"):
+                                run_payload["trace_id"] = trace_id
+                            runs.append(run_payload)
+                    existing_diagnostics["notification_runs"] = runs
+                    context_snapshot["diagnostics"] = existing_diagnostics
+                row.context_snapshot = self._safe_json_dumps(context_snapshot)
+                return 1
+
+            return self._run_write_transaction(
+                f"update_analysis_history_diagnostics[{query_id}:{code or '*'}]",
+                _write,
+            )
+        except Exception as e:
+            logger.warning(
+                "更新分析历史诊断快照失败（fail-open）: query_id=%s code=%s err=%s",
+                query_id,
+                code,
+                e,
+            )
+            return 0
+
     def get_analysis_history(
         self,
         code: Optional[str] = None,
