@@ -44,6 +44,7 @@ and this project adheres to [Semantic Versioning](https://semver.org/).
 - [新功能] 问股新增默认关闭的可见对话上下文压缩，支持 Web 开关、Agent 高级 preset、滚动摘要和最近轮次原文保护，降低长会话 token 消耗。
 - [改进] P2-min：LLM Prompt 注入市场阶段上下文。
 - [修复] 问股 single-agent 新增 provider-aware trace 分轨，跨轮保留 DeepSeek V4 thinking + tool-call 的 `reasoning_content` 与工具协议材料。
+- [新功能] 股票自动补全索引默认支持从 GitHub main 远程刷新并缓存到本地，Web/CLI 分析入口失败时自动降级到内置索引，降低摘帽和更名后旧简称污染分析的概率。
 
 ## [3.18.0] - 2026-05-21
 
