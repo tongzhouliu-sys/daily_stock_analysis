@@ -308,10 +308,10 @@ def test_analysis_context_pack_doc_updates_indexes_and_changelog() -> None:
         "(Chinese-only)"
     ) in index_en
     assert "P1/P2 internal contracts, P3 prompt-summary consumption" in index_en
-    assert "[文档] 新增 AnalysisContextPack P0 上下文盘点" in changelog
-    assert "[新功能] 新增 AnalysisContextPack P1 内部契约与脱敏序列化测试" in changelog
-    assert "[新功能] 新增 AnalysisContextPack P2 builder" in changelog
-    assert "[新功能] 普通分析与 Agent 运行时 Prompt 接入 AnalysisContextPack 低敏摘要" in changelog
+    assert "新增 AnalysisContextPack P0 上下文盘点" in changelog
+    assert "新增 AnalysisContextPack P1 内部契约与脱敏序列化测试" in changelog
+    assert "新增 AnalysisContextPack P2 builder" in changelog
+    assert "普通分析与 Agent 运行时 Prompt 接入 AnalysisContextPack 低敏摘要" in changelog
 
 
 def test_full_guides_clarify_pack_summary_does_not_replace_legacy_payload_channels() -> None:
