@@ -22,11 +22,21 @@ class HistoryItem(BaseModel):
     stock_code: str = Field(..., description="股票代码")
     stock_name: Optional[str] = Field(None, description="股票名称")
     report_type: Optional[str] = Field(None, description="报告类型")
+    trend_prediction: Optional[str] = Field(None, description="趋势预测")
+    analysis_summary: Optional[str] = Field(None, description="分析摘要")
     sentiment_score: Optional[int] = Field(
         None,
         description="情绪评分（历史数据可能超出 0-100 范围，读取时不做约束）",
     )
     operation_advice: Optional[str] = Field(None, description="操作建议")
+    current_price: Optional[float] = Field(None, description="分析时股价")
+    change_pct: Optional[float] = Field(None, description="分析时涨跌幅(%)")
+    volume_ratio: Optional[float] = Field(None, description="分析时量比")
+    turnover_rate: Optional[float] = Field(None, description="分析时换手率")
+    model_used: Optional[str] = Field(
+        None,
+        description="分析历史记录中的模型快照，仅用于展示历史元数据；不参与模型配置或运行时路由决策",
+    )
     created_at: Optional[str] = Field(None, description="创建时间")
     
     model_config = ConfigDict(json_schema_extra={
@@ -117,7 +127,10 @@ class ReportMeta(BaseModel):
     created_at: Optional[str] = Field(None, description="创建时间")
     current_price: Optional[float] = Field(None, description="分析时股价")
     change_pct: Optional[float] = Field(None, description="分析时涨跌幅(%)")
-    model_used: Optional[str] = Field(None, description="分析使用的 LLM 模型")
+    model_used: Optional[str] = Field(
+        None,
+        description="历史报告元数据中的模型快照，仅用于展示，不影响 Provider/Model/Base URL 运行时路由",
+    )
 
 
 class ReportSummary(BaseModel):

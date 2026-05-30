@@ -110,8 +110,15 @@ def get_history_list(
                 stock_code=item.get("stock_code", ""),
                 stock_name=item.get("stock_name"),
                 report_type=item.get("report_type"),
+                trend_prediction=item.get("trend_prediction"),
+                analysis_summary=item.get("analysis_summary"),
                 sentiment_score=item.get("sentiment_score"),
                 operation_advice=item.get("operation_advice"),
+                current_price=item.get("current_price"),
+                change_pct=item.get("change_pct"),
+                volume_ratio=item.get("volume_ratio"),
+                turnover_rate=item.get("turnover_rate"),
+                model_used=item.get("model_used"),
                 created_at=item.get("created_at")
             )
             for item in result.get("items", [])
