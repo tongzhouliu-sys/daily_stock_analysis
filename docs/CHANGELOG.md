@@ -19,6 +19,8 @@ and this project adheres to [Semantic Versioning](https://semver.org/).
 - [修复] Windows 安装器重试旧卸载器时对 `_?=` 安装目录参数加引号，修复旧版本安装在带空格路径时返回 2 导致自动更新失败。
 - [修复] Windows 桌面端自动更新传给 NSIS 的 `/D=` 目录参数在包含空格时自动加引号，避免安装位置注册表被截断。
 
+- [修复] 加固 LLM channel base_url 校验，避免解析差异导致 SSRF 绕过。
+
 ## [3.19.0] - 2026-05-29
 
 ### 新功能
