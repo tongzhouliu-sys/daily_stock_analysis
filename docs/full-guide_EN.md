@@ -627,6 +627,14 @@ P1a constructs and passes an internal `market_phase_context` through the regular
 
 P1a itself does not change prompt wording, API/Web/Bot parameters, report schemas, stable history/task-status metadata, or quote freshness/data quality semantics. Regular history snapshots and Agent history snapshots strip this runtime-only field. P1b is left to define persistent metadata and task-status display contracts.
 
+### Market Phase Low-Sensitivity Metadata (Issue #1386 P1b)
+
+P1b projects the P1a runtime `market_phase_context` into a stable, low-sensitivity, public `market_phase_summary` and stores it at the top level of `analysis_history.context_snapshot`. History detail, sync analysis responses, and completed `/api/v1/analysis/status/{task_id}` responses return the same market-phase metadata at `report.meta.market_phase_summary`; completed task status does not add a top-level `TaskStatus` field and only exposes it through `status.result.report.meta.market_phase_summary`.
+
+`market_phase_summary` only contains market, phase, market-local time, session date, effective daily-bar date, trading-day / market-open / partial-bar flags, open/close minute estimates, trigger source, analysis intent, and warning codes. It does not expose the full `market_phase_context`, and it does not add quote freshness, fallback, stale, or data-quality scoring fields. `report.details.analysis_context_pack_overview` remains the #1389 input data-block quality overview. API `details.context_snapshot` strips the top-level `market_phase_summary` and `analysis_context_pack_overview` so raw snapshots do not duplicate these stable public fields. When `SAVE_CONTEXT_SNAPSHOT=false` or older history records lack the summary, the field is empty and the report still loads.
+
+P1b does not change prompts, does not add an `analysis_phase` request parameter, does not add Web phase labels or rendering, and does not cover pending/processing TaskPanel state, in-progress SSE events, Bot, notifications, `market_review`, or P3 intraday data-quality fields.
+
 ### Market Phase Prompt Injection (Issue #1386 P2-min)
 
 P2-min starts rendering the runtime market phase into an LLM-readable prompt section for analysis paths that already receive `market_phase_context`. Regular analysis, single Agent, and multi-agent prompts can now see the current phase, market-local time, latest reusable complete daily-bar date, and the minimal phase constraints: pre-market runs must not describe today's price action as already happened, intraday / lunch-break / near-close runs must treat the latest daily bar as potentially unfinished, post-market runs can keep the complete-session recap style, and non-trading or unknown phases should stay conservative.

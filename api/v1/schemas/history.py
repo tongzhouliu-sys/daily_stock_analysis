@@ -13,6 +13,8 @@ from typing import Optional, List, Any, Dict, Literal
 
 from pydantic import BaseModel, ConfigDict, Field
 
+from api.v1.schemas.market_phase import MarketPhaseSummary
+
 
 class HistoryItem(BaseModel):
     """历史记录摘要（列表展示用）"""
@@ -130,6 +132,10 @@ class ReportMeta(BaseModel):
     model_used: Optional[str] = Field(
         None,
         description="历史报告元数据中的模型快照，仅用于展示，不影响 Provider/Model/Base URL 运行时路由",
+    )
+    market_phase_summary: Optional[MarketPhaseSummary] = Field(
+        None,
+        description="本次分析市场阶段低敏摘要",
     )
 
 

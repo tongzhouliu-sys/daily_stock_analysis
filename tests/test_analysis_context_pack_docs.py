@@ -352,6 +352,8 @@ def test_full_guides_clarify_pack_summary_does_not_replace_legacy_payload_channe
     assert "`report.details.analysis_context_pack_overview`" in guide
     assert "completed `/api/v1/analysis/status/{task_id}`" in guide
     assert "`details.context_snapshot` 会剥离顶层 `analysis_context_pack_overview`" in guide
+    assert "`report.meta.market_phase_summary`" in guide
+    assert "`details.context_snapshot` 会剥离顶层 `market_phase_summary`" in guide
 
     assert "in this new pack-summary section" in guide_en
     assert "not full `news.content`" in guide_en
@@ -359,3 +361,5 @@ def test_full_guides_clarify_pack_summary_does_not_replace_legacy_payload_channe
     assert "`report.details.analysis_context_pack_overview`" in guide_en
     assert "completed `/api/v1/analysis/status/{task_id}`" in guide_en
     assert "API `details.context_snapshot` strips the top-level `analysis_context_pack_overview`" in guide_en
+    assert "`report.meta.market_phase_summary`" in guide_en
+    assert "API `details.context_snapshot` strips the top-level `market_phase_summary`" in guide_en

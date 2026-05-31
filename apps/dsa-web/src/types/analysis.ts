@@ -37,6 +37,31 @@ export interface MarketReviewAccepted {
 
 export type ReportLanguage = 'zh' | 'en';
 
+export type MarketPhaseValue =
+  | 'premarket'
+  | 'intraday'
+  | 'lunch_break'
+  | 'closing_auction'
+  | 'postmarket'
+  | 'non_trading'
+  | 'unknown';
+
+export interface MarketPhaseSummary {
+  market?: string | null;
+  phase: MarketPhaseValue;
+  marketLocalTime?: string | null;
+  sessionDate?: string | null;
+  effectiveDailyBarDate?: string | null;
+  isTradingDay?: boolean | null;
+  isMarketOpenNow?: boolean | null;
+  isPartialBar?: boolean | null;
+  minutesToOpen?: number | null;
+  minutesToClose?: number | null;
+  triggerSource?: string | null;
+  analysisIntent?: string | null;
+  warnings: string[];
+}
+
 /** Report metadata */
 export interface ReportMeta {
   id?: number;  // Analysis history record ID, present for persisted reports
@@ -49,6 +74,7 @@ export interface ReportMeta {
   currentPrice?: number;
   changePct?: number;
   modelUsed?: string;  // Display-only model snapshot from persisted history; not used for runtime model selection
+  marketPhaseSummary?: MarketPhaseSummary | null;
 }
 
 /** Sentiment label */

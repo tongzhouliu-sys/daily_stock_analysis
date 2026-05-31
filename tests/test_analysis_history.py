@@ -75,6 +75,24 @@ def _analysis_context_pack_overview() -> dict:
     }
 
 
+def _market_phase_summary() -> dict:
+    return {
+        "market": "cn",
+        "phase": "intraday",
+        "market_local_time": "2026-03-27T10:00:00+08:00",
+        "session_date": "2026-03-27",
+        "effective_daily_bar_date": "2026-03-26",
+        "is_trading_day": True,
+        "is_market_open_now": True,
+        "is_partial_bar": True,
+        "minutes_to_open": None,
+        "minutes_to_close": 300,
+        "trigger_source": "api",
+        "analysis_intent": "auto",
+        "warnings": ["partial_bar"],
+    }
+
+
 class AnalysisHistoryTestCase(unittest.TestCase):
     """分析历史存储测试"""
 
@@ -853,6 +871,7 @@ class AnalysisHistoryTestCase(unittest.TestCase):
             self.skipTest("fastapi is not installed in this test environment")
 
         overview = _analysis_context_pack_overview()
+        phase_summary = _market_phase_summary()
         query_id = "query_context_pack_overview_001"
         saved = self.db.save_analysis_history(
             result=self._build_result(),
@@ -862,6 +881,10 @@ class AnalysisHistoryTestCase(unittest.TestCase):
             context_snapshot={
                 "enhanced_context": {"code": "600519"},
                 "analysis_context_pack_overview": overview,
+                "market_phase_summary": {
+                    **phase_summary,
+                    "market_phase_context": {"raw": True},
+                },
             },
             save_snapshot=True,
         )
@@ -878,9 +901,16 @@ class AnalysisHistoryTestCase(unittest.TestCase):
             report.details.analysis_context_pack_overview.metadata.trigger_source,
             "api",
         )
+        self.assertIsNotNone(report.meta.market_phase_summary)
+        self.assertEqual(report.meta.market_phase_summary.phase, "intraday")
+        self.assertEqual(report.meta.market_phase_summary.minutes_to_close, 300)
         self.assertEqual(report.details.analysis_context_pack_overview.metadata.news_result_count, 2)
         self.assertNotIn(
             "analysis_context_pack_overview",
+            report.details.context_snapshot,
+        )
+        self.assertNotIn(
+            "market_phase_summary",
             report.details.context_snapshot,
         )
 
@@ -911,6 +941,7 @@ class AnalysisHistoryTestCase(unittest.TestCase):
             self.assertIsNone(row.context_snapshot)
 
         report = get_history_detail(str(record_id), db_manager=self.db)
+        self.assertIsNone(report.meta.market_phase_summary)
         self.assertIsNone(report.details.analysis_context_pack_overview)
         self.assertIsNone(report.details.context_snapshot)
 
