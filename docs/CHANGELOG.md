@@ -22,6 +22,8 @@ and this project adheres to [Semantic Versioning](https://semver.org/).
 - [修复] Windows 桌面端自动更新传给 NSIS 的 `/D=` 目录参数在包含空格时自动加引号，避免安装位置注册表被截断。
 
 - [修复] 加固 LLM channel base_url 校验，避免解析差异导致 SSRF 绕过。
+- [修复] 修正 efinance ETF 日线 Eastmoney secid 路由，避免沪市 ETF 被按深市 quote id 查询导致日线为空。
+- [测试] 补充 ETF 日线数据源路由、输入变体、fallback 与 MA 字段回归覆盖。
 - [改进] 优化 Web 报告详情页信息层级，将输入数据块和运行诊断下移为主体内容后的折叠辅助信息。
 - [新功能] 市场阶段低敏摘要接入历史详情、同步分析响应和 completed 任务状态的 report metadata。
 
