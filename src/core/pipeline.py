@@ -34,10 +34,8 @@ from src.analyzer import (
     normalize_chip_structure_availability,
     stabilize_decision_with_structure,
 )
-from src.data.stock_mapping import STOCK_NAME_MAP
 from src.notification import NotificationService, NotificationChannel
 from src.report_language import (
-    get_unknown_text,
     infer_decision_type_from_advice,
     localize_confidence_level,
     localize_operation_advice,
