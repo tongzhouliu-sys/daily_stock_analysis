@@ -649,7 +649,7 @@ P3 itself did not add API/Web/Bot parameters, persist fields into history/task s
 
 ### AnalysisContextPack Low-Sensitivity Visibility (Issue #1389 P4)
 
-P4 adds `report.details.analysis_context_pack_overview`. History detail, sync analysis responses, and completed `/api/v1/analysis/status/{task_id}` responses now return the same low-sensitivity overview; the Web report page renders data-block status, source, warnings, missing reasons, status counts, and news result count after Run Diagnostics and before Strategy. API `details.context_snapshot` strips the top-level `analysis_context_pack_overview` so the raw snapshot panel does not duplicate the public overview.
+P4 adds `report.details.analysis_context_pack_overview`. History detail, sync analysis responses, and completed `/api/v1/analysis/status/{task_id}` responses now return the same low-sensitivity overview; the Web report page renders a collapsed data-block summary after Strategy and News, with available/missing counts, non-zero other status counts, and trigger source in the header and data-block status, source, warnings, missing reasons, status counts, and news result count after expansion. API `details.context_snapshot` strips the top-level `analysis_context_pack_overview` so the raw snapshot panel does not duplicate the public overview.
 
 The overview does not include the full pack, the `analysis_context_pack_summary` prompt string, `items.value`, news body text, `trend_result`, chip, or fundamentals raw payloads. When `SAVE_CONTEXT_SNAPSHOT=false` or older history records lack the overview, the field is empty and the report still loads. This phase does not cover pending/processing TaskPanel, in-progress SSE events, notification summaries, Bot/Desktop-specific rendering, `market_review` overview, or P5 data-quality scoring.
 
@@ -1082,7 +1082,7 @@ FastAPI provides RESTful API service for configuration management and triggering
 - **Real-time Progress** - Analysis task status updates in real-time, supports parallel tasks; the regular stock-analysis path now prefers LiteLLM streaming during the LLM stage and pushes finer-grained `message/progress` updates through task SSE
 - **Market Review visibility** - After clicking Market Review, the API returns a `task_id` and the UI polls `GET /api/v1/analysis/status/{task_id}` to show progress; completed/failure states are rendered explicitly and failure messages are shown directly in the UI error area.
 - **Market review history replay** - Market review results are persisted with `report_type=market_review` and can be reopened from history list/detail or Markdown endpoints directly, without re-triggering a fresh analysis run.
-- **Input data-block visibility** - Regular analysis reports expose a low-sensitivity `AnalysisContextPack` overview through history details, sync responses, and completed task status; the Web report page shows block status, source, missing reasons, and fallback summaries.
+- **Input data-block visibility** - Regular analysis reports expose a low-sensitivity `AnalysisContextPack` overview through history details, sync responses, and completed task status; the Web report page shows the data-block summary collapsed after Strategy and News, with block status, source, missing reasons, and fallback summaries available on expansion.
 - **Backtest Validation** - Evaluate historical analysis accuracy, query direction win rate and simulated returns
 - **API Documentation** - Visit `/docs` for Swagger UI
 
