@@ -65,7 +65,7 @@ Go to your forked repo → `Settings` → `Secrets and variables` → `Actions` 
 | `OPENAI_BASE_URL` | OpenAI-compatible API endpoint (e.g., `https://api.deepseek.com`) | Optional |
 | `OPENAI_MODEL` | Model name (e.g., `deepseek-v4-flash`) | Optional |
 
-> *Note: Configure at least one model key or channel. Anspire or AIHubMix is the simplest starting point for one-key multi-model access.
+> *Note: Configure at least one model key or channel. Anspire or AIHubMix is the simplest starting point for one-key multi-model access. Startup validation reports a clear error when no usable AI model key or model channel is configured.
 
 #### Notification Channels (Multiple can be configured, all will receive notifications)
 
@@ -105,7 +105,7 @@ Go to your forked repo → `Settings` → `Secrets and variables` → `Actions` 
 | `CUSTOM_WEBHOOK_BODY_TEMPLATE` | Custom Webhook JSON body template for AstrBot, NapCat, or self-hosted services with special payloads | Optional |
 | `WEBHOOK_VERIFY_SSL` | HTTPS certificate verification for webhook-style notification requests that read this setting (default true). Set to false for self-signed certs. WARNING: Disabling has serious security risk (MITM), use only on trusted internal networks | Optional |
 
-> *Note: Configure at least one channel; multiple channels will all receive notifications
+> *Note: Configure at least one channel; multiple channels will all receive notifications. Startup validation reports missing paired Telegram / email fields and common Webhook URLs that do not start with `http://` or `https://`.
 >
 > The default `00-daily-analysis.yml` in this repository only exports fixed Secret / Variable names. Arbitrary numbered env vars such as `STOCK_GROUP_1` and `EMAIL_GROUP_1` are not auto-injected into the job, so grouped email routing is not available in the stock workflow unless you explicitly extend the workflow's `env:` mapping in your own fork. Actions now maps `CUSTOM_WEBHOOK_BODY_TEMPLATE`, `WEBHOOK_VERIFY_SSL`, `FEISHU_WEBHOOK_SECRET`, `FEISHU_WEBHOOK_KEYWORD`, `PUSHPLUS_TOPIC`, `NTFY_URL`, `NTFY_TOKEN`, `GOTIFY_URL`, `GOTIFY_TOKEN`, the P3 notification route keys, and the P4 notification noise-control keys; `MARKDOWN_TO_IMAGE_CHANNELS` and `MERGE_EMAIL_NOTIFICATION` remain behavior toggles outside the default workflow mapping.
 
