@@ -667,6 +667,12 @@ P5 adds lightweight data-quality scoring and model-readable data limitations to 
 
 History detail, sync analysis responses, and completed task status responses still expose only `report.details.analysis_context_pack_overview`; P5 only adds a nested `data_quality` object with score, level, block_scores, and limitations, and does not duplicate `warnings`. The Web report page remains collapsed by default, adds quality score/level to the header, and shows limitations plus `fetch_failed` status after expansion; API `details.context_snapshot` continues to strip the top-level `analysis_context_pack_overview`.
 
+### Intraday Decision Guardrails and Quality Checks (Issue #1386 P5)
+
+P5 adds a phase-aware decision block under `dashboard.phase_decision` for individual stock analysis reports: `phase_context`, `action_window`, `immediate_action`, `watch_conditions`, `next_check_time`, `confidence_reason`, and `data_limitations`. This is a backward-compatible report JSON addition stored in historical `raw_result`; it does not add an `analysis_phase` API parameter, change Web phase entrypoints, add configuration, or change the default post-market daily review behavior.
+
+Regular analysis and Agent analysis now apply lightweight guardrails before history is saved, using the current `market_phase_summary` and `analysis_context_pack_overview.data_quality`. If core quote / daily_bars / technical data is stale, fallback, missing, fetch_failed, partial, or estimated, high-confidence conclusions are capped. Pre-market, non-trading, or unknown phases must not emit high-confidence intraday buy/sell actions. Intraday, lunch-break, and near-close outputs are scanned for post-market recap wording such as "after today's close" or "focus tomorrow" in the main conclusion and action fields, and obvious violations are replaced with phase-safe wait/watch wording. The guardrail only fills low-sensitivity `phase_context` and data limitations; it does not invent watch conditions or next-check times. Notification summaries, alerts, holdings, and backtest linkage remain later P6 work.
+
 ---
 
 ## Notification Channel Configuration
