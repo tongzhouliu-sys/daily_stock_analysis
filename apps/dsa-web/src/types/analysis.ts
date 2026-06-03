@@ -7,6 +7,7 @@
 
 export type StockReportType = 'simple' | 'detailed' | 'full' | 'brief';
 export type ReportType = StockReportType | 'market_review';
+export type AnalysisPhase = 'auto' | 'premarket' | 'intraday' | 'postmarket';
 
 export interface AnalysisRequest {
   stockCode?: string;
@@ -14,6 +15,7 @@ export interface AnalysisRequest {
   reportType?: StockReportType;
   forceRefresh?: boolean;
   asyncMode?: boolean;
+  analysisPhase?: AnalysisPhase;
   stockName?: string;
   originalQuery?: string;
   selectionSource?: 'manual' | 'autocomplete' | 'import' | 'image';
@@ -254,6 +256,7 @@ export interface TaskAccepted {
   traceId?: string;
   status: 'pending' | 'processing';
   message?: string;
+  analysisPhase?: AnalysisPhase;
 }
 
 export interface BatchTaskAcceptedItem {
@@ -262,6 +265,7 @@ export interface BatchTaskAcceptedItem {
   stockCode: string;
   status: 'pending' | 'processing';
   message?: string;
+  analysisPhase?: AnalysisPhase;
 }
 
 export interface BatchDuplicateTaskItem {
@@ -292,6 +296,7 @@ export interface TaskStatus {
   stockName?: string;
   originalQuery?: string;
   selectionSource?: string;
+  analysisPhase?: AnalysisPhase | null;
   skills?: string[];
 }
 
@@ -311,6 +316,8 @@ export interface TaskInfo {
   error?: string;
   originalQuery?: string;
   selectionSource?: string;
+  analysisPhase?: AnalysisPhase;
+  skills?: string[];
 }
 
 /** Task list response */

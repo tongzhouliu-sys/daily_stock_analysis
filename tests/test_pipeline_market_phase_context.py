@@ -68,6 +68,7 @@ def _make_pipeline(*, agent_mode: bool = False, save_context_snapshot: bool = Tr
     pipeline.save_context_snapshot = save_context_snapshot
     pipeline.progress_callback = None
     pipeline.analysis_skills = None
+    pipeline.analysis_phase = "auto"
     pipeline.social_sentiment_service = None
 
     pipeline.fetcher_manager = MagicMock()
@@ -281,6 +282,30 @@ class PipelineMarketPhaseContextTestCase(unittest.TestCase):
         self.assertEqual(result.dashboard["phase_decision"]["phase_context"]["phase"], "intraday")
         self.assertIsInstance(result.dashboard["phase_decision"]["watch_conditions"], list)
         self.assertIn("daily_bars: missing", result.dashboard["phase_decision"]["data_limitations"])
+
+    def test_pipeline_passes_configured_analysis_phase_to_market_context(self):
+        pipeline = _make_pipeline(agent_mode=False, save_context_snapshot=True)
+        pipeline.analysis_phase = "postmarket"
+        phase_payload = {
+            **_phase_payload(),
+            "phase": "postmarket",
+            "analysis_intent": "postmarket",
+            "is_market_open_now": False,
+            "is_partial_bar": False,
+            "minutes_to_close": None,
+        }
+        phase_context = SimpleNamespace(to_dict=MagicMock(return_value=phase_payload))
+
+        with patch("src.core.pipeline.build_market_phase_context", return_value=phase_context) as mock_build:
+            result = pipeline.analyze_stock(
+                "600519",
+                ReportType.SIMPLE,
+                "q-runtime-phase",
+                current_time=datetime(2026, 3, 27, 16, 0),
+            )
+
+        self.assertIsNotNone(result)
+        self.assertEqual(mock_build.call_args.kwargs["analysis_phase"], "postmarket")
 
     def test_legacy_pipeline_fail_open_when_pack_summary_generation_fails(self):
         pipeline = _make_pipeline(agent_mode=False, save_context_snapshot=True)

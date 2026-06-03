@@ -103,6 +103,7 @@ class StockAnalysisPipeline:
         save_context_snapshot: Optional[bool] = None,
         progress_callback: Optional[Callable[[int, str], None]] = None,
         analysis_skills: Optional[List[str]] = None,
+        analysis_phase: str = "auto",
     ):
         """
         初始化调度器
@@ -122,6 +123,7 @@ class StockAnalysisPipeline:
         )
         self.progress_callback = progress_callback
         self.analysis_skills = list(analysis_skills) if analysis_skills is not None else None
+        self.analysis_phase = analysis_phase or "auto"
         
         # 初始化各模块
         self.db = get_db()
@@ -296,7 +298,7 @@ class StockAnalysisPipeline:
                 market=market,
                 current_time=current_time,
                 trigger_source=self.query_source,
-                analysis_intent="auto",
+                analysis_phase=getattr(self, "analysis_phase", "auto"),
             )
             market_phase_context_dict = market_phase_context.to_dict()
             market_phase_summary = render_market_phase_summary(market_phase_context_dict)
