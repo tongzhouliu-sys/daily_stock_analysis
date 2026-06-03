@@ -537,6 +537,15 @@ conda activate stock
 pip install -r requirements.txt
 ```
 
+On Windows PowerShell, if Python or pip still uses the system default code page, enable UTF-8 before the first dependency install or environment check. This keeps terminal output and third-party tooling from failing on non-ASCII text:
+
+```powershell
+$env:PYTHONUTF8='1'
+$env:PYTHONIOENCODING='utf-8'
+python -m pip install -r requirements.txt
+python scripts/check_env.py --config
+```
+
 ### Command Line Arguments
 
 ```bash
