@@ -962,6 +962,18 @@ const settingsHelpZhCN: SettingsHelpMap = {
     impact: ['影响分析总耗时。'],
     notes: ['总耗时 ≈ 股票数 × 单股耗时 + (股票数-1) × ANALYSIS_DELAY。'],
   },
+  'settings.system.SAVE_CONTEXT_SNAPSHOT': {
+    title: '保存分析上下文快照',
+    summary: '控制是否将分析历史的整份 context_snapshot 持久化到数据库。',
+    usage: '默认开启。关闭后，新历史记录不会保存 enhanced_context、market_phase_summary、AnalysisContextPack overview 或运行诊断快照等 context_snapshot 内容。',
+    valueNotes: [
+      '关闭后，新历史记录的历史详情、completed 任务状态和 Web 报告页无法读取低敏输入数据块摘要。',
+      '该开关不关闭当次 AnalysisContextPack 构建，也不关闭 LLM Prompt 中的低敏 pack summary。',
+      'CLI 的 --no-context-snapshot 与设为 false 的持久化效果一致。',
+    ],
+    impact: ['影响历史透明度、回测/诊断可用的上下文快照信息和 Web 报告页的数据来源摘要。'],
+    notes: ['若需要完全关闭 P3-P5 pack 接入，需要回滚相关代码；当前没有运行时 pack 总开关。'],
+  },
   'settings.system.market_review': {
     title: '大盘分析',
     summary: '控制大盘分析功能的开关、覆盖市场和配色方案。',
@@ -1875,6 +1887,18 @@ const settingsHelpEnUS: SettingsHelpMap = {
     valueNotes: ['Useful when APIs have strict rate limits.'],
     impact: ['Affects total analysis time.'],
     notes: ['Total time ≈ stock count × per-stock time + (count-1) × ANALYSIS_DELAY.'],
+  },
+  'settings.system.SAVE_CONTEXT_SNAPSHOT': {
+    title: 'Save Context Snapshot',
+    summary: 'Controls whether the full analysis history context_snapshot is persisted to the database.',
+    usage: 'Enabled by default. When disabled, new history records do not persist enhanced_context, market_phase_summary, AnalysisContextPack overview, diagnostic snapshots, or other context_snapshot content.',
+    valueNotes: [
+      'When disabled, history detail, completed task status, and Web report pages cannot read low-sensitivity input-block summaries from persisted records.',
+      'This switch does not disable AnalysisContextPack construction for the current run and does not remove the low-sensitivity pack summary from LLM prompts.',
+      'The CLI --no-context-snapshot flag has the same persistence effect as setting this to false.',
+    ],
+    impact: ['Affects historical transparency, diagnostics that rely on context snapshots, and Web report data-source summaries.'],
+    notes: ['To disable the P3-P5 pack integration itself, roll back the related code; there is no runtime pack master switch.'],
   },
   'settings.system.market_review': {
     title: 'Market Review',
