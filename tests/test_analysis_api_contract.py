@@ -1080,7 +1080,15 @@ class AnalysisApiContractTestCase(unittest.TestCase):
             stock_code="600519",
             stock_name="贵州茅台",
             context_snapshot={
-                "enhanced_context": {"code": "600519"},
+                "enhanced_context": {
+                    "code": "600519",
+                    "portfolio_context": {
+                        "quantity": 100,
+                        "avg_cost": 1800,
+                        "unrealized_pnl_base": 5000,
+                    },
+                },
+                "portfolio_context": {"total_cost": 180000},
                 "analysis_context_pack_overview": overview,
                 "market_phase_summary": {
                     **phase_summary,
@@ -1112,6 +1120,15 @@ class AnalysisApiContractTestCase(unittest.TestCase):
             "market_phase_summary",
             report.details.context_snapshot,
         )
+        self.assertNotIn(
+            "portfolio_context",
+            report.details.context_snapshot,
+        )
+        self.assertNotIn(
+            "portfolio_context",
+            report.details.context_snapshot["enhanced_context"],
+        )
+        self.assertNotIn("avg_cost", str(report.details.context_snapshot))
 
     def test_build_analysis_report_falls_back_to_sanitized_report_meta_phase_summary(self) -> None:
         if _build_analysis_report is None:
@@ -1699,6 +1716,35 @@ class AnalysisApiContractTestCase(unittest.TestCase):
                 "#/components/schemas/BatchTaskAcceptedResponse",
             },
         )
+
+    def test_openapi_declares_backtest_phase_filter_enum_and_400(self) -> None:
+        if create_app is None:
+            self.skipTest("fastapi is not installed in this test environment")
+
+        with tempfile.TemporaryDirectory() as temp_dir:
+            app = create_app(static_dir=Path(temp_dir))
+            paths = app.openapi()["paths"]
+
+        for path in (
+            "/api/v1/backtest/results",
+            "/api/v1/backtest/performance",
+            "/api/v1/backtest/performance/{code}",
+        ):
+            operation = paths[path]["get"]
+            self.assertIn("400", operation["responses"])
+            params = {param["name"]: param for param in operation["parameters"]}
+            schema = params["analysis_phase"]["schema"]
+            enum_values = set()
+            stack = [schema]
+            while stack:
+                current = stack.pop()
+                if not isinstance(current, dict):
+                    continue
+                enum_values.update(current.get("enum") or [])
+                stack.extend(current.get("anyOf") or [])
+                stack.extend(current.get("oneOf") or [])
+
+            self.assertEqual(enum_values, {"premarket", "intraday", "postmarket", "unknown"})
 
     def test_market_review_endpoint_accepts_omitted_body(self) -> None:
         if create_app is None or analysis_endpoint_module is None:
@@ -2409,20 +2455,38 @@ class BatchTaskQueueContractTestCase(unittest.TestCase):
         queue = AnalysisTaskQueue(max_workers=1)
         executor = CapturingExecutor()
         queue._executor = executor
+        broadcast_events = []
+        queue._broadcast_event = lambda event_type, data: broadcast_events.append((event_type, data))
         request_skills = ["growth_quality"]
+        portfolio_context = {
+            "account_id": 7,
+            "account_name": "Main",
+            "symbol": "600519",
+            "quantity": 100,
+        }
 
         accepted, duplicates = queue.submit_tasks_batch(
             ["600519"],
             report_type="detailed",
             analysis_phase="intraday",
+            query_source="portfolio",
+            portfolio_context=portfolio_context,
             skills=request_skills,
         )
         request_skills.append("mutated_after_submit")
+        portfolio_context["quantity"] = 999
 
         self.assertEqual(duplicates, [])
         self.assertEqual(accepted[0].analysis_phase, "intraday")
         self.assertEqual(accepted[0].to_dict()["analysis_phase"], "intraday")
+        self.assertNotIn("portfolio_context", accepted[0].to_dict())
+        self.assertNotIn("query_source", accepted[0].to_dict())
+        self.assertNotIn("portfolio_context", broadcast_events[0][1])
+        self.assertNotIn("query_source", broadcast_events[0][1])
         self.assertEqual(accepted[0].copy().analysis_phase, "intraday")
+        self.assertEqual(accepted[0].query_source, "portfolio")
+        self.assertEqual(accepted[0].portfolio_context["quantity"], 100)
+        self.assertEqual(accepted[0].copy().portfolio_context["quantity"], 100)
         self.assertEqual(accepted[0].skills, ["growth_quality"])
         self.assertIs(executor.calls[0][1][-1], accepted[0].skills)
 
@@ -2437,6 +2501,11 @@ class BatchTaskQueueContractTestCase(unittest.TestCase):
         )
         self.assertEqual(service_instance.analyze_stock.call_args.kwargs["skills"], ["growth_quality"])
         self.assertEqual(service_instance.analyze_stock.call_args.kwargs["analysis_phase"], "intraday")
+        self.assertEqual(service_instance.analyze_stock.call_args.kwargs["query_source"], "portfolio")
+        self.assertEqual(
+            service_instance.analyze_stock.call_args.kwargs["portfolio_context"]["quantity"],
+            100,
+        )
 
     def test_batch_submit_deduplicates_equivalent_stock_code_shapes(self) -> None:
         queue = AnalysisTaskQueue(max_workers=1)

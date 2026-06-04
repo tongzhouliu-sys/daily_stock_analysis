@@ -56,6 +56,8 @@ class AnalysisService:
         progress_callback: Optional[Callable[[int, str], None]] = None,
         skills: Optional[List[str]] = None,
         analysis_phase: str = "auto",
+        query_source: str = "api",
+        portfolio_context: Optional[Dict[str, Any]] = None,
     ) -> Optional[Dict[str, Any]]:
         """
         执行股票分析
@@ -91,7 +93,7 @@ class AnalysisService:
                     trace_id=effective_trace_id,
                     query_id=query_id,
                     stock_code=stock_code,
-                    trigger_source="api",
+                    trigger_source=query_source or "api",
                 )
             
             # 获取配置
@@ -102,10 +104,11 @@ class AnalysisService:
                 config=config,
                 query_id=query_id,
                 trace_id=effective_trace_id,
-                query_source="api",
+                query_source=query_source or "api",
                 progress_callback=progress_callback,
                 analysis_skills=skills,
                 analysis_phase=analysis_phase,
+                portfolio_context=portfolio_context,
             )
             
             # 确定报告类型 (API: simple/detailed/full/brief -> ReportType)

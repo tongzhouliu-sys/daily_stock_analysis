@@ -354,6 +354,7 @@ export interface HistoryItem {
   volumeRatio?: number;
   turnoverRate?: number;
   modelUsed?: string;  // Display-only model snapshot from persisted history; runtime provider/model/base URL still come from analyzer configuration
+  marketPhaseSummary?: MarketPhaseSummary | null;
   createdAt: string;
 }
 
@@ -411,6 +412,7 @@ export interface StockBarItem {
   analysisCount: number;
   lastAnalysisTime?: string;
   modelUsed?: string;
+  marketPhaseSummary?: MarketPhaseSummary | null;
 }
 
 export interface StockBarResponse {

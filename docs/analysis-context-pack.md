@@ -1,6 +1,6 @@
-# AnalysisContextPack：P0 盘点、P1/P2 契约、P3 Runtime Consumption、P4 可见性与 P5 数据质量
+# AnalysisContextPack：P0 盘点、P1/P2 契约、P3 Runtime Consumption、P4 可见性、P5 数据质量与 P6 联动
 
-本页是 Issue #1389 的专题文档，用于记录当前 DSA 分析上下文的真实来源、消费路径、字段状态边界，以及 `AnalysisContextPack` 内部契约、builder、运行态消费、低敏可见性和数据质量评分边界。P0 负责现状盘点和契约边界；P1 只新增内部 schema/envelope、block catalog、类型约定和脱敏序列化；P2 只从 pipeline 已有 artifacts 组装 pack；P3 只把低敏摘要接入普通分析和 Agent 初始 Prompt；P4 只把低敏 overview 接入历史详情、同步分析响应、completed task status 和 Web 报告页；P5 在同一 `PACK_VERSION = "1.0"` 内补齐数据质量评分、`fetch_failed` 状态、Prompt 数据限制和 overview 低敏展示。
+本页是 Issue #1389 的专题文档，用于记录当前 DSA 分析上下文的真实来源、消费路径、字段状态边界，以及 `AnalysisContextPack` 内部契约、builder、运行态消费、低敏可见性和数据质量评分边界。P0 负责现状盘点和契约边界；P1 只新增内部 schema/envelope、block catalog、类型约定和脱敏序列化；P2 只从 pipeline 已有 artifacts 组装 pack；P3 只把低敏摘要接入普通分析和 Agent 初始 Prompt；P4 只把低敏 overview 接入历史详情、同步分析响应、completed task status 和 Web 报告页；P5 在同一 `PACK_VERSION = "1.0"` 内补齐数据质量评分、`fetch_failed` 状态、Prompt 数据限制和 overview 低敏展示；#1386 P6 复用同一公开 overview 做告警、持仓、历史、回测和通知联动，并在手动持仓分析时加入可选辅助 `portfolio` block。
 
 ## 术语与边界
 
@@ -143,6 +143,18 @@ Prompt 数据限制只在 `format_analysis_context_pack_prompt_section()` 内渲
 #1386 P2-full 在 P5 score/limitations 之后、confidence/safety 之前追加最小的 `phase × degraded data` 交叉约束：当 `AnalysisContextPack.phase` 来自合法 `MarketPhaseContext`，且 `quote`、`daily_bars` 或 `technical` 存在 degraded 状态时，Prompt 只补充当前阶段下数据质量如何限制盘中判断、开盘计划或保守分析；它不替代 P5 的 confidence/safety 规则，也不复述 `market_phase_context` 的 phase-only 文案。`pack.phase` 缺失、非 dict 或包含非法 phase 时 fail-open，仅保留 P5 通用数据限制。
 
 overview 只扩展现有公开面：`analysis_context_pack_overview.data_quality` 白名单包含 `overall_score`、`level`、`block_scores`、`limitations`，不重复公开 `warnings`。`render_analysis_context_pack_overview()` 与 `extract_analysis_context_pack_overview()` / persisted sanitizer 都会清洗该对象；旧 overview 缺少 `data_quality` 时仍正常读取。`details.context_snapshot` 继续剥离顶层 `analysis_context_pack_overview`，不公开完整 pack。
+
+## P6 告警、持仓、历史和回测联动
+
+#1386 P6 不新增 pack 版本，也不把完整 pack 暴露到更多公共面。它只复用 P4/P5 已定义的 `analysis_context_pack_overview` 和 #1386 已定义的 `market_phase_summary`：
+
+- 告警触发记录仍写入现有 `alert_triggers.diagnostics` 文本字段；当 diagnostics 可 JSON 化时，worker 会合并 `analysis_visibility.analysis_context_pack_overview`，来源只允许 evaluator 已带 overview 或最近 30 天历史 snapshot。旧纯文本 diagnostics 不被覆盖，API 派生字段为空且 source 为 `legacy_text`。
+- 持仓手动分析通过 API 构造低敏 `portfolio_context` 并传入 pipeline；builder 会在 pack 中加入可选 `portfolio` block。该 block 只包含账户 ID/name、symbol、market、currency、quantity、avg cost、total cost、unrealized PnL、price source/provider/date/stale/available 和 cost method，不包含交易流水、现金流水、新闻正文、Prompt、密钥或 webhook。
+- `portfolio` block 是辅助块，`metadata={"auxiliary": true, "quality_weighted": false}`，不改变 P5 固定六块 `quote`、`daily_bars`、`technical`、`news`、`fundamentals`、`chip` 的权重、总分或 limitations 口径。
+- `portfolio_context` 只在任务执行内部透传；`TaskInfo.to_dict()`、任务列表、SSE `task_created/task_started/task_completed/task_failed/task_progress` payload 不暴露该对象。
+- 历史列表、单股历史、StockBar 和回测结果只读取 `context_snapshot` 顶层的公开 `market_phase_summary`；旧记录、`SAVE_CONTEXT_SNAPSHOT=false` 或解析失败返回 `null` / `unknown`，不失败。
+- 回测 phase filter 只基于公开 summary 做 bucket：`premarket` 保持 premarket，`intraday|lunch_break|closing_auction` 归入 intraday，`postmarket` 保持 postmarket，`non_trading|missing|invalid` 归入 unknown。带 phase 过滤时 repository 先按 SQL 条件批量读取结果和 snapshot，服务层 bucket 后再分页和统计，避免 API 层分页后临时过滤。
+- 通知摘要只消费 `market_phase_summary` 与 `analysis_context_pack_overview.data_quality`，输出阶段、trigger source、partial-bar warning、质量等级和前两条 limitations；不输出 raw pack、`analysis_context_pack_summary` Prompt 字符串、新闻正文或持仓敏感细节。
 
 ## 字段质量状态
 
