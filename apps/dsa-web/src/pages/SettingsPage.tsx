@@ -861,6 +861,11 @@ const SettingsPage: React.FC = () => {
                   <p className="text-xs leading-6 text-muted-text">
                     导出内容仅包含当前已保存配置，不包含页面上尚未保存的本地草稿。
                   </p>
+                  <p className="text-xs leading-6 text-muted-text">
+                    Docker 部署中，`--env-file` / Compose `env_file` 只会在启动时注入环境变量；此处导出/导入的是后端当前活跃的
+                    `.env` 文件。若需要让 WebUI 保存值随容器重建保留，请将 `ENV_FILE` 指向 `/app/data/runtime.env` 等可写数据卷文件，
+                    并避免启动环境里继续保留同名旧值。
+                  </p>
                   {envBackupActionError ? (
                     <ApiErrorAlert
                       error={envBackupActionError}
