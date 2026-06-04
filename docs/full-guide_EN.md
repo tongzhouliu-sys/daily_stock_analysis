@@ -722,6 +722,31 @@ History lists, same-stock history, StockBar items, and details extract `market_p
 
 Notification summaries use one public formatting helper and only include the phase label, trigger source, partial-bar warning, data-quality level, and the first two limitations. They do not output raw context packs, prompts, news body text, or sensitive portfolio details. The Web Alerts, Portfolio, History, StockBar, and Backtest pages display the new phase badges, quality summary, phase filter, and breakdown.
 
+### Documentation, Configuration, And Migration Notes (Issue #1386 P7)
+
+P7 is a user-facing documentation closeout for pre-market / intraday / post-market analysis only. It does not add runtime behavior, configuration keys, API parameters, database migrations, a Web phase override selector, Bot phase parameters, or a GitHub Actions intraday workflow. The default daily post-market analysis, default GitHub Actions run, and existing schedule behavior stay unchanged.
+
+Recommended usage:
+
+| Scenario | Recommended Use | Notes |
+| --- | --- | --- |
+| Pre-market | Build an opening plan and watch conditions | Do not describe today's not-yet-traded price action as fact; focus on the last complete trading day, overnight information, and opening triggers. |
+| Intraday / lunch break / near close | Check live state, risk, and opportunity alerts | Focus on current price, realtime quote freshness, partial bars, data limitations, and next watch conditions. This does not replace the full post-market review. |
+| Post-market | Keep the full review and next-day plan | Uses complete trading-day semantics and is closest to the default daily-analysis scenario. |
+
+Entrypoints and visibility:
+
+| Entrypoint | Phase Behavior |
+| --- | --- |
+| `POST /api/v1/analysis/analyze` | Supports `analysis_phase=auto|premarket|intraday|postmarket`; omitted values default to `auto`. |
+| Web main analysis / re-analysis / portfolio manual analysis | There is currently no phase override selector. The frontend defaults to `auto`, the in-progress task panel shows the requested phase, and the final report page shows the final phase label. |
+| Bot / CLI / schedule / default GitHub Actions | Do not pass `analysis_phase`; they continue to use `auto` inference, and the default post-market behavior is unchanged. |
+| History / backtest / notifications / alerts | Only consume public `market_phase_summary` and low-sensitivity `analysis_context_pack_overview`; they do not expose the full pack, prompt summary, news body text, or sensitive portfolio details. |
+
+`analysis_phase` is the requested override value, while the final report phase remains `report.meta.market_phase_summary.phase`. Older callers that omit `analysis_phase` remain compatible. Older history rows without `market_phase_summary` or `analysis_context_pack_overview` return empty fields and still load normally. Backtest queries support `analysis_phase=premarket|intraday|postmarket|unknown` filtering, and P6 folds lunch-break and near-close phases into intraday.
+
+`SAVE_CONTEXT_SNAPSHOT=false` or CLI `--no-context-snapshot` only stops persisting the full `context_snapshot` for new history rows, so new history no longer exposes persisted phase summary / pack overview / diagnostics snapshot data. It does not disable current-run `AnalysisContextPack` construction, does not remove the low-sensitivity `analysis_context_pack_summary` from prompts, and does not change the report JSON schema. Callers that need output closer to the old post-market wording can temporarily pin `analysis_phase=postmarket`; fully removing the P0-P6 phase/pack runtime integration requires a release rollback or code rollback.
+
 ---
 
 ## Notification Channel Configuration
