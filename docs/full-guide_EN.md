@@ -1386,6 +1386,12 @@ A: Check if Actions is enabled, and if cron expression is correct (note it's UTC
 
 ## Portfolio Web Notes
 
+### Portfolio account archive on `/portfolio`
+
+- The `/portfolio` account toolbar can delete a selected single account through the existing `DELETE /api/v1/portfolio/accounts/{account_id}` endpoint.
+- Account deletion uses soft-delete/archive semantics. Archived accounts are hidden from default account lists, portfolio snapshots, risk summaries, entry forms, and event lists.
+- Historical trade, cash-ledger, corporate-action, and daily snapshot rows are not physically removed. To correct a specific ledger row from the Web UI, delete that row before archiving its account.
+
 ### Manual FX refresh on `/portfolio`
 
 - The FX status card on the Web `/portfolio` page includes a manual refresh action.
