@@ -797,6 +797,40 @@ class PortfolioRepository:
             cutoff_ordinal = as_of.toordinal() - lookback_days
             return [row for row in rows if row.snapshot_date.toordinal() >= cutoff_ordinal]
 
+    def list_cached_position_identities(
+        self,
+        *,
+        account_id: Optional[int] = None,
+    ) -> List[Tuple[str, str]]:
+        """Return market/symbol identities from cached non-zero positions only."""
+        with self.db.get_session() as session:
+            query = (
+                select(PortfolioPosition.market, PortfolioPosition.symbol)
+                .join(PortfolioAccount, PortfolioPosition.account_id == PortfolioAccount.id)
+                .where(
+                    PortfolioPosition.quantity > 0,
+                    PortfolioAccount.is_active.is_(True),
+                )
+            )
+            if account_id is not None:
+                query = query.where(PortfolioPosition.account_id == account_id)
+            rows = session.execute(
+                query.order_by(
+                    PortfolioPosition.market.asc(),
+                    PortfolioPosition.symbol.asc(),
+                )
+            ).all()
+            seen = set()
+            identities: List[Tuple[str, str]] = []
+            for market, symbol in rows:
+                market_text = str(market or "").strip().lower()
+                symbol_text = str(symbol or "").strip()
+                identity = (market_text, symbol_text)
+                if market_text and symbol_text and identity not in seen:
+                    seen.add(identity)
+                    identities.append(identity)
+            return identities
+
     # ------------------------------------------------------------------
     # Snapshot / position cache
     # ------------------------------------------------------------------
