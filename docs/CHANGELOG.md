@@ -23,7 +23,14 @@ and this project adheres to [Semantic Versioning](https://semver.org/).
 - [修复] 修复运行流 live SSE 事件未复用快照层递归脱敏规则的问题，避免本地路径、prompt/raw response、代理头等敏感诊断字段在 refetch 前短暂暴露。
 <!-- 新条目格式：- [类型] 描述（类型取值：新功能/改进/修复/文档/测试/chore）-->
 <!-- 每条独立一行追加到本段末尾，无需分类标题，合并时冲突最小 -->
+- [改进] AlphaSift 依赖锁定更新到 `de54ea0da367be85770d9589a5bf7ded4f62d386`，并为新版 last-good snapshot、日线历史、行业/概念 provider cache、hotspot 具体题材榜单、题材发酵路线、概念股详情、上次成功热点缓存与 post-analysis 元信息补齐 DSA 运行期和 Web 选股页适配；默认不启用 DSA deep-analysis 回调。
 - [修复] 桌面发布打包改用冻结可执行文件运行时探针校验 `alphasift.dsa_adapter`，避免 macOS PyInstaller 将模块内嵌进可执行文件时被文件系统/zip 扫描误判为缺失。
+- [新功能] 新增 AlphaSift 热点题材链路：后端新增 `/api/v1/alphasift/hotspots` 与 `/api/v1/alphasift/hotspots/{topic}` API，Web 选股页新增“热点题材”区域并支持发酵路线与概念股查看。
+- [改进] 新增 AlphaSift 热点题材读取与刷新策略：默认优先读取上次成功热点缓存，手动刷新才实时拉取并覆盖缓存，实时拉取失败时尽量回退旧缓存。
+- [改进] 改造 `main.py --webui-only` 启动行为：若 FastAPI 监听端口已被占用，启动即 fail-fast 抛出明确错误并退出，避免 Windows 下 `WinError 10048`。
+- [文档] 补充 `docs/alphasift-integration.md`：明确 AlphaSift 锁定 commit 来源、Hotspot 契约边界、LLM/LiteLLM 兼容语义与关闭开关下回退路径。
+- [修复] 为 THS 发酵路线补充列名兜底：当 `stock_board_concept_summary_ths` 返回缺列时仅跳过该来源富化，不影响 `/api/v1/alphasift/hotspots/{topic}` 返回。
+- [测试] 新增/更新后端回归：`python -m pytest tests/test_alphasift_api.py -q`、`python -m pytest tests/test_docker_entrypoint.py -q`、`python -m pytest tests/test_main_schedule_mode.py -q -k "start_api_server_fails_before_thread_when_port_is_busy"`.
 
 ## [3.21.0] - 2026-06-07
 
