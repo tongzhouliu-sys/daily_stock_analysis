@@ -701,7 +701,7 @@ def run_full_analysis(
         )
         should_use_daily_market_context = (
             should_run_market_review
-            and getattr(config, 'daily_market_context_enabled', False)
+            and getattr(config, 'daily_market_context_enabled', True)
         )
         analysis_reference_time = datetime.now(timezone.utc)
         daily_market_context_target_date = None

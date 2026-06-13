@@ -105,7 +105,7 @@ class MainScheduleModeTestCase(unittest.TestCase):
             "agent_event_monitor_enabled": False,
             "agent_event_alert_rules_json": "",
             "agent_event_monitor_interval_minutes": 5,
-            "daily_market_context_enabled": False,
+            "daily_market_context_enabled": True,
         }
         defaults.update(overrides)
         return _DummyConfig(**defaults)
@@ -684,7 +684,7 @@ class MainScheduleModeTestCase(unittest.TestCase):
         run_market_review.assert_not_called()
         refresh.assert_called_once_with(config)
 
-    def test_run_full_analysis_defaults_daily_context_off_without_disabling_market_review(self) -> None:
+    def test_run_full_analysis_defaults_daily_context_on_without_disabling_market_review(self) -> None:
         args = self._make_args()
         config = self._make_config(
             trading_day_check_enabled=False,
@@ -705,13 +705,13 @@ class MainScheduleModeTestCase(unittest.TestCase):
         with patch.object(main, "_refresh_stock_index_cache_for_analysis") as refresh, \
              patch("main._compute_trading_day_filter", return_value=([], "cn", False)), \
              patch("src.core.pipeline.StockAnalysisPipeline", side_effect=build_pipeline), \
-             patch("main._prime_daily_market_context") as prime_context, \
+             patch("main._prime_daily_market_context", side_effect=[("", ""), ("缓存摘要", "完整复盘")]) as prime_context, \
              patch("main._run_market_review_with_shared_lock", return_value=SimpleNamespace(report="大盘复盘")) as run_with_lock:
             main.run_full_analysis(config, args, [])
 
-        self.assertFalse(pipeline_kwargs["daily_market_context_enabled"])
-        self.assertFalse(pipeline_kwargs["daily_market_context_allow_generate"])
-        prime_context.assert_not_called()
+        self.assertTrue(pipeline_kwargs["daily_market_context_enabled"])
+        self.assertTrue(pipeline_kwargs["daily_market_context_allow_generate"])
+        self.assertEqual(prime_context.call_count, 2)
         run_with_lock.assert_called_once()
         refresh.assert_called_once_with(config)
 

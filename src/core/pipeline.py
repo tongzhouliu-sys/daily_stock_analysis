@@ -137,7 +137,7 @@ class StockAnalysisPipeline:
         self.analysis_phase = analysis_phase or "auto"
         self.portfolio_context = dict(portfolio_context) if isinstance(portfolio_context, dict) else None
         self.daily_market_context_enabled = (
-            bool(getattr(self.config, "daily_market_context_enabled", False))
+            bool(getattr(self.config, "daily_market_context_enabled", True))
             if daily_market_context_enabled is None
             else bool(daily_market_context_enabled)
         )
@@ -1331,9 +1331,9 @@ class StockAnalysisPipeline:
         target_date: Optional[date] = None,
     ) -> Optional[DailyMarketContext]:
         """Load/generate today's market context when market review is explicitly enabled."""
-        if getattr(self, "daily_market_context_enabled", False) is not True:
+        if getattr(self, "daily_market_context_enabled", True) is not True:
             return None
-        if getattr(self.config, "daily_market_context_enabled", False) is not True:
+        if getattr(self.config, "daily_market_context_enabled", True) is not True:
             return None
         if getattr(self.config, "market_review_enabled", None) is not True:
             return None

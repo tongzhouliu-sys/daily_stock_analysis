@@ -3002,14 +3002,14 @@ _FIELD_DEFINITIONS: Dict[str, Dict[str, Any]] = {
         "is_sensitive": False,
         "is_required": False,
         "is_editable": True,
-        "default_value": "false",
+        "default_value": "true",
         "options": [],
         "validation": {},
         "display_order": 47,
         "help_key": "settings.system.market_review",
         "examples": [
-            "DAILY_MARKET_CONTEXT_ENABLED=false",
             "DAILY_MARKET_CONTEXT_ENABLED=true",
+            "DAILY_MARKET_CONTEXT_ENABLED=false",
         ],
         "docs": [
             {

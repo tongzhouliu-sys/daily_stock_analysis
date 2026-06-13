@@ -642,7 +642,7 @@ class TestMarketReviewFieldsRegistered(unittest.TestCase):
         self.assertEqual(field["category"], "system")
         self.assertEqual(field["data_type"], "boolean")
         self.assertEqual(field["ui_control"], "switch")
-        self.assertEqual(field["default_value"], "false")
+        self.assertEqual(field["default_value"], "true")
         self.assertFalse(field["is_sensitive"])
 
     def test_schema_response_includes_market_review_color_scheme(self):
