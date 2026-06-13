@@ -110,9 +110,24 @@ describe('StockScreeningPage', () => {
       provider: 'akshare',
       topic: 'AI算力',
       name: 'AI算力',
+      canonicalTopic: '算力',
       summary: 'AI算力 盘中发酵。',
+      qualityStatus: 'stale',
+      missingFields: ['live_stocks'],
+      fallbackUsed: true,
+      stale: true,
+      staleAgeHours: 2.5,
+      sourceErrors: ['akshare timeout'],
       route: [{ title: '盘中发酵', description: '出现大笔买入。', source: 'eastmoney_board_change' }],
-      stocks: [{ code: '300000', name: '中际旭创', role: '核心龙头', hotStockScore: 88 }],
+      stocks: [{
+        code: '300000',
+        name: '中际旭创',
+        role: '核心龙头',
+        hotStockScore: 88,
+        source: 'last_good_cache.leader_stocks',
+        sourceConfidence: 0.65,
+        fallbackUsed: true,
+      }],
       stockCount: 1,
     });
     getHotspots.mockResolvedValue({ enabled: true, provider: 'akshare', hotspots: [], hotspotCount: 0 });
@@ -195,9 +210,15 @@ describe('StockScreeningPage', () => {
     expect(screen.getByText('加速主升')).toBeInTheDocument();
     expect(screen.getByText(/中际旭创、工业富联/)).toBeInTheDocument();
     expect(await screen.findByText('发酵路线')).toBeInTheDocument();
+    expect(screen.getByText('标准题材：算力')).toBeInTheDocument();
+    expect(screen.getByText('质量 stale')).toBeInTheDocument();
+    expect(screen.getByText('缓存回退 2.5h')).toBeInTheDocument();
+    expect(screen.getByText(/详情降级：/)).toBeInTheDocument();
+    expect(screen.getByText(/缺失 live_stocks/)).toBeInTheDocument();
     expect(screen.getByText('盘中发酵')).toBeInTheDocument();
     expect(screen.getByText('概念股')).toBeInTheDocument();
     expect(screen.getByText('中际旭创')).toBeInTheDocument();
+    expect(screen.getByText(/来源 last_good_cache\.leader_stocks · 置信 65% · 回退/)).toBeInTheDocument();
   });
 
   it('loads selected hotspot detail once when switching themes', async () => {

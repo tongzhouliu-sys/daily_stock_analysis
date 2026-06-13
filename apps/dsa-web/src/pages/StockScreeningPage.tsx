@@ -734,17 +734,40 @@ const StockScreeningPage: React.FC = () => {
                 <p className="mt-1 text-xs leading-5 text-secondary-text">
                   {loadingHotspotDetail ? '正在读取发酵路线与概念股...' : hotspotDetail?.summary || '点击题材查看发酵路线与概念股。'}
                 </p>
+                {hotspotDetail?.canonicalTopic && hotspotDetail.canonicalTopic !== selectedHotspotTopic ? (
+                  <p className="mt-1 text-[11px] text-secondary-text">标准题材：{hotspotDetail.canonicalTopic}</p>
+                ) : null}
               </div>
-              {hotspotDetail?.stockCount != null ? (
-                <span className="w-fit rounded-full bg-orange-500/10 px-3 py-1 text-xs font-semibold text-orange-500">
-                  概念股 {hotspotDetail.stockCount}
-                </span>
-              ) : null}
+              <div className="flex flex-wrap items-center gap-2">
+                {hotspotDetail?.qualityStatus ? (
+                  <span className="w-fit rounded-full bg-warning/10 px-3 py-1 text-xs font-semibold text-warning">
+                    质量 {hotspotDetail.qualityStatus}
+                  </span>
+                ) : null}
+                {hotspotDetail?.fallbackUsed || hotspotDetail?.stale ? (
+                  <span className="w-fit rounded-full bg-warning/10 px-3 py-1 text-xs font-semibold text-warning">
+                    {hotspotDetail.staleAgeHours != null ? `缓存回退 ${formatNumber(hotspotDetail.staleAgeHours, 1)}h` : '缓存回退'}
+                  </span>
+                ) : null}
+                {hotspotDetail?.stockCount != null ? (
+                  <span className="w-fit rounded-full bg-orange-500/10 px-3 py-1 text-xs font-semibold text-orange-500">
+                    概念股 {hotspotDetail.stockCount}
+                  </span>
+                ) : null}
+              </div>
             </div>
 
             {hotspotDetailError ? (
               <p className="mb-3 rounded-xl border border-warning/30 bg-warning/10 px-3 py-2 text-xs text-warning">
                 {hotspotDetailError}
+              </p>
+            ) : null}
+
+            {hotspotDetail && ((hotspotDetail.missingFields || []).length > 0 || (hotspotDetail.sourceErrors || []).length > 0) ? (
+              <p className="mb-3 rounded-xl border border-warning/30 bg-warning/10 px-3 py-2 text-xs text-warning">
+                详情降级：
+                {(hotspotDetail.missingFields || []).length > 0 ? `缺失 ${(hotspotDetail.missingFields || []).join('、')}` : ''}
+                {(hotspotDetail.sourceErrors || []).length > 0 ? ` ${(hotspotDetail.sourceErrors || []).slice(0, 2).join('；')}` : ''}
               </p>
             ) : null}
 
@@ -778,6 +801,13 @@ const StockScreeningPage: React.FC = () => {
                         <p className="mt-2 text-[11px] text-secondary-text">
                           涨跌幅 {formatNumber(stock.changePct)}% · 热度 {formatNumber(stock.hotStockScore, 0)}
                         </p>
+                        {stock.source || stock.sourceConfidence != null || stock.fallbackUsed ? (
+                          <p className="mt-1 text-[11px] text-secondary-text">
+                            来源 {stock.source || '-'}
+                            {stock.sourceConfidence != null ? ` · 置信 ${formatPercent(stock.sourceConfidence)}` : ''}
+                            {stock.fallbackUsed ? ' · 回退' : ''}
+                          </p>
+                        ) : null}
                       </div>
                     ))}
                   </div>

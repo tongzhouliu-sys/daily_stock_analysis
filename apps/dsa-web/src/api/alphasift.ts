@@ -132,6 +132,9 @@ export type AlphaSiftHotspotStock = {
   volumeRatio?: number | null;
   role?: string;
   hotStockScore?: number | null;
+  source?: string;
+  sourceConfidence?: number | null;
+  fallbackUsed?: boolean;
 };
 
 export type AlphaSiftHotspotDetail = {
@@ -139,11 +142,21 @@ export type AlphaSiftHotspotDetail = {
   provider: string;
   topic: string;
   name?: string;
+  canonicalTopic?: string;
+  aliases?: string[];
   summary?: string;
+  summaryDetail?: Record<string, unknown>;
   route: AlphaSiftHotspotRouteItem[];
+  timeline?: AlphaSiftHotspotRouteItem[];
   stocks: AlphaSiftHotspotStock[];
   stockCount: number;
   sourceErrors?: string[];
+  qualityStatus?: 'available' | 'partial' | 'stale' | 'failed' | string;
+  missingFields?: string[];
+  fallbackUsed?: boolean;
+  stale?: boolean;
+  staleAgeHours?: number | null;
+  resolverCandidates?: Record<string, unknown>[];
 };
 
 export type AlphaSiftHotspotsResponse = {

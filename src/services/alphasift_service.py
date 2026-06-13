@@ -98,7 +98,7 @@ def _load_alphasift_hotspot_cache(*, provider: str, top: int) -> Optional[Dict[s
         logger.warning("Failed to read AlphaSift hotspot cache from %s: %s", cache_path, exc)
         return None
 
-    payload = raw.get("payload") if isinstance(raw, dict) else None
+    payload = _normalize_alphasift_hotspot_cache_payload(raw)
     if not isinstance(payload, dict):
         return None
     hotspots = payload.get("hotspots")
@@ -119,6 +119,34 @@ def _load_alphasift_hotspot_cache(*, provider: str, top: int) -> Optional[Dict[s
     return _remove_non_finite_json_values(cached)
 
 
+def _normalize_alphasift_hotspot_cache_payload(raw: Any) -> Optional[Dict[str, Any]]:
+    if not isinstance(raw, dict):
+        return None
+    payload = raw.get("payload")
+    if isinstance(payload, dict):
+        return payload
+    hotspots = raw.get("hotspots")
+    if not isinstance(hotspots, list):
+        return None
+    metadata_raw = raw.get("metadata")
+    metadata: Dict[str, Any] = metadata_raw if isinstance(metadata_raw, dict) else {}
+    cached_at = raw.get("cached_at") or raw.get("generated_at") or metadata.get("generated_at")
+    return {
+        "enabled": True,
+        "provider": _env_text(metadata.get("provider")) or "akshare",
+        "provider_used": _env_text(metadata.get("provider_used")),
+        "fallback_used": False,
+        "cache_used": False,
+        "cached_at": cached_at,
+        "schema_version": raw.get("schema_version") or metadata.get("schema_version"),
+        "source_errors": _list_text_values(raw.get("source_errors") or metadata.get("source_errors")),
+        "stale": bool(raw.get("stale") or metadata.get("stale") or False),
+        "stale_age_hours": raw.get("stale_age_hours") or metadata.get("stale_age_hours"),
+        "hotspots": hotspots,
+        "hotspot_count": len(hotspots),
+    }
+
+
 def _write_alphasift_hotspot_cache(payload: Dict[str, Any]) -> None:
     cache_path = _alphasift_hotspot_cache_path()
     try:
@@ -128,7 +156,25 @@ def _write_alphasift_hotspot_cache(payload: Dict[str, Any]) -> None:
         cache_payload["cache_used"] = False
         cache_payload["cached_at"] = cached_at
         cache_path.write_text(
-            json.dumps({"cached_at": cached_at, "payload": cache_payload}, ensure_ascii=False, indent=2),
+            json.dumps(
+                {
+                    "schema_version": 2,
+                    "generated_at": cached_at,
+                    "cached_at": cached_at,
+                    "metadata": {
+                        "schema_version": 2,
+                        "asset_type": "hotspot_cache",
+                        "provider": cache_payload.get("provider"),
+                        "provider_used": cache_payload.get("provider_used"),
+                        "row_count": len(cache_payload.get("hotspots") or []),
+                        "source_errors": _list_text_values(cache_payload.get("source_errors")),
+                    },
+                    "hotspots": cache_payload.get("hotspots") or [],
+                    "payload": cache_payload,
+                },
+                ensure_ascii=False,
+                indent=2,
+            ),
             encoding="utf-8",
         )
     except Exception as exc:
@@ -281,17 +327,59 @@ class AlphaSiftService:
         provider_name, provider_arg = _resolve_hotspot_provider(provider)
         if not isinstance(provider_arg, DsaEastMoneyHotspotProvider):
             provider_arg = DsaEastMoneyHotspotProvider()
+        normalized: Dict[str, Any] = {}
+        hotspot_helper_error: str = ""
         try:
+            try:
+                hotspot_module = _import_alphasift_hotspot()
+                get_hotspot_detail = getattr(hotspot_module, "get_hotspot_detail", None)
+            except Exception:
+                get_hotspot_detail = None
             with _alphasift_runtime_env(self.config):
-                detail = provider_arg.hotspot_detail(topic_text)
+                if callable(get_hotspot_detail) and type(provider_arg) is DsaEastMoneyHotspotProvider:
+                    try:
+                        detail = get_hotspot_detail(
+                            topic_text,
+                            provider=provider_arg,
+                            top_stocks=30,
+                            history_path=_alphasift_hotspot_history_path(),
+                            fallback_cache_path=_alphasift_hotspot_cache_path(),
+                        )
+                        normalized = _normalize_alphasift_hotspot_detail(
+                            detail,
+                            provider=provider_name,
+                            requested_topic=topic_text,
+                        )
+                        normalized = _merge_provider_hotspot_route_fallback(
+                            normalized,
+                            provider=provider_arg,
+                            topic=topic_text,
+                        )
+                    except Exception as exc:
+                        hotspot_helper_error = f"{exc}"
+                        logger.warning(
+                            "AlphaSift contract hotspot detail fallback to provider for topic=%s: %s",
+                            topic_text,
+                            hotspot_helper_error,
+                        )
+                else:
+                    normalized = provider_arg.hotspot_detail(topic_text)
+                if not normalized:
+                    normalized = provider_arg.hotspot_detail(topic_text)
         except Exception as exc:
             raise HTTPException(
                 status_code=424,
                 detail={"error": "alphasift_hotspot_detail_failed", "message": f"AlphaSift hotspot detail failed: {exc}"},
             ) from exc
-        detail["enabled"] = True
-        detail["provider"] = provider_name
-        return _remove_non_finite_json_values(detail)
+        if hotspot_helper_error:
+            source_errors = _list_text_values(normalized.get("source_errors"))
+            source_errors.append(f"alphasift_hotspot_detail_fallback: {hotspot_helper_error}")
+            normalized["source_errors"] = source_errors
+            normalized["fallback_used"] = True
+            normalized["provider"] = provider_name
+        normalized["enabled"] = True
+        normalized["provider"] = provider_name
+        return _remove_non_finite_json_values(normalized)
 
     def screen(self, *, strategy: str, market: str, max_results: int) -> Dict[str, Any]:
         _ensure_alphasift_enabled(self.config)
@@ -356,6 +444,168 @@ class AlphaSiftService:
             "portfolio_diversity_enabled": raw_data.get("portfolio_diversity_enabled"),
             "portfolio_concentration_notes": raw_data.get("portfolio_concentration_notes") or [],
         }
+
+
+def _normalize_alphasift_hotspot_detail(detail: Any, *, provider: str, requested_topic: str) -> Dict[str, Any]:
+    raw_value = _remove_non_finite_json_values(_to_plain(detail))
+    raw: Dict[str, Any] = raw_value if isinstance(raw_value, dict) else {}
+    summary_value = raw.get("summary")
+    summary: Dict[str, Any] = summary_value if isinstance(summary_value, dict) else {}
+    stocks_value = raw.get("stocks")
+    stocks: List[Any] = stocks_value if isinstance(stocks_value, list) else []
+    timeline_value = raw.get("timeline")
+    timeline: List[Any] = timeline_value if isinstance(timeline_value, list) else []
+    route_value = raw.get("route")
+    route: List[Any] = route_value if isinstance(route_value, list) and route_value else _hotspot_timeline_to_route(timeline)
+    source_errors = _list_text_values(raw.get("source_errors") or summary.get("source_errors"))
+    topic = _env_text(summary.get("topic") or raw.get("topic") or requested_topic)
+    canonical_topic = _env_text(summary.get("canonical_topic") or raw.get("canonical_topic"))
+    name = _env_text(summary.get("name") or raw.get("name") or canonical_topic or topic)
+    quality_status = _env_text(summary.get("quality_status") or raw.get("quality_status"))
+    missing_fields = _list_text_values(summary.get("missing_fields") or raw.get("missing_fields"))
+    summary_text_value = raw.get("summary")
+    summary_text = (
+        summary_text_value
+        if isinstance(summary_text_value, str)
+        else _build_alphasift_hotspot_summary_text(summary, topic=topic, canonical_topic=canonical_topic)
+    )
+    return {
+        "enabled": True,
+        "provider": provider,
+        "topic": topic,
+        "name": name,
+        "canonical_topic": canonical_topic,
+        "aliases": _list_text_values(summary.get("aliases") or raw.get("aliases")),
+        "summary": summary_text,
+        "summary_detail": summary,
+        "route": route,
+        "timeline": timeline,
+        "stocks": stocks,
+        "stock_count": len(stocks),
+        "source_errors": source_errors,
+        "quality_status": quality_status,
+        "missing_fields": missing_fields,
+        "fallback_used": bool(summary.get("fallback_used") or raw.get("fallback_used") or False),
+        "stale": bool(summary.get("stale") or raw.get("stale") or False),
+        "stale_age_hours": summary.get("stale_age_hours") or raw.get("stale_age_hours"),
+        "resolver_candidates": _list_dict_values(summary.get("resolver_candidates") or raw.get("resolver_candidates")),
+    }
+
+
+def _list_text_values(value: Any) -> List[str]:
+    if value is None:
+        return []
+    if isinstance(value, str):
+        text = _env_text(value)
+        return [text] if text else []
+    if not isinstance(value, list):
+        text = _env_text(value)
+        return [text] if text else []
+    return [text for item in value if (text := _env_text(item))]
+
+
+def _list_dict_values(value: Any) -> List[Dict[str, Any]]:
+    if not isinstance(value, list):
+        return []
+    return [item for item in value if isinstance(item, dict)]
+
+
+def _hotspot_timeline_to_route(timeline: List[Any]) -> List[Dict[str, Any]]:
+    route: List[Dict[str, Any]] = []
+    for item in timeline:
+        if not isinstance(item, dict):
+            continue
+        title = _env_text(item.get("title"))
+        if not title:
+            continue
+        date = _env_text(item.get("date") or item.get("published_at"))
+        source = _env_text(item.get("source")) or "alphasift_timeline"
+        route.append({
+            "title": title,
+            "description": f"{date}：{title}" if date else title,
+            "source": source,
+            "url": _env_text(item.get("url")),
+            "published_at": date,
+        })
+    if route:
+        return route
+    return [{
+        "title": "等待发酵",
+        "description": "暂未获取到明确催化事件，可继续观察涨跌幅、成交额和核心个股联动。",
+        "source": "fallback",
+    }]
+
+
+def _merge_provider_hotspot_route_fallback(
+    normalized: Dict[str, Any],
+    *,
+    provider: "DsaEastMoneyHotspotProvider",
+    topic: str,
+) -> Dict[str, Any]:
+    if _has_meaningful_hotspot_route(normalized.get("route")):
+        return normalized
+    try:
+        provider_detail = provider.hotspot_detail(topic)
+    except Exception as exc:
+        logger.warning(
+            "AlphaSift provider route fallback failed for %s; keeping contract detail route: %s",
+            topic,
+            exc,
+        )
+        return normalized
+
+    raw_value = _remove_non_finite_json_values(_to_plain(provider_detail))
+    raw: Dict[str, Any] = raw_value if isinstance(raw_value, dict) else {}
+    provider_route = raw.get("route")
+    if _has_meaningful_hotspot_route(provider_route):
+        normalized["route"] = provider_route
+        provider_timeline = raw.get("timeline")
+        if not normalized.get("timeline") and isinstance(provider_timeline, list):
+            normalized["timeline"] = provider_timeline
+        return normalized
+
+    provider_timeline = raw.get("timeline")
+    if isinstance(provider_timeline, list) and provider_timeline:
+        provider_timeline_route = _hotspot_timeline_to_route(provider_timeline)
+        if _has_meaningful_hotspot_route(provider_timeline_route):
+            normalized["route"] = provider_timeline_route
+            normalized["timeline"] = provider_timeline
+    return normalized
+
+
+def _has_meaningful_hotspot_route(route: Any) -> bool:
+    if not isinstance(route, list):
+        return False
+    for item in route:
+        if not isinstance(item, dict):
+            continue
+        title = _env_text(item.get("title"))
+        description = _env_text(item.get("description"))
+        source = _env_text(item.get("source"))
+        if not title and not description:
+            continue
+        if source == "fallback" and title == "等待发酵":
+            continue
+        return True
+    return False
+
+
+def _build_alphasift_hotspot_summary_text(summary: Dict[str, Any], *, topic: str, canonical_topic: str) -> str:
+    display_topic = canonical_topic or topic
+    quality = _env_text(summary.get("quality_status"))
+    heat = _safe_float(summary.get("heat_score"))
+    stage = _env_text(summary.get("stage"))
+    leaders = summary.get("leaders") if isinstance(summary.get("leaders"), list) else []
+    parts = [f"{display_topic} 当前热点详情"]
+    if heat is not None:
+        parts.append(f"热度 {heat:.1f}")
+    if stage:
+        parts.append(f"阶段 {stage}")
+    if leaders:
+        parts.append("核心股 " + "、".join(_env_text(item) for item in leaders[:3] if _env_text(item)))
+    if quality:
+        parts.append(f"质量状态 {quality}")
+    return "，".join(part for part in parts if part) + "。"
 
 
 def _install_alphasift(config: Config) -> Dict[str, Any]:
