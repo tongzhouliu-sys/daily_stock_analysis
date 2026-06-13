@@ -185,18 +185,33 @@ class AlphaSiftService:
     def hotspots(self, *, provider: str = "", top: int = 12, refresh: bool = False) -> Dict[str, Any]:
         _ensure_alphasift_enabled(self.config)
         _ensure_alphasift_available_for_use()
-        hotspot_module = _import_alphasift_hotspot()
-        discover_hotspots = _get_adapter_callable(
-            hotspot_module,
-            "discover_hotspots",
-            "discover_hotspots() is not callable.",
-        )
         provider_name, provider_arg = _resolve_hotspot_provider(provider)
         top_count = max(1, min(int(top or 12), 50))
         if not refresh:
             cached = _load_alphasift_hotspot_cache(provider=provider_name, top=top_count)
             if cached is not None:
                 return cached
+            return {
+                "enabled": True,
+                "provider": provider_name,
+                "provider_used": "",
+                "fallback_used": False,
+                "cache_used": False,
+                "cached_at": None,
+                "source_errors": [],
+                "stale": False,
+                "stale_age_hours": None,
+                "hotspots": [],
+                "hotspot_count": 0,
+                "message": "No cached AlphaSift hotspot snapshot. Click refresh to fetch live hotspots.",
+            }
+
+        hotspot_module = _import_alphasift_hotspot()
+        discover_hotspots = _get_adapter_callable(
+            hotspot_module,
+            "discover_hotspots",
+            "discover_hotspots() is not callable.",
+        )
 
         try:
             with _alphasift_runtime_env(self.config):

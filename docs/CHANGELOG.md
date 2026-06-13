@@ -32,6 +32,7 @@ and this project adheres to [Semantic Versioning](https://semver.org/).
 - [测试] #1381 覆盖后端 runtime 与兼容核验：本轮受影响/直接执行的验收项为 `tests/test_main_schedule_mode.py`、`tests/test_pipeline_daily_market_context.py`、`tests/test_daily_market_context.py`、`tests/test_daily_market_context_guardrail.py`、`tests/test_agent_executor.py`、`tests/test_config_env_compat.py`、`tests/test_config_registry.py` 与 `apps/dsa-web/tests/system_config_i18n.test.ts`；配置兼容语义继续沿用既有回归：`tests/test_system_config_service.py`、`tests/test_system_config_api.py`、`tests/test_llm_channel_config.py`、`tests/test_market_review_runtime.py`。
 - [新功能] 新增 AlphaSift 热点题材链路：后端新增 `/api/v1/alphasift/hotspots` 与 `/api/v1/alphasift/hotspots/{topic}` API，Web 选股页新增“热点题材”区域并支持发酵路线与概念股查看。
 - [改进] 新增 AlphaSift 热点题材读取与刷新策略：默认优先读取上次成功热点缓存，手动刷新才实时拉取并覆盖缓存，实时拉取失败时尽量回退旧缓存。
+- [修复] AlphaSift 热点题材默认加载在无缓存且旧适配层缺少 `alphasift.hotspot` 模块时返回空态，不再一打开选股页就显示 AlphaSift 未就绪；手动刷新仍会提示依赖需更新。
 - [改进] 改造 `main.py --webui-only` 启动行为：若 FastAPI 监听端口已被占用，启动即 fail-fast 抛出明确错误并退出，避免 Windows 下 `WinError 10048`。
 - [文档] 补充 `docs/alphasift-integration.md`：明确 AlphaSift 锁定 commit 来源、Hotspot 契约边界、LLM/LiteLLM 兼容语义与关闭开关下回退路径。
 - [修复] 为 THS 发酵路线补充列名兜底：当 `stock_board_concept_summary_ths` 返回缺列时仅跳过该来源富化，不影响 `/api/v1/alphasift/hotspots/{topic}` 返回。

@@ -292,7 +292,7 @@ class AlphaSiftOpportunitiesApiTestCase(unittest.TestCase):
             patch("src.services.alphasift_service._get_alphasift_status_snapshot", return_value=({}, True, {})),
             patch("src.services.alphasift_service._import_alphasift_hotspot", return_value=SimpleNamespace(discover_hotspots=discover)),
         ):
-            payload = self._hotspots(config=config, provider="akshare", top=6)
+            payload = self._hotspots(config=config, provider="akshare", top=6, refresh=True)
 
         self.assertEqual(payload["enabled"], True)
         self.assertEqual(payload["provider"], "akshare")
@@ -305,6 +305,27 @@ class AlphaSiftOpportunitiesApiTestCase(unittest.TestCase):
         self.assertTrue(hasattr(provider, "stock_board_concept_name_em"))
         self.assertTrue(hasattr(provider, "stock_board_industry_name_em"))
         self.assertEqual(discover.call_args.kwargs["top"], 6)
+
+    def test_hotspots_default_cache_miss_does_not_import_hotspot_module(self) -> None:
+        config = self._config(enabled=True)
+
+        with tempfile.TemporaryDirectory() as tmpdir:
+            cache_path = Path(tmpdir) / "missing-hotspots.json"
+            import_hotspot = MagicMock(side_effect=AssertionError("default cache read must not import live hotspot module"))
+            with (
+                patch("src.services.alphasift_service.DSA_ALPHASIFT_HOTSPOT_CACHE_PATH", cache_path),
+                patch("src.services.alphasift_service._get_alphasift_status_snapshot", return_value=({}, True, {})),
+                patch("src.services.alphasift_service._import_alphasift_hotspot", import_hotspot),
+            ):
+                payload = self._hotspots(config=config, provider="akshare", top=6, refresh=False)
+
+        self.assertEqual(payload["enabled"], True)
+        self.assertEqual(payload["provider"], "akshare")
+        self.assertEqual(payload["cache_used"], False)
+        self.assertEqual(payload["hotspots"], [])
+        self.assertEqual(payload["hotspot_count"], 0)
+        self.assertEqual(payload["source_errors"], [])
+        import_hotspot.assert_not_called()
 
     def test_hotspots_uses_last_success_cache_by_default(self) -> None:
         config = self._config(enabled=True)
