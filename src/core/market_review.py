@@ -553,7 +553,7 @@ def _persist_market_review_history(
         )
 
         db = DatabaseManager.get_instance()
-        saved = db.save_analysis_history(
+        saved_history_id = db.save_analysis_history(
             result=result,
             query_id=history_query_id,
             report_type=MARKET_REVIEW_REPORT_TYPE,
@@ -561,21 +561,26 @@ def _persist_market_review_history(
             context_snapshot=context_snapshot,
             save_snapshot=True,
         )
-        saved_history_id = _resolve_saved_market_review_history_id(
-            db=db,
-            query_id=history_query_id,
-        ) if saved else None
+        valid_saved_history_id = (
+            saved_history_id
+            if (
+                isinstance(saved_history_id, int)
+                and not isinstance(saved_history_id, bool)
+                and saved_history_id > 0
+            )
+            else None
+        )
         record_history_run(
-            report_saved=bool(saved),
-            metadata_saved=bool(saved),
-            analysis_history_id=saved_history_id,
+            report_saved=bool(saved_history_id),
+            metadata_saved=bool(saved_history_id),
+            analysis_history_id=valid_saved_history_id,
         )
         _refresh_market_review_history_diagnostics(query_id=history_query_id)
-        if saved:
+        if saved_history_id:
             logger.info("大盘复盘历史记录已保存: query_id=%s", history_query_id)
         else:
             logger.warning("大盘复盘历史记录保存失败: query_id=%s", history_query_id)
-        return saved
+        return saved_history_id
     except Exception as exc:
         record_history_run(
             report_saved=False,
@@ -643,34 +648,6 @@ def _build_market_review_context_overview(
             "missing": 0,
         },
     }
-
-
-def _resolve_saved_market_review_history_id(
-    *,
-    db: object,
-    query_id: str,
-) -> Optional[int]:
-    """Resolve the real AnalysisHistory primary key after save_analysis_history returns row count."""
-    try:
-        resolver = getattr(db, "get_latest_analysis_by_query_id", None)
-        if not callable(resolver):
-            return None
-        record = resolver(
-            query_id,
-            code=MARKET_REVIEW_HISTORY_CODE,
-            report_type=MARKET_REVIEW_REPORT_TYPE,
-        )
-        record_id = getattr(record, "id", None)
-        return record_id if isinstance(record_id, int) and not isinstance(record_id, bool) else None
-    except TypeError:
-        try:
-            record = db.get_latest_analysis_by_query_id(query_id)
-            record_id = getattr(record, "id", None)
-            return record_id if isinstance(record_id, int) and not isinstance(record_id, bool) else None
-        except Exception:
-            return None
-    except Exception:
-        return None
 
 
 def _summarize_market_review(review_report: str, report_language: str) -> str:

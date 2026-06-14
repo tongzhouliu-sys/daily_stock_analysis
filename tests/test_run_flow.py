@@ -1071,10 +1071,10 @@ class RunFlowTestCase(unittest.TestCase):
         notification = next(node for node in snapshot.nodes if node.id.startswith("notification_report"))
         self.assertEqual(notification.attempts, 0)
 
-    def test_market_review_persist_records_diagnostics_without_bool_history_id(self) -> None:
+    def test_market_review_persist_records_diagnostics_with_saved_history_id(self) -> None:
         from src.core.market_review import _persist_market_review_history
 
-        fake_db = _FakeMarketReviewDb(save_result=True)
+        fake_db = _FakeMarketReviewDb(save_result=42)
         config = SimpleNamespace(report_language="zh")
         token = activate_run_diagnostic_context(
             trace_id="trace-market",

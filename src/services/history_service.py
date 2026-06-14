@@ -33,6 +33,7 @@ from src.storage import DatabaseManager
 from src.services.run_diagnostics import build_run_diagnostic_summary
 from src.market_phase_summary import extract_market_phase_summary
 from src.schemas.decision_action import build_action_fields
+from src.utils.sniper_points import find_sniper_points
 from src.utils.data_processing import (
     extract_realtime_detail_fields,
     normalize_model_used,
@@ -470,7 +471,7 @@ class HistoryService:
             for candidate in (raw_result.get("dashboard"), raw_result):
                 if not isinstance(candidate, dict):
                     continue
-                raw_points = DatabaseManager._find_sniper_in_dashboard(candidate) or raw_points
+                raw_points = find_sniper_points(candidate) or raw_points
                 if any(raw_points.get(k) is not None for k in ("ideal_buy", "secondary_buy", "stop_loss", "take_profit")):
                     break
 
