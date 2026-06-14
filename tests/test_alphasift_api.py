@@ -7,6 +7,7 @@ import os
 import json
 import sys
 import tempfile
+import time
 import unittest
 from datetime import datetime
 from pathlib import Path
@@ -541,6 +542,104 @@ class AlphaSiftOpportunitiesApiTestCase(unittest.TestCase):
         self.assertEqual(payload["hotspots"][0]["topic"], "MLCC")
         self.assertIn("akshare returned no usable board rows", payload["source_errors"])
         discover.assert_called_once()
+
+    def test_hotspots_refresh_failure_without_cache_returns_friendly_empty_payload(self) -> None:
+        config = self._config(enabled=True)
+        discover = MagicMock(side_effect=RuntimeError("RemoteDisconnected('Remote end closed connection without response')"))
+
+        with tempfile.TemporaryDirectory() as tmpdir:
+            cache_path = Path(tmpdir) / "missing-hotspots.json"
+            provider = alphasift_service.DsaEastMoneyHotspotProvider()
+            with (
+                patch("src.services.alphasift_service.DSA_ALPHASIFT_HOTSPOT_CACHE_PATH", cache_path),
+                patch("src.services.alphasift_service._get_alphasift_status_snapshot", return_value=({}, True, {})),
+                patch("src.services.alphasift_service._resolve_hotspot_provider", return_value=("akshare", provider)),
+                patch("src.services.alphasift_service._import_alphasift_hotspot", return_value=SimpleNamespace(discover_hotspots=discover)),
+            ):
+                payload = self._hotspots(config=config, provider="akshare", top=1, refresh=True)
+
+        self.assertEqual(payload["hotspots"], [])
+        self.assertEqual(payload["hotspot_count"], 0)
+        self.assertEqual(payload["source_errors"], ["eastmoney_hotspot_unavailable"])
+        self.assertEqual(payload["message"], "热点源连接中断，暂无可用缓存。")
+        self.assertNotIn("RemoteDisconnected", payload["message"])
+        discover.assert_called_once()
+
+    def test_hotspots_refresh_runtime_failure_without_cache_raises_integration_error(self) -> None:
+        config = self._config(enabled=True)
+        discover = MagicMock(side_effect=RuntimeError("adapter contract returned invalid payload"))
+
+        with tempfile.TemporaryDirectory() as tmpdir:
+            cache_path = Path(tmpdir) / "missing-hotspots.json"
+            provider = alphasift_service.DsaEastMoneyHotspotProvider()
+            with (
+                patch("src.services.alphasift_service.DSA_ALPHASIFT_HOTSPOT_CACHE_PATH", cache_path),
+                patch("src.services.alphasift_service._get_alphasift_status_snapshot", return_value=({}, True, {})),
+                patch("src.services.alphasift_service._resolve_hotspot_provider", return_value=("akshare", provider)),
+                patch("src.services.alphasift_service._import_alphasift_hotspot", return_value=SimpleNamespace(discover_hotspots=discover)),
+            ):
+                with self.assertRaises(HTTPException) as caught:
+                    self._hotspots(config=config, provider="akshare", top=1, refresh=True)
+
+        self.assertEqual(caught.exception.status_code, 424)
+        self.assertEqual(caught.exception.detail["error"], "alphasift_hotspot_refresh_failed")
+        self.assertIn("adapter contract returned invalid payload", caught.exception.detail["message"])
+        discover.assert_called_once()
+
+    def test_hotspots_refresh_non_akshare_failure_without_cache_raises_integration_error(self) -> None:
+        config = self._config(enabled=True)
+        discover = MagicMock(side_effect=RuntimeError("RemoteDisconnected('remote provider failed')"))
+
+        with tempfile.TemporaryDirectory() as tmpdir:
+            cache_path = Path(tmpdir) / "missing-hotspots.json"
+            with (
+                patch("src.services.alphasift_service.DSA_ALPHASIFT_HOTSPOT_CACHE_PATH", cache_path),
+                patch("src.services.alphasift_service._get_alphasift_status_snapshot", return_value=({}, True, {})),
+                patch("src.services.alphasift_service._resolve_hotspot_provider", return_value=("custom", "custom")),
+                patch("src.services.alphasift_service._import_alphasift_hotspot", return_value=SimpleNamespace(discover_hotspots=discover)),
+            ):
+                with self.assertRaises(HTTPException) as caught:
+                    self._hotspots(config=config, provider="custom", top=1, refresh=True)
+
+        self.assertEqual(caught.exception.status_code, 424)
+        self.assertEqual(caught.exception.detail["error"], "alphasift_hotspot_refresh_failed")
+        self.assertIn("RemoteDisconnected", caught.exception.detail["message"])
+        discover.assert_called_once()
+
+    def test_hotspot_provider_retries_transient_eastmoney_failure(self) -> None:
+        import requests
+
+        provider = alphasift_service.DsaEastMoneyHotspotProvider()
+
+        class FakeResponse:
+            def raise_for_status(self) -> None:
+                return None
+
+            def json(self) -> Dict[str, Any]:
+                return {
+                    "data": {
+                        "diff": [
+                            {"f14": "AI算力", "f3": 4.2, "f140": "工业富联", "f104": 8, "f105": 2},
+                        ]
+                    }
+                }
+
+        get_mock = MagicMock(side_effect=[requests.exceptions.ConnectionError("Connection aborted"), FakeResponse()])
+        provider._last_request_ts = time.monotonic()
+        with (
+            patch("src.services.alphasift_service.time.sleep") as sleep_mock,
+            patch.object(provider._session, "get", get_mock),
+            patch("requests.get", side_effect=AssertionError("bare requests.get should not be used for EastMoney hotspots")) as bare_get,
+        ):
+            frame = provider._fetch_board_names(source_fs="m:90 t:3 f:!50")
+
+        self.assertFalse(frame.empty)
+        self.assertEqual(frame.iloc[0]["name"], "AI算力")
+        self.assertEqual(get_mock.call_count, 2)
+        bare_get.assert_not_called()
+        sleep_values = [call.args[0] for call in sleep_mock.call_args_list if call.args]
+        self.assertIn(0.3, sleep_values)
+        self.assertTrue(any(0 < value <= provider._min_request_interval for value in sleep_values))
 
     def test_hotspots_respects_custom_alphasift_data_dir_for_cache_paths(self) -> None:
         config = self._config(enabled=True)
