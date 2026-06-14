@@ -14,6 +14,7 @@ import re
 import subprocess
 import sys
 import threading
+import time
 from contextvars import ContextVar
 from contextlib import contextmanager
 from dataclasses import asdict, is_dataclass
@@ -39,7 +40,9 @@ DSA_ENRICHMENT_MAX_CANDIDATES = 3
 DSA_PRE_RANK_CONTEXT_MAX_CANDIDATES = 3
 DSA_ALPHASIFT_LLM_CANDIDATE_MULTIPLIER = 2
 DSA_ALPHASIFT_LLM_MAX_CANDIDATES = 12
-DSA_ALPHASIFT_SNAPSHOT_SOURCE_PRIORITY = "em_datacenter,tushare,efinance,akshare_em"
+DSA_ALPHASIFT_SNAPSHOT_SOURCE_PRIORITY = "sina,efinance,akshare_em,em_datacenter"
+DSA_ALPHASIFT_SNAPSHOT_SOURCE_PRIORITY_WITH_TUSHARE = "tushare,sina,efinance,akshare_em,em_datacenter"
+DSA_ALPHASIFT_CANDIDATE_CONTEXT_PROVIDERS = "news,fund_flow,announcement,quote"
 DSA_ALPHASIFT_DATA_DIR = Path("data") / "alphasift"
 DSA_ALPHASIFT_HOTSPOT_CACHE_PATH = DSA_ALPHASIFT_DATA_DIR / "hotspots.json"
 DSA_ALPHASIFT_HOTSPOT_HISTORY_PATH = DSA_ALPHASIFT_DATA_DIR / "hotspot.history.jsonl"
@@ -1704,6 +1707,13 @@ def _alphasift_dsa_daily_history_provider() -> Iterator[None]:
             setattr(daily_module, "fetch_daily_history", original_fetch)
 
 
+def _resolve_alphasift_snapshot_source_priority(config: Config) -> str:
+    token = _env_text(getattr(config, "tushare_token", None) or os.getenv("TUSHARE_TOKEN"))
+    if token:
+        return DSA_ALPHASIFT_SNAPSHOT_SOURCE_PRIORITY_WITH_TUSHARE
+    return DSA_ALPHASIFT_SNAPSHOT_SOURCE_PRIORITY
+
+
 def _build_alphasift_runtime_env(config: Config, *, max_results: Optional[int] = None) -> Dict[str, str]:
     # Bridge runtime only: only inject resolved DSA values for this request/process scope.
     # User .env/config is never rewritten here; unset channels/models are not silently migrated.
@@ -1769,10 +1779,12 @@ def _build_alphasift_runtime_env(config: Config, *, max_results: Optional[int] =
     _put_provider_keys(env, "DEEPSEEK", deepseek_keys)
 
     put("OPENAI_BASE_URL", config.openai_base_url or _first_channel_base_url(channels, {"openai"}))
+    put_default("DAILY_SOURCE", "auto")
     put("LLM_CANDIDATE_CONTEXT_ENABLED", "false")
+    put_default("LLM_CANDIDATE_CONTEXT_PROVIDERS", DSA_ALPHASIFT_CANDIDATE_CONTEXT_PROVIDERS)
     put_default("LLM_CANDIDATE_MULTIPLIER", str(DSA_ALPHASIFT_LLM_CANDIDATE_MULTIPLIER))
     put_default("LLM_MAX_CANDIDATES", str(_resolve_dsa_llm_max_candidates(max_results)))
-    put_default("SNAPSHOT_SOURCE_PRIORITY", DSA_ALPHASIFT_SNAPSHOT_SOURCE_PRIORITY)
+    put_default("SNAPSHOT_SOURCE_PRIORITY", _resolve_alphasift_snapshot_source_priority(config))
     alphasift_data_dir = _resolve_alphasift_data_dir()
     put_default("ALPHASIFT_DATA_DIR", str(alphasift_data_dir))
     put_default("ALPHASIFT_FALLBACK_SNAPSHOT_PATH", str(alphasift_data_dir / "snapshot.last_good.json"))
@@ -1895,9 +1907,24 @@ class DsaEastMoneyHotspotProvider:
         "贵金属": "贵金属",
     }
     def __init__(self) -> None:
+        import requests
+
         self._board_changes_raw_cache: Any = None
         self._board_changes_frame_cache: Any = None
         self._constituent_cache: Dict[Tuple[str, str], Any] = {}
+        self._session = requests.Session()
+        self._request_lock = threading.RLock()
+        self._last_request_ts = 0.0
+        self._min_request_interval = 0.25
+
+    def _eastmoney_get(self, url: str, **kwargs: Any) -> Any:
+        with self._request_lock:
+            elapsed = time.monotonic() - self._last_request_ts
+            if elapsed < self._min_request_interval:
+                time.sleep(self._min_request_interval - elapsed)
+            response = self._session.get(url, **kwargs)
+            self._last_request_ts = time.monotonic()
+            return response
 
     def stock_board_concept_name_em(self) -> Any:
         frame = self._fetch_board_changes_with_fallback()
@@ -2135,12 +2162,10 @@ class DsaEastMoneyHotspotProvider:
 
     def _fetch_board_names(self, *, source_fs: str) -> Any:
         import pandas as pd
-        import requests
 
         params = dict(self._COMMON_PARAMS)
         params.update({"pz": "100", "fs": source_fs})
-        session = requests.Session()
-        response = session.get(
+        response = self._eastmoney_get(
             self._BASE_URL,
             params=params,
             timeout=self._HTTP_TIMEOUT_SECONDS,

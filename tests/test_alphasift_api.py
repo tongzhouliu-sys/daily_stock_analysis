@@ -2003,8 +2003,10 @@ class AlphaSiftOpportunitiesApiTestCase(unittest.TestCase):
                 "LLM_GEMINI_EXTRA_HEADERS": alphasift_service.os.environ.get("LLM_GEMINI_EXTRA_HEADERS"),
                 "GEMINI_API_KEY": alphasift_service.os.environ.get("GEMINI_API_KEY"),
                 "LLM_CANDIDATE_CONTEXT_ENABLED": alphasift_service.os.environ.get("LLM_CANDIDATE_CONTEXT_ENABLED"),
+                "LLM_CANDIDATE_CONTEXT_PROVIDERS": alphasift_service.os.environ.get("LLM_CANDIDATE_CONTEXT_PROVIDERS"),
                 "LLM_CANDIDATE_MULTIPLIER": alphasift_service.os.environ.get("LLM_CANDIDATE_MULTIPLIER"),
                 "LLM_MAX_CANDIDATES": alphasift_service.os.environ.get("LLM_MAX_CANDIDATES"),
+                "DAILY_SOURCE": alphasift_service.os.environ.get("DAILY_SOURCE"),
                 "SNAPSHOT_SOURCE_PRIORITY": alphasift_service.os.environ.get("SNAPSHOT_SOURCE_PRIORITY"),
                 "ALPHASIFT_DATA_DIR": alphasift_service.os.environ.get("ALPHASIFT_DATA_DIR"),
                 "ALPHASIFT_FALLBACK_SNAPSHOT_PATH": alphasift_service.os.environ.get("ALPHASIFT_FALLBACK_SNAPSHOT_PATH"),
@@ -2043,9 +2045,11 @@ class AlphaSiftOpportunitiesApiTestCase(unittest.TestCase):
         self.assertEqual(runtime_env["LLM_GEMINI_EXTRA_HEADERS"], '{"x-tenant": "dsa"}')
         self.assertEqual(runtime_env["GEMINI_API_KEY"], "dsa-gemini-key")
         self.assertEqual(runtime_env["LLM_CANDIDATE_CONTEXT_ENABLED"], "false")
+        self.assertEqual(runtime_env["LLM_CANDIDATE_CONTEXT_PROVIDERS"], "news,fund_flow,announcement,quote")
         self.assertEqual(runtime_env["LLM_CANDIDATE_MULTIPLIER"], "2")
         self.assertEqual(runtime_env["LLM_MAX_CANDIDATES"], "10")
-        self.assertEqual(runtime_env["SNAPSHOT_SOURCE_PRIORITY"], "em_datacenter,tushare,efinance,akshare_em")
+        self.assertEqual(runtime_env["DAILY_SOURCE"], "auto")
+        self.assertEqual(runtime_env["SNAPSHOT_SOURCE_PRIORITY"], "sina,efinance,akshare_em,em_datacenter")
         self.assertEqual(runtime_env["ALPHASIFT_DATA_DIR"], str(alphasift_service.DSA_ALPHASIFT_DATA_DIR))
         self.assertEqual(
             runtime_env["ALPHASIFT_FALLBACK_SNAPSHOT_PATH"],
@@ -2504,6 +2508,98 @@ class AlphaSiftOpportunitiesApiTestCase(unittest.TestCase):
             payload = self._screen(config, market="cn", strategy="dual_low", max_results=5)
 
         self.assertEqual(captured["snapshot_priority"], "tushare,em_datacenter")
+        self.assertEqual(payload["candidate_count"], 0)
+
+    def test_screen_preserves_explicit_daily_source(self) -> None:
+        config = self._config(enabled=True)
+        captured: dict[str, object] = {}
+
+        def screen_impl(_strategy: str, **_kwargs):
+            captured["daily_source"] = alphasift_service.os.environ.get("DAILY_SOURCE")
+            return {"candidates": []}
+
+        fake_module = _make_adapter_module(screen=MagicMock(side_effect=screen_impl))
+
+        with (
+            patch.dict(alphasift_service.os.environ, {"DAILY_SOURCE": "akshare"}, clear=False),
+            patch("src.services.alphasift_service._import_alphasift", return_value=fake_module),
+        ):
+            payload = self._screen(config, market="cn", strategy="dual_low", max_results=5)
+
+        self.assertEqual(captured["daily_source"], "akshare")
+        self.assertEqual(payload["candidate_count"], 0)
+
+    def test_screen_preserves_explicit_openai_base_url_without_openai_channel(self) -> None:
+        config = Config(
+            alphasift_enabled=True,
+            alphasift_install_spec=DEFAULT_ALPHASIFT_TEST_SPEC,
+            litellm_model="deepseek/deepseek-chat",
+            llm_channels=[
+                {
+                    "name": "deepseek",
+                    "protocol": "deepseek",
+                    "enabled": True,
+                    "base_url": "https://api.deepseek.example/v1",
+                    "api_keys": ["runtime-deepseek-key"],
+                    "models": ["deepseek/deepseek-chat"],
+                }
+            ],
+        )
+        captured: dict[str, object] = {}
+
+        def screen_impl(_strategy: str, **_kwargs):
+            captured["openai_base_url"] = alphasift_service.os.environ.get("OPENAI_BASE_URL")
+            captured["llm_openai_base_url"] = alphasift_service.os.environ.get("LLM_OPENAI_BASE_URL")
+            captured["openai_api_key"] = alphasift_service.os.environ.get("OPENAI_API_KEY")
+            return {"candidates": []}
+
+        fake_module = _make_adapter_module(screen=MagicMock(side_effect=screen_impl))
+
+        with (
+            patch.dict(
+                alphasift_service.os.environ,
+                {
+                    "OPENAI_BASE_URL": "https://outer-openai.example/v1",
+                    "LLM_OPENAI_BASE_URL": "https://outer-openai-channel.example/v1",
+                    "OPENAI_API_KEY": "outer-openai-key",
+                },
+                clear=False,
+            ),
+            patch("src.services.alphasift_service._import_alphasift", return_value=fake_module),
+        ):
+            payload = self._screen(config, market="cn", strategy="dual_low", max_results=5)
+
+        self.assertEqual(captured["openai_base_url"], "https://outer-openai.example/v1")
+        self.assertEqual(captured["llm_openai_base_url"], "https://outer-openai-channel.example/v1")
+        self.assertEqual(captured["openai_api_key"], "outer-openai-key")
+        self.assertEqual(payload["candidate_count"], 0)
+
+    def test_alphasift_runtime_priority_puts_tushare_before_sina_when_token_exists(self) -> None:
+        config = self._config(enabled=True)
+        config.tushare_token = "token-1"
+
+        with patch.dict(alphasift_service.os.environ, {"SNAPSHOT_SOURCE_PRIORITY": ""}, clear=False):
+            env = alphasift_service._build_alphasift_runtime_env(config)
+
+        self.assertEqual(env["SNAPSHOT_SOURCE_PRIORITY"], "tushare,sina,efinance,akshare_em,em_datacenter")
+
+    def test_screen_preserves_explicit_candidate_context_provider_override(self) -> None:
+        config = self._config(enabled=True)
+        captured: dict[str, object] = {}
+
+        def screen_impl(_strategy: str, **_kwargs):
+            captured["providers"] = alphasift_service.os.environ.get("LLM_CANDIDATE_CONTEXT_PROVIDERS")
+            return {"candidates": []}
+
+        fake_module = _make_adapter_module(screen=MagicMock(side_effect=screen_impl))
+
+        with (
+            patch.dict(alphasift_service.os.environ, {"LLM_CANDIDATE_CONTEXT_PROVIDERS": "news,announcement"}, clear=False),
+            patch("src.services.alphasift_service._import_alphasift", return_value=fake_module),
+        ):
+            payload = self._screen(config, market="cn", strategy="dual_low", max_results=5)
+
+        self.assertEqual(captured["providers"], "news,announcement")
         self.assertEqual(payload["candidate_count"], 0)
 
     def test_screen_filters_undeclared_managed_fallbacks_for_dsa_routes(self) -> None:
