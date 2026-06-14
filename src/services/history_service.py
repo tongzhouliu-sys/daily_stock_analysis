@@ -284,7 +284,13 @@ class HistoryService:
             **market_fields,
         }
 
-    def _resolve_record(self, record_id: str):
+    def _resolve_record(
+        self,
+        record_id: str,
+        *,
+        code: Optional[str] = None,
+        report_type: Optional[str] = None,
+    ):
         """
         Resolve a record_id parameter to an AnalysisHistory object.
 
@@ -304,8 +310,15 @@ class HistoryService:
                 return record
         except (ValueError, TypeError):
             pass
-        # Fall back to query_id lookup
-        return self.db.get_latest_analysis_by_query_id(record_id)
+        # Fall back to query_id lookup. Keep the old no-kwargs call for
+        # unfiltered paths so existing test doubles and integrations remain compatible.
+        if code is None and report_type is None:
+            return self.db.get_latest_analysis_by_query_id(record_id)
+        return self.db.get_latest_analysis_by_query_id(
+            record_id,
+            code=code,
+            report_type=report_type,
+        )
 
     def resolve_and_get_detail(self, record_id: str) -> Optional[Dict[str, Any]]:
         """
@@ -373,14 +386,20 @@ class HistoryService:
             stock_code=getattr(record, "code", None),
         )
 
-    def resolve_and_get_run_flow(self, record_id: str):
+    def resolve_and_get_run_flow(
+        self,
+        record_id: str,
+        *,
+        code: Optional[str] = None,
+        report_type: Optional[str] = None,
+    ):
         """
         Resolve record_id and return a sanitized run-flow snapshot.
 
         Uses the same strict JSON parsing behavior as diagnostics so malformed
         persisted payloads surface as backend errors instead of partial graphs.
         """
-        record = self._resolve_record(record_id)
+        record = self._resolve_record(record_id, code=code, report_type=report_type)
         if not record:
             return None
 

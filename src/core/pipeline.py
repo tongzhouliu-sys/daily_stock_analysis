@@ -65,6 +65,7 @@ from src.services.run_diagnostics import (
     get_current_diagnostic_context,
     record_history_run,
     record_llm_run,
+    record_llm_run_started,
     record_notification_run,
     reset_run_diagnostic_context,
     sanitize_diagnostic_text,
@@ -605,6 +606,10 @@ class StockAnalysisPipeline:
             self._emit_progress(64, f"{stock_name}：正在请求 LLM 生成报告")
             llm_started_at = time.monotonic()
             try:
+                record_llm_run_started(
+                    model=getattr(self.config, "litellm_model", None),
+                    call_type="analysis",
+                )
                 result = self.analyzer.analyze(
                     enhanced_context,
                     news_context=news_context,
@@ -1127,6 +1132,10 @@ class StockAnalysisPipeline:
                 message = f"请分析股票 {code} ({stock_name})，并生成决策仪表盘报告。"
             llm_started_at = time.monotonic()
             try:
+                record_llm_run_started(
+                    model=getattr(self.config, "agent_litellm_model", None),
+                    call_type="agent_analysis",
+                )
                 agent_result = executor.run(message, context=initial_context)
             except Exception as exc:
                 record_llm_run(

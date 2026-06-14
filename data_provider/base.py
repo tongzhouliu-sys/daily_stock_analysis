@@ -26,7 +26,7 @@ import pandas as pd
 import numpy as np
 from src.data.stock_index_loader import get_index_stock_name
 from src.data.stock_mapping import STOCK_NAME_MAP, is_meaningful_stock_name
-from src.services.run_diagnostics import record_provider_run
+from src.services.run_diagnostics import record_provider_run, record_provider_run_started
 from .fundamental_adapter import AkshareFundamentalAdapter
 from .yfinance_fundamental_adapter import YfinanceFundamentalAdapter
 
@@ -1206,6 +1206,11 @@ class DataFetcherManager:
                             f"[数据源尝试 {attempt}/{total_fetchers}] [{fetcher.name}] "
                             f"{market_label} {stock_code} {role}路由..."
                         )
+                        record_provider_run_started(
+                            data_type="daily_data",
+                            provider=fetcher.name,
+                            operation="get_daily_data",
+                        )
                         df = self._call_fetcher_method(
                             fetcher,
                             "get_daily_data",
@@ -1273,6 +1278,11 @@ class DataFetcherManager:
             fallback_to = fetchers[attempt].name if attempt < total_fetchers else None
             try:
                 logger.info(f"[数据源尝试 {attempt}/{total_fetchers}] [{fetcher.name}] 获取 {stock_code}...")
+                record_provider_run_started(
+                    data_type="daily_data",
+                    provider=fetcher.name,
+                    operation="get_daily_data",
+                )
                 df = self._call_fetcher_method(
                     fetcher,
                     "get_daily_data",
@@ -1638,26 +1648,51 @@ class DataFetcherManager:
                 if source == "efinance":
                     fetcher = self._get_fetcher_by_name("EfinanceFetcher", capability="realtime_quote")
                     if fetcher is not None and hasattr(fetcher, 'get_realtime_quote'):
+                        record_provider_run_started(
+                            data_type="realtime_quote",
+                            provider=fetcher.name,
+                            operation="get_realtime_quote",
+                        )
                         quote = self._call_fetcher_method(fetcher, 'get_realtime_quote', stock_code)
                 
                 elif source == "akshare_em":
                     fetcher = self._get_fetcher_by_name("AkshareFetcher", capability="realtime_quote")
                     if fetcher is not None and hasattr(fetcher, 'get_realtime_quote'):
+                        record_provider_run_started(
+                            data_type="realtime_quote",
+                            provider=fetcher.name,
+                            operation="get_realtime_quote",
+                        )
                         quote = self._call_fetcher_method(fetcher, 'get_realtime_quote', stock_code, source="em")
                 
                 elif source == "akshare_sina":
                     fetcher = self._get_fetcher_by_name("AkshareFetcher", capability="realtime_quote")
                     if fetcher is not None and hasattr(fetcher, 'get_realtime_quote'):
+                        record_provider_run_started(
+                            data_type="realtime_quote",
+                            provider=fetcher.name,
+                            operation="get_realtime_quote",
+                        )
                         quote = self._call_fetcher_method(fetcher, 'get_realtime_quote', stock_code, source="sina")
                 
                 elif source in ("tencent", "akshare_qq"):
                     fetcher = self._get_fetcher_by_name("AkshareFetcher", capability="realtime_quote")
                     if fetcher is not None and hasattr(fetcher, 'get_realtime_quote'):
+                        record_provider_run_started(
+                            data_type="realtime_quote",
+                            provider=fetcher.name,
+                            operation="get_realtime_quote",
+                        )
                         quote = self._call_fetcher_method(fetcher, 'get_realtime_quote', stock_code, source="tencent")
                 
                 elif source == "tushare":
                     fetcher = self._get_fetcher_by_name("TushareFetcher", capability="realtime_quote")
                     if fetcher is not None and hasattr(fetcher, 'get_realtime_quote'):
+                        record_provider_run_started(
+                            data_type="realtime_quote",
+                            provider=fetcher.name,
+                            operation="get_realtime_quote",
+                        )
                         quote = self._call_fetcher_method(fetcher, 'get_realtime_quote', raw_stock_code or stock_code)
 
                 provider_name = fetcher.name if fetcher is not None else source
@@ -1807,6 +1842,11 @@ class DataFetcherManager:
             return None
         attempt_start = time.time()
         try:
+            record_provider_run_started(
+                data_type="realtime_quote",
+                provider=fetcher.name,
+                operation="get_realtime_quote",
+            )
             q = self._call_fetcher_method(fetcher, 'get_realtime_quote', stock_code, **kw)
             if q is not None and q.has_basic_data():
                 record_provider_run(
@@ -1901,12 +1941,13 @@ class DataFetcherManager:
 
         circuit_breaker = get_chip_circuit_breaker()
 
+        candidate_fetchers = []
         # 直接遍历管理器已经按 priority 排好序的数据源列表
         for fetcher in self._get_fetchers_snapshot():
             # 只处理实现了筹码分布逻辑的数据源
             if not hasattr(fetcher, 'get_chip_distribution'):
                 continue
-            
+
             fetcher_name = fetcher.name
             # 动态生成熔断器的 key，例如 "TushareFetcher" -> "tushare_chip"
             source_key = f"{fetcher_name.replace('Fetcher', '').lower()}_chip"
@@ -1916,13 +1957,47 @@ class DataFetcherManager:
                 logger.debug(f"[熔断] {fetcher_name} 筹码接口处于熔断状态，尝试下一个")
                 continue
 
+            candidate_fetchers.append((fetcher, fetcher_name, source_key))
+
+        for index, (fetcher, fetcher_name, source_key) in enumerate(candidate_fetchers):
+            fallback_to = (
+                candidate_fetchers[index + 1][1]
+                if index + 1 < len(candidate_fetchers)
+                else None
+            )
+            attempt_start = time.time()
             try:
+                record_provider_run_started(
+                    data_type="chip",
+                    provider=fetcher_name,
+                    operation="get_chip_distribution",
+                )
                 chip = self._call_fetcher_method(fetcher, 'get_chip_distribution', stock_code)
+                latency_ms = int((time.time() - attempt_start) * 1000)
                 if _is_meaningful_chip_distribution(chip):
+                    record_provider_run(
+                        data_type="chip",
+                        provider=fetcher_name,
+                        operation="get_chip_distribution",
+                        success=True,
+                        latency_ms=latency_ms,
+                        record_count=1,
+                    )
                     circuit_breaker.record_success(source_key)
                     logger.info(f"[筹码分布] {stock_code} 成功获取 (来源: {fetcher_name})")
                     return chip
                 else:
+                    record_provider_run(
+                        data_type="chip",
+                        provider=fetcher_name,
+                        operation="get_chip_distribution",
+                        success=False,
+                        latency_ms=latency_ms,
+                        error_type="empty",
+                        error_message="empty or incomplete chip distribution",
+                        fallback_to=fallback_to,
+                        record_count=0,
+                    )
                     if chip is not None:
                         logger.warning(
                             "[筹码分布] %s 返回字段不完整或占位值，继续尝试下一个数据源",
@@ -1931,6 +2006,17 @@ class DataFetcherManager:
                     # 空结果或占位结果：释放 HALF_OPEN 探测名额，避免卡死
                     circuit_breaker.record_inconclusive(source_key)
             except Exception as e:
+                error_type, error_reason = summarize_exception(e)
+                record_provider_run(
+                    data_type="chip",
+                    provider=fetcher_name,
+                    operation="get_chip_distribution",
+                    success=False,
+                    latency_ms=int((time.time() - attempt_start) * 1000),
+                    error_type=error_type,
+                    error_message=error_reason,
+                    fallback_to=fallback_to,
+                )
                 logger.warning(f"[筹码分布] {fetcher_name} 获取 {stock_code} 失败: {e}")
                 circuit_breaker.record_failure(source_key, str(e))
                 continue
@@ -2017,16 +2103,60 @@ class DataFetcherManager:
         stock_code = normalize_stock_code(stock_code)
         if _market_tag(stock_code) != "cn":
             return []
-        for fetcher in self._fetchers:
-            if not hasattr(fetcher, "get_belong_board"):
-                continue
+        candidate_fetchers = [
+            fetcher
+            for fetcher in self._fetchers
+            if hasattr(fetcher, "get_belong_board")
+        ]
+        for index, fetcher in enumerate(candidate_fetchers):
+            fallback_to = (
+                candidate_fetchers[index + 1].name
+                if index + 1 < len(candidate_fetchers)
+                else None
+            )
+            start = time.time()
             try:
+                record_provider_run_started(
+                    data_type="belong_boards",
+                    provider=fetcher.name,
+                    operation="get_belong_board",
+                )
                 raw_data = fetcher.get_belong_board(stock_code)
                 boards = self._normalize_belong_boards(raw_data)
                 if boards:
+                    record_provider_run(
+                        data_type="belong_boards",
+                        provider=fetcher.name,
+                        operation="get_belong_board",
+                        success=True,
+                        latency_ms=int((time.time() - start) * 1000),
+                        record_count=len(boards),
+                    )
                     logger.info(f"[{fetcher.name}] 获取所属板块成功: {stock_code}, count={len(boards)}")
                     return boards
+                record_provider_run(
+                    data_type="belong_boards",
+                    provider=fetcher.name,
+                    operation="get_belong_board",
+                    success=False,
+                    latency_ms=int((time.time() - start) * 1000),
+                    error_type="empty",
+                    error_message="empty belong boards",
+                    fallback_to=fallback_to,
+                    record_count=0,
+                )
             except Exception as e:
+                error_type, error_reason = summarize_exception(e)
+                record_provider_run(
+                    data_type="belong_boards",
+                    provider=fetcher.name,
+                    operation="get_belong_board",
+                    success=False,
+                    latency_ms=int((time.time() - start) * 1000),
+                    error_type=error_type,
+                    error_message=error_reason,
+                    fallback_to=fallback_to,
+                )
                 logger.debug(f"[{fetcher.name}] 获取所属板块失败: {e}")
                 continue
         return []

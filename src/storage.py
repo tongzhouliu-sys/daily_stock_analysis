@@ -1811,7 +1811,13 @@ class DatabaseManager(metaclass=_DatabaseManagerMeta):
             )
             return list(results)
 
-    def get_latest_analysis_by_query_id(self, query_id: str) -> Optional[AnalysisHistory]:
+    def get_latest_analysis_by_query_id(
+        self,
+        query_id: str,
+        *,
+        code: Optional[str] = None,
+        report_type: Optional[str] = None,
+    ) -> Optional[AnalysisHistory]:
         """
         根据 query_id 查询最新一条分析历史记录
 
@@ -1819,14 +1825,22 @@ class DatabaseManager(metaclass=_DatabaseManagerMeta):
 
         Args:
             query_id: 分析记录关联的 query_id
+            code: 可选股票代码过滤，用于区分同一 query_id 下的 MARKET 与个股记录
+            report_type: 可选报告类型过滤
 
         Returns:
             AnalysisHistory 对象，不存在返回 None
         """
         with self.get_session() as session:
+            conditions = [AnalysisHistory.query_id == query_id]
+            if code:
+                conditions.append(AnalysisHistory.code == code)
+            if report_type:
+                conditions.append(AnalysisHistory.report_type == report_type)
+
             result = session.execute(
                 select(AnalysisHistory)
-                .where(AnalysisHistory.query_id == query_id)
+                .where(and_(*conditions))
                 .order_by(desc(AnalysisHistory.created_at))
                 .limit(1)
             ).scalars().first()

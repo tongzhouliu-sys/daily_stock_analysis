@@ -431,6 +431,13 @@ class MarketReviewLocalizationTestCase(unittest.TestCase):
                 )
 
                 self.assertEqual(saved, 1)
+                with DatabaseManager.get_instance().get_session() as session:
+                    row = session.query(AnalysisHistory).filter(
+                        AnalysisHistory.query_id == "market-task-001"
+                    ).first()
+                    self.assertIsNotNone(row)
+                    snapshot = json.loads(row.context_snapshot or "{}")
+                    self.assertIn("analysis_context_pack_overview", snapshot)
                 db = DatabaseManager.get_instance()
                 with db.get_session() as session:
                     row = session.query(AnalysisHistory).filter(
