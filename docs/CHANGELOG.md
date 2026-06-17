@@ -18,6 +18,7 @@ and this project adheres to [Semantic Versioning](https://semver.org/).
 - [改进] #1390 P3 为 `DecisionSignal` 补齐默认生命周期、同源窄 relaxed 去重、相反 active 信号自动 invalidated、terminal 状态不可 PATCH 复活和自动提取低敏 market phase hints，保持 API 响应 schema 不变。
 - [修复] #1390 收紧建议动作 legacy fallback：英文 `not to ...` 与 `avoid selling/reducing/trimming ...` 等否定/回避表达不再误判为买卖动作，Web 旧记录不再把中文金融上下文、`buy or sell`、多 guard 歧义文本或 `buyback` / `buy-back` / `buy back` / `selloff` / `sell-off` / `sell off` 等英文复合词渲染成 action badge，并在有结构化 `action` 时让回测/历史趋势等入口按界面语言显示 action 标签。
 - [改进] 完善运行时日志上下文，补充 logger name、触发来源、市场统计与实时行情预取链路状态，便于排查调度、API、Bot 和数据源降级路径。
+- [改进] #1595 P0a 新增 legacy LLM usage provider/cache telemetry 与 message HMAC 诊断字段，保持 prompt、provider 请求参数、fallback 与用量 summary API 行为不变。
 - [新功能] 新增分析任务与历史报告运行流快照 API，提供 lanes、nodes、edges、events、summary 等统一契约，并从任务队列、运行诊断和 AnalysisContextPack overview 构建脱敏数据流/信息流。
 - [新功能] Web 端为活跃任务、历史报告和大盘复盘报告补充运行流视图入口，支持查看运行摘要、拓扑节点、事件流和基础排障详情。
 - [修复] 修复历史报告运行流快照在混合时区事件时间戳下返回 500 的问题。

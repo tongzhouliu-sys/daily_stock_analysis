@@ -200,6 +200,8 @@ Default schedule: Every weekday at **18:00 (Beijing Time)** automatic execution.
 | `LITELLM_FALLBACK_MODELS` | Fallback models, comma-separated | - | No |
 | `LLM_CHANNELS` | Channel names (comma-separated), use with `LLM_{NAME}_*`, see [LLM Config Guide](LLM_CONFIG_GUIDE_EN.md) | - | No |
 | `LITELLM_CONFIG` | Advanced model routing YAML path (expert use) | - | No |
+| `LLM_USAGE_HMAC_SECRET` | Secret for LLM usage telemetry message HMACs; leave empty to use a generated local data-dir secret file | - | No |
+| `LLM_USAGE_HMAC_KEY_VERSION` | Version label for the LLM usage HMAC key; update it when rotating the secret | `local-v1` | No |
 | `ANSPIRE_API_KEYS` | [Anspire](https://open.anspire.cn/?share_code=QFBC0FYC) API key, one key for the LLM gateway and search | - | Optional |
 | `AIHUBMIX_KEY` | [AIHubMix](https://aihubmix.com/?aff=CfMq) API key, one key for multiple model families | - | Optional |
 | `GEMINI_API_KEY` | Google Gemini API Key | - | Optional |
