@@ -59,6 +59,7 @@ from src.utils.sniper_points import extract_sniper_points, parse_sniper_value
 logger = logging.getLogger(__name__)
 T = TypeVar("T")
 CURRENT_SCHEMA_VERSION = "2026-06-05-create-all-baseline"
+INTELLIGENCE_ITEM_NULL_SCOPE_VALUE = "__dsa_null_scope__"
 
 # SQLAlchemy ORM 基类
 Base = declarative_base()
@@ -208,6 +209,65 @@ class NewsIntel(Base):
 
     def __repr__(self) -> str:
         return f"<NewsIntel(code={self.code}, title={self.title[:20]}...)>"
+
+
+class IntelligenceSource(Base):
+    """可配置资讯源。"""
+
+    __tablename__ = 'intelligence_sources'
+
+    id = Column(Integer, primary_key=True, autoincrement=True)
+    name = Column(String(100), nullable=False, unique=True, index=True)
+    source_type = Column(String(32), nullable=False, default='rss', index=True)
+    url = Column(String(1000), nullable=False)
+    enabled = Column(Boolean, nullable=False, default=True, index=True)
+    scope_type = Column(String(32), nullable=False, default='market', index=True)
+    scope_value = Column(String(64), index=True)
+    market = Column(String(32), nullable=False, default='cn', index=True)
+    description = Column(Text)
+    last_status = Column(String(32))
+    last_error = Column(Text)
+    last_fetched_at = Column(DateTime, index=True)
+    created_at = Column(DateTime, default=datetime.now, index=True)
+    updated_at = Column(DateTime, default=datetime.now, onupdate=datetime.now, index=True)
+
+    __table_args__ = (
+        Index('ix_intel_source_scope', 'scope_type', 'scope_value', 'market'),
+    )
+
+
+class IntelligenceItem(Base):
+    """沉淀后的资讯 / 情报条目。"""
+
+    __tablename__ = 'intelligence_items'
+
+    id = Column(Integer, primary_key=True, autoincrement=True)
+    source_id = Column(Integer, ForeignKey('intelligence_sources.id', ondelete='SET NULL'), nullable=True, index=True)
+    source_name = Column(String(100), index=True)
+    source_type = Column(String(32), nullable=False, default='rss', index=True)
+    title = Column(String(300), nullable=False)
+    summary = Column(Text)
+    url = Column(String(1000), nullable=False, index=True)
+    source = Column(String(100))
+    published_at = Column(DateTime, index=True)
+    fetched_at = Column(DateTime, default=datetime.now, index=True)
+    scope_type = Column(String(32), nullable=False, default='market', index=True)
+    scope_value = Column(String(64), nullable=False, default=INTELLIGENCE_ITEM_NULL_SCOPE_VALUE, index=True)
+    market = Column(String(32), nullable=False, default='cn', index=True)
+    raw_payload = Column(Text)
+
+    __table_args__ = (
+        UniqueConstraint(
+            'source_id',
+            'url',
+            'scope_type',
+            'scope_value',
+            'market',
+            name='uix_intel_item_source_scope_url',
+        ),
+        Index('ix_intel_item_scope_time', 'scope_type', 'scope_value', 'market', 'published_at'),
+        Index('ix_intel_item_fetch_time', 'fetched_at'),
+    )
 
 
 class FundamentalSnapshot(Base):
@@ -1070,6 +1130,7 @@ class DatabaseManager(metaclass=_DatabaseManagerMeta):
             # 创建所有表
             Base.metadata.create_all(self._engine)
             self._ensure_llm_usage_telemetry_columns()
+            self._ensure_intelligence_item_scope_values()
             self._ensure_schema_migration_record()
 
             self._initialized = True
@@ -1163,6 +1224,31 @@ class DatabaseManager(metaclass=_DatabaseManagerMeta):
                             time.sleep(delay)
                         continue
                     raise
+
+    def _ensure_intelligence_item_scope_values(self) -> None:
+        """Backfill nullable intelligence item scopes so SQLite unique keys work."""
+        if not self._is_sqlite_engine:
+            return
+        try:
+            existing = {
+                column["name"]
+                for column in inspect(self._engine).get_columns(IntelligenceItem.__tablename__)
+            }
+        except Exception as exc:
+            logger.warning("资讯池 scope_value 回填检查失败，已跳过: %s", exc)
+            return
+        if "scope_value" not in existing:
+            return
+        try:
+            with self._engine.begin() as connection:
+                connection.exec_driver_sql(
+                    f"UPDATE {IntelligenceItem.__tablename__} "
+                    "SET scope_value = ? "
+                    "WHERE scope_value IS NULL OR scope_value = ''",
+                    (INTELLIGENCE_ITEM_NULL_SCOPE_VALUE,),
+                )
+        except Exception as exc:
+            logger.warning("资讯池 scope_value 回填失败，已跳过: %s", exc)
 
     @classmethod
     def get_instance(cls) -> 'DatabaseManager':
