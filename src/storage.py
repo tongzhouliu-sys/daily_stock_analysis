@@ -933,6 +933,62 @@ class DecisionSignalRecord(Base):
     )
 
 
+class DecisionSignalOutcomeRecord(Base):
+    """Signal-level forward outcome for Issue #1390 P5."""
+
+    __tablename__ = 'decision_signal_outcomes'
+
+    id = Column(Integer, primary_key=True, autoincrement=True)
+    signal_id = Column(Integer, nullable=False, index=True)
+    horizon = Column(String(16), nullable=False, index=True)
+    engine_version = Column(String(32), nullable=False, index=True)
+    eval_status = Column(String(24), nullable=False, default='unable', index=True)
+    outcome = Column(String(16), index=True)
+    direction_expected = Column(String(16), index=True)
+    direction_correct = Column(Boolean)
+    unable_reason = Column(String(64), index=True)
+    anchor_date = Column(Date, index=True)
+    eval_window_days = Column(Integer)
+    start_price = Column(Float)
+    end_close = Column(Float)
+    max_high = Column(Float)
+    min_low = Column(Float)
+    stock_return_pct = Column(Float)
+
+    action = Column(String(16), index=True)
+    market = Column(String(8), index=True)
+    market_phase = Column(String(24), index=True)
+    source_type = Column(String(32), index=True)
+    source_agent = Column(String(64), index=True)
+    plan_quality = Column(String(16), index=True)
+    data_quality_level = Column(String(24), index=True)
+    holding_state = Column(String(16), nullable=False, default='unknown', index=True)
+
+    created_at = Column(DateTime, default=utc_naive_now, index=True)
+    updated_at = Column(DateTime, default=utc_naive_now, onupdate=utc_naive_now, index=True)
+
+    __table_args__ = (
+        UniqueConstraint('signal_id', 'horizon', 'engine_version', name='uix_decision_signal_outcome_key'),
+        Index('ix_decision_signal_outcome_stats_action', 'engine_version', 'action', 'horizon'),
+        Index('ix_decision_signal_outcome_stats_market', 'engine_version', 'market', 'horizon'),
+    )
+
+
+class DecisionSignalFeedbackRecord(Base):
+    """Latest user feedback for a decision signal."""
+
+    __tablename__ = 'decision_signal_feedback'
+
+    id = Column(Integer, primary_key=True, autoincrement=True)
+    signal_id = Column(Integer, nullable=False, unique=True, index=True)
+    feedback_value = Column(String(16), nullable=False, index=True)
+    reason_code = Column(String(64), index=True)
+    note = Column(Text)
+    source = Column(String(16), nullable=False, default='api', index=True)
+    created_at = Column(DateTime, default=utc_naive_now, index=True)
+    updated_at = Column(DateTime, default=utc_naive_now, onupdate=utc_naive_now, index=True)
+
+
 class _DatabaseManagerMeta(type):
     """Serialize DatabaseManager construction across __new__ and __init__."""
 
@@ -1901,14 +1957,30 @@ class DatabaseManager(metaclass=_DatabaseManagerMeta):
             if not existing_ids:
                 return 0
 
-            session.execute(
-                delete(DecisionSignalRecord).where(
-                    and_(
-                        DecisionSignalRecord.source_type == "analysis",
-                        DecisionSignalRecord.source_report_id.in_(existing_ids),
+            linked_signal_ids = sorted(
+                session.execute(
+                    select(DecisionSignalRecord.id).where(
+                        and_(
+                            DecisionSignalRecord.source_type == "analysis",
+                            DecisionSignalRecord.source_report_id.in_(existing_ids),
+                        )
+                    )
+                ).scalars().all()
+            )
+            if linked_signal_ids:
+                session.execute(
+                    delete(DecisionSignalOutcomeRecord).where(
+                        DecisionSignalOutcomeRecord.signal_id.in_(linked_signal_ids)
                     )
                 )
-            )
+                session.execute(
+                    delete(DecisionSignalFeedbackRecord).where(
+                        DecisionSignalFeedbackRecord.signal_id.in_(linked_signal_ids)
+                    )
+                )
+                session.execute(
+                    delete(DecisionSignalRecord).where(DecisionSignalRecord.id.in_(linked_signal_ids))
+                )
             session.execute(
                 delete(BacktestResult).where(BacktestResult.analysis_history_id.in_(existing_ids))
             )

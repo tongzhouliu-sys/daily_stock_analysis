@@ -13,15 +13,28 @@ from api.v1.schemas.stocks import StockQuote
 
 DECISION_SIGNAL_PATHS = (
     "/api/v1/decision-signals",
+    "/api/v1/decision-signals/outcomes/run",
+    "/api/v1/decision-signals/outcomes",
+    "/api/v1/decision-signals/outcomes/stats",
     "/api/v1/decision-signals/latest/{stock_code}",
+    "/api/v1/decision-signals/{signal_id}/outcomes",
+    "/api/v1/decision-signals/{signal_id}/feedback",
     "/api/v1/decision-signals/{signal_id}",
     "/api/v1/decision-signals/{signal_id}/status",
 )
 DECISION_SIGNAL_SCHEMAS = (
     "DecisionSignalCreateRequest",
+    "DecisionSignalFeedbackItem",
+    "DecisionSignalFeedbackRequest",
     "DecisionSignalItem",
     "DecisionSignalListResponse",
     "DecisionSignalMutationResponse",
+    "DecisionSignalOutcomeItem",
+    "DecisionSignalOutcomeListResponse",
+    "DecisionSignalOutcomeRunRequest",
+    "DecisionSignalOutcomeRunResponse",
+    "DecisionSignalOutcomeStatsBucket",
+    "DecisionSignalOutcomeStatsResponse",
     "DecisionSignalStatusUpdateRequest",
 )
 

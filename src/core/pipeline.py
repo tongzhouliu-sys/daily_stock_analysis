@@ -735,6 +735,7 @@ class StockAnalysisPipeline:
                             source_report_id=saved_history_id,
                             report_type=report_type.value,
                             context_snapshot=context_snapshot,
+                            portfolio_context=portfolio_context,
                         )
                 except Exception as e:
                     record_history_run(
@@ -1318,6 +1319,7 @@ class StockAnalysisPipeline:
                             source_report_id=saved_history_id,
                             report_type=report_type.value,
                             context_snapshot=agent_context_snapshot,
+                            portfolio_context=portfolio_context,
                         )
                     latest_diagnostic_snapshot = current_diagnostic_snapshot()
                     if latest_diagnostic_snapshot is not None:
@@ -2108,6 +2110,7 @@ class StockAnalysisPipeline:
         source_report_id: int,
         report_type: str,
         context_snapshot: Dict[str, Any],
+        portfolio_context: Optional[Dict[str, Any]] = None,
     ) -> None:
         """Best-effort DecisionSignal extraction after analysis history is saved."""
 
@@ -2131,6 +2134,7 @@ class StockAnalysisPipeline:
                 trace_id=str(trace_id),
                 query_source=getattr(self, "query_source", None) or "system",
                 report_type=report_type,
+                portfolio_context=portfolio_context,
             )
         except Exception as exc:
             logger.warning(
