@@ -747,6 +747,7 @@ class LLMUsage(Base):
     call_type = Column(String(32), nullable=False, index=True)
     model = Column(String(128), nullable=False)
     stock_code = Column(String(16), nullable=True)
+    provider = Column(String(64), nullable=True)
     prompt_tokens = Column(Integer, nullable=False, default=0)
     completion_tokens = Column(Integer, nullable=False, default=0)
     total_tokens = Column(Integer, nullable=False, default=0)
@@ -792,11 +793,26 @@ class LLMUsage(Base):
     hmac_key_version = Column(String(64), nullable=True)
     hmac_domain = Column(String(32), nullable=True)
     hash_scope = Column(String(32), nullable=True)
+
+    # P0.5a internal legacy message stability audit. These diagnostics are
+    # stored locally only and are not returned by public usage APIs.
+    language = Column(String(16), nullable=True)
+    market_group = Column(String(16), nullable=True)
+    analysis_mode = Column(String(64), nullable=True)
+    legacy_prompt_mode = Column(String(32), nullable=True)
+    skill_config_hmac = Column(String(64), nullable=True)
+    transport = Column(String(64), nullable=True)
+    message_count = Column(Integer, nullable=True)
+    estimated_total_prompt_tokens = Column(Integer, nullable=True)
+    approx_common_prefix_chars = Column(Integer, nullable=True)
+    approx_common_prefix_tokens = Column(Integer, nullable=True)
+    known_dynamic_marker_positions = Column(Text, nullable=True)
     called_at = Column(DateTime, default=datetime.now, index=True)
 
 
 _LLM_USAGE_TELEMETRY_COLUMN_SQL: Dict[str, str] = {
     "provider_usage_json": "TEXT",
+    "provider": "VARCHAR(64)",
     "provider_usage_schema_name": "VARCHAR(64)",
     "provider_usage_schema_version": "VARCHAR(32)",
     "provider_usage_observed_at": "VARCHAR(32)",
@@ -826,6 +842,17 @@ _LLM_USAGE_TELEMETRY_COLUMN_SQL: Dict[str, str] = {
     "hmac_key_version": "VARCHAR(64)",
     "hmac_domain": "VARCHAR(32)",
     "hash_scope": "VARCHAR(32)",
+    "language": "VARCHAR(16)",
+    "market_group": "VARCHAR(16)",
+    "analysis_mode": "VARCHAR(64)",
+    "legacy_prompt_mode": "VARCHAR(32)",
+    "skill_config_hmac": "VARCHAR(64)",
+    "transport": "VARCHAR(64)",
+    "message_count": "INTEGER",
+    "estimated_total_prompt_tokens": "INTEGER",
+    "approx_common_prefix_chars": "INTEGER",
+    "approx_common_prefix_tokens": "INTEGER",
+    "known_dynamic_marker_positions": "TEXT",
 }
 _LLM_USAGE_INTEGER_TELEMETRY_COLUMNS = {
     column
