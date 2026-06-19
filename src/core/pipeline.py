@@ -72,6 +72,7 @@ from src.services.run_diagnostics import (
     sanitize_diagnostic_text,
 )
 from src.services.decision_signal_extractor import extract_and_persist_from_analysis_result
+from src.services.decision_signal_summary import summarize_decision_signal
 from src.enums import ReportType
 from src.stock_analyzer import StockTrendAnalyzer, TrendAnalysisResult
 from src.core.trading_calendar import (
@@ -2219,7 +2220,7 @@ class StockAnalysisPipeline:
                 or getattr(self, "trace_id", None)
                 or query_id
             )
-            extract_and_persist_from_analysis_result(
+            signal_result = extract_and_persist_from_analysis_result(
                 result,
                 context_snapshot=context_snapshot,
                 source_report_id=source_report_id,
@@ -2228,6 +2229,10 @@ class StockAnalysisPipeline:
                 report_type=report_type,
                 portfolio_context=portfolio_context,
             )
+            if isinstance(signal_result, dict):
+                summary = summarize_decision_signal(signal_result.get("item"))
+                if summary:
+                    setattr(result, "decision_signal_summary", summary)
         except Exception as exc:
             logger.warning(
                 "Decision signal extraction skipped after history save: query_id=%s stock_code=%s error=%s",
