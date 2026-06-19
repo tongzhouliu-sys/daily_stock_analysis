@@ -3789,7 +3789,9 @@
             "enum": [
               "cn",
               "hk",
-              "us"
+              "us",
+              "jp",
+              "kr"
             ],
             "title": "Market"
           },
@@ -5661,7 +5663,9 @@
                 "enum": [
                   "cn",
                   "hk",
-                  "us"
+                  "us",
+                  "jp",
+                  "kr"
                 ]
               },
               {

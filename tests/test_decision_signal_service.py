@@ -246,7 +246,7 @@ def test_service_rejects_invalid_enums_and_ranges(isolated_db) -> None:
     service = DecisionSignalService(db_manager=isolated_db)
 
     with pytest.raises(ValueError, match="market"):
-        service.create_signal(_payload(market="jp"))
+        service.create_signal(_payload(market="global"))
     with pytest.raises(ValueError, match="action"):
         service.create_signal(_payload(action="strong buy"))
     with pytest.raises(ValueError, match="confidence"):

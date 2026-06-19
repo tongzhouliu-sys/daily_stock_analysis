@@ -48,6 +48,8 @@ and this project adheres to [Semantic Versioning](https://semver.org/).
 - [文档] #1707 阐明情报池接入仅追加本地资讯消费，不改模型名/provider/base URL/默认模型策略/回退策略/保存前清理逻辑或运行时配置迁移；结构化风险提示若出现为关键词误报；回滚可采用 `revert` 本 PR 或停用/移除本地资讯接入入口与数据。
 - [文档] 本次 #1707 情报源基线仅新增 `NEWS_INTEL_*` 配置，不变更 LITELLM / ANSPIRE / Base URL / provider/model 清理与回退语义；回退策略为移除或禁用这三项情报源变量后恢复既有 LLM 配置行为。
 - [修复] #1707 默认禁用 `/api/v1/intelligence/sources/defaults` 新建源（未传 `enabled`），避免公开示例 NewsNow 实例被默认启用，同时统一 500 响应细节仅入日志、响应返回通用错误信息。
+- [新功能] #1718 新增日本/韩国 suffix-only 个股分析 MVP：手输 `.T` / `.KS` / `.KQ` 代码可走 YFinance 日线与近实时行情，补充市场识别、交易日历、Prompt 语义、Web/API 类型和能力边界文档。
+- [文档] #1718 明确本次为 JP/KR suffix 仅路由兼容改造，不涉及 provider/model/base URL/运行时配置清理与保存前清理策略，不新增或变更 ANSPIRE/模型相关运行态配置项；回退方式为 revert 本次改动或移除 jp/kr 入口恢复既有行为。
 
 - [新功能] 个股分析历史成功保存后会从最终报告 best-effort 提取 `DecisionSignal` 决策信号，复用现有信号去重、计划质量计算和脱敏契约。
 - [修复] AlphaSift 热点详情兼容 `leader_stocks` 与 `stocks` 双字段，避免旧合约或缓存只提供其中一个字段时概念股详情报缺失字段。
