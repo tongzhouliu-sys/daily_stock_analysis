@@ -10,6 +10,7 @@ and this project adheres to [Semantic Versioning](https://semver.org/).
 ## [Unreleased]
 
 - [新功能] #1390 P6 将 DecisionSignal 复用到告警、通知和组合风险：告警触发关联 latest active 信号或创建最小 alert 信号，通知追加低敏信号摘要，持仓风险聚合 active sell/reduce/alert 信号并保持 fail-open。
+- [修复] #1722 修复 #1390 P6 DecisionSignal 在组合风险快照语义和默认聚合通知展示中的遗漏。
 - [新功能] #1707 资讯源新增 `newsnow` 类型、`NEWSNOW_BASE_URL` 配置和 `/api/v1/intelligence/sources/defaults` 默认源初始化接口，内置财联社热门、雪球热门股票、华尔街见闻快讯、金十数据和格隆汇事件等财经热点源，可直接拉取落库并进入既有分析证据链路；官方 NewsNow 部署指南见 https://github.com/qqhann/newsnow，生产环境建议自建实例而非使用公开示例。
 
 - [修复] AlphaSift 热点题材刷新在 EastMoney 瞬断且无缓存时返回友好空态，并让桌面更新保留 AlphaSift 热点缓存。

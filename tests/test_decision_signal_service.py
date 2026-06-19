@@ -494,6 +494,84 @@ def test_list_signals_does_not_backfill_ambiguous_history_default_decision_type_
         assert session.query(DecisionSignalRecord).count() == 0
 
 
+def test_list_signals_explicit_stock_identities_override_holding_only_and_intersect_filters(isolated_db) -> None:
+    service = DecisionSignalService(db_manager=isolated_db)
+    service.create_signal(
+        _payload(
+            source_report_id=171501,
+            trace_id="trace-explicit-identity-000001",
+            stock_code="000001",
+            stock_name="平安银行",
+            action="sell",
+        )
+    )
+    service.create_signal(
+        _payload(
+            source_report_id=171502,
+            trace_id="trace-explicit-identity-600519",
+            stock_code="600519",
+            action="reduce",
+        )
+    )
+
+    listed = service.list_signals(
+        stock_identities=[("cn", "000001")],
+        holding_only=True,
+        status="active",
+    )
+
+    assert listed["total"] == 1
+    assert listed["items"][0]["stock_code"] == "000001"
+    assert listed["items"][0]["action"] == "sell"
+
+    mismatched_stock_filter = service.list_signals(
+        stock_code="600519",
+        market="cn",
+        stock_identities=[("cn", "000001")],
+        status="active",
+    )
+
+    assert mismatched_stock_filter == {"items": [], "total": 0, "page": 1, "page_size": 20}
+
+
+def test_list_signals_explicit_empty_stock_identities_returns_empty_without_widening(isolated_db) -> None:
+    service = DecisionSignalService(db_manager=isolated_db)
+    service.create_signal(
+        _payload(
+            source_report_id=171503,
+            trace_id="trace-empty-identity-600519",
+            stock_code="600519",
+            action="sell",
+        )
+    )
+
+    listed = service.list_signals(stock_identities=[], status="active")
+
+    assert listed == {"items": [], "total": 0, "page": 1, "page_size": 20}
+
+
+def test_list_signals_explicit_stock_identities_do_not_trigger_history_backfill(isolated_db) -> None:
+    record_id = isolated_db.save_analysis_history(
+        result=_history_result(operation_advice="卖出", decision_type="sell", action="sell", action_label="卖出"),
+        query_id="query-explicit-identity-no-backfill",
+        report_type="simple",
+        news_content="新闻摘要",
+        context_snapshot={"market_phase_summary": {"phase": "postmarket"}},
+        save_snapshot=True,
+    )
+    service = DecisionSignalService(db_manager=isolated_db)
+
+    listed = service.list_signals(
+        source_type="analysis",
+        source_report_id=record_id,
+        stock_identities=[("cn", "600519")],
+    )
+
+    assert listed == {"items": [], "total": 0, "page": 1, "page_size": 20}
+    with isolated_db.get_session() as session:
+        assert session.query(DecisionSignalRecord).count() == 0
+
+
 def test_service_plan_quality_slots_and_explicit_override(isolated_db) -> None:
     service = DecisionSignalService(db_manager=isolated_db)
 
