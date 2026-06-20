@@ -9,6 +9,7 @@ and this project adheres to [Semantic Versioning](https://semver.org/).
 
 ## [Unreleased]
 
+- [文档] README 与完整指南补充日股/韩股示例（`7203.T`、`005930.KS`）并明确 `.T/.KS/.KQ` 当前为 YFinance-only MVP，`capital_flow`、`dragon_tiger`、`boards` 等依赖 A 股专属能力会按边界降级为 `not_supported`，并补充市场支持文档跳转。
 - [修复] Refs #1718 Web 股票自动补全支持渲染日股/韩股市场建议，避免搜索 `000660` 等韩股代码时下拉列表崩溃并退化为手动输入。
 - [修复] Refs #1718 个股分析输入和历史/任务展示会先从股票池解析裸代码命中的日韩市场条目，`000660`、`005930` 等池内韩股代码可提交并显示为 `.KS` 标的，未命中时再保留默认 A 股语义。
 - [修复] Refs #1718 日韩个股分析在本地历史上下文缺失时会用 YFinance 日线兜底构造 K 线与技术指标上下文，避免报告误称日股/韩股核心行情和技术数据不可用。
