@@ -9,6 +9,11 @@ and this project adheres to [Semantic Versioning](https://semver.org/).
 
 ## [Unreleased]
 
+- [修复] Refs #1718 Web 股票自动补全支持渲染日股/韩股市场建议，避免搜索 `000660` 等韩股代码时下拉列表崩溃并退化为手动输入。
+- [修复] Refs #1718 个股分析输入和历史/任务展示会先从股票池解析裸代码命中的日韩市场条目，`000660`、`005930` 等池内韩股代码可提交并显示为 `.KS` 标的，未命中时再保留默认 A 股语义。
+- [修复] Refs #1718 日韩个股分析在本地历史上下文缺失时会用 YFinance 日线兜底构造 K 线与技术指标上下文，避免报告误称日股/韩股核心行情和技术数据不可用。
+- [修复] Refs #1718 历史列表和筛选统一裸码与日韩后缀码语义，并缓存股票池代码解析，避免旧 `005930` 与新 `005930.KS` 分裂展示或拖慢历史页查询。
+
 - [新功能] #1390 P6 将 DecisionSignal 复用到告警、通知和组合风险：告警触发关联 latest active 信号或创建最小 alert 信号，通知追加低敏信号摘要，持仓风险聚合 active sell/reduce/alert 信号并保持 fail-open。
 - [文档] #1390 P7 新增 DecisionSignal 决策信号专题文档，补齐字段/API/Web/告警通知/组合风险/后验评估、脱敏、迁移与回滚说明，并收口 Web i18n 显示边界。
 - [修复] #1722 修复 #1390 P6 DecisionSignal 在组合风险快照语义和默认聚合通知展示中的遗漏。
@@ -53,12 +58,11 @@ and this project adheres to [Semantic Versioning](https://semver.org/).
 - [文档] 本次 #1707 情报源基线仅新增 `NEWS_INTEL_*` 配置，不变更 LITELLM / ANSPIRE / Base URL / provider/model 清理与回退语义；回退策略为移除或禁用这三项情报源变量后恢复既有 LLM 配置行为。
 - [修复] #1707 默认禁用 `/api/v1/intelligence/sources/defaults` 新建源（未传 `enabled`），避免公开示例 NewsNow 实例被默认启用，同时统一 500 响应细节仅入日志、响应返回通用错误信息。
 - [新功能] #1718 新增日本/韩国 suffix-only 个股分析 MVP：手输 `.T` / `.KS` / `.KQ` 代码可走 YFinance 日线与近实时行情，补充市场识别、交易日历、Prompt 语义、Web/API 类型和能力边界文档。
-- [文档] #1718 明确本次为 JP/KR suffix 仅路由兼容改造，不涉及 provider/model/base URL/运行时配置清理与保存前清理策略，不新增或变更 ANSPIRE/模型相关运行态配置项；回退方式为 revert 本次改动或移除 jp/kr 入口恢复既有行为。
 
 - [新功能] 个股分析历史成功保存后会从最终报告 best-effort 提取 `DecisionSignal` 决策信号，复用现有信号去重、计划质量计算和脱敏契约。
 - [修复] AlphaSift 热点详情兼容 `leader_stocks` 与 `stocks` 双字段，避免旧合约或缓存只提供其中一个字段时概念股详情报缺失字段。
 - [改进] 问股页移动端策略选择改为默认收起的按钮入口，展开后仍可多选策略并在发送后自动收起，减少对对话内容的遮挡。
-- [修复] #1718 Web 股票输入与自动补全补齐日韩 Yahoo 后缀代码校验和常用日韩股票索引，手输或搜索 `7203.T`、`005930.KS`、`035720.KQ` 可正常提交分析。
+- [修复] Refs #1718 Web 股票输入与自动补全补齐日韩 Yahoo 后缀代码校验和常用日韩股票索引，手输或搜索 `7203.T`、`005930.KS`、`035720.KQ` 可正常提交分析。
 
 
 ## [3.22.0] - 2026-06-13
