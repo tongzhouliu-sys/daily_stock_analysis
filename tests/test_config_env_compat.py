@@ -53,6 +53,56 @@ class ConfigEnvCompatibilityTestCase(unittest.TestCase):
 
     @patch("src.config.setup_env")
     @patch.object(Config, "_parse_litellm_yaml", return_value=[])
+    def test_prompt_cache_config_defaults_are_safe(
+        self, _mock_parse_litellm_yaml, _mock_setup_env
+    ):
+        with patch.dict(os.environ, {"STOCK_LIST": "600519"}, clear=True):
+            config = Config._load_from_env()
+
+        self.assertTrue(config.llm_prompt_cache_telemetry_enabled)
+        self.assertFalse(config.llm_prompt_cache_hints_enabled)
+        self.assertEqual(config.llm_prompt_cache_diagnostics_level, "off")
+
+    @patch("src.config.setup_env")
+    @patch.object(Config, "_parse_litellm_yaml", return_value=[])
+    def test_prompt_cache_config_parses_env_values(
+        self, _mock_parse_litellm_yaml, _mock_setup_env
+    ):
+        with patch.dict(
+            os.environ,
+            {
+                "STOCK_LIST": "600519",
+                "LLM_PROMPT_CACHE_TELEMETRY_ENABLED": "false",
+                "LLM_PROMPT_CACHE_HINTS_ENABLED": "true",
+                "LLM_PROMPT_CACHE_DIAGNOSTICS_LEVEL": " DEBUG ",
+            },
+            clear=True,
+        ):
+            config = Config._load_from_env()
+
+        self.assertFalse(config.llm_prompt_cache_telemetry_enabled)
+        self.assertTrue(config.llm_prompt_cache_hints_enabled)
+        self.assertEqual(config.llm_prompt_cache_diagnostics_level, "debug")
+
+    @patch("src.config.setup_env")
+    @patch.object(Config, "_parse_litellm_yaml", return_value=[])
+    def test_prompt_cache_invalid_diagnostics_level_falls_back_to_off(
+        self, _mock_parse_litellm_yaml, _mock_setup_env
+    ):
+        with patch.dict(
+            os.environ,
+            {
+                "STOCK_LIST": "600519",
+                "LLM_PROMPT_CACHE_DIAGNOSTICS_LEVEL": "verbose",
+            },
+            clear=True,
+        ):
+            config = Config._load_from_env()
+
+        self.assertEqual(config.llm_prompt_cache_diagnostics_level, "off")
+
+    @patch("src.config.setup_env")
+    @patch.object(Config, "_parse_litellm_yaml", return_value=[])
     def test_load_from_env_uses_stable_fundamental_timeout_defaults(
         self, _mock_parse_litellm_yaml, _mock_setup_env
     ):
