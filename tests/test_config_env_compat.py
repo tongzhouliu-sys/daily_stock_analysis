@@ -561,6 +561,97 @@ class ConfigEnvCompatibilityTestCase(unittest.TestCase):
 
         self.assertEqual(config.stock_list, ["600519", "000001"])
 
+    @patch.object(Config, "_parse_litellm_yaml", return_value=[])
+    def test_custom_webhook_template_unescapes_compose_saved_placeholders(
+        self,
+        _mock_parse_yaml,
+    ) -> None:
+        with tempfile.TemporaryDirectory() as temp_dir:
+            env_path = Path(temp_dir) / ".env"
+            env_path.write_text(
+                'CUSTOM_WEBHOOK_BODY_TEMPLATE={"title":$$title_json,"content":$$content_json}\n',
+                encoding="utf-8",
+            )
+
+            with patch.dict(
+                os.environ,
+                {
+                    "ENV_FILE": str(env_path),
+                    "CUSTOM_WEBHOOK_BODY_TEMPLATE": '{"title":$$title_json,"content":$$content_json}',
+                },
+                clear=True,
+            ):
+                config = Config._load_from_env()
+
+        self.assertEqual(
+            config.custom_webhook_body_template,
+            '{"title":$title_json,"content":$content_json}',
+        )
+
+    @patch.object(Config, "_parse_litellm_yaml", return_value=[])
+    def test_custom_webhook_template_unescapes_compose_saved_braced_placeholders(
+        self,
+        _mock_parse_yaml,
+    ) -> None:
+        with tempfile.TemporaryDirectory() as temp_dir:
+            env_path = Path(temp_dir) / ".env"
+            env_path.write_text(
+                'CUSTOM_WEBHOOK_BODY_TEMPLATE={"content":$${content_json}}\n',
+                encoding="utf-8",
+            )
+
+            with patch.dict(
+                os.environ,
+                {"ENV_FILE": str(env_path)},
+                clear=True,
+            ):
+                config = Config._load_from_env()
+
+        self.assertEqual(
+            config.custom_webhook_body_template,
+            '{"content":${content_json}}',
+        )
+
+    @patch.object(Config, "_parse_litellm_yaml", return_value=[])
+    def test_custom_webhook_template_does_not_affect_llm_contract(
+        self,
+        _mock_parse_litellm_yaml: object,
+    ) -> None:
+        with tempfile.TemporaryDirectory() as temp_dir:
+            env_path = Path(temp_dir) / ".env"
+            env_path.write_text(
+                "\n".join(
+                    [
+                        "STOCK_LIST=600519",
+                        "LITELLM_MODEL=openai/gpt-5.5",
+                        "OPENAI_MODEL=gpt-5.5",
+                        "OPENAI_API_KEY=runtime-openai-key",
+                        "OPENAI_BASE_URL=https://openai.example/v1",
+                        "CUSTOM_WEBHOOK_BODY_TEMPLATE={\"title\":$$title_json,\"content\":$$content_json}",
+                    ]
+                )
+                + "\n",
+                encoding="utf-8",
+            )
+
+            with patch.dict(
+                os.environ,
+                {
+                    "ENV_FILE": str(env_path),
+                },
+                clear=True,
+            ):
+                config = Config._load_from_env()
+
+        self.assertEqual(config.litellm_model, "openai/gpt-5.5")
+        self.assertEqual(config.openai_model, "gpt-5.5")
+        self.assertEqual(config.openai_api_key, "runtime-openai-key")
+        self.assertEqual(config.openai_base_url, "https://openai.example/v1")
+        self.assertEqual(
+            config.custom_webhook_body_template,
+            '{"title":$title_json,"content":$content_json}',
+        )
+
     def test_refresh_stock_list_preserves_empty_required_config(self) -> None:
         with tempfile.TemporaryDirectory() as temp_dir:
             env_path = Path(temp_dir) / ".env"
