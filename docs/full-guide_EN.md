@@ -405,6 +405,8 @@ docker-compose -f ./docker/docker-compose.yml up -d            # Start both mode
 docker-compose -f ./docker/docker-compose.yml logs -f server
 ```
 
+The default Compose file sets `limits.memory: 1G` and `reservations.memory: 512M` for each service. Use `512M` only for lightweight Web/API usage, single-stock runs, and low concurrency with `MAX_WORKERS=1`; use `1G` for normal full analysis, and `2G+` when running `server + analyzer` together, multi-stock analysis, market review, news expansion, image reports, or AlphaSift. If constrained to `512M`, avoid starting both services and reduce heavy features.
+
 ### Run Official Images Directly
 
 If you do not want to keep the source tree on the target machine, you can run the published image directly:
@@ -463,6 +465,12 @@ x-common: &common
     - ../logs:/app/logs
     - ../reports:/app/reports
     - ../strategies:/app/strategies:ro
+  deploy:
+    resources:
+      limits:
+        memory: 1G
+      reservations:
+        memory: 512M
 
 services:
   # Scheduled task mode

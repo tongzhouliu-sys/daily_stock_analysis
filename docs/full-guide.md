@@ -474,6 +474,8 @@ docker-compose -f ./docker/docker-compose.yml up -d            # 同时启动两
 docker-compose -f ./docker/docker-compose.yml logs -f server
 ```
 
+默认 Compose 为每个服务设置 `limits.memory: 1G`、`reservations.memory: 512M`。`512M` 仅建议用于轻量 Web/API、单股、低并发场景，并将 `MAX_WORKERS=1`；常规完整分析建议 `1G`，同时启动 `server + analyzer`、多股票、大盘复盘、新闻扩展、图片报告或 AlphaSift 建议 `2G+`。如果只能使用 `512M`，请避免同时启动两个服务并减少重型功能。
+
 ### 直接拉官方镜像运行
 
 如果你不打算在目标机器上保留源码，可以直接拉取官方镜像：
@@ -532,6 +534,12 @@ x-common: &common
     - ../logs:/app/logs
     - ../reports:/app/reports
     - ../strategies:/app/strategies:ro
+  deploy:
+    resources:
+      limits:
+        memory: 1G
+      reservations:
+        memory: 512M
 
 services:
   # 定时任务模式
