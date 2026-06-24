@@ -38,6 +38,9 @@ and this project adheres to [Semantic Versioning](https://semver.org/).
 - [修复] `main.py --serve-only` 在低配主机上因 uvicorn 在 3.0s 启动自检窗口内才惰性 import 应用（litellm + 整个 app 树）导致超时退出、容器反复重启；改为在计时前于调用线程预先 import app 对象再交给 uvicorn，启动自检不再误杀慢启动。
 - [修复] Docker 镜像预置 efinance 缓存目录（efinance/data）属主给非 root 运行用户 dsa，修复 A 股 efinance 数据源因写 search-cache.json 触发 PermissionError 而每次抓取失败降级的问题。
 - [修复] Docker 部署中 Web 设置页保存自定义 Webhook 模板时自动转义 `$content_json` 等应用占位符，并在运行时还原，避免 Compose 重新部署将其展开为空。
+- [修复] 修复 Web 回测运行未传分析日期范围、股票代码未归一化导致后端成功返回但结果为空的问题，并为空候选和行情不足返回诊断信息。
+- [文档] 补充回测请求链路说明：`analysis_date_from/analysis_date_to` 与 `code` 的输入边界、归一化与筛选顺序，以及历史行情不足或候选集为空时回测返回成功响应，在 `message` 与 `diagnostics`（含 `empty_reason`）中提供可诊断信息，并同步更新 `docs/full-guide.md`、`docs/full-guide_EN.md` 示例。
+- [修复] 回测代码匹配新增非法市场后缀/长度兜底：如 `600519.HK`、`600519.SZ`、`SH000001` 不再静默回落到其它有效代码，并在日期筛选重跑时对齐旧回测结果的分析日期，避免历史快照日期命中但结果列表仍为空。
 
 ## [3.23.0] - 2026-06-20
 
