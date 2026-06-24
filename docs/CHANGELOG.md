@@ -24,6 +24,13 @@ and this project adheres to [Semantic Versioning](https://semver.org/).
 - [修复] Web/API runtime scheduler 接管 `--serve --schedule` 后保留 `--dry-run`、`--no-notify` 等启动参数语义。
 - [改进] Web 历史报告详情不再内嵌展示 AI 建议卡片，结构化决策信号集中在 AI 建议页查询，并保留按来源报告 ID 筛选或 URL 参数精确定位入口。
 - [改进] 新增 GenerationBackend Phase 1 抽象与 LiteLLM backend 配置，默认保持普通分析、`generate_text()` 和 Agent Chat 的 LiteLLM 行为不变。
+- [新功能] #1743 Phase 2 新增显式 opt-in 的 `codex_cli` 本地 CLI generation backend，固定安全 preset、结构化错误、fallback、stream 降级和 usage unavailable contract。
+- [改进] `GENERATION_BACKEND=codex_cli` 下普通分析与大盘复盘不再因缺少 LiteLLM API Key 被误判不可用，local CLI 失败会暴露结构化错误或按配置回退 LiteLLM。
+- [改进] `codex_cli` preset 改用 `--output-last-message` 文件读取最终响应，stdout/stderr 仅作为诊断预览，避免 Codex CLI session 元数据混入主分析 JSON。
+- [修复] `codex_cli` preset 不再把 Codex CLI 同时打印到 stdout 的最终响应重复计入输出上限，也不在 `stdout_preview` 暴露重复的最终响应内容。
+- [修复] 恢复主分析 JSON 解析的宽松 schema fallback 语义，完整报告 schema 校验失败时继续按 raw JSON 解析，避免有效字段被错误降级为文本 fallback。
+- [改进] 本地 CLI backend 对诊断 stdout/stderr 与最终响应实行执行期总量上限，并为新增 generation backend 数字配置补齐最大值校验。
+- [文档] 补充本地 CLI backend 隐私边界、非离线模型说明、Docker/CI 登录态限制，以及 `codex_cli` experimental/limited 状态。
 - [修复] unsupported `GENERATION_BACKEND` 在 `generate_text()` 与大盘复盘路径中显式报配置错误，避免被当成空响应或模板报告 fallback。
 - [改进] Web 设置页明确 `AGENT_GENERATION_BACKEND=auto` 当前使用 LiteLLM 工具调用路径，避免暗示已有动态 backend 选择。
 - [改进] Web 首页“任务已存在”重复分析提示新增手动关闭按钮与 5 秒后自动消失。
