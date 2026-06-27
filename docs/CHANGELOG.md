@@ -9,6 +9,7 @@ and this project adheres to [Semantic Versioning](https://semver.org/).
 
 ## [Unreleased]
 
+- [修复] 修复通知 Markdown 表格转换在空单元格后将后续内容错配到错误表头的问题。
 - [修复] 将 Docker 可安装的 Longbridge SDK 版本固定为 0.2.75，避免 `longbridge>=0.2.77` 从包索引消失后导致 docker-build 失败。
 
 - [改进] Web 设置页新增首次启动配置检查卡，串联基础配置状态、自选股入口、模型配置入口和一次简短试跑。
