@@ -21,11 +21,15 @@ and this project adheres to [Semantic Versioning](https://semver.org/).
 - [文档] #1815 细化 PR 提交流程约束：.github/PULL_REQUEST_TEMPLATE.md 补充 Head CI 一致性、Web 设置变更可视证据、第三方兼容性声明与回滚说明要求，避免描述与验证状态/变更影响不一致。
 - [修复] 修复通知 Markdown 表格转换在空单元格后将后续内容错配到错误表头的问题。
 - [改进] #1815 Phase 3 收敛 JP/KR Portfolio 与 Market Light 边界：JP/KR 持仓快照标记 partial/limitations，Market Light 告警继续限定 cn/hk/us，并同步 Web 选项、文档和测试。
+- [修复] 修复 Market Light 区域归一化仍拒绝 `jp`/`kr`，导致 JP/KR 大盘复盘历史快照读取回归失败的问题。
 - [文档] #1815 明确 JP/KR Phase 3 收敛时的兼容与回退路径：`MARKET_REVIEW_REGION=jp/kr` 仅扩展复盘输入；Market Light 告警、LLM provider/model/base URL、运行时配置持久化与清理语义保持不变，并补充官方来源、当前 LiteLLM 依赖窗口与回归测试证据。
 - [文档] #1815 集中补充 `MARKET_REVIEW_REGION` 保存/校验/回退矩阵、旧 `both` 三市场边界到 `cn,hk,us` 的迁移说明、JP/KR yfinance 指数依赖边界，以及 Market Light 告警与设置页 UI 变更的可替代验证证据；补充冲突解决后最终 head 的 backend gate 与 Web lint/build 验证结论。
 - [修复] 将 Docker 可安装的 Longbridge SDK 版本固定为 0.2.75，避免 `longbridge>=0.2.77` 从包索引消失后导致 docker-build 失败。
 - [修复] 持仓快照今日估值改为受限并发预取多只持仓实时价，减少持仓较多时 Web 组合页面刷新超时。
 - [修复] Web 首页重新分析完成后自动切换到同一股票最新生成的报告，避免仍停留在旧报告内容。
+- [改进] AlphaSift 默认依赖 pin 更新到 `0a7b9cd59e81718f851890535241bc105d4ddc64`，纳入上游日线数据源健康度、硬过滤诊断、策略评估摘要和 LLM 排名解析稳定性改进。
+- [改进] AlphaSift 热点默认走 DSA EastMoney 兜底 provider，选股运行期默认提高日线抓取重试并在状态接口暴露 snapshot/daily source health，便于定位不稳定数据源。
+- [文档] 新增数据源稳定性与故障处理图示，说明 Tushare、TickFlow、AkShare、Efinance、YFinance、Longbridge 等已接入源的使用场景、fallback 链路和推荐配置。
 - [新功能] #1754 在 Web AI 建议页新增单股信号时间线，并为自动生成与历史回填的 DecisionSignal 写入默认 decision_profile metadata。
 
 - [修复] 默认通知报告补充展示 `dashboard.phase_decision` 盘中决策护栏字段，避免与模板渲染路径展示不一致。
