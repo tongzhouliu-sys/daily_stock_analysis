@@ -18,6 +18,7 @@ and this project adheres to [Semantic Versioning](https://semver.org/).
 - [新功能] 报告输出语言新增韩语（`REPORT_LANGUAGE=ko`），覆盖个股报告、大盘复盘、提示词输出语言、决策护栏、通知模板标签与 Web 报告详情页文案；`ko` 复用英文结构骨架并约束模型用韩文输出，`zh`/`en` 行为保持不变 (#1614)
 
 - [修复] 修复 Web 首页个股栏在 stock-bar 摘要字段缺失或动作建议无法归类时隐藏情绪分与建议标识的问题。
+- [修复] 修复 Web 设置页定时任务“立即执行一次”后台线程未传 `stock_codes` 导致任务崩溃的问题。
 
 ## [3.24.1] - 2026-06-28
 
