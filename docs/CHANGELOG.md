@@ -18,6 +18,7 @@ and this project adheres to [Semantic Versioning](https://semver.org/).
 - [新功能] 报告输出语言新增韩语（`REPORT_LANGUAGE=ko`），覆盖个股报告、大盘复盘、提示词输出语言、决策护栏、通知模板标签与 Web 报告详情页文案；`ko` 复用英文结构骨架并约束模型用韩文输出，`zh`/`en` 行为保持不变 (#1614)
 
 - [修复] 修复 Web 首页个股栏在 stock-bar 摘要字段缺失或动作建议无法归类时隐藏情绪分与建议标识的问题。
+- [修复] 修复 macOS 桌面端从 Finder/Dock 启动时后端 PATH 看不到 Homebrew Codex CLI 的问题，并明确 Codex CLI 主分析与 Agent LiteLLM 工具调用分流诊断。
 - [测试] 台股三大法人 fetcher（TwInstitutionalFetcher）新增真实端点 live-smoke 脚本（tests/tw_institutional_live_smoke.py，非 pytest）与 @pytest.mark.network 漂移检测测试：核对 TWSE T86 / TPEx 核心字段名仍在、解析结果与原始字段一致；仅在非阻断的 network-smoke 定时任务运行，阻断门（pytest -m "not network"）不收集，离线 fixtures 无法察觉的上游字段改名/端点变动由此告警。
 - [修复] 修复 Web 设置页定时任务“立即执行一次”后台线程未传 `stock_codes` 导致任务崩溃的问题。
 
