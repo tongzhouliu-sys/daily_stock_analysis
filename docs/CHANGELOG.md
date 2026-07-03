@@ -8,6 +8,7 @@ and this project adheres to [Semantic Versioning](https://semver.org/).
 > For user-friendly release highlights, see the [GitHub Releases](https://github.com/ZhuLinsen/daily_stock_analysis/releases) page.
 
 ## [Unreleased]
+- [修复] 修复 Windows 桌面端启动后端时固定传入 `--host 127.0.0.1` 导致 `.env` 中 `WEBUI_HOST=0.0.0.0` 不生效、局域网无法访问 WebUI 的问题；桌面端仍默认使用 `127.0.0.1`，仅在显式配置 `WEBUI_HOST` 后按配置绑定，并继续使用本机地址完成健康检查和窗口加载。
 - [新功能] 钉钉群机器人通知支持 — 支持通过 `DINGTALK_WEBHOOK_URL` 和 `DINGTALK_SECRET` 配置钉钉推送，并支持长文本自动切片以适配 20KB 限制。
 
 - [文档] 记录 Agent `/chat/stream` progress event 契约，说明新增 `stage_start`、`stage_done`、`pipeline_timeout`、`pipeline_budget_skipped` 的字段语义、Web 兼容边界、验证方式、回滚方式；其中 `pipeline_budget_skipped` 表示剩余预算不足、未启动下一阶段即跳过的语义；本变更不触及 provider/model/Base URL 或运行时配置迁移语义。
