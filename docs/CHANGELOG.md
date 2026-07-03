@@ -8,6 +8,7 @@ and this project adheres to [Semantic Versioning](https://semver.org/).
 > For user-friendly release highlights, see the [GitHub Releases](https://github.com/ZhuLinsen/daily_stock_analysis/releases) page.
 
 ## [Unreleased]
+- [新功能] 钉钉群机器人通知支持 — 支持通过 `DINGTALK_WEBHOOK_URL` 和 `DINGTALK_SECRET` 配置钉钉推送，并支持长文本自动切片以适配 20KB 限制。
 
 - [文档] 记录 Agent `/chat/stream` progress event 契约，说明新增 `stage_start`、`stage_done`、`pipeline_timeout`、`pipeline_budget_skipped` 的字段语义、Web 兼容边界、验证方式、回滚方式；其中 `pipeline_budget_skipped` 表示剩余预算不足、未启动下一阶段即跳过的语义；本变更不触及 provider/model/Base URL 或运行时配置迁移语义。
 - [修复] Discord 长报告推送按 2000 字符上限分片逐段发送，遇到 429 限流会按 `retry_after`/`Retry-After` 有限重试，避免中途失败后只收到前半段报告。
