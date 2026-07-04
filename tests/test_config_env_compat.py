@@ -16,6 +16,26 @@ class ConfigEnvCompatibilityTestCase(unittest.TestCase):
 
     @patch("src.config.setup_env")
     @patch.object(Config, "_parse_litellm_yaml", return_value=[])
+    @patch.object(Config, "_parse_stock_email_groups", return_value=[])
+    def test_stock_list_accepts_common_copy_paste_separators(
+        self, _mock_parse_stock_email_groups, _mock_parse_litellm_yaml, _mock_setup_env
+    ):
+        with patch.dict(
+            os.environ,
+            {
+                "STOCK_LIST": "600519，300750  hk00700;AAPL、7203.T\n005930.KS",
+            },
+            clear=True,
+        ):
+            config = Config._load_from_env()
+
+        self.assertEqual(
+            config.stock_list,
+            ["600519", "300750", "HK00700", "AAPL", "7203.T", "005930.KS"],
+        )
+
+    @patch("src.config.setup_env")
+    @patch.object(Config, "_parse_litellm_yaml", return_value=[])
     def test_load_from_env_reads_tickflow_api_key(
         self, _mock_parse_litellm_yaml, _mock_setup_env
     ):
@@ -863,6 +883,22 @@ class ConfigEnvCompatibilityTestCase(unittest.TestCase):
         self.assertTrue(
             any(issue.severity == "error" and issue.field == "STOCK_LIST" for issue in issues)
         )
+
+    def test_refresh_stock_list_accepts_runtime_env_common_separators(self) -> None:
+        with tempfile.TemporaryDirectory() as temp_dir:
+            missing_env_path = Path(temp_dir) / "missing.env"
+            config = Config(stock_list=["600519"])
+            with patch.dict(
+                os.environ,
+                {
+                    "ENV_FILE": str(missing_env_path),
+                    "STOCK_LIST": "600519，300750 AAPL",
+                },
+                clear=True,
+            ):
+                config.refresh_stock_list()
+
+        self.assertEqual(config.stock_list, ["600519", "300750", "AAPL"])
 
     def test_parse_report_language_accepts_known_alias_without_warning(self) -> None:
         with self.assertNoLogs("src.config", level="WARNING"):

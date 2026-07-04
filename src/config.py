@@ -36,6 +36,7 @@ from src.notification_contracts import (
     is_feishu_app_bot_configured,
     is_feishu_static_configured,
 )
+from src.services.stock_list_parser import split_stock_list
 from src.llm.backend_registry import (
     AUTO_AGENT_BACKEND_ID,
     GENERATION_ONLY_BACKEND_IDS,
@@ -1253,7 +1254,7 @@ class Config:
         )
         stock_list = [
             (c or "").strip().upper()
-            for c in stock_list_str.split(',')
+            for c in split_stock_list(stock_list_str)
             if (c or "").strip()
         ]
         
@@ -2719,7 +2720,7 @@ class Config:
 
         stock_list = [
             (c or "").strip().upper()
-            for c in stock_list_str.split(',')
+            for c in split_stock_list(stock_list_str)
             if (c or "").strip()
         ]
 
