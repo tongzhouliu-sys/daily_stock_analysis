@@ -171,6 +171,7 @@ Web 入口位于 `/decision-signals`：
 - 没有 active 信号时，告警 worker 只创建最小 `source_type=alert/action=alert` 信号。
 - 告警信号的 `trace_id=alert-rule-<hash>` 只用于同源重试的 best-effort 去重，不覆盖 active 信号本体。
 - 通知只引用公开摘要字段：`action`、`horizon`、`reason`、`watch_conditions`、`risk_summary`、`source_report_id`。
+- 通知中的 `reason` 在脱敏后完整展示，避免固定字符数在句中截断；`watch_conditions` 和 `risk_summary` 仍保持紧凑摘要上限。
 - 通知不得输出 signal `metadata`、`evidence`、raw diagnostics、webhook URL、token 或 cookie。
 - `GET /api/v1/portfolio/risk` 的 `decision_signal_risk` 只统计当前持仓中的 active `sell/reduce/alert` 信号，查询失败时 fail-open。
 
