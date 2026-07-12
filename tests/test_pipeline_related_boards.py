@@ -10,7 +10,11 @@ from unittest.mock import MagicMock
 from api.v1.schemas.history import ReportDetails
 from data_provider.base import DataFetcherManager
 from src.core.pipeline import StockAnalysisPipeline
-from src.utils.data_processing import extract_board_detail_fields
+from src.services.market_hotspot_service import MarketHotspotService
+from src.utils.data_processing import (
+    extract_board_detail_fields,
+    extract_market_structure_detail_field,
+)
 
 
 class _SlowConceptRankingFetcher:
@@ -27,6 +31,20 @@ class _SlowConceptRankingFetcher:
         return (
             [{"name": f"top-{n}", "change_pct": 1.2}],
             [{"name": f"bottom-{n}", "change_pct": -0.8}],
+        )
+
+
+class _HangingConceptRankingFetcher:
+    def __init__(self, delay_seconds: float = 0.5) -> None:
+        self.calls = 0
+        self.delay_seconds = delay_seconds
+
+    def get_concept_rankings(self, n: int = 5):
+        self.calls += 1
+        time.sleep(self.delay_seconds)
+        return (
+            [{"name": f"top-{n}", "change_pct": 1.0}],
+            [{"name": f"bottom-{n}", "change_pct": -1.0}],
         )
 
 
@@ -99,6 +117,30 @@ class PipelineRelatedBoardsTestCase(unittest.TestCase):
         self.assertEqual(first["concept_boards"]["data"]["top"][0]["name"], "Robot Theme")
         self.assertEqual(second["concept_boards"]["data"]["top"][0]["name"], "Robot Theme")
 
+    def test_get_concept_rankings_for_market_no_long_block_with_hanging_fetcher(self) -> None:
+        fetcher = _HangingConceptRankingFetcher()
+        pipeline = StockAnalysisPipeline.__new__(StockAnalysisPipeline)
+        pipeline.fetcher_manager = fetcher
+        pipeline.market_hotspot_service = MarketHotspotService(
+            fetcher_manager=fetcher,
+            ranking_fetch_timeout_seconds=0.05,
+        )
+        pipeline._concept_rankings_cache = {}
+        pipeline._concept_rankings_cache_lock = threading.Lock()
+
+        start = time.perf_counter()
+        with ThreadPoolExecutor(max_workers=2) as executor:
+            first = executor.submit(pipeline._get_concept_rankings_for_market, "cn")
+            second = executor.submit(pipeline._get_concept_rankings_for_market, "cn")
+            first_result = first.result()
+            second_result = second.result()
+
+        duration = time.perf_counter() - start
+        self.assertLess(duration, 0.30)
+        self.assertEqual(first_result, ([], []))
+        self.assertEqual(second_result, ([], []))
+        self.assertGreaterEqual(fetcher.calls, 1)
+
     def test_concept_rankings_cache_is_shared_across_manager_instances(self) -> None:
         fetcher = _SlowConceptRankingFetcher()
         first_manager = DataFetcherManager.__new__(DataFetcherManager)
@@ -144,6 +186,65 @@ class PipelineRelatedBoardsTestCase(unittest.TestCase):
         self.assertEqual(extracted["concept_rankings"]["top"][0]["change_pct"], 4.2)
         self.assertEqual(extracted["concept_rankings"]["top"][0]["source"], "akshare")
         self.assertEqual(details.concept_rankings["top"][0]["name"], "机器人概念")
+
+    def test_extract_market_structure_details_from_enhanced_context(self) -> None:
+        snapshot = {
+            "enhanced_context": {
+                "market_structure_context": {
+                    "schema_version": "market-structure-v1",
+                    "status": "partial",
+                    "market": "cn",
+                    "market_theme_context": {
+                        "schema_version": "market-theme-v1",
+                        "status": "partial",
+                        "market": "cn",
+                        "active_themes": [{"name": "机器人概念"}],
+                    },
+                    "stock_market_position": {
+                        "schema_version": "stock-market-position-v1",
+                        "status": "partial",
+                        "stock_code": "300024",
+                        "market": "cn",
+                        "primary_theme": {"name": "机器人概念"},
+                    },
+                }
+            }
+        }
+
+        extracted = extract_market_structure_detail_field(snapshot)
+        details = ReportDetails(context_snapshot=snapshot)
+
+        self.assertEqual(extracted["stock_market_position"]["primary_theme"]["name"], "机器人概念")
+        self.assertEqual(details.market_structure["market_theme_context"]["active_themes"][0]["name"], "机器人概念")
+
+    def test_extract_market_structure_details_from_raw_result_fallback(self) -> None:
+        payload = {
+            "schema_version": "market-structure-v1",
+            "status": "partial",
+            "market": "cn",
+            "market_theme_context": {
+                "schema_version": "market-theme-v1",
+                "status": "partial",
+                "market": "cn",
+                "active_themes": [{"name": "机器人概念"}],
+            },
+            "stock_market_position": {
+                "schema_version": "stock-market-position-v1",
+                "status": "partial",
+                "stock_code": "300024",
+                "market": "cn",
+                "primary_theme": {"name": "机器人概念"},
+            },
+        }
+
+        extracted = extract_market_structure_detail_field(
+            None,
+            {"market_structure_context": payload},
+        )
+        details = ReportDetails(raw_result={"market_structure_context": payload})
+
+        self.assertEqual(extracted["stock_market_position"]["primary_theme"]["name"], "机器人概念")
+        self.assertEqual(details.market_structure["market_theme_context"]["active_themes"][0]["name"], "机器人概念")
 
     def test_attach_belong_boards_copies_existing_board_list(self) -> None:
         pipeline = StockAnalysisPipeline.__new__(StockAnalysisPipeline)
