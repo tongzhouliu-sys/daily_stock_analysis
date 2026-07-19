@@ -25,6 +25,7 @@ from src.agent.chat_context import build_agent_chat_context_bundle, build_visibl
 from src.agent.llm_adapter import LLMToolAdapter
 from src.agent.provider_trace import persist_provider_trace_turns
 from src.agent.runner import run_agent_loop, parse_dashboard_json
+from src.agent.runtime_facts import AgentRuntimeFacts
 from src.agent.stock_scope import StockScope, resolve_stock_scope
 from src.storage import get_db
 from src.agent.tools.registry import ToolRegistry
@@ -54,6 +55,7 @@ class AgentResult:
     model: str = ""                            # comma-separated models used (supports fallback)
     error: Optional[str] = None
     messages: List[Dict[str, Any]] = field(default_factory=list)
+    runtime_facts: Optional[AgentRuntimeFacts] = None  # internal; never serialized into dashboard
     backend: str = ""
     error_code: Optional[str] = None
     usage: Optional[Dict[str, Any]] = None
@@ -804,9 +806,8 @@ class AgentExecutor:
     ) -> AgentResult:
         """Delegate to the shared runner and adapt the result.
 
-        This preserves the exact same observable behaviour as the original
-        inline implementation while sharing the single authoritative loop
-        in :mod:`src.agent.runner`.
+        Dashboard mode exposes only the parsed canonical payload through both
+        ``dashboard`` and ``content``; free-form mode preserves the raw text.
         """
         loop_result = run_agent_loop(
             messages=messages,
@@ -824,7 +825,11 @@ class AgentExecutor:
             dashboard = parse_dashboard_json(loop_result.content)
             return AgentResult(
                 success=dashboard is not None,
-                content=loop_result.content,
+                content=(
+                    json.dumps(dashboard, ensure_ascii=False, indent=2)
+                    if dashboard is not None
+                    else loop_result.content
+                ),
                 dashboard=dashboard,
                 tool_calls_log=loop_result.tool_calls_log,
                 total_steps=loop_result.total_steps,

@@ -20,6 +20,7 @@ and this project adheres to [Semantic Versioning](https://semver.org/).
 - [修复] `codex_cli` 普通分析显式固定无人值守批准策略与只读沙箱，避免新版 Codex 在非交互任务中因请求人工批准而中断。
 
 - [新功能] Web AI 建议页支持确认保存基于历史报告快照重算的决策风格信号，以 created/existing/refreshed 区分新建、原样复用和既有记录续期或维度补齐，复用 profile-aware 去重与失效语义，将历史信号的创建时间、有效期和相反信号失效顺序锚定来源报告时间，并提供可审计 guardrail 提示与阻断。
+- [修复] 修正多 Agent 内部 runtime facts 的 timeout 归因，并让 risk application 后已覆盖的 dashboard 决策字段及一句话核心结论基于 post-risk signal 完成 finalization。
 - [新功能] 多策略观点结构化输出第一版：新增策略观点标准化、基础冲突检测与聚合 metadata，作为 #1964 的阶段性基础契约；本次不声明完成并发执行、2–4 策略完整调度 MVP 或前端完整多语言展示。
 - [修复] 多策略综合报告统一兼容历史与外部 dashboard 的宽松字段形状，避免非法计数、非字典综合块或异常策略列表导致通知、微信、Jinja 与历史 Markdown 渲染失败。
 - [修复] MiniMax 分析与渠道 JSON 测试仅提取最终文本块，避免推理内容与 JSON 拼接后导致结果无法解析和持久化。
