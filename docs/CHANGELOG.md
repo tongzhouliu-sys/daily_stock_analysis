@@ -8,6 +8,7 @@ and this project adheres to [Semantic Versioning](https://semver.org/).
 > For user-friendly release highlights, see the [GitHub Releases](https://github.com/ZhuLinsen/daily_stock_analysis/releases) page.
 
 ## [Unreleased]
+- [修复] 将 `TencentFetcher` 的默认优先级从与 Efinance 并列的 `0` 调整为最终兜底的 `5`，避免 Efinance 短暂失败时越过其余 A 股日 K 数据源，并新增 `TENCENT_PRIORITY` 环境变量用于显式覆盖（refs #2032）。
 - [修复] macOS unsigned 打包显式禁用 Electron 签名与 Hardened Runtime，在冻结后端首次执行前及 electron-builder `afterPack` 阶段清理残缺签名，并对原始应用和 DMG 挂载产物执行签名审计，避免再次发布带损坏签名的桌面包；该缓解不替代 Apple Developer 签名与公证（refs #2075）。
 - [修复] WebUI 分开展示发布版本、代码版本与构建时间，并通过构建输入摘要识别 `rsync -a` 保留时间戳造成的旧静态资源复用（fixes #2093）。
 - [chore] 暂停 PR Review 的自动触发，仅保留 `workflow_dispatch` 手动入口，避免辅助评审重复运行及评论权限失败产生误导性红灯；正式 CI 检查保持不变。
