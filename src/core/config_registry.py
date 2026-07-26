@@ -2578,7 +2578,7 @@ _FIELD_DEFINITIONS: Dict[str, Dict[str, Any]] = {
     },
     "REPORT_LANGUAGE": {
         "title": "Report Language",
-        "description": "Default output language for reports and notification templates. Supported values: zh, en.",
+        "description": "Default output language for reports, Agent Chat fallback replies, and notification templates. Supported values: zh, en, ko.",
         "category": "notification",
         "data_type": "string",
         "ui_control": "select",
@@ -2597,6 +2597,7 @@ _FIELD_DEFINITIONS: Dict[str, Dict[str, Any]] = {
         "examples": [
             "REPORT_LANGUAGE=zh",
             "REPORT_LANGUAGE=en",
+            "REPORT_LANGUAGE=ko",
         ],
         "docs": [
             {

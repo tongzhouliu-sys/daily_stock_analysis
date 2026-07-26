@@ -578,10 +578,10 @@ const settingsHelpZhCN: SettingsHelpMap = {
   },
   'settings.notification.report_output': {
     title: '报告输出设置',
-    summary: '控制通知报告的详细程度、语言和模板输出。',
-    usage: 'REPORT_TYPE 可选 simple/full/brief，REPORT_LANGUAGE 可选 zh/en。',
-    valueNotes: ['报告语言影响默认模板和通知文案，不等同于前端界面语言。'],
-    impact: ['影响通知正文长度、语言和阅读体验。'],
+    summary: '控制通知报告的详细程度、默认输出语言和模板输出。',
+    usage: 'REPORT_TYPE 可选 simple/full/brief，REPORT_LANGUAGE 可选 zh/en/ko；Agent Chat 只有在未显式传入 context.report_language 时才继承这里的默认语言。',
+    valueNotes: ['报告语言会影响默认模板、通知文案，以及未单独指定语言的 Agent Chat 回复；它不等同于前端界面语言。'],
+    impact: ['影响通知正文长度、语言和未显式指定语言的 Agent Chat 阅读体验。'],
     notes: ['full 报告可能更长，部分平台可能触发分段发送。'],
   },
   'settings.system.WEBUI_HOST': {
@@ -1773,10 +1773,10 @@ const settingsHelpEnUS: SettingsHelpMap = {
   },
   'settings.notification.report_output': {
     title: 'Report Output',
-    summary: 'Controls notification detail level, language, and template output.',
-    usage: 'REPORT_TYPE supports simple/full/brief. REPORT_LANGUAGE supports zh/en.',
-    valueNotes: ['Report language affects default report and notification text, not the Web UI language.'],
-    impact: ['Affects notification length, language, and readability.'],
+    summary: 'Controls notification detail level, default output language, and template output.',
+    usage: 'REPORT_TYPE supports simple/full/brief. REPORT_LANGUAGE supports zh/en/ko. Agent Chat inherits this default only when context.report_language is omitted.',
+    valueNotes: ['Report language affects default templates, notification text, and Agent Chat replies that do not explicitly set a language; it does not change the Web UI language.'],
+    impact: ['Affects notification length, language, and the readability of Agent Chat replies that rely on the default language.'],
     notes: ['Full reports can be long and may be split by some platforms.'],
   },
   'settings.system.WEBUI_HOST': {
