@@ -498,6 +498,25 @@ const settingsHelpZhCN: SettingsHelpMap = {
       '不要把 Stream 模式和群机器人 Webhook 混为一条配置路径。',
     ],
   },
+  'settings.notification.DINGTALK_WEBHOOK_URL': {
+    title: '钉钉群机器人 Webhook',
+    summary: '通过普通钉钉群机器人 Webhook 推送通知，与 App/Stream 模式相互独立。',
+    usage: '在钉钉群安全设置中添加自定义机器人，复制以 oapi.dingtalk.com/robot/send 开头的 Webhook 地址。',
+    valueNotes: [
+      'Webhook 包含 access_token，必须按密钥保护。',
+      '若机器人启用了关键词安全模式，通知内容必须包含配置的关键词。',
+    ],
+    impact: ['影响钉钉群机器人通知的送达目标。'],
+    notes: ['不要填写钉钉应用 App Key；App/Stream 模式使用独立配置。'],
+  },
+  'settings.notification.DINGTALK_SECRET': {
+    title: '钉钉群机器人加签密钥',
+    summary: '配置钉钉群机器人安全设置中的 SEC 开头加签密钥。',
+    usage: '仅在机器人启用“加签”安全设置时填写；未启用加签时保持为空。',
+    valueNotes: ['该值属于敏感凭证，Web 设置页仅显示遮罩。'],
+    impact: ['填写后，发送器会为每次 Webhook 请求追加 timestamp 和 sign 参数。'],
+    notes: ['关键词和加签可由钉钉同时要求，需分别满足。'],
+  },
   'settings.notification.webhooks': {
     title: '企业微信 Webhook',
     summary: '配置企业微信群机器人 Webhook，用于把分析报告推送到指定群。',
@@ -1679,6 +1698,25 @@ const settingsHelpEnUS: SettingsHelpMap = {
       'Restart the relevant bot/service process after saving; existing long connections are not rebuilt automatically.',
       'Do not treat Stream mode and group bot Webhook as the same delivery path.',
     ],
+  },
+  'settings.notification.DINGTALK_WEBHOOK_URL': {
+    title: 'DingTalk Group Bot Webhook',
+    summary: 'Delivers notifications through a regular DingTalk group bot webhook, separate from App/Stream mode.',
+    usage: 'Add a custom bot in a DingTalk group and paste the webhook URL beginning with oapi.dingtalk.com/robot/send.',
+    valueNotes: [
+      'The webhook contains an access_token and must be treated as a secret.',
+      'If keyword security is enabled, notification content must include the configured keyword.',
+    ],
+    impact: ['Controls the destination for DingTalk group bot notifications.'],
+    notes: ['Do not enter an App Key here; App/Stream mode uses separate settings.'],
+  },
+  'settings.notification.DINGTALK_SECRET': {
+    title: 'DingTalk Group Bot Signing Secret',
+    summary: 'Configures the SEC-prefixed signing secret from DingTalk group bot security settings.',
+    usage: 'Set this only when signing is enabled for the bot; otherwise leave it empty.',
+    valueNotes: ['This is a sensitive credential and is masked in Web settings.'],
+    impact: ['When set, the sender appends timestamp and sign parameters to each webhook request.'],
+    notes: ['DingTalk may require both keyword and signing security; configure each independently.'],
   },
   'settings.notification.webhooks': {
     title: 'Enterprise WeChat Webhook',
