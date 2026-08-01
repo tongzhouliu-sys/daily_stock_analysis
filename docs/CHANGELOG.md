@@ -15,6 +15,7 @@ and this project adheres to [Semantic Versioning](https://semver.org/).
 - [新功能] 新增按 skill、horizon 与 outcome engine version 独立聚合的只读 Skill Opinion 表现统计；少于 30 条 evaluated 样本时仅返回观察性计数，不输出表现指标或调整运行时权重。
 - [修复] 统一等价股票代码的本地日线候选与同源窗口解析；冲突沪深交易所代码不再降级匹配裸码，回测仅接受快照或交易日历确认的起点，并在同一起点中优先完整的单一代码窗口。
 - [新功能] 新增按 individual SkillAgent 自身 signal、版本化 engine 与本地已存同源日线窗口计算并持久化 `skill_opinion_outcomes` 的核心服务。
+- [修复] #1970 关闭认证属于高风险操作，即使携带有效 session cookie 也强制要求再次输入当前管理员密码二次确认；后端 `auth_update_settings` 的 disable 分支统一走 currentPassword 校验，命中 rate limit 时与 enable 路径一致返回 429，前端 `AuthSettingsCard` 在关闭认证时如有缺失当前密码将阻止提交并给出内联提示。
 <!-- 新条目格式：- [类型] 描述（类型取值：新功能/改进/修复/文档/测试/chore）-->
 <!-- 每条独立一行追加到本段末尾，无需分类标题，合并时冲突最小 -->
 - [修复] 本地 CLI 的 `stdout_preview` / `stderr_preview` 按环境变量、JSON、YAML/日志标量与 URL 的独立契约脱敏短凭证，避免小于 32 字符的 API key、secret 或 token 进入诊断；普通字段仅按敏感名称判定，未加引号的 YAML 敏感标量则 fail-closed 脱敏至行尾（refs #1784）。
