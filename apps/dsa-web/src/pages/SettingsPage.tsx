@@ -1584,13 +1584,6 @@ const SettingsPage: React.FC = () => {
                   <div className="flex flex-wrap items-center gap-2">
                     <Button
                       type="button"
-                      variant="settings-secondary"
-                      onClick={() => setActiveCategory('data_source')}
-                    >
-                      {t('settings.viewConfigItems')}
-                    </Button>
-                    <Button
-                      type="button"
                       variant={screeningEnabled ? 'settings-secondary' : 'settings-primary'}
                       onClick={() => void updateScreeningEnabled(!screeningEnabled)}
                       disabled={isSaving || isLoading || isUpdatingScreening}

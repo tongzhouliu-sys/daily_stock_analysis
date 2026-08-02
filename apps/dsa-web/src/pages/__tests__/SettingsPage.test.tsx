@@ -1461,6 +1461,7 @@ describe('SettingsPage', () => {
     render(<SettingsPage />);
 
     expect(screen.getByRole('button', { name: '开启选股' })).toBeInTheDocument();
+    expect(screen.queryByRole('button', { name: '查看配置项' })).not.toBeInTheDocument();
     expect(screen.queryByTestId('settings-field-SCREENING_ENABLED')).not.toBeInTheDocument();
   });
 

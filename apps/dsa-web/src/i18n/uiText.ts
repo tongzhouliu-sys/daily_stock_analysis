@@ -930,7 +930,6 @@ const zh = {
   'settings.versionInfo': '版本信息',
   'settings.versionInfoDescription': '用于确认当前 WebUI 静态资源是否已经切换到最新构建。',
   'settings.versionWebui': 'WebUI 版本',
-  'settings.viewConfigItems': '查看配置项',
   'settings.envExportNote': '导出内容仅包含当前已保存配置，不包含页面上尚未保存的本地草稿。',
   'settings.envDockerNote': 'Docker 部署中，`--env-file` / Compose `env_file` 只会在启动时注入环境变量；此处导出/导入的是后端当前活跃的 `.env` 文件。若需要让 WebUI 保存值随容器重建保留，请将 `ENV_FILE` 指向 `/app/data/runtime.env` 等可写数据卷文件，并避免启动环境里继续保留同名旧值。',
 } as const;
@@ -1867,7 +1866,6 @@ const en: Record<UiTextKey, string> = {
   'settings.versionInfo': 'Version info',
   'settings.versionInfoDescription': 'Use this to confirm the current WebUI static assets are on the latest build.',
   'settings.versionWebui': 'WebUI version',
-  'settings.viewConfigItems': 'View fields',
   'settings.envExportNote': 'Exports include only currently saved configuration, not unsaved local drafts on the page.',
   'settings.envDockerNote': 'In Docker deployments, --env-file and Compose env_file inject environment variables only at startup. This export/import area uses the backend active .env file. To keep WebUI-saved values across container rebuilds, point ENV_FILE to a writable data-volume file such as /app/data/runtime.env and avoid keeping same-name old values in the startup environment.',
 };
