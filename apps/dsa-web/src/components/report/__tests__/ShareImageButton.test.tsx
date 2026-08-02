@@ -38,13 +38,14 @@ describe('ShareImageButton', () => {
       />,
     );
 
+    expect(mockedGetShareImage).not.toHaveBeenCalled();
+    fireEvent.click(screen.getByRole('button', { name: '分享' }));
     await waitFor(() => expect(mockedGetShareImage).toHaveBeenCalledWith(17));
-    fireEvent.click(await screen.findByRole('button', { name: '分享' }));
     await waitFor(() => expect(HTMLAnchorElement.prototype.click).toHaveBeenCalled());
     expect(screen.getByRole('button', { name: '已生成' })).toBeInTheDocument();
   });
 
-  it('preloads the PNG and invokes native sharing synchronously from the click', async () => {
+  it('generates the PNG after the click and then invokes native sharing', async () => {
     const nativeShare = vi.fn().mockResolvedValue(undefined);
     let resolveImage: ((blob: Blob) => void) | undefined;
     mockedGetShareImage.mockReturnValue(new Promise((resolve) => {
@@ -61,6 +62,12 @@ describe('ShareImageButton', () => {
       />,
     );
 
+    expect(screen.getByRole('button', { name: '分享' })).toBeEnabled();
+    expect(mockedGetShareImage).not.toHaveBeenCalled();
+    expect(nativeShare).not.toHaveBeenCalled();
+
+    fireEvent.click(screen.getByRole('button', { name: '分享' }));
+    expect(mockedGetShareImage).toHaveBeenCalledWith(18);
     expect(screen.getByRole('button', { name: '生成中...' })).toBeDisabled();
     expect(nativeShare).not.toHaveBeenCalled();
 
@@ -68,7 +75,6 @@ describe('ShareImageButton', () => {
       resolveImage?.(new Blob(['png'], { type: 'image/png' }));
     });
 
-    fireEvent.click(screen.getByRole('button', { name: '分享' }));
     expect(nativeShare).toHaveBeenCalledTimes(1);
     const sharePayload = nativeShare.mock.calls[0][0];
     expect(sharePayload.title).toBe('A股市场复盘');
@@ -89,6 +95,7 @@ describe('ShareImageButton', () => {
       />,
     );
 
+    expect(mockedGetShareImage).not.toHaveBeenCalled();
     fireEvent.click(await screen.findByRole('button', { name: '分享' }));
 
     await waitFor(() => expect(nativeShare).toHaveBeenCalledTimes(1));
@@ -107,7 +114,10 @@ describe('ShareImageButton', () => {
       />,
     );
 
+    expect(mockedGetShareImage).not.toHaveBeenCalled();
+    fireEvent.click(screen.getByRole('button', { name: '分享' }));
     expect(await screen.findByRole('button', { name: '重试' })).toBeInTheDocument();
+    expect(mockedGetShareImage).toHaveBeenCalledWith(19);
   });
 
   it('does not render or prefetch share images during desktop runtime', () => {
@@ -150,11 +160,7 @@ describe('ShareImageButton', () => {
       />,
     );
 
-    await act(async () => {
-      await Promise.resolve();
-    });
-
-    expect(mockedGetShareImage).toHaveBeenCalledWith(21);
+    expect(mockedGetShareImage).not.toHaveBeenCalled();
     expect(screen.getByRole('button', { name: '分享' })).toBeInTheDocument();
 
     await act(async () => {
@@ -162,6 +168,7 @@ describe('ShareImageButton', () => {
       await Promise.resolve();
     });
 
+    expect(mockedGetShareImage).toHaveBeenCalledWith(21);
     expect(nativeShare).toHaveBeenCalledTimes(1);
     expect(screen.getByRole('button', { name: '已生成' })).toBeInTheDocument();
 
@@ -173,6 +180,9 @@ describe('ShareImageButton', () => {
       />,
     );
 
+    expect(screen.getByRole('button', { name: '分享' })).toBeEnabled();
+    expect(mockedGetShareImage).not.toHaveBeenCalledWith(22);
+    fireEvent.click(screen.getByRole('button', { name: '分享' }));
     expect(screen.getByRole('button', { name: '生成中...' })).toBeDisabled();
     await act(async () => {
       resolveSecondImage?.(new Blob(['b'], { type: 'image/png' }));
@@ -180,7 +190,7 @@ describe('ShareImageButton', () => {
     });
 
     expect(mockedGetShareImage).toHaveBeenCalledWith(22);
-    expect(screen.getByRole('button', { name: '分享' })).toBeInTheDocument();
+    expect(screen.getByRole('button', { name: '已生成' })).toBeInTheDocument();
     expect(clearTimeoutSpy).toHaveBeenCalled();
 
     await act(async () => {
