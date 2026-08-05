@@ -404,6 +404,10 @@ class TestExtractStockCodesFromImage:
         jpeg = _make_jpeg_bytes()
         with patch("src.services.image_stock_extractor.get_config", return_value=cfg), \
              patch("src.services.image_stock_extractor.litellm.completion",
-                   side_effect=RuntimeError("network down")):
+                   side_effect=RuntimeError("network down")) as mock_completion, \
+             patch("src.services.image_stock_extractor.time.sleep") as mock_sleep:
             with pytest.raises(ValueError, match="Vision API 调用失败"):
                 extract_stock_codes_from_image(jpeg, "image/jpeg")
+
+        assert mock_completion.call_count == 3
+        assert [item.args[0] for item in mock_sleep.call_args_list] == [1, 2]
