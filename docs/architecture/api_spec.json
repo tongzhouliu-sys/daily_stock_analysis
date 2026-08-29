@@ -3419,12 +3419,569 @@
                 "description": "市场结构上下文（题材主线与个股市场位置信息，JSON）"
               }
             }
+          },
+          "structured_report": {
+            "anyOf": [
+              {
+                "$ref": "#/components/schemas/ResearchArtifact"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "description": "结构化研究产物，供看板、个股研究页、监控和 Copilot 复用"
           }
         },
         "required": [
           "meta",
           "summary"
         ]
+      },
+      "ResearchArtifact": {
+        "properties": {
+          "schema_version": {
+            "type": "string",
+            "const": "research-artifact-v1",
+            "title": "Schema Version",
+            "default": "research-artifact-v1"
+          },
+          "artifact_id": {
+            "type": "string",
+            "minLength": 1,
+            "title": "Artifact Id"
+          },
+          "source_report_id": {
+            "anyOf": [
+              {
+                "type": "integer"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Source Report Id"
+          },
+          "source_query_id": {
+            "anyOf": [
+              {
+                "type": "string"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Source Query Id"
+          },
+          "created_at": {
+            "anyOf": [
+              {
+                "type": "string"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Created At"
+          },
+          "subject": {
+            "$ref": "#/components/schemas/ResearchSubject"
+          },
+          "thesis": {
+            "$ref": "#/components/schemas/ResearchThesis"
+          },
+          "evidence": {
+            "items": {
+              "$ref": "#/components/schemas/ResearchEvidenceItem"
+            },
+            "type": "array",
+            "title": "Evidence"
+          },
+          "invalidation_conditions": {
+            "items": {
+              "$ref": "#/components/schemas/ResearchInvalidationCondition"
+            },
+            "type": "array",
+            "minItems": 1,
+            "title": "Invalidation Conditions"
+          },
+          "next_actions": {
+            "items": {
+              "$ref": "#/components/schemas/ResearchNextAction"
+            },
+            "type": "array",
+            "title": "Next Actions"
+          },
+          "data_quality": {
+            "$ref": "#/components/schemas/ResearchDataQuality"
+          },
+          "metadata": {
+            "additionalProperties": true,
+            "type": "object",
+            "title": "Metadata"
+          }
+        },
+        "type": "object",
+        "required": [
+          "artifact_id",
+          "subject",
+          "thesis",
+          "invalidation_conditions"
+        ],
+        "title": "ResearchArtifact",
+        "description": "Structured report artifact for dashboard, stock detail, monitor and copilot reuse."
+      },
+      "ResearchDataQuality": {
+        "properties": {
+          "level": {
+            "type": "string",
+            "enum": [
+              "good",
+              "usable",
+              "limited",
+              "poor",
+              "unknown"
+            ],
+            "title": "Level",
+            "default": "unknown"
+          },
+          "overall_score": {
+            "anyOf": [
+              {
+                "type": "integer",
+                "maximum": 100.0,
+                "minimum": 0.0
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Overall Score"
+          },
+          "source_count": {
+            "type": "integer",
+            "minimum": 0.0,
+            "title": "Source Count",
+            "default": 0
+          },
+          "stale_count": {
+            "type": "integer",
+            "minimum": 0.0,
+            "title": "Stale Count",
+            "default": 0
+          },
+          "missing_blocks": {
+            "items": {
+              "type": "string"
+            },
+            "type": "array",
+            "title": "Missing Blocks"
+          },
+          "limitations": {
+            "items": {
+              "type": "string"
+            },
+            "type": "array",
+            "title": "Limitations"
+          }
+        },
+        "type": "object",
+        "title": "ResearchDataQuality",
+        "description": "Low-sensitive quality summary for the artifact inputs."
+      },
+      "ResearchEvidenceItem": {
+        "properties": {
+          "id": {
+            "type": "string",
+            "minLength": 1,
+            "title": "Id"
+          },
+          "source_type": {
+            "type": "string",
+            "minLength": 1,
+            "title": "Source Type"
+          },
+          "title": {
+            "type": "string",
+            "minLength": 1,
+            "title": "Title"
+          },
+          "summary": {
+            "anyOf": [
+              {
+                "type": "string"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Summary"
+          },
+          "source": {
+            "anyOf": [
+              {
+                "type": "string"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Source"
+          },
+          "freshness": {
+            "type": "string",
+            "enum": [
+              "fresh",
+              "stale",
+              "unknown"
+            ],
+            "title": "Freshness",
+            "default": "unknown"
+          },
+          "quality_level": {
+            "type": "string",
+            "enum": [
+              "good",
+              "usable",
+              "limited",
+              "poor",
+              "unknown"
+            ],
+            "title": "Quality Level",
+            "default": "unknown"
+          },
+          "as_of": {
+            "anyOf": [
+              {
+                "type": "string"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "As Of"
+          },
+          "url": {
+            "anyOf": [
+              {
+                "type": "string"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Url"
+          },
+          "metadata": {
+            "additionalProperties": true,
+            "type": "object",
+            "title": "Metadata"
+          }
+        },
+        "type": "object",
+        "required": [
+          "id",
+          "source_type",
+          "title"
+        ],
+        "title": "ResearchEvidenceItem",
+        "description": "One evidence item with freshness and quality status."
+      },
+      "ResearchInvalidationCondition": {
+        "properties": {
+          "id": {
+            "type": "string",
+            "minLength": 1,
+            "title": "Id"
+          },
+          "category": {
+            "type": "string",
+            "enum": [
+              "price",
+              "volume",
+              "evidence",
+              "market",
+              "time",
+              "data_quality",
+              "manual"
+            ],
+            "title": "Category"
+          },
+          "description": {
+            "type": "string",
+            "minLength": 1,
+            "title": "Description"
+          },
+          "trigger": {
+            "anyOf": [
+              {
+                "type": "string"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Trigger"
+          },
+          "severity": {
+            "type": "string",
+            "enum": [
+              "watch",
+              "warning",
+              "critical"
+            ],
+            "title": "Severity",
+            "default": "warning"
+          },
+          "metric": {
+            "anyOf": [
+              {
+                "type": "string"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Metric"
+          },
+          "threshold": {
+            "anyOf": [
+              {
+                "type": "string"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Threshold"
+          },
+          "due_at": {
+            "anyOf": [
+              {
+                "type": "string"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Due At"
+          },
+          "metadata": {
+            "additionalProperties": true,
+            "type": "object",
+            "title": "Metadata"
+          }
+        },
+        "type": "object",
+        "required": [
+          "id",
+          "category",
+          "description"
+        ],
+        "title": "ResearchInvalidationCondition",
+        "description": "Condition that should invalidate or force reassessment of the thesis."
+      },
+      "ResearchNextAction": {
+        "properties": {
+          "action": {
+            "type": "string",
+            "minLength": 1,
+            "title": "Action"
+          },
+          "label": {
+            "type": "string",
+            "minLength": 1,
+            "title": "Label"
+          },
+          "reason": {
+            "anyOf": [
+              {
+                "type": "string"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Reason"
+          },
+          "due_at": {
+            "anyOf": [
+              {
+                "type": "string"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Due At"
+          },
+          "metadata": {
+            "additionalProperties": true,
+            "type": "object",
+            "title": "Metadata"
+          }
+        },
+        "type": "object",
+        "required": [
+          "action",
+          "label"
+        ],
+        "title": "ResearchNextAction",
+        "description": "Suggested next action for a human or workflow."
+      },
+      "ResearchSubject": {
+        "properties": {
+          "stock_code": {
+            "type": "string",
+            "minLength": 1,
+            "title": "Stock Code"
+          },
+          "stock_name": {
+            "anyOf": [
+              {
+                "type": "string"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Stock Name"
+          },
+          "market": {
+            "anyOf": [
+              {
+                "type": "string"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Market"
+          },
+          "entity_ref": {
+            "anyOf": [
+              {
+                "type": "string"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Entity Ref",
+            "description": "Optional EntityLink ref when available"
+          }
+        },
+        "type": "object",
+        "required": [
+          "stock_code"
+        ],
+        "title": "ResearchSubject",
+        "description": "The entity being researched."
+      },
+      "ResearchThesis": {
+        "properties": {
+          "direction": {
+            "type": "string",
+            "enum": [
+              "bullish",
+              "bearish",
+              "neutral",
+              "unknown"
+            ],
+            "title": "Direction",
+            "default": "unknown"
+          },
+          "summary": {
+            "type": "string",
+            "title": "Summary",
+            "description": "Concise thesis statement",
+            "default": ""
+          },
+          "confidence": {
+            "anyOf": [
+              {
+                "type": "number",
+                "maximum": 1.0,
+                "minimum": 0.0
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Confidence"
+          },
+          "score": {
+            "anyOf": [
+              {
+                "type": "integer"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Score",
+            "description": "Original sentiment score when available"
+          },
+          "horizon": {
+            "anyOf": [
+              {
+                "type": "string"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Horizon"
+          },
+          "action": {
+            "anyOf": [
+              {
+                "type": "string",
+                "enum": [
+                  "buy",
+                  "add",
+                  "hold",
+                  "reduce",
+                  "sell",
+                  "watch",
+                  "avoid",
+                  "alert"
+                ]
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Action"
+          },
+          "action_label": {
+            "anyOf": [
+              {
+                "type": "string"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Action Label"
+          },
+          "reasons": {
+            "items": {
+              "type": "string"
+            },
+            "type": "array",
+            "title": "Reasons"
+          },
+          "risks": {
+            "items": {
+              "type": "string"
+            },
+            "type": "array",
+            "title": "Risks"
+          }
+        },
+        "type": "object",
+        "title": "ResearchThesis",
+        "description": "Structured investment thesis extracted from a report."
       },
       "StockQuote": {
         "type": "object",
