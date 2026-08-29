@@ -47,6 +47,14 @@ from api.v1.schemas.backtest import (
     BacktestResultsResponse,
     PerformanceMetrics,
 )
+from api.v1.schemas.data_capability import (
+    DataCapabilityOverviewResponse,
+    DataDatasetQuality,
+    DataPriorityView,
+    DataProviderCapability,
+    DatasetQualityStatus,
+    ProviderCapabilityStatus,
+)
 from api.v1.schemas.system_config import (
     SystemConfigFieldSchema,
     SystemConfigCategorySchema,
@@ -165,6 +173,13 @@ __all__ = [
     "BacktestResultItem",
     "BacktestResultsResponse",
     "PerformanceMetrics",
+    # data capability
+    "DataCapabilityOverviewResponse",
+    "DataDatasetQuality",
+    "DataPriorityView",
+    "DataProviderCapability",
+    "DatasetQualityStatus",
+    "ProviderCapabilityStatus",
     # system config
     "SystemConfigFieldSchema",
     "SystemConfigCategorySchema",
