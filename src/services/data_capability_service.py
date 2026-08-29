@@ -532,7 +532,7 @@ class DataCapabilityService:
                     "cn.index.csi": {"providers": ["efinance"], "warnings": []},
                     "hk": priority_map.get("hk.realtime", {}),
                     "us": priority_map.get("us.realtime", {}),
-                    "us.index": {"providers": ["yfinance", "longbridge"], "warnings": []},
+                    "us.index": {"providers": ["yfinance"], "warnings": []},
                     "jp": {"providers": ["yfinance"], "warnings": []},
                     "kr": {"providers": ["yfinance"], "warnings": []},
                     "tw": {"providers": ["yfinance"], "warnings": []},

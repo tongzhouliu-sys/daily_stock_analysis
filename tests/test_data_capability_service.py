@@ -410,6 +410,23 @@ def test_us_index_realtime_keeps_yfinance_ahead_of_healthy_longbridge() -> None:
     assert markets["us.index"]["fallback_from"] == []
 
 
+def test_us_index_realtime_does_not_fallback_to_longbridge() -> None:
+    service = DataCapabilityService(
+        config=_config(longbridge_app_key="key"),
+        fetcher_manager=_FetcherManager([
+            _Fetcher("LongbridgeFetcher", 1, available=True, is_available_for_request=True),
+            _Fetcher("YfinanceFetcher", 4, available=False),
+        ]),
+    )
+
+    markets = _dataset(service.get_overview(), "quote.realtime")["coverage"]["markets"]
+
+    assert markets["us"]["source"] == "longbridge"
+    assert markets["us.index"]["status"] == "unavailable"
+    assert markets["us.index"]["source"] is None
+    assert markets["us.index"]["fallback_from"] == ["yfinance"]
+
+
 def test_cn_realtime_rejects_tokens_without_runtime_handlers() -> None:
     service = DataCapabilityService(
         config=_config(realtime_source_priority="yfinance,efinance"),

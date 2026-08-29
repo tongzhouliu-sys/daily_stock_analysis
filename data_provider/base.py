@@ -2535,9 +2535,14 @@ class DataFetcherManager:
             fallback_from = primary_token if primary_quote is None else None
             if primary_quote is not None:
                 logger.info(f"[实时行情] {market_label} {stock_code} 成功获取 (来源: {primary_src})")
-            primary_quote = self._supplement_quote(
-                stock_code, primary_quote, secondary_src, **secondary_kw,
-            )
+            # US index quotes are YFinance-only. Longbridge accepts index-like
+            # symbols syntactically, but does not provide the index quote
+            # contract used by this manager, so it must not be used as either
+            # fallback or field supplement here.
+            if not is_us_index:
+                primary_quote = self._supplement_quote(
+                    stock_code, primary_quote, secondary_src, **secondary_kw,
+                )
             if is_us and not is_us_index and primary_quote is not None:
                 for extra_src in ["FinnhubFetcher", "AlphaVantageFetcher"]:
                     primary_quote = self._supplement_quote(
