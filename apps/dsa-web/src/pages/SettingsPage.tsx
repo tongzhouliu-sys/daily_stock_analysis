@@ -78,6 +78,7 @@ const GENERATION_BACKEND_STATUS_KEYS = new Set([
   'DEEPSEEK_API_KEY',
   'DEEPSEEK_API_KEYS',
   'AIHUBMIX_KEY',
+  'MODELFLARE_KEY',
   'ANSPIRE_LLM_ENABLED',
   'ANSPIRE_LLM_BASE_URL',
   'ANSPIRE_LLM_MODEL',
@@ -854,7 +855,8 @@ const SettingsPage: React.FC = () => {
   const screeningEnabled = String(screeningItem?.value ?? '').trim().toLowerCase() === 'true';
   const shouldShowFirstRunSetup = activeCategory === 'base';
   const shouldShowScreeningSettings = activeCategory === 'base' && Boolean(screeningItem);
-  const hasConfiguredChannels = Boolean((rawActiveItemMap.get('LLM_CHANNELS') || '').trim());
+  const hasConfiguredChannels = Boolean((rawActiveItemMap.get('LLM_CHANNELS') || '').trim()
+    || (rawActiveItemMap.get('MODELFLARE_KEY') || '').trim());
   const hasLitellmConfig = Boolean((rawActiveItemMap.get('LITELLM_CONFIG') || '').trim());
   const hasRuntimeSchedulerMismatch =
     schedulerRuntimeEnabled !== null
