@@ -9,9 +9,6 @@ and this project adheres to [Semantic Versioning](https://semver.org/).
 
 ## [Unreleased]
 
-- [新功能] 新增 Opper（OpenAI Compatible 聚合网关）渠道预设：Web 模板、`.env.example` 示例、`00-daily-analysis.yml` 的 `LLM_OPPER_*` 映射与服务商文档同步补齐；Web「获取模型」在 `opper.ai` Base URL 下返回的 provider/model ID 保存为 `openai/<provider>/<model>` 网关路由，避免被误判为 LiteLLM 直连 provider；手动填写的值与已有渠道配置保持原有规则不变。
-- [新功能] 新增 API Route 渠道预设，复用 OpenAI-compatible 模型发现和连接测试，补齐每日分析 workflow 的渠道环境变量映射及中英文配置示例。
-
 <!-- 新条目格式：- [类型] 描述（类型取值：新功能/改进/修复/文档/测试/chore）-->
 <!-- 每条独立一行追加到本段末尾，无需分类标题，合并时冲突最小 -->
 
