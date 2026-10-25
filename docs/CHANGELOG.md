@@ -9,6 +9,8 @@ and this project adheres to [Semantic Versioning](https://semver.org/).
 
 ## [Unreleased]
 
+- [改进] 移除实验性 Codex App Server 问股后端及专属探针、取消与启动链；旧配置明确提示退役并可主动修正，保留默认 LiteLLM、会话接受事务及独立 Codex CLI 报告。
+- [修复] Agent 状态面板在缺少可用主模型时显示中英文配置指引，保留技术错误码；配置指南明确区分已移除后端与历史 Gate 记录。
 - [chore] Default new MiniMax channels to MiniMax-M3.1-Flash and MiniMax-M3, filter older text recommendations while retaining saved/custom models, and refresh fallback pricing.
 
 <!-- 新条目格式：- [类型] 描述（类型取值：新功能/改进/修复/文档/测试/chore）-->
