@@ -29,6 +29,30 @@ import os
 from pathlib import Path
 from typing import Any, Callable, Dict, List, Optional, Tuple, Union
 
+# Dispatch isolated scanner children before loading DSA's private .env or services.
+# Bundled desktop children re-enter this file rather than invoking `python -m`.
+import sys
+
+if __name__ == "__main__" and len(sys.argv) > 1 and sys.argv[1].startswith("--signal-scanner-"):
+    multiprocessing.freeze_support()
+    if len(sys.argv) > 1 and sys.argv[1] == "--signal-scanner-worker":
+        from src.services.signal_scanner.host_worker import main as scanner_worker_main
+
+        sys.exit(scanner_worker_main(sys.argv[2:]))
+    if len(sys.argv) > 2 and sys.argv[1] == "--signal-scanner-entry":
+        import runpy
+
+        module = sys.argv[2]
+        if module not in {
+            "src.services.signal_scanner.worker.rule_validation",
+            "src.services.signal_scanner.cli",
+            "src.services.signal_scanner.research.cli",
+        }:
+            raise SystemExit("Unsupported scanner worker entry")
+        sys.argv = [sys.argv[0], *sys.argv[3:]]
+        runpy.run_module(module, run_name="__main__")
+        raise SystemExit(0)
+
 from dotenv import dotenv_values
 from src.config import setup_env
 

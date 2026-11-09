@@ -8,6 +8,7 @@ import { useDesktopUpdate } from '../../hooks/useDesktopUpdate';
 import { cn } from '../../utils/cn';
 import { Button } from '../common/Button';
 import { StatusDot } from '../common/StatusDot';
+import { Tooltip } from '../common/Tooltip';
 
 export const DesktopUpdateIndicator: React.FC = () => {
   const { t } = useUiLanguage();
@@ -69,39 +70,40 @@ export const DesktopUpdateIndicator: React.FC = () => {
 
   return (
     <div className="relative" ref={containerRef}>
-      <button
-        type="button"
-        className={cn(
-          'relative inline-flex h-10 w-10 items-center justify-center rounded-xl border border-border/70 bg-card/85 text-secondary-text shadow-soft-card backdrop-blur-md transition-colors hover:bg-hover hover:text-foreground',
-          open ? 'border-border text-foreground' : '',
-        )}
-        aria-label={t('layout.desktopUpdateEntry')}
-        aria-expanded={open}
-        aria-haspopup="dialog"
-        title={tooltip}
-        onClick={() => setOpen((current) => !current)}
-      >
-        {busy ? (
-          <RefreshCw className="h-4 w-4 animate-spin" aria-hidden="true" />
-        ) : (
-          <Download className="h-4 w-4" aria-hidden="true" />
-        )}
-        {badgeTone ? (
-          <StatusDot
-            tone={badgeTone}
-            pulse={status === 'update-downloaded' || status === 'update-available'}
-            className="absolute right-1.5 top-1.5 h-2 w-2"
-            data-testid="desktop-update-badge"
-            aria-label={notice?.title || t('layout.desktopUpdateEntry')}
-          />
-        ) : null}
-      </button>
+      <Tooltip content={tooltip} contentClassName={open ? 'hidden' : undefined} side="bottom">
+        <button
+          type="button"
+          className={cn(
+            'relative inline-flex h-10 w-10 items-center justify-center rounded-xl border border-border bg-card text-secondary-text transition-colors hover:bg-hover hover:text-foreground',
+            open ? 'border-border text-foreground' : '',
+          )}
+          aria-label={t('layout.desktopUpdateEntry')}
+          aria-expanded={open}
+          aria-haspopup="dialog"
+          onClick={() => setOpen((current) => !current)}
+        >
+          {busy ? (
+            <RefreshCw className="h-4 w-4 animate-spin" aria-hidden="true" />
+          ) : (
+            <Download className="h-4 w-4" aria-hidden="true" />
+          )}
+          {badgeTone ? (
+            <StatusDot
+              tone={badgeTone}
+              pulse={status === 'update-downloaded' || status === 'update-available'}
+              className="absolute right-1.5 top-1.5 h-2 w-2"
+              data-testid="desktop-update-badge"
+              aria-label={notice?.title || t('layout.desktopUpdateEntry')}
+            />
+          ) : null}
+        </button>
+      </Tooltip>
 
       {open ? (
         <div
           role="dialog"
           aria-label={t('layout.desktopUpdateEntry')}
-          className="absolute right-0 z-50 mt-2 w-[min(20rem,calc(100vw-1.5rem))] rounded-2xl border border-border/70 bg-card/95 p-3 shadow-soft-card backdrop-blur-xl"
+          className="absolute right-0 z-50 mt-2 w-[min(20rem,calc(100vw-1.5rem))] rounded-xs border border-border bg-popover p-3 shadow-lg"
         >
           <div className="space-y-1">
             <p className="text-sm font-semibold text-foreground">

@@ -16,7 +16,6 @@ import {
   Pickaxe,
   Plane,
   Play,
-  PlusCircle,
   RefreshCw,
   Search,
   Shield,
@@ -1380,7 +1379,7 @@ const StockScreeningPage: React.FC = () => {
         window.clearTimeout(timer);
       }
     };
-  }, [activeTaskId, applyScreenResult, restoreResolved]);
+  }, [activeTaskId, applyScreenResult, restoreResolved, market, strategy, maxResults, screenMeta?.runId]);
 
   const handleEnable = async () => {
     setEnabling(true);
@@ -1458,13 +1457,8 @@ const StockScreeningPage: React.FC = () => {
 
   return (
     <AppPage className="max-w-6xl space-y-6 pb-12 pt-6">
-      <div className="flex flex-col gap-4 sm:flex-row sm:items-start sm:justify-between">
-        <div className="flex items-center gap-3">
-          <span className="grid h-7 w-7 place-items-center rounded-full border-2 border-cyan text-cyan shadow-[0_0_24px_hsl(var(--primary)/0.18)]">
-            <PlusCircle className="h-4 w-4" />
-          </span>
-          <h1 className="text-2xl font-bold tracking-normal text-foreground">选股</h1>
-        </div>
+      <div className="research-page-heading flex flex-wrap items-end justify-between gap-4">
+        <h1 className="research-display text-foreground">选股</h1>
 
         <div className="inline-flex w-fit items-center gap-2 rounded-2xl border border-border/70 bg-card/80 px-4 py-2 text-sm shadow-soft-card">
           <span className={`h-2.5 w-2.5 rounded-full ${isScreeningEnabled ? 'bg-success' : 'bg-warning'}`} />
@@ -1578,7 +1572,7 @@ const StockScreeningPage: React.FC = () => {
                 key={`${item.topic}-${item.rank ?? ''}`}
                 className={`group relative min-h-[116px] overflow-hidden rounded-xl border px-3 py-3 text-left transition-all ${
                   selected
-                    ? 'border-orange-400 bg-gradient-to-br from-orange-500/10 via-card to-card shadow-[0_0_0_1px_rgba(249,115,22,0.16),0_18px_44px_rgba(249,115,22,0.14)]'
+                    ? 'border-primary/50 bg-primary/8'
                     : 'border-border/80 bg-card hover:-translate-y-0.5 hover:border-orange-300/70 hover:shadow-soft-card'
                 }`}
                 type="button"

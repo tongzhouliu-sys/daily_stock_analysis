@@ -1,0 +1,110 @@
+#!/usr/bin/env python3
+"""测试批量历史数据拉取 - 先验证SPY单只标的"""
+
+import os
+import sys
+from pathlib import Path
+
+# 添加backend到路径
+backend_path = Path(__file__).parent / "backend"
+sys.path.insert(0, str(backend_path))
+
+from app.core import Settings, now, stamp, uid
+from app.services.source_data import read_private_env
+from app.domain.calendar import Calendar
+from app.storage.db import Database, one
+from app.worker.jobs import Worker, enqueue
+from app.services.batch_history import run_batch_history_job
+
+def main():
+    env_file = os.environ.get("SCANNER_ENV_FILE")
+    if env_file:
+        read_private_env(Path(env_file))
+    settings = Settings.load()
+    db = Database(settings.db_path)
+    cal = Calendar()
+    
+    # 计算日期范围（3年）
+    end_date = cal.last_completed(now())
+    start_date = cal.shift(end_date, -(3 * 252))
+    
+    print("=" * 60)
+    print("测试批量历史数据拉取 - SPY单只标的")
+    print("=" * 60)
+    print(f"开始日期: {start_date}")
+    print(f"结束日期: {end_date}")
+    print(f"CSV文件: test_spy.csv")
+    print(f"标的数量: 1")
+    print()
+    
+    # 创建作业记录
+    with db.transaction() as cx:
+        jid = enqueue(
+            cx,
+            "BATCH_HISTORY",
+            f"BATCH_HISTORY:test_spy.csv:3y:{stamp()}",
+            end_date,
+            progress={
+                "csv_filename": "test_spy.csv",
+                "years": 3,
+                "total": 1,
+                "processed": 0,
+                "current_ticker": None,
+                "results": [],
+                "started_at": stamp(),
+            },
+        )
+    
+    print(f"作业ID: {jid}")
+    print()
+    
+    # 直接执行批量拉取
+    csv_path = settings.runtime / "imports" / "test_spy.csv"
+    
+    try:
+        summary = run_batch_history_job(settings, jid, csv_path, start_date, end_date)
+        
+        print()
+        print("=" * 60)
+        print("测试完成")
+        print("=" * 60)
+        print(f"状态: {summary.get('status', 'UNKNOWN')}")
+        print(f"总数: {summary.get('total_symbols', 0)}")
+        print(f"已处理: {summary.get('processed', 0)}")
+        print(f"成功: {summary.get('succeeded', 0)}")
+        print(f"失败: {summary.get('failed', 0)}")
+        print(f"跳过: {summary.get('skipped', 0)}")
+        print(f"历史不足: {summary.get('insufficient', 0)}")
+        print(f"覆盖率: {summary.get('coverage_rate', 'N/A')}")
+        print()
+        
+        # 显示详细结果
+        results = summary.get('results', [])
+        if results:
+            print("详细结果:")
+            print("-" * 60)
+            for r in results:
+                status_emoji = {
+                    'SUCCEEDED': '✓',
+                    'FAILED': '✗',
+                    'SKIPPED': '⊘',
+                    'INSUFFICIENT': '⚠'
+                }.get(r['status'], '?')
+                print(f"  {status_emoji} {r['symbol']:10s} {r['status']:15s} {r.get('bar_count', 0):4d}条")
+                if r.get('first_date') and r.get('last_date'):
+                    print(f"    日期范围: {r['first_date']} ~ {r['last_date']}")
+                if r.get('reason'):
+                    print(f"    原因: {r['reason']}")
+        
+    except Exception as e:
+        print()
+        print("=" * 60)
+        print("测试失败")
+        print("=" * 60)
+        print(f"错误: {e}")
+        import traceback
+        traceback.print_exc()
+        sys.exit(1)
+
+if __name__ == "__main__":
+    main()

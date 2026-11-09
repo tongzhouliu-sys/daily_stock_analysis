@@ -147,9 +147,13 @@ $pyInstallerArgs = @(
   '--collect-data', 'fxmacrodata_public',
   '--collect-all', 'py_mini_racer',
   '--collect-all', 'src.services.screening',
+  '--collect-all', 'src.services.signal_scanner',
   '--collect-all', 'futu'
 )
 $pyInstallerArgs += $hiddenImportArgs
+foreach ($package in @('fastapi', 'pydantic', 'httpx', 'exchange-calendars', 'pandas', 'numpy', 'argon2-cffi')) {
+  $pyInstallerArgs += @('--copy-metadata', $package)
+}
 $pyInstallerArgs += 'main.py'
 
 Write-Host "Running: $pythonBin $($pyInstallerArgs -join ' ')"

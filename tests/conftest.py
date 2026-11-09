@@ -7,6 +7,10 @@ import asyncio
 import concurrent.futures
 import time
 import threading
+import os
+import tempfile
+from pathlib import Path
+from unittest.mock import patch
 from collections.abc import Awaitable, Callable
 from contextvars import copy_context
 from functools import wraps
@@ -17,9 +21,53 @@ import anyio.to_thread
 import fastapi.testclient
 import httpx
 import starlette.testclient
+import pytest
+import dotenv
 from anyio._backends import _asyncio
 
 T = TypeVar("T")
+
+# Collection imports application modules. Keep those imports away from the
+# developer's live .env, credentials and database before fixtures can run.
+_test_environment = tempfile.TemporaryDirectory(prefix="dsa-pytest-")
+_test_env_path = Path(_test_environment.name) / ".env"
+_test_env_path.write_text("ADMIN_AUTH_ENABLED=false\nSCANNER_WORKERS_ENABLED=false\n")
+os.environ["ENV_FILE"] = str(_test_env_path)
+os.environ["DATABASE_PATH"] = str(Path(_test_environment.name) / "test.db")
+os.environ["SCANNER_WORKERS_ENABLED"] = "false"
+os.environ["LITELLM_LOCAL_MODEL_COST_MAP"] = "True"
+
+# LiteLLM and network-test modules call load_dotenv() during collection, without
+# an explicit path. Honor the test ENV_FILE instead of discovering live secrets.
+_original_load_dotenv = dotenv.load_dotenv
+
+
+@wraps(_original_load_dotenv)
+def _load_test_dotenv(dotenv_path=None, stream=None, *args, **kwargs):
+    if dotenv_path is None and stream is None:
+        dotenv_path = os.environ.get("ENV_FILE", str(_test_env_path))
+    return _original_load_dotenv(dotenv_path, stream, *args, **kwargs)
+
+
+dotenv.load_dotenv = _load_test_dotenv
+
+
+@pytest.fixture(autouse=True)
+def isolated_application_environment():
+    """Restore env/cache state between tests; individual tests set real configs."""
+    from src import auth
+    from src.config import Config
+
+    with patch.dict(os.environ, {}, clear=False):
+        os.environ.setdefault("ENV_FILE", str(_test_env_path))
+        Config.reset_instance()
+        for key in ("_auth_enabled", "_session_secret", "_password_hash_salt", "_password_hash_stored"):
+            setattr(auth, key, None)
+        auth._rate_limit = {}
+        yield
+        Config.reset_instance()
+        for key in ("_auth_enabled", "_session_secret", "_password_hash_salt", "_password_hash_stored"):
+            setattr(auth, key, None)
 
 _original_call_soon_threadsafe = asyncio.BaseEventLoop.call_soon_threadsafe
 
@@ -150,6 +198,7 @@ class _ThreadlessTestClient:
         base_url: str = "http://testserver",
         raise_server_exceptions: bool = True,
         follow_redirects: bool = True,
+        headers: Any = None,
         **_: Any,
     ) -> None:
         self.app = app
@@ -157,6 +206,7 @@ class _ThreadlessTestClient:
         self.raise_server_exceptions = raise_server_exceptions
         self.follow_redirects = follow_redirects
         self.cookies = httpx.Cookies()
+        self.headers = httpx.Headers(headers)
         self._lifespan_ctx = None
         self._lifespan_enter_count = 0
         self._loop: asyncio.AbstractEventLoop | None = None
@@ -212,6 +262,9 @@ class _ThreadlessTestClient:
     def request(self, method: str, url: str, **kwargs: Any) -> httpx.Response:
         follow_redirects = kwargs.pop("follow_redirects", self.follow_redirects)
         kwargs.pop("allow_redirects", None)
+        headers = httpx.Headers(self.headers)
+        headers.update(kwargs.pop("headers", None) or {})
+        kwargs["headers"] = headers
 
         if self._lifespan_enter_count > 0 and self._loop is not None and self._async_client is not None:
             response = self._loop.run_until_complete(

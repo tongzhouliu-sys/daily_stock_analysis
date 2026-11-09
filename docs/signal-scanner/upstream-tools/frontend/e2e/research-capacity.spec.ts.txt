@@ -1,0 +1,118 @@
+import { test, expect } from "@playwright/test";
+import fs from "node:fs";
+import path from "node:path";
+import { createHash } from "node:crypto";
+test.skip(
+  !process.env.RESEARCH_CAPACITY_E2E,
+  "requires explicit isolated capacity service",
+);
+test.use({
+  baseURL: process.env.SCANNER_CAPACITY_TEST_URL || "http://127.0.0.1:18769",
+});
+test("large frozen report over real HTTP: first screen, bounded JSON, event, narrow layout and streamed download", async ({
+  page,
+}) => {
+  test.setTimeout(180000);
+  const root = path.resolve("../runtime/research-web-capacity-100-1261"),
+    run = JSON.parse(fs.readFileSync(path.join(root, "run.json"), "utf8"));
+  const responses: { path: string; bytes: number }[] = [],
+    pending: Promise<void>[] = [],
+    errors: string[] = [];
+  page.on("pageerror", (e) => errors.push(e.message));
+  page.on("response", (response) => {
+    const pathname = new URL(response.url()).pathname;
+    if (
+      pathname.startsWith("/api/rule-validation/") &&
+      !pathname.includes("/artifacts/")
+    )
+      pending.push(
+        (async () => {
+          if (response.ok())
+            responses.push({
+              path: pathname,
+              bytes: (await response.body()).byteLength,
+            });
+        })(),
+      );
+  });
+  await page.goto("/rule-validation");
+  await page
+    .getByLabel("本机访问密码")
+    .fill(
+      fs
+        .readFileSync(path.join(root, "query-app/首次登录密码.txt"), "utf8")
+        .trim(),
+    );
+  await page.getByRole("button", { name: "进入工作台" }).click();
+  await expect(
+    page.getByRole("heading", { name: "规则验证", exact: true }),
+  ).toBeVisible();
+  // Drain the initial list requests before navigating, so response bodies remain readable.
+  await page.waitForLoadState("networkidle");
+  await Promise.all(pending);
+  const started = Date.now();
+  await page.goto(`/rule-validation/runs/${run.id}/report`);
+  await expect(
+    page.getByRole("heading", { name: "研究切分与覆盖", exact: true }),
+  ).toBeVisible();
+  const interactiveMs = Date.now() - started;
+  expect(interactiveMs).toBeLessThan(3000);
+  await expect(page.getByText(/独立经济事件.*标签行/)).toBeVisible();
+  for (const width of [1440, 320]) {
+    await page.setViewportSize({ width, height: 1000 });
+    expect(
+      await page.evaluate(
+        () => document.documentElement.scrollWidth <= innerWidth,
+      ),
+    ).toBe(true);
+    await page.screenshot({
+      path: path.join(root, `browser-${width}.png`),
+      fullPage: true,
+    });
+  }
+  await page
+    .getByRole("link", { name: "查看事件", exact: true })
+    .first()
+    .click();
+  await expect(
+    page.getByRole("heading", { name: "事件时间轴", exact: true }),
+  ).toBeVisible();
+  await page.waitForLoadState("networkidle");
+  await Promise.all(pending);
+  await page.getByRole("link", { name: "返回报告与筛选" }).click();
+  await expect(page.getByText(/独立经济事件.*标签行/)).toBeVisible();
+  const downloadEvent = page.waitForEvent("download");
+  await page.getByRole("link", { name: /^report.json/ }).click();
+  const download = await downloadEvent;
+  const temporaryPath = await download.path();
+  expect(temporaryPath).not.toBeNull();
+  const checksum = await new Promise<string>((resolve, reject) => {
+    const hash = createHash("sha256"),
+      stream = fs.createReadStream(temporaryPath!);
+    stream.on("data", (chunk) => hash.update(chunk));
+    stream.on("end", () => resolve(hash.digest("hex")));
+    stream.on("error", reject);
+  });
+  expect(checksum).toBe(
+    run.artifacts.find((a: { name: string }) => a.name === "report.json")
+      .sha256,
+  );
+  await Promise.all(pending);
+  expect(responses.every((r) => r.bytes <= 1024 * 1024)).toBe(true);
+  expect(errors).toEqual([]);
+  fs.writeFileSync(
+    path.join(root, "browser-measurements.json"),
+    JSON.stringify(
+      {
+        interactiveMs,
+        responses,
+        errors,
+        downloadChecksum: checksum,
+        downloadBytes: fs.statSync(temporaryPath!).size,
+        report_hash: run.report_hash,
+      },
+      null,
+      2,
+    ),
+  );
+});

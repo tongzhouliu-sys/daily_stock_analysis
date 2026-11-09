@@ -480,6 +480,17 @@ export function parseApiError(error: unknown): ParsedApiError {
     });
   }
 
+  if (errorCode === 'share_image_unavailable') {
+    return createParsedApiError({
+      title: '分享图不可用',
+      message: rawMessage,
+      rawMessage,
+      status,
+      category: 'http_error',
+      code: errorCode,
+    });
+  }
+
   if (
     status === 502
     || status === 503

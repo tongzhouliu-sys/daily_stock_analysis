@@ -1,0 +1,8 @@
+.scanner-workspace { color: var(--text-primary); background: var(--bg-base); padding: clamp(12px, 2vw, 28px); min-width: 0; --accent: hsl(var(--primary)); --panel: var(--bg-card); --line: hsl(var(--border)); --muted: var(--text-secondary-text); }
+.scanner-workspace .scanner-heading { display: flex; align-items: center; justify-content: space-between; gap: 16px; flex-wrap: wrap; margin-bottom: 20px; }
+.scanner-workspace .scanner-heading h1 { font-size: 24px; margin: 0; }
+.scanner-workspace .scanner-tabs { display: flex; gap: 8px; overflow-x: auto; border-bottom: 1px solid hsl(var(--border)); margin-bottom: 24px; }
+.scanner-workspace .scanner-tabs a { white-space: nowrap; padding: 12px; border-bottom: 2px solid transparent; }
+.scanner-workspace .scanner-tabs a.active { color: hsl(var(--primary)); border-bottom-color: hsl(var(--primary)); }
+.scanner-workspace .card, .scanner-workspace button, .scanner-workspace .button { border-radius: var(--radius); box-shadow: none; }
+.scanner-workspace input, .scanner-workspace select, .scanner-workspace textarea { background: var(--bg-card); color: var(--text-primary); border-color: hsl(var(--border)); }

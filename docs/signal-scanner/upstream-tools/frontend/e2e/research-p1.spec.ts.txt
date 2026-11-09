@@ -1,0 +1,240 @@
+import { test, expect } from "@playwright/test";
+import fs from "node:fs";
+import path from "node:path";
+const root = path.resolve("../runtime/research-web-p1-browser"),
+  fixture = () =>
+    JSON.parse(fs.readFileSync(path.join(root, "fixture.json"), "utf8"));
+test.skip(
+  !process.env.RESEARCH_WEB_P1_E2E,
+  "explicit isolated P1 API/worker required",
+);
+test("P1 real API: frozen PIT chart, finite variant, actual cancellation, weekly history and responsive layouts", async ({
+  page,
+}) => {
+  test.setTimeout(180000);
+  const f = fixture(),
+    errors: string[] = [],
+    external: string[] = [];
+  page.on("pageerror", (e) => errors.push(e.message));
+  page.on("request", (r) => {
+    if (
+      !r
+        .url()
+        .startsWith(process.env.SCANNER_TEST_URL || "http://127.0.0.1:18771")
+    )
+      external.push(r.url());
+  });
+  await page.goto(`/rule-validation/runs/${f.run_id}/events/${f.event_id}`);
+  await page
+    .getByLabel("本机访问密码")
+    .fill(
+      fs.readFileSync(path.join(root, "app/首次登录密码.txt"), "utf8").trim(),
+    );
+  await page.getByRole("button", { name: "进入工作台" }).click();
+  await expect(
+    page.getByRole("heading", { name: "冻结行情与事件图" }),
+  ).toBeVisible();
+  await expect(page.getByRole("img", { name: /逐时点冻结OHLC/ })).toBeVisible({
+    timeout: 15000,
+  });
+  await page.getByLabel("行情观察时点").selectOption("LAST_EVENT_STATE");
+  await page.getByLabel("行情窗口（最多120会话）").selectOption("20");
+  await expect(page.getByRole("img", { name: /逐时点冻结OHLC/ })).toBeVisible();
+  await page.getByText("OHLC数字替代表与修订证据").click();
+  await expect(
+    page.getByRole("columnheader", { name: "当时可见修订" }),
+  ).toBeVisible();
+  for (const width of [1440, 768, 375, 320]) {
+    await page.setViewportSize({ width, height: 1000 });
+    await page.screenshot({
+      path: path.join(root, `chart-${width}.png`),
+      fullPage: true,
+    });
+    expect(
+      await page.evaluate(
+        () => document.documentElement.scrollWidth <= innerWidth + 1,
+      ),
+    ).toBeTruthy();
+  }
+  await page.setViewportSize({ width: 1440, height: 1050 });
+  await page.goto(`/rule-validation/runs/${f.run_id}/report?tab=protocol`);
+  await expect(
+    page.getByRole("heading", { name: "预登记参数变体" }),
+  ).toBeVisible();
+  await page
+    .getByRole("combobox", { name: "预登记参数", exact: true })
+    .selectOption("TR-01/rv_min");
+  await page
+    .getByRole("combobox", { name: "有限变化值", exact: true })
+    .selectOption("1.2");
+  await page.getByRole("button", { name: "提交变体预检" }).click();
+  await expect(
+    page.getByRole("button", { name: "确认固定轴并运行变体" }),
+  ).toBeVisible({ timeout: 30000 });
+  const beforeFamily = (
+    await (
+      await page.request.get(`/api/rule-validation/runs/${f.run_id}/variants`)
+    ).json()
+  ).data;
+  const startedVariant = page.waitForResponse(
+    (r) =>
+      new URL(r.url()).pathname === "/api/rule-validation/runs" &&
+      r.request().method() === "POST" &&
+      r.status() === 202,
+  );
+  await page.getByRole("button", { name: "确认固定轴并运行变体" }).click();
+  const variantRun = (await (await startedVariant).json()).data;
+  const variantRow = page.getByRole("row").filter({
+    has: page.locator(`a[href="/rule-validation/runs/${variantRun.id}"]`),
+  });
+  await expect(
+    variantRow.getByRole("link", { name: /P1浏览器基准实验.*rv_min=1.2/ }),
+  ).toBeVisible();
+  await expect(
+    variantRow.getByRole("link", { name: "规则轴对比", exact: true }),
+  ).toBeVisible({ timeout: 90000 });
+  await page.screenshot({
+    path: path.join(root, "variants-1440.png"),
+    fullPage: true,
+  });
+  for (const width of [768, 375, 320]) {
+    await page.setViewportSize({ width, height: 1000 });
+    expect(
+      await page.evaluate(
+        () => document.documentElement.scrollWidth <= innerWidth + 1,
+      ),
+    ).toBeTruthy();
+    await page.screenshot({
+      path: path.join(root, `variants-${width}.png`),
+      fullPage: true,
+    });
+  }
+  await page.setViewportSize({ width: 1440, height: 1050 });
+  const family = await page.request.get(
+    `/api/rule-validation/runs/${f.run_id}/variants`,
+  );
+  const familyData = (await family.json()).data;
+  expect(familyData.total).toBe(beforeFamily.total + 1);
+  expect(familyData.selection_policy).toBe(
+    "ALL_RESULTS_RETAINED_NO_OPTIMIZATION",
+  );
+  // Submit a real preflight/run and cancel the persisted job, rather than stopping browser polling.
+  const run = await page.evaluate(
+    async ({ dataset }: { dataset: string }) => {
+      const session = await (await fetch("/api/auth/session")).json();
+      const cat = await (await fetch("/api/rule-validation/catalog")).json();
+      const ds = cat.data.datasets.find((d: any) => d.id === dataset);
+      const headers = {
+        "Content-Type": "application/json",
+        "X-CSRF-Token": session.data.csrf_token,
+        "Idempotency-Key": crypto.randomUUID(),
+      };
+      const v = await (
+        await fetch("/api/rule-validation/validations", {
+          method: "POST",
+          headers,
+          body: JSON.stringify({
+            dataset_id: dataset,
+            draft: {
+              ...ds.default_draft,
+              name: "P1浏览器取消实验",
+              hypothesis: "验证真实计算取消",
+            },
+          }),
+        })
+      ).json();
+      for (let n = 0; n < 160; n++) {
+        const x = await (
+          await fetch(`/api/rule-validation/validations/${v.data.id}`)
+        ).json();
+        if (x.data.status === "SUCCEEDED")
+          return (
+            await (
+              await fetch("/api/rule-validation/runs", {
+                method: "POST",
+                headers: { ...headers, "Idempotency-Key": crypto.randomUUID() },
+                body: JSON.stringify({
+                  validation_id: x.data.id,
+                  config_digest: x.data.config_digest,
+                  reveal_sealed: false,
+                }),
+              })
+            ).json()
+          ).data;
+        await new Promise((r) => setTimeout(r, 200));
+      }
+      throw Error("preflight did not finish");
+    },
+    { dataset: f.cancel_dataset_id },
+  );
+  await page.goto(`/rule-validation/runs/${run.id}`);
+  await expect(
+    page.getByRole("button", { name: "取消本次计算" }),
+  ).toBeVisible();
+  await page.getByLabel("取消原因").fill("浏览器真实取消验收");
+  await page.getByRole("button", { name: "取消本次计算" }).click();
+  await expect(page.getByText("计算已取消", { exact: true })).toBeVisible({
+    timeout: 45000,
+  });
+  const cancelled = (
+    await (await page.request.get(`/api/rule-validation/runs/${run.id}`)).json()
+  ).data;
+  expect(cancelled.status).toBe("CANCELLED");
+  expect(cancelled.report_state).toBe("NOT_READY");
+  await page.screenshot({
+    path: path.join(root, "cancelled-1440.png"),
+    fullPage: true,
+  });
+  for (const width of [768, 375, 320]) {
+    await page.setViewportSize({ width, height: 1000 });
+    expect(
+      await page.evaluate(
+        () => document.documentElement.scrollWidth <= innerWidth + 1,
+      ),
+    ).toBeTruthy();
+    await page.screenshot({
+      path: path.join(root, `cancelled-${width}.png`),
+      fullPage: true,
+    });
+  }
+  await page.setViewportSize({ width: 1440, height: 1050 });
+  await page.goto("/rule-validation/probes");
+  await expect(
+    page.getByRole("heading", { name: "周度冻结核验历史" }),
+  ).toBeVisible();
+  await expect(
+    page.getByText("快照核验一致", { exact: true }).first(),
+  ).toBeVisible();
+  await page.getByRole("button", { name: "查看核验记录" }).first().click();
+  await expect(page.getByText(/预期业务hash/)).toBeVisible();
+  for (const width of [1440, 768, 375, 320]) {
+    await page.setViewportSize({ width, height: 1000 });
+    await page.screenshot({
+      path: path.join(root, `probes-${width}.png`),
+      fullPage: true,
+    });
+    expect(
+      await page.evaluate(
+        () => document.documentElement.scrollWidth <= innerWidth + 1,
+      ),
+    ).toBeTruthy();
+  }
+  expect(errors).toEqual([]);
+  expect(external).toEqual([]);
+  fs.writeFileSync(
+    path.join(root, "browser-metrics.json"),
+    JSON.stringify(
+      {
+        status: "PASS",
+        widths: [1440, 768, 375, 320],
+        page_errors: errors,
+        external_requests: external,
+        variant_runs: familyData.items.length,
+        cancel_status: cancelled.status,
+        weekly_probe: "PASS",
+      },
+      null,
+      2,
+    ),
+  );
+});

@@ -39,12 +39,8 @@ export const authApi = {
     return data;
   },
 
-  async login(password: string, passwordConfirm?: string): Promise<void> {
-    const body: { password: string; passwordConfirm?: string } = { password };
-    if (passwordConfirm !== undefined) {
-      body.passwordConfirm = passwordConfirm;
-    }
-    await apiClient.post('/api/v1/auth/login', body);
+  async login(username: string, password: string, passwordConfirm?: string): Promise<void> {
+    await apiClient.post('/api/v1/auth/login', { username, password, passwordConfirm });
   },
 
   async changePassword(

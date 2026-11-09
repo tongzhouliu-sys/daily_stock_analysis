@@ -9,11 +9,17 @@ const rows = [
 ];
 
 test('watchlist signals stay readable and accessible at sidebar widths', async ({ page }, testInfo) => {
-  await page.route('**/src/main.tsx', (route) => route.fulfill({
-    contentType: 'application/javascript',
-    body: `
-      import React from '/node_modules/.vite/deps/react.js';
-      import ReactDOMClient from '/node_modules/.vite/deps/react-dom_client.js';
+  await page.route((url) => url.pathname === '/src/main.tsx', async (route) => {
+    // Reuse the versioned Vite URLs to share React with the workspace's hooks.
+    const entry = await (await route.fetch()).text();
+    const react = entry.match(/"([^"]*\/react\.js(?:\?[^"]*)?)"/)?.[1];
+    const reactDom = entry.match(/"([^"]*\/react-dom_client\.js(?:\?[^"]*)?)"/)?.[1];
+    if (!react || !reactDom) throw new Error('Unable to locate Vite React imports');
+    await route.fulfill({
+      contentType: 'application/javascript',
+      body: `
+      import React from ${JSON.stringify(react)};
+      import ReactDOMClient from ${JSON.stringify(reactDom)};
       import '/src/index.css';
       import { HomeStockWorkspace } from '/src/components/watchlist/HomeStockWorkspace.tsx';
       import { UiLanguageProvider } from '/src/contexts/UiLanguageContext.tsx';
@@ -34,8 +40,9 @@ test('watchlist signals stay readable and accessible at sidebar widths', async (
           )
         )
       ));
-    `,
-  }));
+      `,
+    });
+  });
   await page.goto('/');
   await expect(page.getByText('今日待分析 1')).toBeVisible();
   await expect(page.getByRole('button', { name: '暂无 AAPL 的分析详情，可先分析' })).toHaveAccessibleDescription(

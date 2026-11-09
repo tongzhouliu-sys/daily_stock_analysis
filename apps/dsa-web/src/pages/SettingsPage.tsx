@@ -1275,12 +1275,12 @@ const SettingsPage: React.FC = () => {
   );
 
   return (
-    <div className="settings-page min-h-full px-4 pb-6 pt-4 md:px-6">
-      <div className="mb-4 rounded-lg border settings-border bg-card/90 px-4 py-4 shadow-soft-card backdrop-blur-sm">
+    <div className="settings-page research-page">
+      <div className="research-page-heading mb-4">
         <div className="flex flex-col gap-3 md:flex-row md:items-center md:justify-between">
           <div className="min-w-0">
-            <h1 className="text-xl font-semibold tracking-tight text-foreground">{t('settings.pageTitle')}</h1>
-            <p className="max-w-3xl text-xs leading-5 text-muted-text sm:text-sm sm:leading-6">
+            <h1 className="research-display text-foreground">{t('settings.pageTitle')}</h1>
+            <p className="mt-2 max-w-3xl text-sm leading-6 text-secondary-text">
               {t('settings.pageDescription')}
             </p>
           </div>

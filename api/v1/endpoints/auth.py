@@ -27,6 +27,7 @@ from src.auth import (
     refresh_auth_state,
     rotate_session_secret,
     set_initial_password,
+    verify_admin_username,
     verify_password,
     verify_stored_password,
     verify_session,
@@ -40,10 +41,11 @@ router = APIRouter()
 
 
 class LoginRequest(BaseModel):
-    """Login request body. For first-time setup use password + password_confirm."""
+    """Admin account credentials. Initial setup also needs password_confirm."""
 
     model_config = {"populate_by_name": True}
 
+    username: str = Field(default="", description="Required administrator username")
     password: str = Field(default="", description="Admin password")
     password_confirm: str | None = Field(default=None, alias="passwordConfirm", description="Confirm (first-time)")
 
@@ -361,11 +363,14 @@ async def auth_update_settings(request: Request, body: AuthSettingsRequest):
 
 @router.post(
     "/login",
-    summary="Login or set initial password",
-    description="Verify password and set session cookie. If password not set yet, accepts password+passwordConfirm.",
+    summary="Sign in as administrator",
+    description=(
+        "Verify username and password and set a session cookie. "
+        "Initial password setup also requires passwordConfirm."
+    ),
 )
 async def auth_login(request: Request, body: LoginRequest):
-    """Verify password or set initial password, set cookie on success. Returns 401 or 429 on failure."""
+    """Verify admin credentials before issuing a session cookie."""
     if not is_auth_enabled():
         return JSONResponse(
             status_code=400,
@@ -390,8 +395,9 @@ async def auth_login(request: Request, body: LoginRequest):
         )
 
     password_set = is_password_set()
+    username_matches = verify_admin_username(body.username)
 
-    if not password_set:
+    if not password_set and username_matches:
         # First-time setup: require passwordConfirm
         confirm = (body.password_confirm or "").strip()
         if password != confirm:
@@ -407,13 +413,12 @@ async def auth_login(request: Request, body: LoginRequest):
                 status_code=400,
                 content={"error": "invalid_password", "message": err},
             )
-    else:
-        if not verify_password(password):
-            record_login_failure(ip)
-            return JSONResponse(
-                status_code=401,
-                content={"error": "invalid_password", "message": "密码错误"},
-            )
+    elif not verify_password(password) or not username_matches:
+        record_login_failure(ip)
+        return JSONResponse(
+            status_code=401,
+            content={"error": "invalid_credentials", "message": "账号或密码错误"},
+        )
 
     clear_rate_limit(ip)
     session_val = create_session()

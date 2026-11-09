@@ -1,0 +1,14 @@
+#!/bin/sh
+set -eu
+SCANNER_PROJECT_ROOT=$(CDPATH= cd -- "$(dirname -- "$0")/.." && pwd)
+cd "$SCANNER_PROJECT_ROOT"
+if [ ! -x .venv/bin/python ]; then
+  echo '请先按照README创建Python环境并安装requirements.lock。'
+  exit 1
+fi
+if [ ! -f frontend/dist/index.html ]; then
+  echo '请先在frontend目录安装依赖并运行npm run build。'
+  exit 1
+fi
+export PYTHONPATH="$SCANNER_PROJECT_ROOT/backend"
+exec "$SCANNER_PROJECT_ROOT/.venv/bin/python" -m app.launch

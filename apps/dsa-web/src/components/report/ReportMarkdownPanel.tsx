@@ -6,7 +6,7 @@ import { markdownToPlainText } from '../../utils/markdown';
 import { getReportText, normalizeReportLanguage } from '../../utils/reportLanguage';
 import { Tooltip } from '../common/Tooltip';
 import { ReportMarkdownBody } from './ReportMarkdownBody';
-import { ShareImageButton } from './ShareImageButton';
+import { ShareReportButton } from './ShareReportButton';
 
 export interface ReportMarkdownPanelProps {
   recordId: number;
@@ -98,7 +98,7 @@ export const ReportMarkdownPanel: React.FC<ReportMarkdownPanelProps> = ({
         </div>
 
         <div className="flex items-center gap-2">
-          <ShareImageButton
+          <ShareReportButton
             recordId={recordId}
             reportTitle={`${stockName || stockCode}-${stockCode}`}
             reportLanguage={reportLanguage}

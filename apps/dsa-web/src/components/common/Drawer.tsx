@@ -1,5 +1,5 @@
 import type React from 'react';
-import { useEffect, useCallback } from 'react';
+import { useEffect, useCallback, useId, useRef } from 'react';
 import { useUiLanguage } from '../../contexts/UiLanguageContext';
 import { cn } from '../../utils/cn';
 
@@ -17,7 +17,7 @@ interface DrawerProps {
 }
 
 /**
- * Side drawer component with terminal-inspired styling.
+ * Shared side drawer.
  */
 export const Drawer: React.FC<DrawerProps> = ({
   isOpen,
@@ -30,6 +30,19 @@ export const Drawer: React.FC<DrawerProps> = ({
   backdropClassName,
 }) => {
   const { t } = useUiLanguage();
+  const headingId = useId();
+  const closeButtonRef = useRef<HTMLButtonElement>(null);
+
+  useEffect(() => {
+    if (!isOpen) return;
+    const previouslyFocused = document.activeElement;
+    closeButtonRef.current?.focus({ preventScroll: true });
+    return () => {
+      if (previouslyFocused instanceof HTMLElement && previouslyFocused.isConnected) {
+        previouslyFocused.focus({ preventScroll: true });
+      }
+    };
+  }, [isOpen]);
   // Close the drawer when Escape is pressed.
   const handleKeyDown = useCallback(
     (e: KeyboardEvent) => {
@@ -60,7 +73,7 @@ export const Drawer: React.FC<DrawerProps> = ({
 
   if (!isOpen) return null;
 
-  const titleId = title ? `drawer-title-${side}` : undefined;
+  const titleId = title ? headingId : undefined;
   const sidePositionClass = side === 'left' ? 'left-0 justify-start' : 'right-0 justify-end';
   const borderClass = side === 'left' ? 'border-r' : 'border-l';
 
@@ -69,7 +82,7 @@ export const Drawer: React.FC<DrawerProps> = ({
       {/* Backdrop */}
       <div
         className={cn(
-          'absolute inset-0 bg-background/80 backdrop-blur-sm transition-opacity duration-300',
+          'absolute inset-0 bg-black/55 transition-opacity duration-300',
           backdropClassName,
         )}
         onClick={onClose}
@@ -90,12 +103,12 @@ export const Drawer: React.FC<DrawerProps> = ({
           <div className="flex items-center justify-between border-b border-border/60 px-6 py-4">
             {title ? (
               <div>
-                <span className="label-uppercase">DETAIL VIEW</span>
                 <h2 id={titleId} className="mt-1 text-lg font-semibold text-foreground">{title}</h2>
               </div>
             ) : <div />}
             <button
               type="button"
+              ref={closeButtonRef}
               onClick={onClose}
               className="inline-flex h-10 w-10 items-center justify-center rounded-xl border border-border/70 bg-card/80 text-secondary-text transition-colors hover:bg-hover hover:text-foreground"
               aria-label={t('common.closeDrawer')}
@@ -105,7 +118,7 @@ export const Drawer: React.FC<DrawerProps> = ({
               </svg>
             </button>
           </div>
-          <div className="flex-1 overflow-y-auto p-6">
+          <div className="min-h-0 flex-1 overflow-y-auto p-4 sm:p-6">
             {children}
           </div>
         </div>

@@ -188,7 +188,7 @@ class TestCallLitellmVision:
             _call_litellm_vision("b64", "image/jpeg")
             kwargs = mock_comp.call_args[1]
             assert kwargs["api_base"] == "https://aihubmix.com/v1"
-            assert kwargs["extra_headers"]["APP-Code"] == "GPIJ3886"
+            assert "extra_headers" not in kwargs or not kwargs["extra_headers"]
 
     def test_responses_vision_route_uses_deployment_wire_model_and_credentials(self):
         cfg = _cfg(

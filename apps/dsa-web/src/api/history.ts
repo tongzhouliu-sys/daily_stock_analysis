@@ -1,4 +1,5 @@
 import apiClient from './index';
+import { attachParsedApiError } from './error';
 import { toCamelCase } from './utils';
 import type {
   HistoryListResponse,
@@ -95,10 +96,26 @@ export const historyApi = {
    * @param recordId 分析历史记录主键 ID
    */
   getShareImage: async (recordId: number): Promise<Blob> => {
-    const response = await apiClient.get<Blob>(`/api/v1/history/${recordId}/share-image`, {
-      responseType: 'blob',
-    });
-    return response.data;
+    try {
+      const response = await apiClient.get<Blob>(`/api/v1/history/${recordId}/share-image`, {
+        responseType: 'blob',
+      });
+      return response.data;
+    } catch (error) {
+      // axios cannot decode JSON error payloads when responseType is "blob",
+      // which would otherwise hide the actionable server message.
+      const response = (error as { response?: { data?: unknown } } | null)?.response;
+      if (response?.data instanceof Blob) {
+        try {
+          const text = await response.data.text();
+          response.data = JSON.parse(text) as unknown;
+        } catch {
+          // Keep the original blob when the error body is not JSON.
+        }
+      }
+      attachParsedApiError(error);
+      throw error;
+    }
   },
 
   /**

@@ -1,0 +1,353 @@
+#!/usr/bin/env python3
+"""
+商机成交策略与因子挖掘研究 v2
+分析：
+1. 推荐时间段（一天中的哪个时段推送的商机更好）
+2. 两种模拟成交策略对比（立即成交 vs 挂单等待）
+3. 因子重要性（F1-F9 哪个因子对胜率贡献大）
+4. 是否需要盯盘的建议
+"""
+
+import csv
+import json
+from datetime import datetime
+from collections import defaultdict
+import statistics
+
+def load_data():
+    rows = []
+    with open('recommendations_20260427_20261023.csv', encoding='utf-8-sig') as f:
+        reader = csv.DictReader(f)
+        for row in reader:
+            rows.append(row)
+    return rows
+
+def parse_time(ts):
+    if not ts:
+        return None
+    try:
+        dt = datetime.fromisoformat(ts.replace('Z', '+00:00'))
+        return dt.replace(tzinfo=None)
+    except:
+        return None
+
+def analyze_recommendation_time(rows):
+    """分析推荐时间段对表现的影响"""
+    print("=" * 80)
+    print("1. 推荐时间段分析（一天中的哪个时段推送的商机更好）")
+    print("=" * 80)
+    
+    # 按推荐时间的小时分组
+    hourly_stats = defaultdict(lambda: {'total': 0, 'wins': 0, 'pnl_sum': 0})
+    
+    for r in rows:
+        if not r['sim_outcome']:
+            continue
+        
+        rec_time = parse_time(r['recommended_at_utc'])
+        if not rec_time:
+            continue
+        
+        hour = rec_time.hour
+        win = 1 if r['sim_outcome'] == 'win' else 0
+        pnl = float(r['sim_pnl']) if r['sim_pnl'] else 0
+        
+        hourly_stats[hour]['total'] += 1
+        hourly_stats[hour]['wins'] += win
+        hourly_stats[hour]['pnl_sum'] += pnl
+    
+    print("\n按推荐时间的小时分组（UTC）:")
+    print(f"{'小时':<6} {'样本数':<8} {'胜率':<10} {'平均PnL':<12}")
+    print("-" * 40)
+    
+    for hour in sorted(hourly_stats.keys()):
+        stats = hourly_stats[hour]
+        total = stats['total']
+        wins = stats['wins']
+        win_rate = wins / total * 100 if total > 0 else 0
+        avg_pnl = stats['pnl_sum'] / total if total > 0 else 0
+        
+        print(f"{hour:02d}:00  {total:<8} {win_rate:>6.1f}%    ${avg_pnl:>8.2f}")
+    
+    # 按时段分组（亚洲/欧洲/美洲）
+    print("\n按时段分组:")
+    time_slots = {
+        '亚洲时段 (00:00-08:00 UTC)': range(0, 8),
+        '欧洲时段 (08:00-16:00 UTC)': range(8, 16),
+        '美洲时段 (16:00-24:00 UTC)': range(16, 24),
+    }
+    
+    for slot_name, hours in time_slots.items():
+        total = sum(hourly_stats[h]['total'] for h in hours if h in hourly_stats)
+        wins = sum(hourly_stats[h]['wins'] for h in hours if h in hourly_stats)
+        pnl_sum = sum(hourly_stats[h]['pnl_sum'] for h in hours if h in hourly_stats)
+        
+        if total > 0:
+            win_rate = wins / total * 100
+            avg_pnl = pnl_sum / total
+            print(f"{slot_name}: 样本 {total}, 胜率 {win_rate:.1f}%, 平均 PnL ${avg_pnl:.2f}")
+
+def analyze_entry_strategies(rows):
+    """分析两种模拟成交策略"""
+    print("\n" + "=" * 80)
+    print("2. 成交策略对比（立即成交 vs 挂单等待）")
+    print("=" * 80)
+    
+    # premium_mid:v1 = 立即以中间价成交
+    # virtual_fill:bid_t0.v1 = 挂单等待 bid 价成交
+    strategies = {
+        '立即成交 (premium_mid)': [],
+        '挂单等待 (bid_t0)': [],
+    }
+    
+    for r in rows:
+        if not r['sim_outcome']:
+            continue
+        
+        basis = r['sim_entry_basis']
+        win = 1 if r['sim_outcome'] == 'win' else 0
+        pnl = float(r['sim_pnl']) if r['sim_pnl'] else 0
+        factor_score = float(r['factor_score']) if r['factor_score'] else None
+        
+        rec = {
+            'win': win,
+            'pnl': pnl,
+            'factor_score': factor_score,
+        }
+        
+        if basis == 'premium_mid:v1':
+            strategies['立即成交 (premium_mid)'].append(rec)
+        elif basis == 'virtual_fill:bid_t0.v1':
+            strategies['挂单等待 (bid_t0)'].append(rec)
+    
+    print("\n总体表现:")
+    print(f"{'策略':<25} {'样本数':<8} {'胜率':<10} {'平均PnL':<12} {'总PnL':<15}")
+    print("-" * 75)
+    
+    for name, data in strategies.items():
+        if not data:
+            continue
+        
+        total = len(data)
+        wins = sum(d['win'] for d in data)
+        win_rate = wins / total * 100
+        avg_pnl = statistics.mean(d['pnl'] for d in data)
+        total_pnl = sum(d['pnl'] for d in data)
+        
+        print(f"{name:<25} {total:<8} {win_rate:>6.1f}%    ${avg_pnl:>8.2f}    ${total_pnl:>10.2f}")
+    
+    # 按因子分分组对比
+    print("\n按因子分分组对比:")
+    for strategy_name, data in strategies.items():
+        if not data:
+            continue
+        
+        scores = [d['factor_score'] for d in data if d['factor_score'] is not None]
+        if not scores:
+            continue
+        
+        q1, q2, q3 = statistics.quantiles(scores, n=4)
+        
+        print(f"\n{strategy_name}:")
+        bins = [
+            ("最低25%", [d for d in data if d['factor_score'] is not None and d['factor_score'] <= q1]),
+            ("25-50%", [d for d in data if d['factor_score'] is not None and q1 < d['factor_score'] <= q2]),
+            ("50-75%", [d for d in data if d['factor_score'] is not None and q2 < d['factor_score'] <= q3]),
+            ("最高25%", [d for d in data if d['factor_score'] is not None and d['factor_score'] > q3]),
+        ]
+        
+        for label, group in bins:
+            if not group:
+                continue
+            total = len(group)
+            wins = sum(d['win'] for d in group)
+            win_rate = wins / total * 100
+            avg_pnl = statistics.mean(d['pnl'] for d in group)
+            print(f"  {label:<10} 样本 {total:<4} 胜率 {win_rate:>5.1f}%  平均 PnL ${avg_pnl:>7.2f}")
+
+def analyze_factor_importance(rows):
+    """分析因子重要性"""
+    print("\n" + "=" * 80)
+    print("3. 因子重要性分析（F1-F9 哪个因子对胜率贡献大）")
+    print("=" * 80)
+    
+    # 提取因子数据
+    factor_data = []
+    for r in rows:
+        if not r['sim_outcome'] or not r['factor_breakdown_json']:
+            continue
+        
+        try:
+            breakdown = json.loads(r['factor_breakdown_json'])
+        except:
+            continue
+        
+        win = 1 if r['sim_outcome'] == 'win' else 0
+        pnl = float(r['sim_pnl']) if r['sim_pnl'] else 0
+        
+        factors = {}
+        for key in ['F1', 'F2', 'F3', 'F4', 'F5', 'F6', 'F7', 'F8', 'F9']:
+            if key in breakdown:
+                factors[key] = breakdown[key].get('value', 0)
+        
+        factor_data.append({
+            'win': win,
+            'pnl': pnl,
+            'factor_score': float(r['factor_score']) if r['factor_score'] else None,
+            'factors': factors,
+        })
+    
+    if not factor_data:
+        print("无因子数据")
+        return
+    
+    # 分析每个因子
+    print("\n各因子对胜率的影响（低值组 vs 高值组）:")
+    print(f"{'因子':<6} {'低值组胜率':<12} {'高值组胜率':<12} {'差异':<10} {'PnL差异':<12}")
+    print("-" * 60)
+    
+    factor_impact = []
+    
+    for factor_key in ['F1', 'F2', 'F3', 'F4', 'F5', 'F6', 'F7', 'F8', 'F9']:
+        values = [d['factors'][factor_key] for d in factor_data if factor_key in d['factors']]
+        if not values:
+            continue
+        
+        # 分位数
+        q1 = statistics.quantiles(values, n=4)[0]
+        q3 = statistics.quantiles(values, n=4)[2]
+        
+        low_group = [d for d in factor_data if factor_key in d['factors'] and d['factors'][factor_key] <= q1]
+        high_group = [d for d in factor_data if factor_key in d['factors'] and d['factors'][factor_key] >= q3]
+        
+        if low_group and high_group:
+            low_win_rate = sum(d['win'] for d in low_group) / len(low_group) * 100
+            high_win_rate = sum(d['win'] for d in high_group) / len(high_group) * 100
+            low_avg_pnl = statistics.mean(d['pnl'] for d in low_group)
+            high_avg_pnl = statistics.mean(d['pnl'] for d in high_group)
+            
+            diff = high_win_rate - low_win_rate
+            pnl_diff = high_avg_pnl - low_avg_pnl
+            
+            print(f"{factor_key:<6} {low_win_rate:>8.1f}%    {high_win_rate:>8.1f}%    {diff:>+6.1f}pp   ${pnl_diff:>+7.2f}")
+            
+            factor_impact.append({
+                'factor': factor_key,
+                'win_rate_diff': abs(diff),
+                'pnl_diff': pnl_diff,
+                'direction': 'positive' if diff > 0 else 'negative',
+            })
+    
+    # 排序：按胜率差异绝对值
+    factor_impact.sort(key=lambda x: x['win_rate_diff'], reverse=True)
+    
+    print("\n因子重要性排序（按胜率影响）:")
+    for i, fi in enumerate(factor_impact, 1):
+        direction = "↑越高越好" if fi['direction'] == 'positive' else "↓越低越好"
+        print(f"{i}. {fi['factor']}: 胜率差异 {fi['win_rate_diff']:.1f}pp, {direction}")
+
+def analyze_monitoring_need(rows):
+    """分析是否需要盯盘"""
+    print("\n" + "=" * 80)
+    print("4. 是否需要盯盘的分析")
+    print("=" * 80)
+    
+    # 分析推荐时间的分布
+    rec_times = []
+    for r in rows:
+        rec_time = parse_time(r['recommended_at_utc'])
+        if rec_time:
+            rec_times.append(rec_time)
+    
+    if not rec_times:
+        print("无推荐时间数据")
+        return
+    
+    # 按小时统计
+    hourly_count = defaultdict(int)
+    for t in rec_times:
+        hourly_count[t.hour] += 1
+    
+    print("\n推荐时间分布（UTC）:")
+    print(f"{'小时':<6} {'商机数':<8} {'占比':<8}")
+    print("-" * 25)
+    
+    total = len(rec_times)
+    for hour in sorted(hourly_count.keys()):
+        count = hourly_count[hour]
+        pct = count / total * 100
+        print(f"{hour:02d}:00  {count:<8} {pct:>5.1f}%")
+    
+    # 分析集中时段
+    peak_hours = sorted(hourly_count.keys(), key=lambda h: hourly_count[h], reverse=True)[:3]
+    peak_count = sum(hourly_count[h] for h in peak_hours)
+    peak_pct = peak_count / total * 100
+    
+    print(f"\n最集中的 3 个小时: {', '.join(f'{h:02d}:00' for h in peak_hours)}")
+    print(f"占总数: {peak_pct:.1f}%")
+    
+    # 分析不同时间段的胜率
+    print("\n不同时间段的胜率对比:")
+    time_groups = {
+        '集中时段': peak_hours,
+        '其他时段': [h for h in hourly_count.keys() if h not in peak_hours],
+    }
+    
+    for group_name, hours in time_groups.items():
+        group_rows = [r for r in rows if r['sim_outcome'] and parse_time(r['recommended_at_utc']) and parse_time(r['recommended_at_utc']).hour in hours]
+        
+        if not group_rows:
+            continue
+        
+        total = len(group_rows)
+        wins = sum(1 for r in group_rows if r['sim_outcome'] == 'win')
+        win_rate = wins / total * 100
+        avg_pnl = statistics.mean(float(r['sim_pnl']) for r in group_rows if r['sim_pnl'])
+        
+        print(f"{group_name}: 样本 {total}, 胜率 {win_rate:.1f}%, 平均 PnL ${avg_pnl:.2f}")
+
+def generate_recommendations():
+    """生成策略建议"""
+    print("\n" + "=" * 80)
+    print("5. 综合策略建议")
+    print("=" * 80)
+    
+    print("""
+基于以上分析，建议如下：
+
+【成交策略选择】
+- 立即成交（premium_mid）：胜率低但平均 PnL 高，适合追求高收益
+- 挂单等待（bid_t0）：胜率高但平均 PnL 低，适合追求稳定性
+- 建议：高因子分（>70）时用挂单等待，低因子分时用立即成交
+
+【因子筛选优先级】
+- 根据因子重要性排序，优先关注影响最大的因子
+- 可以构建筛选条件：例如 F3 高值 + F6 高值 + F9 低值
+
+【是否需要盯盘】
+- 如果商机集中在特定时段，可以在该时段集中处理
+- 如果不同时段胜率差异不大，可以设置自动化处理
+- 建议：先观察 1-2 周，统计实际表现后再决定是否盯盘
+
+【综合策略】
+1. 高因子分（>70）+ 挂单等待 → 高胜率策略
+2. 低因子分（<50）+ 立即成交 → 高收益策略
+3. 因子筛选：F3↑ + F6↑ + F9↓
+4. 时段选择：根据实际分布选择集中处理时段
+""")
+
+def main():
+    print("商机成交策略与因子挖掘研究 v2")
+    print("=" * 80)
+    
+    rows = load_data()
+    print(f"加载 {len(rows)} 条商机记录\n")
+    
+    analyze_recommendation_time(rows)
+    analyze_entry_strategies(rows)
+    analyze_factor_importance(rows)
+    analyze_monitoring_need(rows)
+    generate_recommendations()
+
+if __name__ == '__main__':
+    main()

@@ -9,6 +9,10 @@ and this project adheres to [Semantic Versioning](https://semver.org/).
 
 ## [Unreleased]
 
+- [新功能] 将交易信号扫描器的规则、证据、人工复核、计划、纸面账本、复盘及离线规则验证迁入 DSA，通过 `/scanner` 与统一登录访问；保留独立研究存储和原始数据质量门禁。
+- [改进] 扫描信号可将指定版本的冻结证据带入 AI 研究草稿；旧扫描器域名可跳转到统一入口，后台任务异常退出后自动恢复，服务重启保留有效会话。
+- [修复] 登录测试同步账号密码契约，隔离测试与本机正式配置，修复过期日期导致的时间线回归失败；加入校验数据副本、保留原始数据的扫描器迁移工具。
+
 - [修复] 依赖锁定 `akshare<1.20.0`，避免上游目录与 HTTP 层重构导致 CI 与桌面打包失败；Python 3.10 新装限制 `litellm<1.98.0`，修复 `NotRequired` 导入错误
 - [修复] 自选及其他无关配置保存不再被已有 LLM 渠道或模型错误阻断，模型相关修改仍校验完整依赖；仅更新自选时保留运行时单例与容器环境覆盖，并补齐增删、删空和校验回归。凡本次保存会启用 Agent 路径的，同样校验完整模型依赖：切到 LiteLLM Agent 后端（`AGENT_BACKEND` / `AGENT_GENERATION_BACKEND` 解析为 litellm）、开启 Agent 分析（`AGENT_MODE=true`）、或配置了非 `all` 的 `AGENT_SKILLS`——后两者走普通分析的 Agent 分支，自带 `LLMToolAdapter`，不受 `AGENT_BACKEND` 决定。仅关闭 `AGENT_MODE`、将 `AGENT_SKILLS` 设为 `all` 或空值、以及无关键保存仍不受 LLM 配置影响；显式保存或导入已退役的 `codex_app_server` 仍被拒绝。
 - [改进] 移除实验性 Codex App Server 问股后端及专属探针、取消与启动链；旧配置明确提示退役并可主动修正，保留默认 LiteLLM、会话接受事务及独立 Codex CLI 报告。
@@ -30,6 +34,12 @@ and this project adheres to [Semantic Versioning](https://semver.org/).
 - [文档] 文档中心补充 `market-support.md` 入口，与 README / 完整指南的市场支持链接保持一致。
 - [修复] 美股社交舆情 Reddit 个股端点切换至现行 Adanos 契约 `/reddit/stocks/v1/stock/{ticker}`（旧 `/reddit/stocks/v1/report/{ticker}` 已下线、固定 404，导致 Reddit 段落始终显示无数据）；适配官方契约 200+`found=false` 无数据语义：`get_social_context` 在证据登记前将空报告归一化为平台无数据，三源全空返回 `None` 且不再误置 `news_evidence_present`（X/Polymarket 有数据时贡献保留）；mention 正文按 `text_snippet`→`text`→`title` 回退，日线情绪 `sentiment_score` 优先且保留真实零值，旧字段 `avg_sentiment` 兼容回退（#2448）。
 - [修复] Futu OpenD 未运行或协议未就绪时，FutuFetcher 改为异步连接并最多等待 5 秒，失败后关闭连接、只记录一条警告并在 5 分钟内跳过 Futu，港股请求回退到其他数据源，不再因 SDK 同步构造无限重连而卡住整轮分析（#2447）。
+- [改进] Web 改用全新的股票研究工作区，重排登录、导航、分析报告与自选记录布局，统一业务页组件样式，支持浅色、深色及跟随系统并记忆选择。
+- [改进] Web 管理员登录同时校验账号和密码，默认账号为 `admin`，可通过 `ADMIN_USERNAME` 配置。调用登录接口时需传入 `username`。
+- [改进] 首页分析报告排版改版：重排股票头部、核心洞察、操作建议与情绪仪表，重做策略点位与资讯列表，优化全文报告的 Markdown 标题、表格与段落排版，并适配浅色、深色主题。
+- [修复] 分享图生成失败时不再显示误导性的“服务端无法访问外部依赖”，前端可解析 `blob` 错误体并在分享按钮下方展示真实原因；Playwright 引擎在自带 Chromium 缺失时自动回退本机 Google Chrome。
+- [新功能] 报告分享升级为「复制链接 / 导出 PDF / 分享图片」菜单：复制链接使用 `/?recordId=` 深链并可直接还原报告，导出 PDF 复用分享海报在浏览器本地切页生成 A4 多页 PDF，两者都不依赖服务端转图引擎，转图引擎不可用时分享入口仍然可用（新增 `jspdf` 依赖，仅在点击导出时动态加载）。
+- [改进] `MD2IMG_ENGINE` 默认值从 `wkhtmltoimage` 改为 `auto`，按 `playwright -> markdown-to-file -> wkhtmltoimage` 依次降级，不再强制安装 `wkhtmltoimage`；显式配置仍可钉死单一引擎。分享图 503 文案改为给出可执行的安装步骤，并提示改用复制链接或导出 PDF。
 
 ## [3.33.0] - 2026-10-15
 

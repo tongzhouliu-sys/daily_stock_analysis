@@ -10,4 +10,4 @@
 
 固定客户端 v0.1.0 内置快照中的 23 个 REST 操作及 49 个 MCP 工具的操作表、参数、安装及测试说明见 [English guide](FXMACRODATA_EN.md)。这两份文档同步介绍相同功能；完整操作名称保持英文。
 
-[FXMacroData](https://fxmacrodata.com/?utm_source=github&utm_medium=referral&utm_campaign=open_source_integrations&utm_content=daily_stock_analysis_readme) · [API 文档](https://fxmacrodata.com/documentation/reference?utm_source=github&utm_medium=referral&utm_campaign=open_source_integrations&utm_content=daily_stock_analysis_docs)
+[FXMacroData](https://fxmacrodata.com/) · [API 文档](https://fxmacrodata.com/documentation/reference)

@@ -1,13 +1,13 @@
 import type React from 'react';
 import { useCallback, useEffect, useMemo, useRef, useState } from 'react';
-import { BarChart3, Check, SlidersHorizontal, X } from 'lucide-react';
-import { useLocation, useNavigate } from 'react-router-dom';
+import { ArrowUpRight, BarChart3, Check, FileText, PanelRight, SlidersHorizontal, X } from 'lucide-react';
+import { useLocation, useNavigate, useSearchParams } from 'react-router-dom';
 import { getParsedApiError, type ParsedApiError } from '../api/error';
 import { analysisApi, DuplicateTaskError } from '../api/analysis';
 import { historyApi } from '../api/history';
 import { agentApi, type SkillInfo } from '../api/agent';
 import { systemConfigApi } from '../api/systemConfig';
-import { ApiErrorAlert, Button, Drawer, EmptyState, InlineAlert } from '../components/common';
+import { ApiErrorAlert, Button, Drawer, InlineAlert } from '../components/common';
 import { DashboardStateBlock } from '../components/dashboard';
 import { StockAutocomplete } from '../components/StockAutocomplete';
 import { StockHistoryTrendDrawer } from '../components/history';
@@ -29,6 +29,7 @@ import { useWatchlist } from '../hooks/useWatchlist';
 import { useUiLanguage } from '../contexts/UiLanguageContext';
 import type { SetupStatusResponse } from '../types/systemConfig';
 import { normalizeReportLanguage } from '../utils/reportLanguage';
+import { parseReportRecordId } from '../utils/reportShare';
 import type {
   AnalyzeAsyncResponse,
   HistoryItem,
@@ -288,6 +289,16 @@ const HomePage: React.FC = () => {
   );
 
   const [sidebarOpen, setSidebarOpen] = useState(false);
+  useEffect(() => {
+    if (!sidebarOpen) return;
+    const desktopDesk = window.matchMedia?.('(min-width: 48rem)');
+    if (!desktopDesk) return;
+    const closeOnDesktop = () => {
+      if (desktopDesk.matches) setSidebarOpen(false);
+    };
+    desktopDesk.addEventListener?.('change', closeOnDesktop);
+    return () => desktopDesk.removeEventListener?.('change', closeOnDesktop);
+  }, [sidebarOpen]);
   const [isSubmittingMarketReview, setIsSubmittingMarketReview] = useState(false);
   const [marketReviewNotice, setMarketReviewNotice] = useState<MarketReviewNotice>(null);
   const [marketReviewError, setMarketReviewError] = useState<ParsedApiError | null>(null);
@@ -324,7 +335,7 @@ const HomePage: React.FC = () => {
   const marketReviewPollTimer = useRef<number | null>(null);
   const stockBarLoadStartedRef = useRef(false);
   const taskPanelPreferenceSettledRef = useRef(readTaskPanelCollapsedPreference() !== null);
-  const dashboardScrollRef = useRef<HTMLElement | null>(null);
+  const dashboardScrollRef = useRef<HTMLDivElement | null>(null);
   const strategyMenuRef = useRef<HTMLDivElement | null>(null);
   const strategyButtonRef = useRef<HTMLButtonElement | null>(null);
   const strategyItemRefs = useRef<Array<HTMLButtonElement | null>>([]);
@@ -841,6 +852,18 @@ const HomePage: React.FC = () => {
     void selectHistoryItem(recordId);
     setSidebarOpen(false);
   }, [clearMarketReviewState, selectHistoryItem]);
+
+  // 分享链接通过 `?recordId=` 指定报告，打开后直接定位，避免只能看到最新一份。
+  const [searchParams] = useSearchParams();
+  const deepLinkRecordId = parseReportRecordId(searchParams.get('recordId'));
+  const appliedDeepLinkRef = useRef<number | undefined>(undefined);
+  useEffect(() => {
+    if (deepLinkRecordId === undefined || appliedDeepLinkRef.current === deepLinkRecordId) {
+      return;
+    }
+    appliedDeepLinkRef.current = deepLinkRecordId;
+    handleHistoryItemClick(deepLinkRecordId);
+  }, [deepLinkRecordId, handleHistoryItemClick]);
 
   const handleRefreshWatchlist = useCallback(async () => {
     await Promise.all([
@@ -1517,21 +1540,12 @@ const HomePage: React.FC = () => {
   return (
     <div
       data-testid="home-dashboard"
-      className="flex h-[calc(100vh-5rem)] w-full flex-col overflow-hidden md:flex-row sm:h-[calc(100vh-5.5rem)] lg:h-[calc(100vh-2rem)]"
+      className="research-home"
     >
-      <div className="flex-1 flex flex-col min-h-0 min-w-0 max-w-full lg:max-w-6xl mx-auto w-full">
-        <header className="relative z-30 flex min-w-0 flex-shrink-0 items-center overflow-visible px-3 py-3 md:px-4 md:py-4">
+      <div className="research-home-content">
+        <div className="research-command-bar">
           <div className="flex min-w-0 flex-1 flex-col gap-2.5 md:flex-row md:items-center">
             <div className="flex min-w-0 flex-1 items-center gap-2.5">
-              <button
-                onClick={() => setSidebarOpen(true)}
-                className="md:hidden -ml-1 flex-shrink-0 rounded-lg p-1.5 text-secondary-text transition-colors hover:bg-hover hover:text-foreground"
-                aria-label={t('home.historyButton')}
-              >
-                <svg className="h-5 w-5" fill="none" stroke="currentColor" viewBox="0 0 24 24">
-                  <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M4 6h16M4 12h16M4 18h16" />
-                </svg>
-              </button>
               <div className="relative min-w-0 flex-1">
                 <StockAutocomplete
                   value={query}
@@ -1625,27 +1639,19 @@ const HomePage: React.FC = () => {
                 <BarChart3 className="h-4 w-4" aria-hidden="true" />
                 {t('home.marketReview')}
               </Button>
-              <button
-                type="button"
+              <Button
                 onClick={() => handleSubmitAnalysis()}
-                disabled={!query || isAnalyzing}
-                className="btn-primary flex h-10 flex-1 items-center justify-center gap-1.5 whitespace-nowrap md:flex-none"
+                disabled={!query}
+                isLoading={isAnalyzing}
+                loadingText={t('home.analyzing')}
+                className="flex-1 whitespace-nowrap md:flex-none"
               >
-                {isAnalyzing ? (
-                  <>
-                    <svg className="h-3.5 w-3.5 animate-spin" fill="none" viewBox="0 0 24 24">
-                      <circle className="opacity-25" cx="12" cy="12" r="10" stroke="currentColor" strokeWidth="4" />
-                      <path className="opacity-75" fill="currentColor" d="M4 12a8 8 0 018-8V0C5.373 0 0 5.373 0 12h4zm2 5.291A7.962 7.962 0 014 12H0c0 3.042 1.135 5.824 3 7.938l3-2.647z" />
-                    </svg>
-                    {t('home.analyzing')}
-                  </>
-                ) : (
-                  t('home.analyze')
-                )}
-              </button>
+                {t('home.analyze')}
+                <ArrowUpRight className="h-4 w-4" aria-hidden="true" />
+              </Button>
             </div>
           </div>
-        </header>
+        </div>
 
         {inputError || (duplicateError && duplicateBannerVisible) ? (
           <div className="px-3 pb-2 md:px-4">
@@ -1703,186 +1709,196 @@ const HomePage: React.FC = () => {
           </div>
         ) : null}
 
-        <div className="flex-1 flex min-h-0 overflow-hidden">
-          <div className="hidden min-h-0 w-64 shrink-0 flex-col overflow-hidden pl-4 pb-4 md:flex lg:w-72">
-            {sidebarContent}
-          </div>
-
-          {sidebarOpen ? (
-            <div className="fixed inset-0 z-40 md:hidden" onClick={() => setSidebarOpen(false)}>
-              <div className="page-drawer-overlay absolute inset-0" />
-              <div
-                className="dashboard-card absolute bottom-0 left-0 top-0 flex w-72 flex-col overflow-hidden !rounded-none !rounded-r-xl p-3 shadow-2xl"
-                onClick={(event) => event.stopPropagation()}
+        <div className="research-desk">
+          <section className="research-reading" aria-label={t('home.reportTitle')}>
+            <div className="research-panel-heading">
+              <h2><FileText size={16} aria-hidden="true" />{t('home.reportTitle')}</h2>
+              <button
+                type="button"
+                onClick={() => setSidebarOpen(true)}
+                className="research-records-button"
+                aria-haspopup="dialog"
               >
-                {sidebarContent}
-              </div>
+                <PanelRight size={16} aria-hidden="true" />
+                {t('home.researchRecords')}
+              </button>
             </div>
-          ) : null}
+            <div
+              ref={dashboardScrollRef}
+              data-testid="home-dashboard-scroll"
+              className="research-reading-scroll touch-pan-y"
+            >
+              {marketReviewNotice ? (
+                <div className="mb-3">
+                  <InlineAlert
+                    variant={marketReviewNotice.variant}
+                    title={marketReviewNotice.title}
+                    message={marketReviewNotice.message}
+                    className="rounded-xl px-3 py-2 text-xs shadow-none"
+                  />
+                </div>
+              ) : null}
 
-          <section
-            ref={dashboardScrollRef}
-            data-testid="home-dashboard-scroll"
-            className="flex-1 min-w-0 min-h-0 overflow-x-auto overflow-y-auto px-3 pb-4 md:px-6 touch-pan-y"
-          >
-            {marketReviewNotice ? (
-              <div className="mb-3">
-                <InlineAlert
-                  variant={marketReviewNotice.variant}
-                  title={marketReviewNotice.title}
-                  message={marketReviewNotice.message}
-                  className="rounded-xl px-3 py-2 text-xs shadow-none"
+              {marketReviewError ? (
+                <div className="mb-3">
+                  <ApiErrorAlert
+                    error={marketReviewError}
+                    className="mb-1"
+                    onDismiss={() => setMarketReviewError(null)}
+                  />
+                </div>
+              ) : null}
+
+              {marketReviewReport ? (
+                <MarketReviewReportView
+                  content={marketReviewReport}
+                  payload={marketReviewPayload}
+                  reportLanguage={liveMarketReviewLanguage}
+                  className="mb-3"
                 />
-              </div>
-            ) : null}
+              ) : null}
 
-            {marketReviewError ? (
-              <div className="mb-3">
+              {error ? (
                 <ApiErrorAlert
-                  error={marketReviewError}
-                  className="mb-1"
-                  onDismiss={() => setMarketReviewError(null)}
+                  error={error}
+                  className="mb-3"
+                  onDismiss={clearError}
                 />
-              </div>
-            ) : null}
-
-            {marketReviewReport ? (
-              <MarketReviewReportView
-                content={marketReviewReport}
-                payload={marketReviewPayload}
-                reportLanguage={liveMarketReviewLanguage}
-                className="mb-3"
-              />
-            ) : null}
-
-            {error ? (
-              <ApiErrorAlert
-                error={error}
-                className="mb-3"
-                onDismiss={clearError}
-              />
-            ) : null}
-            {!marketReviewReport && isLoadingReport ? (
-              <div className="flex h-full flex-col items-center justify-center">
-                <DashboardStateBlock title={t('home.loadingReport')} loading />
-              </div>
-            ) : !marketReviewReport && selectedReport ? (
-              <div className={isHistoryTrendOpen ? 'max-w-6xl space-y-4 pb-8' : 'max-w-4xl space-y-4 pb-8'}>
-                <div className="flex flex-wrap items-center justify-end gap-2">
-                  {!isMarketReviewHistoryReport ? (
-                    <>
+              ) : null}
+              {!marketReviewReport && isLoadingReport ? (
+                <div className="flex h-full flex-col items-center justify-center">
+                  <DashboardStateBlock title={t('home.loadingReport')} loading />
+                </div>
+              ) : !marketReviewReport && selectedReport ? (
+                <div className="space-y-4 pb-4">
+                  <div className="report-toolbar flex flex-wrap items-center justify-end gap-2">
+                    {!isMarketReviewHistoryReport ? (
+                      <>
+                        <Button
+                          variant="home-action-ai"
+                          size="sm"
+                          disabled={isAnalyzing || selectedReport.meta.id === undefined}
+                          onClick={handleReanalyze}
+                        >
+                          <svg className="h-4 w-4" fill="none" stroke="currentColor" viewBox="0 0 24 24">
+                            <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M4 4v5h.582m15.356 2A8.001 8.001 0 004.582 9m0 0H9m11 11v-5h-.581m0 0a8.003 8.003 0 01-15.357-2m15.357 2H15" />
+                          </svg>
+                          {t('home.reanalyze')}
+                        </Button>
+                        <Button
+                          variant="home-action-ai"
+                          size="sm"
+                          disabled={selectedReport.meta.id === undefined}
+                          onClick={handleAskFollowUp}
+                        >
+                          <svg className="h-4 w-4" fill="none" stroke="currentColor" viewBox="0 0 24 24">
+                            <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M8 12h.01M12 12h.01M16 12h.01M21 12c0 4.418-4.03 8-9 8a9.863 9.863 0 01-4.255-.949L3 20l1.395-3.72C3.512 15.042 3 13.574 3 12c0-4.418 4.03-8 9-8s9 3.582 9 8z" />
+                          </svg>
+                          {t('home.askAi')}
+                        </Button>
+                      </>
+                    ) : (
                       <Button
                         variant="home-action-ai"
                         size="sm"
-                        disabled={isAnalyzing || selectedReport.meta.id === undefined}
-                        onClick={handleReanalyze}
+                        disabled={isSubmittingMarketReview}
+                        isLoading={isSubmittingMarketReview}
+                        loadingText={t('home.submitMarketReview')}
+                        onClick={() => void handleTriggerMarketReview()}
                       >
-                        <svg className="h-4 w-4" fill="none" stroke="currentColor" viewBox="0 0 24 24">
-                          <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M4 4v5h.582m15.356 2A8.001 8.001 0 004.582 9m0 0H9m11 11v-5h-.581m0 0a8.003 8.003 0 01-15.357-2m15.357 2H15" />
-                        </svg>
-                        {t('home.reanalyze')}
+                        <BarChart3 className="h-4 w-4" />
+                        {t('home.rerunMarketReview')}
                       </Button>
-                      <Button
-                        variant="home-action-ai"
-                        size="sm"
-                        disabled={selectedReport.meta.id === undefined}
-                        onClick={handleAskFollowUp}
-                      >
-                        <svg className="h-4 w-4" fill="none" stroke="currentColor" viewBox="0 0 24 24">
-                          <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M8 12h.01M12 12h.01M16 12h.01M21 12c0 4.418-4.03 8-9 8a9.863 9.863 0 01-4.255-.949L3 20l1.395-3.72C3.512 15.042 3 13.574 3 12c0-4.418 4.03-8 9-8s9 3.582 9 8z" />
-                        </svg>
-                        {t('home.askAi')}
-                      </Button>
-                    </>
-                  ) : (
+                    )}
                     <Button
                       variant="home-action-ai"
                       size="sm"
-                      disabled={isSubmittingMarketReview}
-                      isLoading={isSubmittingMarketReview}
-                      loadingText={t('home.submitMarketReview')}
-                      onClick={() => void handleTriggerMarketReview()}
+                      disabled={selectedReport.meta.id === undefined || isHistoryTrendUnavailable}
+                      className={isHistoryTrendOpen ? 'border-primary/70 bg-primary/15 text-primary shadow-glow-cyan' : undefined}
+                      onClick={() => {
+                        if (isHistoryTrendOpen) {
+                          closeHistoryTrend();
+                          return;
+                        }
+                        void openHistoryTrend();
+                      }}
                     >
                       <BarChart3 className="h-4 w-4" />
-                      {t('home.rerunMarketReview')}
+                      {t('home.historyTrend')}
                     </Button>
+                    <Button
+                      variant="home-action-ai"
+                      size="sm"
+                      disabled={selectedReport.meta.id === undefined}
+                      onClick={openMarkdownDrawer}
+                      className="report-toolbar-primary"
+                    >
+                      <svg className="h-4 w-4" fill="none" stroke="currentColor" viewBox="0 0 24 24">
+                        <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M9 12h6m-6 4h6m2 5H7a2 2 0 01-2-2V5a2 2 0 012-2h5.586a1 1 0 01.707.293l5.414 5.414a1 1 0 01.293.707V19a2 2 0 01-2 2z" />
+                      </svg>
+                      {t('home.fullReport')}
+                    </Button>
+                  </div>
+                  {isHistoryTrendOpen ? (
+                    <StockHistoryTrendDrawer
+                      key={`stock-history-${selectedReport.meta.id}`}
+                      report={selectedReport}
+                      items={stockHistoryItems}
+                      total={stockHistoryTotal}
+                      hasMore={stockHistoryHasMore}
+                      isLoading={isLoadingStockHistory}
+                      isLoadingMore={isLoadingMoreStockHistory}
+                      error={stockHistoryError}
+                      filters={stockHistoryFilters}
+                      onClose={closeHistoryTrend}
+                      onRangeChange={(range) => void setStockHistoryRange(range)}
+                      onLoadMore={() => void loadMoreStockHistory()}
+                      onSelectRecord={(recordId) => void selectHistoryItem(recordId)}
+                      onRetry={() => void openHistoryTrend()}
+                    />
+                  ) : (
+                    <ReportSummary
+                      data={selectedReport}
+                      isHistory
+                      onOpenRunFlow={openHistoryRunFlow}
+                      watchlist={{
+                        isInWatchlist: watchlistState.isInWatchlist,
+                        onToggle: watchlistState.toggleWatchlist,
+                        isActioning: watchlistState.isActioning,
+                        actionMessage: watchlistState.actionMessage,
+                      }}
+                    />
                   )}
-                  <Button
-                    variant="home-action-ai"
-                    size="sm"
-                    disabled={selectedReport.meta.id === undefined || isHistoryTrendUnavailable}
-                    className={isHistoryTrendOpen ? 'border-primary/70 bg-primary/15 text-primary shadow-glow-cyan' : undefined}
-                    onClick={() => {
-                      if (isHistoryTrendOpen) {
-                        closeHistoryTrend();
-                        return;
-                      }
-                      void openHistoryTrend();
-                    }}
-                  >
-                    <BarChart3 className="h-4 w-4" />
-                    {t('home.historyTrend')}
-                  </Button>
-                  <Button
-                    variant="home-action-ai"
-                    size="sm"
-                    disabled={selectedReport.meta.id === undefined}
-                    onClick={openMarkdownDrawer}
-                  >
-                    <svg className="h-4 w-4" fill="none" stroke="currentColor" viewBox="0 0 24 24">
-                      <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M9 12h6m-6 4h6m2 5H7a2 2 0 01-2-2V5a2 2 0 012-2h5.586a1 1 0 01.707.293l5.414 5.414a1 1 0 01.293.707V19a2 2 0 01-2 2z" />
-                    </svg>
-                    {t('home.fullReport')}
-                  </Button>
                 </div>
-                {isHistoryTrendOpen ? (
-                  <StockHistoryTrendDrawer
-                    key={`stock-history-${selectedReport.meta.id}`}
-                    report={selectedReport}
-                    items={stockHistoryItems}
-                    total={stockHistoryTotal}
-                    hasMore={stockHistoryHasMore}
-                    isLoading={isLoadingStockHistory}
-                    isLoadingMore={isLoadingMoreStockHistory}
-                    error={stockHistoryError}
-                    filters={stockHistoryFilters}
-                    onClose={closeHistoryTrend}
-                    onRangeChange={(range) => void setStockHistoryRange(range)}
-                    onLoadMore={() => void loadMoreStockHistory()}
-                    onSelectRecord={(recordId) => void selectHistoryItem(recordId)}
-                    onRetry={() => void openHistoryTrend()}
-                  />
-                ) : (
-                  <ReportSummary
-                    data={selectedReport}
-                    isHistory
-                    onOpenRunFlow={openHistoryRunFlow}
-                    watchlist={{
-                      isInWatchlist: watchlistState.isInWatchlist,
-                      onToggle: watchlistState.toggleWatchlist,
-                      isActioning: watchlistState.isActioning,
-                      actionMessage: watchlistState.actionMessage,
-                    }}
-                  />
-                )}
-              </div>
-            ) : !marketReviewReport ? (
-              <div className="flex h-full items-center justify-center">
-                <EmptyState
-                  title={t('home.startAnalysisTitle')}
-                  description={t('home.startAnalysisDescription')}
-                  className="max-w-xl border-dashed"
-                  icon={(
-                    <svg className="h-6 w-6" fill="none" stroke="currentColor" viewBox="0 0 24 24">
-                      <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={1.5} d="M9 19v-6a2 2 0 00-2-2H5a2 2 0 00-2 2v6a2 2 0 002 2h2a2 2 0 002-2zm0 0V9a2 2 0 012-2h2a2 2 0 012 2v10m-6 0a2 2 0 002 2h2a2 2 0 002-2m0 0V5a2 2 0 012-2h2a2 2 0 012 2v14a2 2 0 01-2 2h-2a2 2 0 01-2-2z" />
-                    </svg>
-                  )}
-                />
-              </div>
-            ) : null}
+              ) : !marketReviewReport ? (
+                <div className="research-report-empty">
+                  <span className="research-empty-icon"><FileText size={25} strokeWidth={1.4} aria-hidden="true" /></span>
+                  <h3>{t('home.startAnalysisTitle')}</h3>
+                  <p>{t('home.startAnalysisDescription')}</p>
+                </div>
+              ) : null}
+            </div>
           </section>
+
+          <aside className="research-records" aria-label={t('home.researchRecords')}>
+            <div className="research-panel-heading">
+              <h2><PanelRight size={16} aria-hidden="true" />{t('home.researchRecords')}</h2>
+            </div>
+            <div className="research-records-body">{sidebarContent}</div>
+          </aside>
         </div>
       </div>
+
+      <Drawer
+        isOpen={sidebarOpen}
+        onClose={() => setSidebarOpen(false)}
+        title={t('home.researchRecords')}
+        width="max-w-[min(340px,92vw)]"
+        zIndex={55}
+        backdropClassName="page-drawer-overlay"
+      >
+        {sidebarContent}
+      </Drawer>
 
       {markdownDrawerOpen && selectedReport?.meta.id ? (
         <ReportMarkdownDrawer

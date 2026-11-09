@@ -1,5 +1,5 @@
 import type React from 'react';
-import { useEffect, useRef, useState } from 'react';
+import { useEffect, useId, useRef, useState } from 'react';
 import { Check, Monitor, Moon, Sun } from 'lucide-react';
 import { useTheme } from 'next-themes';
 import { useUiLanguage } from '../../contexts/UiLanguageContext';
@@ -53,6 +53,9 @@ export const ThemeToggle: React.FC<ThemeToggleProps> = ({
   const { t } = useUiLanguage();
   const [open, setOpen] = useState(false);
   const containerRef = useRef<HTMLDivElement | null>(null);
+  const triggerRef = useRef<HTMLButtonElement>(null);
+  const menuRef = useRef<HTMLDivElement>(null);
+  const menuId = useId();
 
   useEffect(() => {
     if (!open) {
@@ -65,11 +68,37 @@ export const ThemeToggle: React.FC<ThemeToggleProps> = ({
       }
     };
 
-    document.addEventListener('mousedown', handlePointerDown);
+    menuRef.current?.querySelector<HTMLButtonElement>('[aria-checked=true]')?.focus();
+    document.addEventListener('pointerdown', handlePointerDown);
     return () => {
-      document.removeEventListener('mousedown', handlePointerDown);
+      document.removeEventListener('pointerdown', handlePointerDown);
     };
   }, [open]);
+
+  const closeMenu = () => {
+    setOpen(false);
+    triggerRef.current?.focus();
+  };
+
+  const handleMenuKeyDown = (event: React.KeyboardEvent) => {
+    if (event.key === 'Escape') {
+      event.preventDefault();
+      event.stopPropagation();
+      closeMenu();
+      return;
+    }
+    const items = Array.from(menuRef.current?.querySelectorAll<HTMLButtonElement>('[role=menuitemradio]') ?? []);
+    const index = items.indexOf(document.activeElement as HTMLButtonElement);
+    const nextIndex = {
+      ArrowDown: (index + 1) % items.length,
+      ArrowUp: (index - 1 + items.length) % items.length,
+      Home: 0,
+      End: items.length - 1,
+    }[event.key];
+    if (nextIndex === undefined) return;
+    event.preventDefault();
+    items[nextIndex]?.focus();
+  };
 
   const activeTheme = (theme as ThemeOption | undefined) ?? 'system';
   const visualTheme = resolvedTheme ?? 'dark';
@@ -78,9 +107,16 @@ export const ThemeToggle: React.FC<ThemeToggleProps> = ({
   const isRailVariant = variant === 'rail';
 
   return (
-    <div className={cn('relative', isRailVariant ? 'w-full' : '', wrapperClassName)} ref={containerRef}>
+    <div
+      className={cn('relative', isRailVariant ? 'w-full' : '', wrapperClassName)}
+      ref={containerRef}
+      onBlur={(event) => {
+        if (!event.currentTarget.contains(event.relatedTarget)) setOpen(false);
+      }}
+    >
       <button
         type="button"
+        ref={triggerRef}
         onClick={() => setOpen((value) => !value)}
         data-state={open ? 'open' : 'closed'}
         className={cn(
@@ -95,6 +131,7 @@ export const ThemeToggle: React.FC<ThemeToggleProps> = ({
           isNavVariant && collapsed ? 'justify-center px-2' : ''
         )}
         aria-haspopup="menu"
+        aria-controls={open ? menuId : undefined}
         aria-expanded={open}
         aria-label={t('theme.toggle')}
       >
@@ -111,9 +148,12 @@ export const ThemeToggle: React.FC<ThemeToggleProps> = ({
       {open ? (
         <div
           role="menu"
+          id={menuId}
+          ref={menuRef}
+          onKeyDown={handleMenuKeyDown}
           aria-label={t('theme.menu')}
           className={cn(
-            'z-[100] min-w-[8rem] overflow-hidden rounded-2xl border border-border/70 bg-elevated p-1.5 shadow-[0_24px_48px_rgba(3,8,20,0.32)] backdrop-blur-xl',
+            'z-[100] min-w-[8rem] border border-border bg-elevated p-1 shadow-lg',
             isNavVariant || isRailVariant
               ? 'absolute bottom-full left-0 mb-2 w-max min-w-[9rem]'
               : 'absolute right-0 mt-2'
@@ -129,7 +169,7 @@ export const ThemeToggle: React.FC<ThemeToggleProps> = ({
                 aria-checked={isActive}
                 onClick={() => {
                   setTheme(value);
-                  setOpen(false);
+                  closeMenu();
                 }}
                 className={cn(
                   'flex w-full items-center justify-between rounded-xl px-3 py-2 text-sm transition-colors',

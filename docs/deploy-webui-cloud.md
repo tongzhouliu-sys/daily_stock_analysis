@@ -329,17 +329,16 @@ sudo systemctl reload nginx
 
 ## 安全建议
 
-把 Web 界面暴露到公网之前，强烈建议开启登录密码保护：
+把 Web 界面暴露到公网之前，请启用管理员账号密码登录。
 
 在 `.env` 中设置：
 
 ```env
 ADMIN_AUTH_ENABLED=true
+ADMIN_USERNAME=admin
 ```
 
-重启服务后，第一次访问网页时会要求设置初始密码。设置完成后，每次打开设置页面都需要输入密码，可以防止 API Key 等敏感配置被他人看到。
-
-> 如果忘了密码，可以在服务器上执行：`python -m src.auth reset_password`
+首次部署时，在开放公网访问前运行 `python -m src.auth reset_password`，按提示输入初始密码。重启服务后，使用上面配置的账号和密码登录。升级已有部署时可以继续使用已设置的密码。忘记密码时也可用同一命令重置。
 
 ---
 

@@ -28,6 +28,7 @@ env/
 .git/
 .github/
 .claude/reviews/
+local/
 data/
 logs/
 reports/

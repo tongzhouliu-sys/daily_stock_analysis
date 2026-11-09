@@ -122,7 +122,7 @@ Discord 长报告发送复用现有分片链路：单条 `content` 运行时不�
 - 小红书 URL、昵称与二维码路径可由 `SHARE_IMAGE_XIAOHONGSHU_*` 配置覆盖；二维码下方只显示昵称，不显示数字 ID。全部留空时显示内置二维码和昵称 `@霸天土小豆`。二维码转图时嵌入 HTML，不依赖外部图片服务或运行时网络。
 - 模板只展示报告已有的 0–100 评分、八态动作和 `battle_plan.sniper_points` 点位；理想/次优买入点、止损位和目标位会使用专门的高对比交易卡片，不生成额外评分或多空占比。
 - 结构化字段、缺失值行为、个股/大盘映射和本地预览示例见 [分享图片模板与数据填充](share-images.md)。
-- `wkhtmltoimage`、`markdown-to-file` 与 `playwright` 使用同一份海报 HTML；现有 `MD2IMG_ENGINE`、`MARKDOWN_TO_IMAGE_MAX_CHARS` 和转换失败后回退文本的行为不变。Playwright 模式需先安装 Web 依赖并执行 `npx playwright install chromium`。
+- `wkhtmltoimage`、`markdown-to-file` 与 `playwright` 使用同一份海报 HTML；现有 `MD2IMG_ENGINE`、`MARKDOWN_TO_IMAGE_MAX_CHARS` 和转换失败后回退文本的行为不变。默认 `auto` 按 `playwright -> markdown-to-file -> wkhtmltoimage` 降级，因此不强制安装 `wkhtmltoimage`。Playwright 模式需先安装 Web 依赖并执行 `npx playwright install chromium`；自带 Chromium 缺失时会自动回退到本机 Google Chrome（`--channel chrome`）。
 - 模板按正文长度生成长图，不会为适配固定画幅而截断报告。内容超过 `MARKDOWN_TO_IMAGE_MAX_CHARS` 时仍跳过转图。
 - GitHub Actions 默认仍不映射 `MARKDOWN_TO_IMAGE_CHANNELS`；如需在 fork 的工作流中启用，应显式补充环境变量映射并安装所选转图工具。
 

@@ -16,6 +16,7 @@ import {
   type ProgressStep,
 } from '../stores/agentChatStore';
 import { downloadSession, formatSessionAsMarkdown } from '../utils/chatExport';
+import { buildScannerFollowUpPrompt } from '../utils/scannerFollowUp';
 import type { ChatFollowUpContext } from '../utils/chatFollowUp';
 import {
   buildFollowUpPrompt,
@@ -94,6 +95,7 @@ const ChatPage: React.FC = () => {
   const [sidebarOpen, setSidebarOpen] = useState(false);
   const [sending, setSending] = useState(false);
   const [isFollowUpContextLoading, setIsFollowUpContextLoading] = useState(false);
+  const [followUpEvidenceError, setFollowUpEvidenceError] = useState<string | null>(null);
   const [sendToast, setSendToast] = useState<{
     type: 'success' | 'error';
     message: string;
@@ -531,24 +533,35 @@ const ChatPage: React.FC = () => {
     }
 
     const hydrationToken = ++followUpHydrationTokenRef.current;
-    setInput(buildFollowUpPrompt(stock, name));
+    const initialPrompt = buildFollowUpPrompt(stock, name);
+    const scannerSignal = searchParams.get('scannerSignal');
+    setFollowUpEvidenceError(null);
+    setInput(initialPrompt);
     followUpContextRef.current = {
       stock_code: stock,
       stock_name: name,
     };
-    if (recordId !== undefined) {
+    if (recordId !== undefined || scannerSignal) {
       setIsFollowUpContextLoading(true);
     }
-    void resolveChatFollowUpContext({
+    void Promise.all([resolveChatFollowUpContext({
       stockCode: stock,
       stockName: name,
       recordId,
       index: stockIndex,
-    }).then((context) => {
+    }), scannerSignal
+      ? buildScannerFollowUpPrompt(stock, scannerSignal, searchParams.get('scannerRevision'))
+      : Promise.resolve(null),
+    ]).then(([context, prompt]) => {
       if (!isMountedRef.current || followUpHydrationTokenRef.current !== hydrationToken) {
         return;
       }
       followUpContextRef.current = context;
+      if (prompt) setInput((current) => current === initialPrompt ? prompt : current);
+    }).catch((error: unknown) => {
+      if (isMountedRef.current && followUpHydrationTokenRef.current === hydrationToken) {
+        setFollowUpEvidenceError(error instanceof Error ? error.message : '未能载入冻结证据，请从信号详情重试');
+      }
     }).finally(() => {
       if (isMountedRef.current && followUpHydrationTokenRef.current === hydrationToken) {
         setIsFollowUpContextLoading(false);
@@ -892,10 +905,10 @@ const ChatPage: React.FC = () => {
   return (
     <div
       data-testid="chat-workspace"
-      className="flex h-[calc(100vh-5rem)] w-full min-w-0 gap-4 overflow-hidden sm:h-[calc(100vh-5.5rem)] lg:h-[calc(100vh-2rem)]"
+      className="research-chat flex min-w-0 gap-4 overflow-hidden"
     >
       {/* Desktop sidebar */}
-      <div className="hidden h-full w-64 flex-shrink-0 flex-col overflow-hidden rounded-[1.25rem] border border-white/8 bg-card/82 shadow-soft-card md:flex">
+      <div className="research-chat-sessions hidden h-full w-64 shrink-0 flex-col overflow-hidden border border-border bg-card md:flex">
         {sidebarContent}
       </div>
 
@@ -929,9 +942,9 @@ const ChatPage: React.FC = () => {
 
       {/* Main chat area */}
       <div className="flex h-full min-w-0 flex-1 flex-col overflow-hidden">
-        <header className="mb-4 flex-shrink-0 space-y-3">
+        <header className="research-chat-header mb-4 shrink-0 space-y-3">
           <div className="flex items-start justify-between gap-4">
-            <h1 className="text-2xl font-bold text-foreground flex items-center gap-2">
+            <h1 className="research-display flex items-center gap-2 text-foreground">
               <button
                 onClick={() => setSidebarOpen(true)}
                 className="md:hidden p-1.5 -ml-1 rounded-lg hover:bg-hover transition-colors text-secondary-text hover:text-foreground"
@@ -1072,6 +1085,7 @@ const ChatPage: React.FC = () => {
           <p className="text-secondary-text text-sm">
             {t('chat.introDefault')}
           </p>
+          {followUpEvidenceError && <InlineAlert variant="danger" title="扫描证据未载入" message={followUpEvidenceError} />}
           {sendToast ? (
             <InlineAlert
               variant={sendToast.type === 'success' ? 'success' : 'danger'}
@@ -1082,7 +1096,7 @@ const ChatPage: React.FC = () => {
           ) : null}
         </header>
 
-        <div className="relative z-10 flex min-h-0 flex-1 flex-col overflow-hidden border border-white/6 bg-card/78 glass-card">
+        <div className="relative z-10 flex min-h-0 flex-1 flex-col overflow-hidden glass-card">
           {/* Messages */}
           <ScrollArea
             className="relative z-10 flex-1"
@@ -1092,11 +1106,11 @@ const ChatPage: React.FC = () => {
             testId="chat-message-scroll"
           >
             {messages.length === 0 && !loading ? (
-              <div className="flex h-full items-center justify-center">
+              <div className="flex h-full min-h-fit items-center">
                 <EmptyState
                   title="开始问股"
                   description={t('chat.emptyDescriptionDefault')}
-                  className="max-w-2xl border-dashed bg-card/55"
+                  className="research-chat-welcome"
                   icon={(
                     <svg
                       className="h-8 w-8"
@@ -1113,7 +1127,7 @@ const ChatPage: React.FC = () => {
                     </svg>
                   )}
                   action={(
-                    <div className="flex max-w-lg flex-wrap justify-center gap-2">
+                    <div className="flex max-w-xl flex-wrap gap-2">
                       {quickQuestions.map((q, i) => (
                         <button
                           key={i}
@@ -1138,7 +1152,7 @@ const ChatPage: React.FC = () => {
                 >
                   <div
                     className={cn(
-                      'flex h-8 w-8 shrink-0 items-center justify-center rounded-full text-[10px] font-bold shadow-sm transition-all',
+                      'flex h-8 w-8 shrink-0 items-center justify-center rounded-xs text-[10px] font-semibold',
                       msg.role === 'user' ? 'chat-avatar-user' : 'chat-avatar-ai'
                     )}
                   >

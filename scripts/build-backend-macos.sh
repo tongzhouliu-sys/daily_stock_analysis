@@ -122,6 +122,10 @@ done
 pushd "${ROOT_DIR}" >/dev/null
 cmd=("${PYTHON_BIN}" -m PyInstaller --name stock_analysis --onedir --noconfirm --noconsole --runtime-hook "${SCRIPT_DIR}/pyinstaller_runtime_compat.py" --add-data "static:static" --add-data "strategies:strategies" --add-data "src/assets/share_image:src/assets/share_image" --collect-data litellm --collect-data tiktoken --collect-data akshare --collect-data fxmacrodata_public)
 cmd+=("--collect-all" "src.services.screening")
+cmd+=("--collect-all" "src.services.signal_scanner")
+for package in fastapi pydantic httpx exchange-calendars pandas numpy argon2-cffi; do
+  cmd+=("--copy-metadata" "${package}")
+done
 cmd+=("--collect-all" "futu")
 cmd+=("--collect-all" "py_mini_racer")
 cmd+=("--add-data" "src/services/screening/strategies:src/services/screening/strategies")

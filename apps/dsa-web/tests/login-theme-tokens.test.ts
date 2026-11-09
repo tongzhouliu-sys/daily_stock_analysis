@@ -5,7 +5,6 @@ import { resolve } from 'node:path';
 import { describe, expect, it } from 'vitest';
 
 const REQUIRED_LOGIN_TOKENS = [
-  '--login-button-text',
   '--login-label-text',
   '--login-hint-text',
   '--login-input-icon',
