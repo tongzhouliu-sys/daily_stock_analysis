@@ -90,6 +90,7 @@ const ChatPage: React.FC = () => {
   const [defaultSkillIds, setDefaultSkillIds] = useState<string[]>([]);
   const [showSkillDesc, setShowSkillDesc] = useState<string | null>(null);
   const [mobileSkillPickerOpen, setMobileSkillPickerOpen] = useState(false);
+  const [advancedOptionsOpen, setAdvancedOptionsOpen] = useState(false);
   const [expandedThinking, setExpandedThinking] = useState<Set<string>>(new Set());
   const [deleteConfirmId, setDeleteConfirmId] = useState<string | null>(null);
   const [sidebarOpen, setSidebarOpen] = useState(false);
@@ -944,14 +945,29 @@ const ChatPage: React.FC = () => {
       <div className="flex h-full min-w-0 flex-1 flex-col overflow-hidden">
         <header className="research-chat-header mb-3 shrink-0 space-y-1.5">
           <div className="flex items-start justify-between gap-4">
-            <h1 className="research-display flex items-center gap-2 text-foreground">
-              <button
-                onClick={() => setSidebarOpen(true)}
-                className="md:hidden p-1.5 -ml-1 rounded-lg hover:bg-hover transition-colors text-secondary-text hover:text-foreground"
-                aria-label="历史对话"
-              >
+            <div className="flex min-w-0 flex-wrap items-center gap-3">
+              <h1 className="research-display flex flex-wrap items-center gap-2 text-foreground">
+                <button
+                  onClick={() => setSidebarOpen(true)}
+                  className="md:hidden p-1.5 -ml-1 rounded-lg hover:bg-hover transition-colors text-secondary-text hover:text-foreground"
+                  aria-label="历史对话"
+                >
+                  <svg
+                    className="w-5 h-5"
+                    fill="none"
+                    stroke="currentColor"
+                    viewBox="0 0 24 24"
+                  >
+                    <path
+                      strokeLinecap="round"
+                      strokeLinejoin="round"
+                      strokeWidth={2}
+                      d="M4 6h16M4 12h16M4 18h16"
+                    />
+                  </svg>
+                </button>
                 <svg
-                  className="w-5 h-5"
+                  className="w-6 h-6 text-cyan"
                   fill="none"
                   stroke="currentColor"
                   viewBox="0 0 24 24"
@@ -960,33 +976,23 @@ const ChatPage: React.FC = () => {
                     strokeLinecap="round"
                     strokeLinejoin="round"
                     strokeWidth={2}
-                    d="M4 6h16M4 12h16M4 18h16"
+                    d="M9.663 17h4.673M12 3v1m6.364 1.636l-.707.707M21 12h-1M4 12H3m3.343-5.657l-.707-.707m2.828 9.9a5 5 0 117.072 0l-.548.547A3.374 3.374 0 0014 18.469V19a2 2 0 11-4 0v-.531c0-.895-.356-1.754-.988-2.386l-.548-.547z"
                   />
                 </svg>
-              </button>
-              <svg
-                className="w-6 h-6 text-cyan"
-                fill="none"
-                stroke="currentColor"
-                viewBox="0 0 24 24"
-              >
-                <path
-                  strokeLinecap="round"
-                  strokeLinejoin="round"
-                  strokeWidth={2}
-                  d="M9.663 17h4.673M12 3v1m6.364 1.636l-.707.707M21 12h-1M4 12H3m3.343-5.657l-.707-.707m2.828 9.9a5 5 0 117.072 0l-.548.547A3.374 3.374 0 0014 18.469V19a2 2 0 11-4 0v-.531c0-.895-.356-1.754-.988-2.386l-.548-.547z"
-                />
-              </svg>
-              问股
-              {agentStatus ? (
-                <Badge
-                  variant={agentStatus.errorCode === 'backend_removed' ? 'warning' : 'history'}
-                  size="sm"
-                >
-                  {t(agentStatus.errorCode === 'backend_removed' ? 'settings.agentBackendRemovedLabel' : 'chat.defaultBackendBadge')}
-                </Badge>
-              ) : null}
-            </h1>
+                <span className="whitespace-nowrap">问股</span>
+                {agentStatus ? (
+                  <Badge
+                    variant={agentStatus.errorCode === 'backend_removed' ? 'warning' : 'history'}
+                    size="sm"
+                  >
+                    {t(agentStatus.errorCode === 'backend_removed' ? 'settings.agentBackendRemovedLabel' : 'chat.defaultBackendBadge')}
+                  </Badge>
+                ) : null}
+              </h1>
+              <span className="hidden text-sm font-normal text-muted-text lg:inline">
+                {t('chat.introDefault')}
+              </span>
+            </div>
             {messages.length > 0 && (
               <div className="flex flex-shrink-0 flex-wrap items-center justify-end gap-2">
                 <Tooltip content="导出会话为 Markdown 文件">
@@ -1082,7 +1088,7 @@ const ChatPage: React.FC = () => {
               </div>
             )}
           </div>
-          <p className="text-secondary-text text-sm">
+          <p className="text-sm text-secondary-text lg:hidden">
             {t('chat.introDefault')}
           </p>
           {followUpEvidenceError && <InlineAlert variant="danger" title="扫描证据未载入" message={followUpEvidenceError} />}
@@ -1357,10 +1363,10 @@ const ChatPage: React.FC = () => {
                   className="rounded-xl px-3 py-2 text-xs shadow-none"
                 />
               ) : null}
-              <div className="flex flex-wrap items-center justify-between gap-3 rounded-xl border border-white/6 bg-surface/25 px-3 py-2">
+              <div className="flex flex-wrap items-center gap-3 text-xs">
                 <label
                   className={cn(
-                    'inline-flex items-center gap-2 text-sm',
+                    'inline-flex items-center gap-1.5',
                     contextCompressionLoaded && !contextCompressionSaving
                       ? 'cursor-pointer text-foreground'
                       : 'cursor-not-allowed text-muted-text',
@@ -1374,9 +1380,9 @@ const ChatPage: React.FC = () => {
                     className="chat-skill-checkbox"
                   />
                   <span className="font-medium">上下文压缩</span>
-                  <span className="text-xs text-muted-text">节省长会话 token</span>
+                  <span className="text-muted-text">节省长会话 token</span>
                 </label>
-                <span className="text-xs text-muted-text">
+                <span className="text-muted-text">
                   {contextCompressionSaving
                     ? '保存中...'
                     : contextCompressionEnabled
@@ -1393,23 +1399,23 @@ const ChatPage: React.FC = () => {
                 />
               ) : null}
               {skills.length > 0 && (
-                <div className="space-y-2">
+                <div className="space-y-1.5">
                   <button
                     type="button"
-                    className="home-surface-button flex h-10 w-full items-center justify-between gap-3 rounded-xl px-3 text-left text-sm text-foreground md:hidden"
+                    className="home-surface-button flex h-9 w-full items-center justify-between gap-3 rounded-xl px-3 text-left text-sm text-foreground md:hidden"
                     aria-label={mobileSkillPickerOpen ? '收起策略选择' : '展开策略选择'}
                     aria-expanded={mobileSkillPickerOpen}
                     aria-controls="chat-skill-picker-panel"
                     onClick={() => setMobileSkillPickerOpen((open) => !open)}
                   >
                     <span className="flex min-w-0 items-center gap-2">
-                      <SlidersHorizontal className="h-4 w-4 flex-shrink-0" aria-hidden="true" />
-                      <span className="flex-shrink-0 font-medium">策略</span>
+                      <SlidersHorizontal className="h-3.5 w-3.5 flex-shrink-0" aria-hidden="true" />
+                      <span className="flex-shrink-0 font-medium text-xs">策略</span>
                       <span className="truncate text-xs text-muted-text">{selectedSkillSummary}</span>
                     </span>
                     <ChevronDown
                       className={cn(
-                        'h-4 w-4 flex-shrink-0 text-muted-text transition-transform',
+                        'h-3.5 w-3.5 flex-shrink-0 text-muted-text transition-transform',
                         mobileSkillPickerOpen ? 'rotate-180' : '',
                       )}
                       aria-hidden="true"
@@ -1420,13 +1426,13 @@ const ChatPage: React.FC = () => {
                     data-testid="chat-skill-picker-panel"
                     className={cn(
                       mobileSkillPickerOpen ? 'flex' : 'hidden',
-                      'max-h-40 flex-wrap items-start gap-x-5 gap-y-2 overflow-y-auto rounded-xl border border-white/6 bg-surface/25 px-3 py-2 md:flex md:max-h-none md:overflow-visible md:border-0 md:bg-transparent md:p-0',
+                      'max-h-40 flex-wrap items-center gap-x-3 gap-y-1 overflow-y-auto rounded-xl border border-white/6 bg-surface/25 px-2.5 py-1.5 md:flex md:max-h-none md:overflow-visible md:border-0 md:bg-transparent md:p-0',
                     )}
                   >
-                    <span className="text-xs text-muted-text font-medium uppercase tracking-wider flex-shrink-0 mt-1">
+                    <span className="text-[11px] text-muted-text font-medium uppercase tracking-wider flex-shrink-0">
                       策略
                     </span>
-                    <label className="flex items-center gap-1.5 text-sm cursor-pointer group mt-0.5">
+                    <label className="flex items-center gap-1 text-xs cursor-pointer group">
                       <input
                         type="checkbox"
                         name="general-analysis"
@@ -1436,7 +1442,7 @@ const ChatPage: React.FC = () => {
                         className="chat-skill-checkbox"
                       />
                       <span
-                        className={`transition-colors text-sm ${selectedSkillIds.length === 0 ? 'text-foreground font-medium' : 'text-secondary-text group-hover:text-foreground'}`}
+                        className={`transition-colors text-xs ${selectedSkillIds.length === 0 ? 'text-foreground font-medium' : 'text-secondary-text group-hover:text-foreground'}`}
                       >
                         通用分析
                       </span>
@@ -1447,7 +1453,7 @@ const ChatPage: React.FC = () => {
                       return (
                         <label
                           key={s.id}
-                          className={`flex items-center gap-1.5 cursor-pointer group relative mt-0.5 ${disabled ? 'opacity-60 cursor-not-allowed' : ''}`}
+                          className={`flex items-center gap-1 cursor-pointer group relative ${disabled ? 'opacity-60 cursor-not-allowed' : ''}`}
                           onMouseEnter={() => setShowSkillDesc(s.id)}
                           onMouseLeave={() => setShowSkillDesc(null)}
                         >
@@ -1461,7 +1467,7 @@ const ChatPage: React.FC = () => {
                             className="chat-skill-checkbox"
                           />
                           <span
-                            className={`transition-colors text-sm ${checked ? 'text-foreground font-medium' : 'text-secondary-text group-hover:text-foreground'}`}
+                            className={`transition-colors text-xs ${checked ? 'text-foreground font-medium' : 'text-secondary-text group-hover:text-foreground'}`}
                           >
                             {s.name}
                           </span>

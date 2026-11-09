@@ -487,10 +487,10 @@
 }
 
 .chat-welcome-head {
-  display: flex;
-  align-items: center;
+  display: grid;
+  grid-template-columns: 22px minmax(0, 1fr);
+  align-items: start;
   gap: 8px;
-  flex-wrap: wrap;
 }
 
 .chat-welcome-icon {
