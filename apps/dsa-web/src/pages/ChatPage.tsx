@@ -606,7 +606,6 @@ const ChatPage: React.FC = () => {
           followUpContextRef.current = null;
           setIsFollowUpContextLoading(false);
           setInput('');
-          setMobileSkillPickerOpen(false);
           requestScrollToBottom('smooth');
         },
       });
