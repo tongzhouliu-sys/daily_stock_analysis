@@ -9,8 +9,16 @@ import pytest
 import logging
 from unittest.mock import patch
 from data_provider.market_router import get_router
+from data_provider.market_router.calendar import TradingCalendar
 
 logger = logging.getLogger(__name__)
+
+
+def test_installed_calendar_returns_iso_dates_and_respects_holidays():
+    pytest.importorskip('tj_calendar')
+    calendar = TradingCalendar()
+    assert calendar.get_calendar('2026-11-06', '2026-11-09') == ['2026-11-06', '2026-11-09']
+    assert calendar.next_trade_day('2025-09-30') == '2025-10-09'
 
 
 class TestCalendarOffline:
