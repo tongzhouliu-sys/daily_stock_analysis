@@ -475,30 +475,98 @@
   height: max(580px, calc(100dvh - var(--masthead-height)));
 }
 
+/* New-chat guidance: compact inline layout so the empty conversation
+   uses vertical space efficiently. */
 .research-chat-welcome {
-  width: min(100%, 680px);
+  width: min(100%, 860px);
   margin-inline: auto;
-  border: 0;
-  padding: clamp(8px, 3vw, 36px);
+  border: 1px solid hsl(var(--border));
+  background: hsl(var(--muted) / 0.28);
+  padding: 10px 14px 12px;
   text-align: start;
 }
 
-.research-chat-welcome h3 {
-  font-size: clamp(1.45rem, 3vw, 2rem);
-  font-weight: 400;
+.chat-welcome-head {
+  display: flex;
+  align-items: center;
+  gap: 8px;
+  flex-wrap: wrap;
 }
 
-.research-chat-welcome > :is(div, p) {
-  margin-inline: 0;
-  justify-content: start;
+.chat-welcome-icon {
+  display: grid;
+  flex: none;
+  width: 22px;
+  height: 22px;
+  place-items: center;
+  border: 1px solid hsl(var(--primary) / 0.22);
+  background: hsl(var(--primary) / 0.08);
+  color: hsl(var(--primary));
+  border-radius: 4px;
 }
 
-.research-chat-welcome > .research-empty-icon {
-  justify-content: center;
+.chat-welcome-copy {
+  display: flex;
+  align-items: baseline;
+  gap: 8px;
+  min-width: 0;
+  flex-wrap: wrap;
+}
+
+.chat-welcome-copy h3 {
+  font-size: 0.875rem;
+  font-weight: 500;
+  line-height: 1.35;
+  white-space: nowrap;
+}
+
+.chat-welcome-copy p {
+  min-width: 0;
+  font-size: 12px;
+  line-height: 1.5;
+  color: var(--text-secondary-text);
+}
+
+.chat-welcome-prompts {
+  margin-top: 8px;
+  padding-top: 8px;
+  border-top: 1px solid hsl(var(--border) / 0.7);
+}
+
+.chat-welcome-label {
+  display: block;
+  margin-bottom: 6px;
+  font-family: var(--font-mono);
+  font-size: 11px;
+  letter-spacing: 0.09em;
+  color: var(--text-muted-text);
+}
+
+.chat-welcome-grid {
+  display: grid;
+  grid-template-columns: repeat(auto-fit, minmax(min(100%, 220px), 1fr));
+  gap: 6px;
+}
+
+.research-chat-welcome .chat-welcome-prompt {
+  display: flex;
+  align-items: center;
+  min-width: 0;
+  min-height: 30px;
+  padding: 4px 10px;
+  font-size: 12px;
+  line-height: 1.35;
+  text-align: start;
+}
+
+@media (max-width: 39.999rem) {
+  .chat-welcome-grid {
+    grid-template-columns: repeat(2, minmax(0, 1fr));
+  }
 }
 
 .research-chat-header {
-  padding-bottom: 12px;
+  padding-bottom: 10px;
   border-bottom: 1px solid hsl(var(--border));
 }
 
