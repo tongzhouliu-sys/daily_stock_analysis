@@ -41,6 +41,7 @@ and this project adheres to [Semantic Versioning](https://semver.org/).
 - [新功能] 报告分享升级为「复制链接 / 导出 PDF / 分享图片」菜单：复制链接使用 `/?recordId=` 深链并可直接还原报告，导出 PDF 复用分享海报在浏览器本地切页生成 A4 多页 PDF，两者都不依赖服务端转图引擎，转图引擎不可用时分享入口仍然可用（新增 `jspdf` 依赖，仅在点击导出时动态加载）。
 - [改进] `MD2IMG_ENGINE` 默认值从 `wkhtmltoimage` 改为 `auto`，按 `playwright -> markdown-to-file -> wkhtmltoimage` 依次降级，不再强制安装 `wkhtmltoimage`；显式配置仍可钉死单一引擎。分享图 503 文案改为给出可执行的安装步骤，并提示改用复制链接或导出 PDF。
 - [改进] 问股新建会话欢迎区改为紧凑引导卡：图标与「开始问股」同行、说明并排、示例问题按网格排列并贴近标题区，桌面与移动端均压缩留白，提升空会话信息密度。
+- [修复] Tushare 交易日历改用本地 `trading_calendar` 模块（基于 `exchange-calendars`），失败时降级到 Baostock，不再直接调用 `trade_cal` API，避免低积分账号触发"1 次/小时"限频影响市场统计、筹码分布、行业板块排名等功能。
 
 ## [3.33.0] - 2026-10-15
 
