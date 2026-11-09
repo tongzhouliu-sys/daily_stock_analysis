@@ -6,7 +6,7 @@ import { ChevronDown, SlidersHorizontal } from 'lucide-react';
 import { cn } from '../utils/cn';
 import { agentApi } from '../api/agent';
 import { systemConfigApi } from '../api/systemConfig';
-import { ApiErrorAlert, Badge, Button, ConfirmDialog, EmptyState, InlineAlert, ScrollArea, Tooltip } from '../components/common';
+import { ApiErrorAlert, Badge, Button, ConfirmDialog, InlineAlert, ScrollArea, Tooltip } from '../components/common';
 import { createParsedApiError, getParsedApiError } from '../api/error';
 import type { AgentStatusResponse, SkillInfo } from '../api/agent';
 import { DashboardStateBlock } from '../components/dashboard';
@@ -942,7 +942,7 @@ const ChatPage: React.FC = () => {
 
       {/* Main chat area */}
       <div className="flex h-full min-w-0 flex-1 flex-col overflow-hidden">
-        <header className="research-chat-header mb-4 shrink-0 space-y-3">
+        <header className="research-chat-header mb-3 shrink-0 space-y-1.5">
           <div className="flex items-start justify-between gap-4">
             <h1 className="research-display flex items-center gap-2 text-foreground">
               <button
@@ -1106,41 +1106,47 @@ const ChatPage: React.FC = () => {
             testId="chat-message-scroll"
           >
             {messages.length === 0 && !loading ? (
-              <div className="flex h-full min-h-fit items-center">
-                <EmptyState
-                  title="开始问股"
-                  description={t('chat.emptyDescriptionDefault')}
-                  className="research-chat-welcome"
-                  icon={(
-                    <svg
-                      className="h-8 w-8"
-                      fill="none"
-                      stroke="currentColor"
-                      viewBox="0 0 24 24"
-                    >
-                      <path
-                        strokeLinecap="round"
-                        strokeLinejoin="round"
-                        strokeWidth={1.5}
-                        d="M9.663 17h4.673M12 3v1m6.364 1.636l-.707.707M21 12h-1M4 12H3m3.343-5.657l-.707-.707m2.828 9.9a5 5 0 117.072 0l-.548.547A3.374 3.374 0 0014 18.469V19a2 2 0 11-4 0v-.531c0-.895-.356-1.754-.988-2.386l-.548-.547z"
-                      />
-                    </svg>
-                  )}
-                  action={(
-                    <div className="flex max-w-xl flex-wrap gap-2">
+              <div className="flex h-full min-h-fit items-start pt-3">
+                <section className="research-chat-welcome" data-testid="chat-welcome" aria-labelledby="chat-welcome-title">
+                  <div className="chat-welcome-head">
+                    <span className="chat-welcome-icon" aria-hidden="true">
+                      <svg
+                        className="h-5 w-5"
+                        fill="none"
+                        stroke="currentColor"
+                        viewBox="0 0 24 24"
+                      >
+                        <path
+                          strokeLinecap="round"
+                          strokeLinejoin="round"
+                          strokeWidth={1.5}
+                          d="M9.663 17h4.673M12 3v1m6.364 1.636l-.707.707M21 12h-1M4 12H3m3.343-5.657l-.707-.707m2.828 9.9a5 5 0 117.072 0l-.548.547A3.374 3.374 0 0014 18.469V19a2 2 0 11-4 0v-.531c0-.895-.356-1.754-.988-2.386l-.548-.547z"
+                        />
+                      </svg>
+                    </span>
+                    <div className="chat-welcome-copy">
+                      <h3 id="chat-welcome-title">开始问股</h3>
+                      <p>{t('chat.emptyDescriptionDefault')}</p>
+                    </div>
+                  </div>
+                  <div className="chat-welcome-prompts">
+                    <span className="chat-welcome-label">{t('chat.quickQuestionLabel')}</span>
+                    <div className="chat-welcome-grid">
                       {quickQuestions.map((q, i) => (
                         <button
                           key={i}
+                          type="button"
                           onClick={() => handleQuickQuestion(q)}
                           disabled={!agentAvailable}
-                          className="quick-question-btn disabled:cursor-not-allowed disabled:opacity-60"
+                          aria-label={q.label}
+                          className="quick-question-btn chat-welcome-prompt disabled:cursor-not-allowed disabled:opacity-60"
                         >
                           {q.label}
                         </button>
                       ))}
                     </div>
-                  )}
-                />
+                  </div>
+                </section>
               </div>
             ) : (
               messages.map((msg) => {
