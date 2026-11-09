@@ -20,6 +20,7 @@ import "./styles/research.css";
 import "./styles/host.css";
 
 export default function ScannerWorkspace() {
+  useEffect(() => { document.title = "交易信号扫描器 - DSA"; }, []);
   const { refreshStatus } = useAuth();
   const session = useData("/api/auth/session");
   useData(session.data ? "/api/configs/preferences" : null);
