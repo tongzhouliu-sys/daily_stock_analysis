@@ -735,6 +735,10 @@ class ConversationMessage(Base):
     content = Column(Text, nullable=False)
     created_at = Column(DateTime, default=datetime.now, index=True)
 
+    __table_args__ = (
+        Index('ix_conversation_messages_session_role_created', 'session_id', 'role', 'created_at'),
+    )
+
 
 class ConversationSessionState(Base):
     """Persisted user selections for an Agent chat session."""
@@ -4452,22 +4456,46 @@ class DatabaseManager(metaclass=_DatabaseManagerMeta):
             )
             rows = session.execute(stmt).all()
 
+            if not rows:
+                return []
+
+            # 批量获取所有 session 的第一条 user 消息作为标题（避免 N+1 查询）
+            session_ids = [row.session_id for row in rows]
+            
+            # 使用子查询获取每个 session 的第一条 user 消息
+            first_msg_subq = (
+                select(
+                    ConversationMessage.session_id,
+                    func.min(ConversationMessage.id).label('first_msg_id')
+                )
+                .where(
+                    and_(
+                        ConversationMessage.session_id.in_(session_ids),
+                        ConversationMessage.role == "user",
+                    )
+                )
+                .group_by(ConversationMessage.session_id)
+                .subquery()
+            )
+            
+            title_query = (
+                select(
+                    first_msg_subq.c.session_id,
+                    ConversationMessage.content
+                )
+                .join(
+                    ConversationMessage,
+                    ConversationMessage.id == first_msg_subq.c.first_msg_id
+                )
+            )
+            
+            title_rows = session.execute(title_query).all()
+            title_map = {row.session_id: row.content for row in title_rows}
+
             results = []
             for row in rows:
                 sid = row.session_id
-                # 取该会话第一条 user 消息作为标题
-                first_user_msg = session.execute(
-                    select(ConversationMessage.content)
-                    .where(
-                        and_(
-                            ConversationMessage.session_id == sid,
-                            ConversationMessage.role == "user",
-                        )
-                    )
-                    .order_by(ConversationMessage.created_at)
-                    .limit(1)
-                ).scalar()
-                title = (first_user_msg or "新对话")[:60]
+                title = (title_map.get(sid) or "新对话")[:60]
 
                 results.append({
                     "session_id": sid,
