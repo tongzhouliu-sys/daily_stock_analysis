@@ -148,7 +148,7 @@ LITELLM_MODEL=ollama/qwen3:8b
 
 ```env
 # Anspire Open API Keys（支持多个，逗号分隔）
-# 获取: https://open.anspire.cn/dsa?share_code=QFBC0FYC
+# 获取: https://open.anspire.cn/
 # 满足默认优先级条件时，系统会复用该 Key 处理搜索与 LLM（仅限示例兜底路径）。
 # 示例模型：Doubao-Seed-2.0-lite；示例网关：https://open-gateway.anspire.cn/v6
 ANSPIRE_API_KEYS=sk-xxxxxxxxxxxxxxxx
@@ -203,7 +203,7 @@ ANSPIRE_API_KEYS=sk-xxxxxxxxxxxxxxxx
 - OpenAI Compatible 规范（LiteLLM）：<https://docs.litellm.ai/docs/providers/openai_compatible>
 - OpenAI 官方：<https://platform.openai.com/docs/api-reference/chat>
 - DeepSeek 官方：<https://api-docs.deepseek.com/>
-- Anspire Open：<https://open.anspire.cn/dsa?share_code=QFBC0FYC>
+- Anspire Open：<https://open.anspire.cn/>
 - 阿里百炼 DashScope 兼容模式：<https://help.aliyun.com/zh/model-studio/compatibility-of-openai-with-dashscope>
 - Moonshot / Kimi 官方：<https://platform.moonshot.ai/docs/guide/compatibility>
 - Anthropic 官方：<https://docs.anthropic.com/en/api/messages>
@@ -224,7 +224,7 @@ ANSPIRE_API_KEYS=sk-xxxxxxxxxxxxxxxx
 
 ### 示例：Modelflare
 
-[注册 Modelflare](https://modelflare.dev/sign-up?utm_source=github&utm_campaign=daily_stock_analysis)，在控制台创建 API Key 后配置：
+注册 Modelflare，在控制台创建 API Key 后配置：
 
 ```env
 MODELFLARE_KEY=sk-xxx

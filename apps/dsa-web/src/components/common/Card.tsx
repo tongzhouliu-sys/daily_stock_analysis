@@ -13,7 +13,7 @@ interface CardProps {
 }
 
 /**
- * Card component with terminal-inspired variants and optional hover styling.
+ * Shared panel with optional heading, emphasis, and hover styling.
  */
 export const Card: React.FC<CardProps> = ({
   title,

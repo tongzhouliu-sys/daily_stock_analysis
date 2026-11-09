@@ -164,6 +164,7 @@ def test_history_share_image_reports_renderer_unavailable(monkeypatch):
 
     assert exc_info.value.status_code == 503
     assert exc_info.value.detail["error"] == "share_image_unavailable"
+    assert "markdown-to-file" in exc_info.value.detail["message"]
 
 
 def test_history_share_image_returns_not_found(monkeypatch):

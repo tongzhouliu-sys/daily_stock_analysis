@@ -330,8 +330,6 @@ def _call_litellm_vision(image_b64: str, mime_type: str, api_key: Optional[str] 
     if not deployment_params and not model.startswith("gemini/") and not model.startswith("anthropic/") and not model.startswith("vertex_ai/"):
         if cfg.openai_base_url:
             call_kwargs["api_base"] = cfg.openai_base_url
-        if cfg.openai_base_url and "aihubmix.com" in cfg.openai_base_url:
-            call_kwargs["extra_headers"] = {"APP-Code": "GPIJ3886"}
 
     if getattr(litellm, "completion", None) is None:
         import litellm as litellm_module

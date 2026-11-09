@@ -1,0 +1,20 @@
+"""Launch the installed service with an explicitly selected, private environment file."""
+
+import os
+import stat
+import sys
+from pathlib import Path
+
+root = Path(__file__).resolve().parents[2]
+config = Path(os.environ["SCANNER_ENV_FILE"])
+if stat.S_IMODE(config.stat().st_mode) & 0o077:
+    raise SystemExit("Service environment must be readable only by its owner")
+for line in config.read_text().splitlines():
+    if line.strip() and not line.lstrip().startswith("#"):
+        key, separator, value = line.partition("=")
+        if not separator or not key.strip().replace("_", "").isalnum():
+            raise SystemExit("Invalid service environment format")
+        os.environ[key.strip()] = value.strip()
+os.environ["PYTHONPATH"] = str(root)
+os.chdir(root)
+os.execv(sys.executable, [sys.executable, "-m", "src.services.signal_scanner.launch"])

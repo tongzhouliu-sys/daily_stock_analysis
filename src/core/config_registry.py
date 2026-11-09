@@ -86,6 +86,23 @@ WEB_SETTINGS_HIDDEN_FROM_UI = {
     # CLI-only schedule-mode behavior (python main.py --schedule); the WebUI
     # runtime scheduler does not consult the startup dedup gate.
     "SCHEDULE_STARTUP_DEDUP",
+    # Scanner process lifecycle, private provider credentials and filesystem
+    # boundaries are deployment settings. Domain settings live in /scanner.
+    "SCANNER_RUNTIME",
+    "SCANNER_WORKERS_ENABLED",
+    "SCANNER_ORIGIN",
+    "SCANNER_LEGACY_HOST",
+    "SCANNER_HTTPS",
+    "SCANNER_DAILY_MARKET",
+    "SCANNER_WEBHOOK_URL",
+    "TIINGO_API_KEY",
+    "TIINGO_API_KEYS",
+    "ALPHAVANTAGE_API_KEYS",
+    "ALPACA_API_KEY",
+    "ALPACA_SECRET_KEY",
+    "RULE_VALIDATION_WEB_ENABLED",
+    "RULE_VALIDATION_WEB_ROOT",
+    "RULE_VALIDATION_INPUT_ROOTS",
 }
 
 _FIELD_DEFINITIONS: Dict[str, Dict[str, Any]] = {
@@ -658,7 +675,7 @@ _FIELD_DEFINITIONS: Dict[str, Dict[str, Any]] = {
     },
     "AIHUBMIX_KEY": {
         "title": "AIHubmix Key",
-        "description": "AIHubmix one-stop API key – access all mainstream models with a single key, no VPN required. Auto-sets base URL to aihubmix.com/v1. Get key: https://inferera.com/?aff=CfMq",
+        "description": "AIHubmix one-stop API key – access all mainstream models with a single key, no VPN required. Auto-sets base URL to aihubmix.com/v1.",
         "category": "ai_model",
         "data_type": "string",
         "ui_control": "password",

@@ -29,6 +29,17 @@ const NEWS_SOURCE_TEXT = {
   },
 } as const;
 
+const getSourceHost = (url?: string): string | null => {
+  if (!url) {
+    return null;
+  }
+  try {
+    return new URL(url).hostname.replace(/^www\./i, '');
+  } catch {
+    return null;
+  }
+};
+
 /**
  * 资讯区组件 - 终端风格
  */
@@ -69,10 +80,12 @@ export const ReportNews: React.FC<ReportNewsProps> = ({ recordId, limit = 8, lan
   }
 
   return (
-    <Card variant="bordered" padding="md" className="home-panel-card">
+    <Card variant="bordered" padding="md" className="home-panel-card report-news">
       <DashboardPanelHeader
         eyebrow={text.newsFeed}
         title={text.relatedNews}
+        className="report-section-head mb-2"
+        titleClassName="report-section-title"
         actions={(
           <div className="flex items-center gap-2">
             {isLoading ? (
@@ -92,7 +105,7 @@ export const ReportNews: React.FC<ReportNewsProps> = ({ recordId, limit = 8, lan
           </div>
         )}
       />
-      <p className="mb-3 text-xs leading-5 text-muted-text">
+      <p className="report-news-hint">
         {sourceText.sourceHint}
       </p>
 
@@ -127,33 +140,36 @@ export const ReportNews: React.FC<ReportNewsProps> = ({ recordId, limit = 8, lan
       )}
 
       {!isLoading && !error && items.length > 0 && (
-        <div className="space-y-3 text-left">
-          {items.map((item, index) => (
-            <div
-              key={`${item.title}-${index}`}
-              className="home-subpanel home-news-item group p-4"
-            >
-              <div className="flex items-start justify-between gap-3">
-                <div className="flex-1 min-w-0 text-left">
-                  <p className="home-news-title text-sm font-medium leading-6 text-foreground text-left">
-                    {item.title}
-                  </p>
+        <div className="report-news-list">
+          {items.map((item, index) => {
+            const sourceHost = getSourceHost(item.url);
+            return (
+              <article
+                key={`${item.title}-${index}`}
+                className="home-subpanel report-news-item group"
+              >
+                <span className="report-news-index font-mono" aria-hidden="true">
+                  {String(index + 1).padStart(2, '0')}
+                </span>
+                <div className="report-news-main">
+                  <p className="report-news-title">{item.title}</p>
                   {item.snippet && (
-                    <p className="home-news-snippet mt-2 text-sm leading-6 text-secondary-text text-left overflow-hidden [display:-webkit-box] [-webkit-line-clamp:3] [-webkit-box-orient:vertical]">
-                      {item.snippet}
-                    </p>
+                    <p className="report-news-snippet">{item.snippet}</p>
                   )}
+                  {sourceHost ? (
+                    <span className="report-news-source font-mono">{sourceHost}</span>
+                  ) : null}
                 </div>
                 {item.url && (
                   <a
                     href={item.url}
                     target="_blank"
                     rel="noopener noreferrer"
-                    className="home-accent-pill-link shrink-0 whitespace-nowrap px-2.5 py-1 text-xs"
+                    className="report-news-link shrink-0"
                     aria-label={text.openLink}
                   >
                     {text.openLink}
-                    <svg className="w-3.5 h-3.5" fill="none" stroke="currentColor" viewBox="0 0 24 24">
+                    <svg className="h-3.5 w-3.5" fill="none" stroke="currentColor" viewBox="0 0 24 24" aria-hidden="true">
                       <path
                         strokeLinecap="round"
                         strokeLinejoin="round"
@@ -163,10 +179,9 @@ export const ReportNews: React.FC<ReportNewsProps> = ({ recordId, limit = 8, lan
                     </svg>
                   </a>
                 )}
-              </div>
-            </div>
-          ))}
-
+              </article>
+            );
+          })}
         </div>
       )}
     </Card>

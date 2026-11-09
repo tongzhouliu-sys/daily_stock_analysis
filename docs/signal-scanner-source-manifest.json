@@ -1,0 +1,813 @@
+{
+  "source": "交易信号扫描器",
+  "source_version": "0.2.0",
+  "imported_on": "2026-11-08",
+  "base_head": "78a9736d2ae98d10aed2cefeae3e7e6e37cc4f4d",
+  "files": [
+    {
+      "source": "backend/app/__init__.py",
+      "target": "src/services/signal_scanner/__init__.py",
+      "source_sha256": "3c09aa3c1693c615b800fd8f22fa6520a1edfbdefd986e49b60c06e1ebd759c0"
+    },
+    {
+      "source": "backend/app/adapters/__init__.py",
+      "target": "src/services/signal_scanner/adapters/__init__.py",
+      "source_sha256": "e3b0c44298fc1c149afbf4c8996fb92427ae41e4649b934ca495991b7852b855"
+    },
+    {
+      "source": "backend/app/adapters/alphavantage_adapter.py",
+      "target": "src/services/signal_scanner/adapters/alphavantage_adapter.py",
+      "source_sha256": "0e4d2866e598d8e9fd3280f389f1448a6a46b2af64a1d7d97b5b1107585897cb"
+    },
+    {
+      "source": "backend/app/adapters/base.py",
+      "target": "src/services/signal_scanner/adapters/base.py",
+      "source_sha256": "405c4244a1026462647babbd0c585d91ddadb08b6eb299a1212850f472a41fec"
+    },
+    {
+      "source": "backend/app/adapters/finnhub_earnings_adapter.py",
+      "target": "src/services/signal_scanner/adapters/finnhub_earnings_adapter.py",
+      "source_sha256": "b180f0b0e5c692f5d663c9a8989f1f820dd4e6045d4f3da7113d77e526c98dd0"
+    },
+    {
+      "source": "backend/app/adapters/fred_vix_adapter.py",
+      "target": "src/services/signal_scanner/adapters/fred_vix_adapter.py",
+      "source_sha256": "01e838c796ea9d98e1d93d3f4c1e667b75299cfea6e0e87fe10750c221324761"
+    },
+    {
+      "source": "backend/app/adapters/market.py",
+      "target": "src/services/signal_scanner/adapters/market.py",
+      "source_sha256": "ded1398a680121c92f4fe01476f5c9530b5394794dedaf9a0114ae9c017c17c6"
+    },
+    {
+      "source": "backend/app/adapters/tiingo_adapter.py",
+      "target": "src/services/signal_scanner/adapters/tiingo_adapter.py",
+      "source_sha256": "ebc92eedaf71abc7c4b0030a5f24eea94f490f049a3a9978255611dbc1f6e379"
+    },
+    {
+      "source": "backend/app/api/__init__.py",
+      "target": "src/services/signal_scanner/api/__init__.py",
+      "source_sha256": "e3b0c44298fc1c149afbf4c8996fb92427ae41e4649b934ca495991b7852b855"
+    },
+    {
+      "source": "backend/app/api/models.py",
+      "target": "src/services/signal_scanner/api/models.py",
+      "source_sha256": "6b1b7c9d60b3076d65d28d51e71b9f56f4c3c97dce181e22134e5b36a0c734ea"
+    },
+    {
+      "source": "backend/app/api/rule_validation.py",
+      "target": "src/services/signal_scanner/api/rule_validation.py",
+      "source_sha256": "ee5a047e00fff15f8e8aa743177aa9a25c52273615cfceac8af4c2d57d8cf98f"
+    },
+    {
+      "source": "backend/app/cli.py",
+      "target": "src/services/signal_scanner/cli.py",
+      "source_sha256": "dbcaa334778a6fc82685dd7016289bc47a5d9fdf8a184a7d0483ec8effc34658"
+    },
+    {
+      "source": "backend/app/core.py",
+      "target": "src/services/signal_scanner/core.py",
+      "source_sha256": "7a9e3a6c72a7420edc383ae2ab6ea27ac4f8350f9d5e5b55494a64a4aa8c7095"
+    },
+    {
+      "source": "backend/app/domain/__init__.py",
+      "target": "src/services/signal_scanner/domain/__init__.py",
+      "source_sha256": "e3b0c44298fc1c149afbf4c8996fb92427ae41e4649b934ca495991b7852b855"
+    },
+    {
+      "source": "backend/app/domain/calendar.py",
+      "target": "src/services/signal_scanner/domain/calendar.py",
+      "source_sha256": "7cbd95fe9a2b1a30e57c4b3468addf2ea9d2204fa4e7ccacee2c9d27732127f1"
+    },
+    {
+      "source": "backend/app/domain/features.py",
+      "target": "src/services/signal_scanner/domain/features.py",
+      "source_sha256": "bcb5658b4bafd61ec1518d163c0bb6edc4e82951e26e77267c80fbed2960ae8d"
+    },
+    {
+      "source": "backend/app/domain/paper.py",
+      "target": "src/services/signal_scanner/domain/paper.py",
+      "source_sha256": "868eeb274ded3eeaedfd145970d0c53a30840ca2a756bbfbc511cc8e037668a5"
+    },
+    {
+      "source": "backend/app/domain/portfolio.py",
+      "target": "src/services/signal_scanner/domain/portfolio.py",
+      "source_sha256": "2ff871c0113128a317280bbc4882a01c4f664db60585f9559268f8407b559b21"
+    },
+    {
+      "source": "backend/app/domain/reports.py",
+      "target": "src/services/signal_scanner/domain/reports.py",
+      "source_sha256": "5a646c5c2fd76ddddd36b6ee36b455b12809adbe1960f12ef3644018976c074e"
+    },
+    {
+      "source": "backend/app/domain/risk.py",
+      "target": "src/services/signal_scanner/domain/risk.py",
+      "source_sha256": "f3947ae7dfec2764d25c95c577832bb4494c0616d524ba1bb2df97fd98d9d4c6"
+    },
+    {
+      "source": "backend/app/domain/rule_parameters.py",
+      "target": "src/services/signal_scanner/domain/rule_parameters.py",
+      "source_sha256": "0919a3b38f4582408a620ab6d1f76e3dd39c1c201ec2e8aa9ad9d390212e9c43"
+    },
+    {
+      "source": "backend/app/domain/rules.py",
+      "target": "src/services/signal_scanner/domain/rules.py",
+      "source_sha256": "70dc8ac9c1b22e8c76fd5805eccb3da1706577a77da64679d0f053c15c36ba8d"
+    },
+    {
+      "source": "backend/app/domain/scoring.py",
+      "target": "src/services/signal_scanner/domain/scoring.py",
+      "source_sha256": "1d3344ca5396d39d9bb2dbda8e5610cd2262a28047a859b85c8fdc263564a121"
+    },
+    {
+      "source": "backend/app/launch.py",
+      "target": "src/services/signal_scanner/launch.py",
+      "source_sha256": "d6bb3cda482a3efc8f8830aac4e282d427d867c9c1163abc19d2e22b82574cb1"
+    },
+    {
+      "source": "backend/app/main.py",
+      "target": "src/services/signal_scanner/main.py",
+      "source_sha256": "3ad34aa56f6c61718d7d94e3aad91cb63400696b1f2472a2df25f8f50e5cbe1f"
+    },
+    {
+      "source": "backend/app/research/__init__.py",
+      "target": "src/services/signal_scanner/research/__init__.py",
+      "source_sha256": "0a6c9e3fe4465fbcc8d5b2f44ded2011b60928046c93fe5d73482e92ab4a8626"
+    },
+    {
+      "source": "backend/app/research/benchmarks.py",
+      "target": "src/services/signal_scanner/research/benchmarks.py",
+      "source_sha256": "4c63fae190e9a25e84acbf82da2ea88c93e832ccde02846d5423c76bb2fc7a65"
+    },
+    {
+      "source": "backend/app/research/cli.py",
+      "target": "src/services/signal_scanner/research/cli.py",
+      "source_sha256": "a20cbac4032ed5927956fdde7394c2fed4c1649bbfeaec187e9351c93dbc1403"
+    },
+    {
+      "source": "backend/app/research/contracts.py",
+      "target": "src/services/signal_scanner/research/contracts.py",
+      "source_sha256": "9a84587b7a8f5183fe291bc08e5224d7c9a885657934919e5ac48ec9ac1772a3"
+    },
+    {
+      "source": "backend/app/research/experiments.py",
+      "target": "src/services/signal_scanner/research/experiments.py",
+      "source_sha256": "2537e1413cea9abc9654b3ed7feb3bf437e87f4a3687a91a17a4265256faa9be"
+    },
+    {
+      "source": "backend/app/research/fixtures.py",
+      "target": "src/services/signal_scanner/research/fixtures.py",
+      "source_sha256": "c6f4def1f123779b767149f46a409a77d9f64fd133a4f2f094b707cd9d8b74df"
+    },
+    {
+      "source": "backend/app/research/inputs.py",
+      "target": "src/services/signal_scanner/research/inputs.py",
+      "source_sha256": "90797d80f4d729a2182a112d0a4eed8d333b79854cfe8b5589fbffc4a3b63a4d"
+    },
+    {
+      "source": "backend/app/research/isolation.py",
+      "target": "src/services/signal_scanner/research/isolation.py",
+      "source_sha256": "e94b52a060faefdb394def02b43aff1806b884507fb66f67da8a678bb8ef8408"
+    },
+    {
+      "source": "backend/app/research/outcomes.py",
+      "target": "src/services/signal_scanner/research/outcomes.py",
+      "source_sha256": "e7167a923f5827bc7dd6a1c56c1d1d7c47806c192287abd961de2527a7bcb5e4"
+    },
+    {
+      "source": "backend/app/research/probe.py",
+      "target": "src/services/signal_scanner/research/probe.py",
+      "source_sha256": "d09f18d8e5649d7ad018c498dadb6ba022a20977799ba876a7e432629f4ca169"
+    },
+    {
+      "source": "backend/app/research/reporting.py",
+      "target": "src/services/signal_scanner/research/reporting.py",
+      "source_sha256": "4a7401aacaebb418c1075c1e6a8635907245666f686f7bd3449cd42a0f99d1d7"
+    },
+    {
+      "source": "backend/app/research/runner.py",
+      "target": "src/services/signal_scanner/research/runner.py",
+      "source_sha256": "35373323d5e512e20250e304b8f3a2661fc0bfe803749ae02ad388bd021fe3c9"
+    },
+    {
+      "source": "backend/app/research/statistics.py",
+      "target": "src/services/signal_scanner/research/statistics.py",
+      "source_sha256": "74f5991e1dc447411ebbba9e7f746712b43bc7957a515b749146c313aba6ce1f"
+    },
+    {
+      "source": "backend/app/research/versions.py",
+      "target": "src/services/signal_scanner/research/versions.py",
+      "source_sha256": "75fef21565c291dde518c9aa16496a86ba9bbdef624b97cab1732870c673d82d"
+    },
+    {
+      "source": "backend/app/services/__init__.py",
+      "target": "src/services/signal_scanner/services/__init__.py",
+      "source_sha256": "e3b0c44298fc1c149afbf4c8996fb92427ae41e4649b934ca495991b7852b855"
+    },
+    {
+      "source": "backend/app/services/accounts.py",
+      "target": "src/services/signal_scanner/services/accounts.py",
+      "source_sha256": "39f280884391ebfbb72db262156be72935112c9518080f6d7b24767820548b88"
+    },
+    {
+      "source": "backend/app/services/auth.py",
+      "target": "src/services/signal_scanner/services/auth.py",
+      "source_sha256": "6cea40570b987db71e1e4be3c742f222fcc3ba2fe810ab0dee6d0e0ae8e65378"
+    },
+    {
+      "source": "backend/app/services/batch_history.py",
+      "target": "src/services/signal_scanner/services/batch_history.py",
+      "source_sha256": "efca5b56b4239f419b0d4988a30d5ce8a77a52b23b9e273cf30710aa70f2556c"
+    },
+    {
+      "source": "backend/app/services/config.py",
+      "target": "src/services/signal_scanner/services/config.py",
+      "source_sha256": "1e64b1881b62ea814d236c7eb6708a69c62ec0c9b18edf3e3f93528eeb46e5eb"
+    },
+    {
+      "source": "backend/app/services/daily_market.py",
+      "target": "src/services/signal_scanner/services/daily_market.py",
+      "source_sha256": "8e6368141184bcbe6ce19e6a2b9fd71088547ac0ab70a4ea78f3377611dc4311"
+    },
+    {
+      "source": "backend/app/services/plans.py",
+      "target": "src/services/signal_scanner/services/plans.py",
+      "source_sha256": "b07c5cfbc8f4e1fe32196e7b51c8bfe36bad519012a32a2c0b8757c61cf78cb6"
+    },
+    {
+      "source": "backend/app/services/rule_validation_web/__init__.py",
+      "target": "src/services/signal_scanner/services/rule_validation_web/__init__.py",
+      "source_sha256": "426ce622cfcf7fe7da32c4e225251ac1530dd372b1dc1966cdd4d096af7ff409"
+    },
+    {
+      "source": "backend/app/services/rule_validation_web/cancellation.py",
+      "target": "src/services/signal_scanner/services/rule_validation_web/cancellation.py",
+      "source_sha256": "612786ac1e79c3f53e31a17ae5eab2b7538a464c9e4bd3b82f7aefef78338324"
+    },
+    {
+      "source": "backend/app/services/rule_validation_web/catalog.py",
+      "target": "src/services/signal_scanner/services/rule_validation_web/catalog.py",
+      "source_sha256": "3ee81ccfd8722be7b1d77ad171f8bcdc9b61669f5953356aa95066bb4ddaf27a"
+    },
+    {
+      "source": "backend/app/services/rule_validation_web/charts.py",
+      "target": "src/services/signal_scanner/services/rule_validation_web/charts.py",
+      "source_sha256": "b778f87a564f29035e4f78e574de3a42513b3cb1909b8e77aebfc2439027fe72"
+    },
+    {
+      "source": "backend/app/services/rule_validation_web/exports.py",
+      "target": "src/services/signal_scanner/services/rule_validation_web/exports.py",
+      "source_sha256": "b6e832815eed92a2e39e419f771fabedbf1338b6c684cfc1cc2034415d41d863"
+    },
+    {
+      "source": "backend/app/services/rule_validation_web/models.py",
+      "target": "src/services/signal_scanner/services/rule_validation_web/models.py",
+      "source_sha256": "ec1c7bf25f52707cbe5e5af0d4fa9dbe6e1211ae31449afeceae16946d4b33d7"
+    },
+    {
+      "source": "backend/app/services/rule_validation_web/probes.py",
+      "target": "src/services/signal_scanner/services/rule_validation_web/probes.py",
+      "source_sha256": "75e2b9706ed8c0e213d8d1802df522726667c9aef48898a992caca9e77d53643"
+    },
+    {
+      "source": "backend/app/services/rule_validation_web/query.py",
+      "target": "src/services/signal_scanner/services/rule_validation_web/query.py",
+      "source_sha256": "fd71076e554951e6ab5905d4556ef02173b2149edb1ef3fb8764f1fa62cf9521"
+    },
+    {
+      "source": "backend/app/services/rule_validation_web/service.py",
+      "target": "src/services/signal_scanner/services/rule_validation_web/service.py",
+      "source_sha256": "4965c2d1502810771503256362fc7bb3290475e2ce484f4064097f895ce5275b"
+    },
+    {
+      "source": "backend/app/services/rule_validation_web/store.py",
+      "target": "src/services/signal_scanner/services/rule_validation_web/store.py",
+      "source_sha256": "fc6025c25d406f54dcc85203b3c967910dca5eb3628754ede826c39a63d74ce4"
+    },
+    {
+      "source": "backend/app/services/rule_validation_web/streaming.py",
+      "target": "src/services/signal_scanner/services/rule_validation_web/streaming.py",
+      "source_sha256": "dd45fc7023ee45b43518e640d60cd6931774b37a40494f7cdfbc5f5240f99fd7"
+    },
+    {
+      "source": "backend/app/services/rule_validation_web/variants.py",
+      "target": "src/services/signal_scanner/services/rule_validation_web/variants.py",
+      "source_sha256": "e423339c8f744008183d768b5c2686043b38f9647a11c26dee8c493600b16c13"
+    },
+    {
+      "source": "backend/app/services/screen.py",
+      "target": "src/services/signal_scanner/services/screen.py",
+      "source_sha256": "0598fc44f289322859768e65c938ffa1b5aa6d987ca6e2f3730daa64a92aea36"
+    },
+    {
+      "source": "backend/app/services/source_data.py",
+      "target": "src/services/signal_scanner/services/source_data.py",
+      "source_sha256": "fb561d8e42ed975221f458c856b4447ac1247a1224949de38e3f433e6931d6c6"
+    },
+    {
+      "source": "backend/app/storage/__init__.py",
+      "target": "src/services/signal_scanner/storage/__init__.py",
+      "source_sha256": "e3b0c44298fc1c149afbf4c8996fb92427ae41e4649b934ca495991b7852b855"
+    },
+    {
+      "source": "backend/app/storage/db.py",
+      "target": "src/services/signal_scanner/storage/db.py",
+      "source_sha256": "fbe3dde975440317bb76a9b2aaf4ba1ea64e6646f5692edfeb5862ba82df05d6"
+    },
+    {
+      "source": "backend/app/storage/files.py",
+      "target": "src/services/signal_scanner/storage/files.py",
+      "source_sha256": "cc1068a91d7ff579e690cc690d6fbec42554618b7390a20b9719926e2e4fe662"
+    },
+    {
+      "source": "backend/app/storage/schema.sql",
+      "target": "src/services/signal_scanner/storage/schema.sql",
+      "source_sha256": "96576f56999bcd73f4ac1d99501b59367b3202905168c303b5e95df1ded12173"
+    },
+    {
+      "source": "backend/app/worker/__init__.py",
+      "target": "src/services/signal_scanner/worker/__init__.py",
+      "source_sha256": "e3b0c44298fc1c149afbf4c8996fb92427ae41e4649b934ca495991b7852b855"
+    },
+    {
+      "source": "backend/app/worker/jobs.py",
+      "target": "src/services/signal_scanner/worker/jobs.py",
+      "source_sha256": "e8008eaa6d99fb3e42c8e999af12e4a960771125b648c68f877c4003bdf304e8"
+    },
+    {
+      "source": "backend/app/worker/pipeline.py",
+      "target": "src/services/signal_scanner/worker/pipeline.py",
+      "source_sha256": "0e3ea82fdfb46a8a2266feacc9272738587c0f3b88acebb0ff736c796077fb7e"
+    },
+    {
+      "source": "backend/app/worker/rule_validation.py",
+      "target": "src/services/signal_scanner/worker/rule_validation.py",
+      "source_sha256": "61b463798e0f38890070971c72854a55620cfc1715c697adc56d60a933f194a1"
+    },
+    {
+      "source": "backend/tests/conftest.py",
+      "target": "tests/signal_scanner/conftest.py",
+      "source_sha256": "262d424c957f0da06376311f4906f478349b1ace9bbe7e43414c0eccf4d51590"
+    },
+    {
+      "source": "backend/tests/research/__init__.py",
+      "target": "tests/signal_scanner/research/__init__.py",
+      "source_sha256": "e3b0c44298fc1c149afbf4c8996fb92427ae41e4649b934ca495991b7852b855"
+    },
+    {
+      "source": "backend/tests/research/test_eod_diagnostic.py",
+      "target": "tests/signal_scanner/research/test_eod_diagnostic.py",
+      "source_sha256": "b3a23cae79e01c0ed10a82d286998198d2523f82922b6bacbc4f290b8ba3c98a"
+    },
+    {
+      "source": "backend/tests/research/test_probe_and_boundaries.py",
+      "target": "tests/signal_scanner/research/test_probe_and_boundaries.py",
+      "source_sha256": "f5407dcffe4e7a623057d4eeaa5b239158a9773194cebb4abc9d9f485432c9ce"
+    },
+    {
+      "source": "backend/tests/research/test_research.py",
+      "target": "tests/signal_scanner/research/test_research.py",
+      "source_sha256": "13bdf45190ac812ada979a0c6f9352789667663afbfd1f274e75d168923cc965"
+    },
+    {
+      "source": "backend/tests/research/test_rules.py",
+      "target": "tests/signal_scanner/research/test_rules.py",
+      "source_sha256": "a3e256607d54777acb6bef9aaa26ddae1759c1afc06ec39e8b90f468ccfa1d90"
+    },
+    {
+      "source": "backend/tests/research_web/test_p1.py",
+      "target": "tests/signal_scanner/research_web/test_p1.py",
+      "source_sha256": "d4db98448fda1ed38343d0474ced02dcd57742b630e4764fcc5ada1213506b41"
+    },
+    {
+      "source": "backend/tests/research_web/test_web.py",
+      "target": "tests/signal_scanner/research_web/test_web.py",
+      "source_sha256": "be5fb47476073b6428cb5a1bda48a78e2f907583902fd4b2ecfd93c66328c2a3"
+    },
+    {
+      "source": "backend/tests/test_daily_market.py",
+      "target": "tests/signal_scanner/test_daily_market.py",
+      "source_sha256": "ff410188b4e1a023ba6361a4f35aa27e5107b9d2cd8cf78e00a121f6d73fec07"
+    },
+    {
+      "source": "backend/tests/test_data10_import.py",
+      "target": "tests/signal_scanner/test_data10_import.py",
+      "source_sha256": "5e529203337cfeb70228aa51d79c145b212469a3290476a0ecbe02b66d3d05d0"
+    },
+    {
+      "source": "backend/tests/test_finnhub.py",
+      "target": "tests/signal_scanner/test_finnhub.py",
+      "source_sha256": "08198c073bf097474c1dd98ef23a67bbe7429e56d9d0aa181e39d50ae1c3b5b1"
+    },
+    {
+      "source": "backend/tests/test_fred.py",
+      "target": "tests/signal_scanner/test_fred.py",
+      "source_sha256": "61044385c644f4f232dbd7953daf25b577248867a2bba37c4413edc1810bc4fd"
+    },
+    {
+      "source": "backend/tests/test_golden.py",
+      "target": "tests/signal_scanner/test_golden.py",
+      "source_sha256": "065b8011b25723e49dd71a5923a5b7cd18eb9b84186e98e3578f9b6488df021b"
+    },
+    {
+      "source": "backend/tests/test_integration.py",
+      "target": "tests/signal_scanner/test_integration.py",
+      "source_sha256": "b16d64c992958c5fba6312a95e2520280ab6247923300716aa2f866451b29432"
+    },
+    {
+      "source": "backend/tests/test_portfolio.py",
+      "target": "tests/signal_scanner/test_portfolio.py",
+      "source_sha256": "85869e42001758168bf66e577f459ace8de96487e8d157c68c424dc672b3fd7c"
+    },
+    {
+      "source": "backend/tests/test_regressions.py",
+      "target": "tests/signal_scanner/test_regressions.py",
+      "source_sha256": "be68f797df960ca77d48173e36b3739ec57d8ce10a3c66146a30e08d9a6b4958"
+    },
+    {
+      "source": "backend/tests/test_score_dependencies.py",
+      "target": "tests/signal_scanner/test_score_dependencies.py",
+      "source_sha256": "3ad42a6e23d3f0b99735c4206972ab047819fba852a987fc8c233bc7f2934c08"
+    },
+    {
+      "source": "backend/tests/test_screen.py",
+      "target": "tests/signal_scanner/test_screen.py",
+      "source_sha256": "1750764a38605ef6a6cc657569f9fa32e644e9422ae62cd01ae45c46cbc7c776"
+    },
+    {
+      "source": "backend/tests/test_tiingo.py",
+      "target": "tests/signal_scanner/test_tiingo.py",
+      "source_sha256": "0c84ddef8a9c6649387081a8e63350167e06bb5ec34091a180a8819b78dd2f9b"
+    },
+    {
+      "source": "backend/tests/test_worker.py",
+      "target": "tests/signal_scanner/test_worker.py",
+      "source_sha256": "7e366530d0e3eaf2acc1032c6fcbac229cbb364e8d3d5a815f39232cc20669b5"
+    },
+    {
+      "source": "frontend/src/App.tsx",
+      "target": "apps/dsa-web/src/components/scanner/App.tsx",
+      "source_sha256": "a00bbebf23cbbbe37f85c4bb52da30af239bbf68914871faf9a1769d297e1689"
+    },
+    {
+      "source": "frontend/src/api/client.ts",
+      "target": "apps/dsa-web/src/components/scanner/api/client.ts",
+      "source_sha256": "024d20c539a2853bda6f3ffe0e6ca7cb8e89aba8eb393eda61474b895da578e5"
+    },
+    {
+      "source": "frontend/src/api/research.ts",
+      "target": "apps/dsa-web/src/components/scanner/api/research.ts",
+      "source_sha256": "785b8c488fca1e8dbe1c257510c940355a208a870283eb2c6b3741ad162d966b"
+    },
+    {
+      "source": "frontend/src/components/research/FrozenChart.tsx",
+      "target": "apps/dsa-web/src/components/scanner/components/research/FrozenChart.tsx",
+      "source_sha256": "f03f2f3793c9a8b7d12e19ca055c4704bc943eb6836b7b8a9b37845f341deb8d"
+    },
+    {
+      "source": "frontend/src/components/research/Variants.tsx",
+      "target": "apps/dsa-web/src/components/scanner/components/research/Variants.tsx",
+      "source_sha256": "88c501833dfa62aa9b8836deaecab6600f0ea142260688163645feb104295837"
+    },
+    {
+      "source": "frontend/src/components/research/ui.tsx",
+      "target": "apps/dsa-web/src/components/scanner/components/research/ui.tsx",
+      "source_sha256": "bca6b209a269478270560406f057c2b7e271b6af1f9efea71bc5d4a92c741c6b"
+    },
+    {
+      "source": "frontend/src/components/ui.tsx",
+      "target": "apps/dsa-web/src/components/scanner/components/ui.tsx",
+      "source_sha256": "9ccd12cd85245b383a4d920f372b88e0ecdd239d11b4f574aae31ee62addcabb"
+    },
+    {
+      "source": "frontend/src/main.tsx",
+      "target": "docs/signal-scanner/upstream-tools/frontend/src/main.tsx.txt",
+      "source_sha256": "a061e782a6fe6a46e5fc26270b25b1706fcbd2c88f538980331dbb75057ea2eb",
+      "disposition": "replaced by DSA router bootstrap"
+    },
+    {
+      "source": "frontend/src/pages/Dashboard.tsx",
+      "target": "apps/dsa-web/src/components/scanner/pages/Dashboard.tsx",
+      "source_sha256": "c137780b321d6111a6fdf4da9e2c4d9427f7b3a1b117da246c633c37fa1eeca0"
+    },
+    {
+      "source": "frontend/src/pages/Detail.tsx",
+      "target": "apps/dsa-web/src/components/scanner/pages/Detail.tsx",
+      "source_sha256": "35f8465e7921dccfe09220f932b5bd72f81ad9eefbf2cde6b3e6158b14f31aa7"
+    },
+    {
+      "source": "frontend/src/pages/Journal.tsx",
+      "target": "apps/dsa-web/src/components/scanner/pages/Journal.tsx",
+      "source_sha256": "cab72a21b92b7a38afc005475d445b0fcdc2e27b51bbd2fee4a73c797098a9b1"
+    },
+    {
+      "source": "frontend/src/pages/Screen.tsx",
+      "target": "apps/dsa-web/src/components/scanner/pages/Screen.tsx",
+      "source_sha256": "0171bc7844779bb72e79f6871babfb21c03e7c024929c493559a3cca65cccb20"
+    },
+    {
+      "source": "frontend/src/pages/Settings.tsx",
+      "target": "apps/dsa-web/src/components/scanner/pages/Settings.tsx",
+      "source_sha256": "2b849e4aa0f5500d0472fc4fa8b2f2d9cbfa2ebaf6fc06a8ee8613035455e26f"
+    },
+    {
+      "source": "frontend/src/pages/Signals.tsx",
+      "target": "apps/dsa-web/src/components/scanner/pages/Signals.tsx",
+      "source_sha256": "422320031d66e7c04757af052bc553422e9f6b5cab0a1c51f41b83fbcccc7b04"
+    },
+    {
+      "source": "frontend/src/pages/rule-validation/Compare.tsx",
+      "target": "apps/dsa-web/src/components/scanner/pages/rule-validation/Compare.tsx",
+      "source_sha256": "72047437310a5fb331f083bf4d90e7b1cf21100b50a29d3a9931fb33319c6fbb"
+    },
+    {
+      "source": "frontend/src/pages/rule-validation/Event.tsx",
+      "target": "apps/dsa-web/src/components/scanner/pages/rule-validation/Event.tsx",
+      "source_sha256": "385fbeeff0cbee916f4fadbe6d4f78e826e3ffe84821ce8d8101d2981ce90495"
+    },
+    {
+      "source": "frontend/src/pages/rule-validation/List.tsx",
+      "target": "apps/dsa-web/src/components/scanner/pages/rule-validation/List.tsx",
+      "source_sha256": "33e27ec8b7660517dea362ace5fdaf0bb6f3e4cb4c1e522e96b7abd071867775"
+    },
+    {
+      "source": "frontend/src/pages/rule-validation/New.tsx",
+      "target": "apps/dsa-web/src/components/scanner/pages/rule-validation/New.tsx",
+      "source_sha256": "0ce26c64f9365b71749017f916d2d32eaa12cbe7fc0415394d445498d74220a6"
+    },
+    {
+      "source": "frontend/src/pages/rule-validation/Probes.tsx",
+      "target": "apps/dsa-web/src/components/scanner/pages/rule-validation/Probes.tsx",
+      "source_sha256": "1483a829c14dbcde78dd5dab011d8a4ceb425cb164d369030e964fc20f57316a"
+    },
+    {
+      "source": "frontend/src/pages/rule-validation/Report.tsx",
+      "target": "apps/dsa-web/src/components/scanner/pages/rule-validation/Report.tsx",
+      "source_sha256": "8a4ffb2cb4494e182cd3f5950e720a988e46bb052b19f72816c9ca5c32f659f6"
+    },
+    {
+      "source": "frontend/src/pages/rule-validation/Run.tsx",
+      "target": "apps/dsa-web/src/components/scanner/pages/rule-validation/Run.tsx",
+      "source_sha256": "42d28529b5b2d7159a42b84f0a9e6082eb17377a2c324ca032e7c1892dd24860"
+    },
+    {
+      "source": "frontend/src/styles/app.css",
+      "target": "apps/dsa-web/src/components/scanner/styles/app.css",
+      "source_sha256": "8a7234242ec4347288062afd2cfcb7616d9946d7d922201d0fab5c7f7e504a61"
+    },
+    {
+      "source": "frontend/src/styles/research.css",
+      "target": "apps/dsa-web/src/components/scanner/styles/research.css",
+      "source_sha256": "fe95ec05201bbcbda6eb2e4220a8951586c6903b923a64b6ee8df1044467a6be"
+    },
+    {
+      "source": "frontend/src/styles/screen.css",
+      "target": "apps/dsa-web/src/components/scanner/styles/screen.css",
+      "source_sha256": "82af469c066ba3ec1f33082bd86b7d119d62c38f86baa080a26f491f16b0cd32"
+    },
+    {
+      "source": "scripts/apply_data10.py",
+      "target": "scripts/signal_scanner/apply_data10.py",
+      "source_sha256": "51318365dd018cc9f1334f1281a275dca1a14b3375ac9bd0c4590ca37b7a4640"
+    },
+    {
+      "source": "scripts/backtest_ibkrv5_opportunities_20d.py",
+      "target": "scripts/signal_scanner/backtest_ibkrv5_opportunities_20d.py",
+      "source_sha256": "85a53340d1d7925119ba3ffd519df7337d6ddd5bfa07842f524d25ac98a504a7"
+    },
+    {
+      "source": "scripts/backtest_ibkrv5_score_tiers.py",
+      "target": "scripts/signal_scanner/backtest_ibkrv5_score_tiers.py",
+      "source_sha256": "a4e3fd9dfa09424224589c76b9f6f83bf91b3d5cd2cdc35e84ccb9c0e6f1f09e"
+    },
+    {
+      "source": "scripts/backtest_three_dimensional_rebound.py",
+      "target": "scripts/signal_scanner/backtest_three_dimensional_rebound.py",
+      "source_sha256": "5a3d4f85d85311c8af563bb37abfacee38a721c835d92c7d9278c161b9980301"
+    },
+    {
+      "source": "scripts/benchmark.py",
+      "target": "scripts/signal_scanner/benchmark.py",
+      "source_sha256": "80270fd479852a8c7ad4f300188bfcb126c5b6a668b193ab9d3004d7d24be2c2"
+    },
+    {
+      "source": "scripts/build_replay_conclusions.py",
+      "target": "scripts/signal_scanner/build_replay_conclusions.py",
+      "source_sha256": "235c6822417c78b5e1d16d77a803b48a3401e2286696b41417ec85d6ce4afa47"
+    },
+    {
+      "source": "scripts/daily_market.py",
+      "target": "scripts/signal_scanner/daily_market.py",
+      "source_sha256": "f5938f9d2962f2ba702bc80ef431a6e235027c13f8036408fe0c2ea41aa3c836"
+    },
+    {
+      "source": "scripts/deploy_local.py",
+      "target": "docs/signal-scanner/upstream-tools/deploy_local.py.txt",
+      "source_sha256": "196d338d2e1fca7af64ea33e702dd4bfc91b9bea1030f2f32936925a164c5292",
+      "disposition": "historical-host-tool; replaced by DSA lifecycle"
+    },
+    {
+      "source": "scripts/install_daily_market.py",
+      "target": "docs/signal-scanner/upstream-tools/install_daily_market.py.txt",
+      "source_sha256": "f9ea43a62a965c98f9e5843fc5370d3c391a34c69305de37806f548d73ec7bc2",
+      "disposition": "historical-host-tool; replaced by DSA lifecycle"
+    },
+    {
+      "source": "scripts/load_data10.py",
+      "target": "scripts/signal_scanner/load_data10.py",
+      "source_sha256": "bfc6968436289e50528a0be86c1df73f79ee1a6841b1099cfaca0e15490caa32"
+    },
+    {
+      "source": "scripts/load_finnhub_earnings.py",
+      "target": "scripts/signal_scanner/load_finnhub_earnings.py",
+      "source_sha256": "f8e93d88af09dd25e55cd097ad24595745161d4c88eefeb966036f1b8b50c714"
+    },
+    {
+      "source": "scripts/load_fred_vix.py",
+      "target": "scripts/signal_scanner/load_fred_vix.py",
+      "source_sha256": "3a1459200e3567f598a823cbde03b964233a8e0f726c65d5cbf073bad4d64e51"
+    },
+    {
+      "source": "scripts/load_tiingo_spy.py",
+      "target": "scripts/signal_scanner/load_tiingo_spy.py",
+      "source_sha256": "8709102f3435904744d2566e28404506ba114d0df1e16ef63b629254877b2e9a"
+    },
+    {
+      "source": "scripts/mine_patterns_hourly.py",
+      "target": "scripts/signal_scanner/mine_patterns_hourly.py",
+      "source_sha256": "5072fc36fbf3b689c7110c47eeeccfbe9244ab23e98ca7bfc2e3ffb4f30169d5"
+    },
+    {
+      "source": "scripts/prepare_data10.py",
+      "target": "scripts/signal_scanner/prepare_data10.py",
+      "source_sha256": "89a9d8cd464098bf6c0a84a87d6000a266ad657ab390e24cce00224d0dda1e99"
+    },
+    {
+      "source": "scripts/repair_score_dependencies.py",
+      "target": "scripts/signal_scanner/repair_score_dependencies.py",
+      "source_sha256": "2b7e0dfd45f9c44b1de6a48db05fc20a9e903a0f480f9215990b5e5fb36a25b0"
+    },
+    {
+      "source": "scripts/replay_local_eod.py",
+      "target": "scripts/signal_scanner/replay_local_eod.py",
+      "source_sha256": "e9b33b84a76e605594e924613006baf801ae5f2b760771d80ac2fb4ce6cade50"
+    },
+    {
+      "source": "scripts/research_web_benchmark.py",
+      "target": "scripts/signal_scanner/research_web_benchmark.py",
+      "source_sha256": "3d69b62b3ca389659444a6d9268370ee0277a77a967ab1aeebe9243bb18d77bb"
+    },
+    {
+      "source": "scripts/research_web_fixture.py",
+      "target": "scripts/signal_scanner/research_web_fixture.py",
+      "source_sha256": "3688ff898ba9cb8d8e999916af50f20f25f0a367c2904551df19056985bba93f"
+    },
+    {
+      "source": "scripts/research_web_p1_fixture.py",
+      "target": "scripts/signal_scanner/research_web_p1_fixture.py",
+      "source_sha256": "459f268502100a6aa627eb769b5a82a3723d15c55fae149c23b08b759d6231f7"
+    },
+    {
+      "source": "scripts/research_web_process_watch.py",
+      "target": "scripts/signal_scanner/research_web_process_watch.py",
+      "source_sha256": "a1afdd105a896b2640495cbf4a8503b981d2f791ef52d8cc64789d4b2cfe9aa3"
+    },
+    {
+      "source": "scripts/service.py",
+      "target": "docs/signal-scanner/upstream-tools/service.py.txt",
+      "source_sha256": "6c64e66792266c0f721f29163723cad57332c789777da6b7141a9ff68df1db49",
+      "disposition": "historical-host-tool; replaced by DSA lifecycle"
+    },
+    {
+      "source": "scripts/start.sh",
+      "target": "docs/signal-scanner/upstream-tools/start.sh.txt",
+      "source_sha256": "c9e9b3ba382b42dafef4e03eb280b98d6ac8a85a524968b13f2057e6f0024b45",
+      "disposition": "historical-host-tool; replaced by DSA lifecycle"
+    },
+    {
+      "source": "scripts/verify_data10_replay.py",
+      "target": "scripts/signal_scanner/verify_data10_replay.py",
+      "source_sha256": "5497871d161224d42f60d25103231844e2f1d53192a95372b177736b41a0dd72"
+    },
+    {
+      "source": "scripts/verify_patterns.py",
+      "target": "scripts/signal_scanner/verify_patterns.py",
+      "source_sha256": "7d0e6db73715ba243b15653e648750335082dea4eb7eeb6def9d2bce332bd501"
+    },
+    {
+      "source": "scripts/verify_patterns2.py",
+      "target": "scripts/signal_scanner/verify_patterns2.py",
+      "source_sha256": "d93d0fa79babb06ef52b02a8d32dacc5c695e678f9f94f0fbda5a96cf0276fe7"
+    },
+    {
+      "source": "scripts/verify_patterns3.py",
+      "target": "scripts/signal_scanner/verify_patterns3.py",
+      "source_sha256": "f76485f10c80db2482ba68d8df180e780d45549924aca4d94ca66383388ef03b"
+    },
+    {
+      "source": "scripts/verify_three_dimensional_rebound.py",
+      "target": "scripts/signal_scanner/verify_three_dimensional_rebound.py",
+      "source_sha256": "66ebb002cae495300baccb9167729f0b3066e4f720daa1c65e56e8e72602bbe9"
+    },
+    {
+      "source": "requirements.lock",
+      "target": "src/services/signal_scanner/upstream/requirements.lock",
+      "source_sha256": "7bc52e0acf986c74b4cbec68d0b36a0f968572e6c34bb3b4d69ca0a3635dca76"
+    },
+    {
+      "source": "pyproject.toml",
+      "target": "src/services/signal_scanner/upstream/pyproject.toml",
+      "source_sha256": "8ab1bf88fadb340beec0a067b46969d914c1f979c100780e48f9ffd2f59500d1"
+    },
+    {
+      "source": "run_batch_history.py",
+      "target": "docs/signal-scanner/upstream-tools/run_batch_history.py.txt",
+      "source_sha256": "74c74b59418c22f809d82133b0b805cfed96773d92c3866079c31cc9ff0db023",
+      "disposition": "historical operational/research/test source; use DSA lifecycle and mounted API"
+    },
+    {
+      "source": "start_batch_history.py",
+      "target": "docs/signal-scanner/upstream-tools/start_batch_history.py.txt",
+      "source_sha256": "60b1b9f4947f2d253b86426aa23e8261059cd0e031eed3ac881c02314bd7d8b4",
+      "disposition": "historical operational/research/test source; use DSA lifecycle and mounted API"
+    },
+    {
+      "source": "test_batch_spy.py",
+      "target": "docs/signal-scanner/upstream-tools/test_batch_spy.py.txt",
+      "source_sha256": "d2e1ac49d2048ed913afb442388983487837c1db2895685c7e1e09b7222bf24d",
+      "disposition": "historical operational/research/test source; use DSA lifecycle and mounted API"
+    },
+    {
+      "source": "frontend/scripts/e2e.mjs",
+      "target": "docs/signal-scanner/upstream-tools/frontend/scripts/e2e.mjs.txt",
+      "source_sha256": "30ec72438c8ed1b65b17c9465c44ebecb3530f48646cf521670714fb62a4ac4e",
+      "disposition": "historical operational/research/test source; use DSA lifecycle and mounted API"
+    },
+    {
+      "source": "frontend/vite.config.ts",
+      "target": "docs/signal-scanner/upstream-tools/frontend/vite.config.ts.txt",
+      "source_sha256": "c1ceb37d3d47a96dbf072d855550037542f7c03a53db78c00365a974a127f517",
+      "disposition": "historical operational/research/test source; use DSA lifecycle and mounted API"
+    },
+    {
+      "source": "frontend/playwright.config.ts",
+      "target": "docs/signal-scanner/upstream-tools/frontend/playwright.config.ts.txt",
+      "source_sha256": "072652727ca4ee5785935f32dcc53e8989366fff056062166ca5cfaf04526506",
+      "disposition": "historical operational/research/test source; use DSA lifecycle and mounted API"
+    },
+    {
+      "source": "frontend/e2e/research-capacity.spec.ts",
+      "target": "docs/signal-scanner/upstream-tools/frontend/e2e/research-capacity.spec.ts.txt",
+      "source_sha256": "d0e0bb7ce7132877cef4c63ee5c67bffa6ccbeb24c6ae9f0c35801b2ef38a767",
+      "disposition": "historical operational/research/test source; use DSA lifecycle and mounted API"
+    },
+    {
+      "source": "frontend/e2e/research-p1.spec.ts",
+      "target": "docs/signal-scanner/upstream-tools/frontend/e2e/research-p1.spec.ts.txt",
+      "source_sha256": "85f563a77ffbe2b9b35783a4d9af4cd14763036442c5ae7fa6615dd2227d7a17",
+      "disposition": "historical operational/research/test source; use DSA lifecycle and mounted API"
+    },
+    {
+      "source": "frontend/e2e/research.spec.ts",
+      "target": "docs/signal-scanner/upstream-tools/frontend/e2e/research.spec.ts.txt",
+      "source_sha256": "25f3d0feedfdebaff30ed8c31051b7b9bc97938ea9a0f92a9aa819538a0e38a6",
+      "disposition": "historical operational/research/test source; use DSA lifecycle and mounted API"
+    },
+    {
+      "source": "frontend/e2e/workspace.spec.ts",
+      "target": "docs/signal-scanner/upstream-tools/frontend/e2e/workspace.spec.ts.txt",
+      "source_sha256": "9368865c6feb0c11beaa7f2e1edf04212311b6096b32068662597a1840ab0145",
+      "disposition": "historical operational/research/test source; use DSA lifecycle and mounted API"
+    },
+    {
+      "source": "frontend/e2e/screen.spec.ts",
+      "target": "docs/signal-scanner/upstream-tools/frontend/e2e/screen.spec.ts.txt",
+      "source_sha256": "9b6358cf1c0cfa220048764d0d5b397a061e901fa841cae3b52e41cd51710265",
+      "disposition": "historical operational/research/test source; use DSA lifecycle and mounted API"
+    },
+    {
+      "source": "frontend/e2e/score-repair.spec.ts",
+      "target": "docs/signal-scanner/upstream-tools/frontend/e2e/score-repair.spec.ts.txt",
+      "source_sha256": "562fb27998df8912a56942104c4d2c30940bec9be56a9311f534f725088f8c28",
+      "disposition": "historical operational/research/test source; use DSA lifecycle and mounted API"
+    },
+    {
+      "source": "doc/ibkrv52016/opportunity_research.py",
+      "target": "docs/signal-scanner/upstream-tools/doc/ibkrv52016/opportunity_research.py.txt",
+      "source_sha256": "5b6741f6dcfbe14d7bec49fc4230afe7b3e192e6ed04bc3cb22592fa1cd947ee",
+      "disposition": "historical operational/research/test source; use DSA lifecycle and mounted API"
+    },
+    {
+      "source": "doc/ibkrv52016/opportunity_research_v2.py",
+      "target": "docs/signal-scanner/upstream-tools/doc/ibkrv52016/opportunity_research_v2.py.txt",
+      "source_sha256": "d11d2dbf0e3874a015e921f651c6d58e5e344f2b6a69de337295e3dbe1c793d6",
+      "disposition": "historical operational/research/test source; use DSA lifecycle and mounted API"
+    },
+    {
+      "source": "docs/AI代码事实库/生成索引.py",
+      "target": "docs/signal-scanner/upstream-tools/docs/AI代码事实库/生成索引.py.txt",
+      "source_sha256": "feac1ed240c765b0a6340d34d75fdb9afb0d90ce53ebf8a0d31d63817b5a1ffa",
+      "disposition": "historical operational/research/test source; use DSA lifecycle and mounted API"
+    }
+  ]
+}

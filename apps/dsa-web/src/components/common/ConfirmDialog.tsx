@@ -37,7 +37,7 @@ export const ConfirmDialog: React.FC<ConfirmDialogProps> = ({
 
   const dialog = (
     <div
-      className="fixed inset-0 z-50 flex items-center justify-center bg-black/60 backdrop-blur-sm transition-all"
+      className="fixed inset-0 z-[110] flex items-center justify-center bg-black/55 transition-all"
       onClick={() => {
         if (!cancelDisabled) {
           onCancel();
@@ -65,10 +65,10 @@ export const ConfirmDialog: React.FC<ConfirmDialogProps> = ({
             type="button"
             onClick={onConfirm}
             disabled={confirmDisabled}
-            className={`rounded-lg px-4 py-2 text-sm font-medium text-foreground transition-colors ${
+            className={`rounded-lg px-4 py-2 text-sm font-medium transition-colors ${
               isDanger
-                ? 'bg-red-500/80 hover:bg-red-500 shadow-lg shadow-red-500/20'
-                : 'bg-cyan/80 hover:bg-cyan shadow-lg shadow-cyan/20'
+                ? 'bg-danger text-destructive-foreground hover:bg-danger/90'
+                : 'bg-primary text-primary-foreground hover:bg-primary/90'
             } disabled:cursor-not-allowed disabled:opacity-60`}
           >
             {confirmText ?? t('common.confirm')}

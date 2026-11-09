@@ -523,7 +523,8 @@ async function fetchHistory(
       const selectedReport = get().selectedReport;
       if (latestCompletedTaskItem && latestCompletedTaskItem.id !== selectedReport?.meta.id) {
         await get().selectHistoryItem(latestCompletedTaskItem.id, false);
-      } else if (autoSelectFirst && response.items.length > 0 && !selectedReport) {
+      } else if (autoSelectFirst && response.items.length > 0 && !selectedReport && manualSelectionRequestId === 0) {
+        // 深链或用户点击触发的选择仍在进行中时，不覆盖用户意图。
         await get().selectHistoryItem(response.items[0].id, false);
       }
     }

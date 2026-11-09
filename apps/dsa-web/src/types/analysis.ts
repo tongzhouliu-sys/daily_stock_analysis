@@ -650,11 +650,10 @@ export const getSentimentLabel = (score: number, language: ReportLanguage = 'zh'
   return '极度乐观';
 };
 
-/** Get sentiment color by score */
-export const getSentimentColor = (score: number): string => {
-  if (score <= 20) return '#ef4444'; // red-500
-  if (score <= 40) return '#f97316'; // orange-500
-  if (score <= 60) return '#eab308'; // yellow-500
-  if (score <= 80) return '#22c55e'; // green-500
-  return '#10b981'; // emerald-500
+/** Map report sentiment to a theme-aware UI tone. */
+export const getSentimentTone = (score: number): 'danger' | 'warning' | 'default' | 'success' => {
+  if (score <= 20) return 'danger';
+  if (score <= 40) return 'warning';
+  if (score <= 60) return 'default';
+  return 'success';
 };

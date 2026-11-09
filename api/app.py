@@ -295,9 +295,17 @@ async def app_lifespan(app: FastAPI):
     from src.services.name_to_code_resolver import warmup_akshare_cache
 
     warmup_akshare_cache()
+    scanner_host = getattr(app.state, "scanner_host", None)
+    if scanner_host is not None:
+        try:
+            await run_in_threadpool(scanner_host.start)
+        except (ImportError, OSError) as exc:
+            logger.error("Scanner worker startup failed: %s", type(exc).__name__)
     try:
         yield
     finally:
+        if scanner_host is not None:
+            await run_in_threadpool(scanner_host.stop)
         refresh_task = getattr(app.state, "stock_index_refresh_task", None)
         if refresh_task is not None and not refresh_task.done():
             refresh_task.cancel()
@@ -386,12 +394,19 @@ def create_app(static_dir: Optional[Path] = None) -> FastAPI:
 
     if not guard_enabled:
         add_auth_middleware(app)
+
+    from api.middlewares.legacy_scanner import LegacyScannerRedirectMiddleware
+    app.add_middleware(LegacyScannerRedirectMiddleware)
     
     # ============================================================
     # 注册路由
     # ============================================================
     
     app.include_router(api_v1_router, prefix="/api/v1")
+    from src.services.signal_scanner.host import ScannerHost
+
+    app.state.scanner_host = ScannerHost()
+    app.mount("/api/v1/scanner", app.state.scanner_host, name="signal-scanner")
     add_error_handlers(app)
     
     # ============================================================

@@ -1,0 +1,147 @@
+"""Release only the reviewed daily-collection changes and install its LaunchAgent."""
+
+import hashlib
+import json
+import os
+import plistlib
+import shutil
+import sqlite3
+import subprocess
+import time
+from pathlib import Path
+
+from datetime import datetime, timezone
+
+
+SOURCE = Path(__file__).resolve().parents[2]
+BASE = Path.home() / "Library/Application Support/SignalScanner"
+FILES = (
+    "backend/app/adapters/tiingo_adapter.py",
+    "backend/app/adapters/alphavantage_adapter.py",
+    "backend/app/services/daily_market.py",
+    "backend/app/services/source_data.py",
+    "backend/app/worker/jobs.py",
+    "backend/app/worker/pipeline.py",
+    "scripts/daily_market.py",
+    "backend/tests/test_daily_market.py",
+    "backend/tests/test_tiingo.py",
+    "README.md",
+    ".env.example",
+)
+
+
+def install():
+    current = BASE / "current"
+    previous = current.resolve(strict=True)
+    release_id = datetime.now(timezone.utc).strftime("%Y%m%dT%H%M%SZ") + "-daily-market"
+    release = BASE / "releases" / release_id
+    shutil.copytree(previous, release, ignore=shutil.ignore_patterns("__pycache__", "*.pyc"))
+    os.chmod(release, 0o700)
+    for name in FILES:
+        destination = release / name
+        destination.parent.mkdir(parents=True, exist_ok=True)
+        shutil.copy2(SOURCE / name, destination)
+        assert destination.read_bytes() == (SOURCE / name).read_bytes()
+    manifest = {
+        str(p.relative_to(release)): hashlib.sha256(p.read_bytes()).hexdigest()
+        for p in release.rglob("*")
+        if p.is_file() and p.name != "release-manifest.json"
+    }
+    (release / "release-manifest.json").write_text(
+        json.dumps(
+            {
+                "release_id": release_id,
+                "previous_release": str(previous),
+                "changed_files": list(FILES),
+                "files": manifest,
+            },
+            indent=2,
+        )
+    )
+    assert (release / "DESIGN.md").read_bytes() == (previous / "DESIGN.md").read_bytes()
+    assert not any(p.name == "key.md" for p in release.rglob("*"))
+    env_file = BASE / "service.env"
+    lines = [
+        s for s in env_file.read_text().splitlines() if s.partition("=")[0].strip() != "SCANNER_DAILY_MARKET"
+    ]
+    temporary = env_file.with_suffix(".tmp")
+    fd = os.open(temporary, os.O_CREAT | os.O_TRUNC | os.O_WRONLY, 0o600)
+    with os.fdopen(fd, "w") as stream:
+        stream.write("\n".join(lines) + "\nSCANNER_DAILY_MARKET=true\n")
+        stream.flush()
+        os.fsync(stream.fileno())
+    os.replace(temporary, env_file)
+    link = BASE / "current.daily-new"
+    link.symlink_to(release, target_is_directory=True)
+    os.replace(link, current)
+    label = "kg.edu.985.scan.market"
+    launch = Path.home() / "Library/LaunchAgents" / (label + ".plist")
+    logs = BASE / "logs"
+    for suffix in ("out", "err"):
+        path = logs / (label + "." + suffix + ".log")
+        path.touch(mode=0o600, exist_ok=True)
+        os.chmod(path, 0o600)
+    value = {
+        "Label": label,
+        "ProgramArguments": [
+            str(BASE / "venv/bin/python"),
+            str(current / "scripts/daily_market.py"),
+            "--runtime",
+            str(BASE / "data"),
+            "--loop",
+        ],
+        "EnvironmentVariables": {"SCANNER_ENV_FILE": str(env_file), "PYTHONUNBUFFERED": "1"},
+        "RunAtLoad": True,
+        "KeepAlive": True,
+        "ThrottleInterval": 30,
+        "WorkingDirectory": str(current),
+        "StandardOutPath": str(logs / (label + ".out.log")),
+        "StandardErrorPath": str(logs / (label + ".err.log")),
+    }
+    launch.write_bytes(plistlib.dumps(value))
+    os.chmod(launch, 0o600)
+    domain = f"gui/{os.getuid()}"
+    if subprocess.run(["launchctl", "list", label], capture_output=True).returncode == 0:
+        subprocess.run(["launchctl", "bootout", domain + "/" + label], check=True, capture_output=True)
+    # launchd may retain a just-removed job briefly after bootout returns.
+    for attempt in range(10):
+        started = subprocess.run(["launchctl", "bootstrap", domain, str(launch)], capture_output=True)
+        if started.returncode == 0:
+            break
+        time.sleep(1)
+    else:
+        raise RuntimeError("Collector service could not be loaded")
+    subprocess.run(
+        ["launchctl", "kickstart", "-k", domain + "/kg.edu.985.scan.app"], check=True, capture_output=True
+    )
+    control = BASE / "data/rule-validation/control.sqlite3"
+    research_restarted = False
+    if control.is_file():
+        with sqlite3.connect(control.as_uri() + "?mode=ro", uri=True) as cx:
+            active = cx.execute(
+                "SELECT count(*) FROM objects WHERE json_extract(payload,'$.status') "
+                "IN ('RUNNING','QUEUED','CANCELLING')"
+            ).fetchone()[0]
+        if not active:
+            subprocess.run(
+                ["launchctl", "kickstart", "-k", domain + "/kg.edu.985.scan.research"],
+                check=True,
+                capture_output=True,
+            )
+            research_restarted = True
+    result = {
+        "release_id": release_id,
+        "previous_release": str(previous),
+        "release": str(release),
+        "changed_files": list(FILES),
+        "collector": label,
+        "source_key_file_excluded": True,
+        "design_preserved": True,
+        "idle_research_worker_restarted": research_restarted,
+    }
+    (SOURCE / "runtime/daily-market-release.json").write_text(json.dumps(result, indent=2))
+    print(json.dumps(result))
+
+
+if __name__ == "__main__":
+    install()

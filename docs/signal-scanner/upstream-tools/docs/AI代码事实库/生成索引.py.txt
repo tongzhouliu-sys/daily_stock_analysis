@@ -1,0 +1,138 @@
+#!/usr/bin/env python3
+"""Refresh static source indexes only; never reads runtime data or secrets."""
+import ast
+import hashlib
+import json
+import re
+import sqlite3
+import sys
+from datetime import datetime
+from pathlib import Path
+from zoneinfo import ZoneInfo
+
+ROOT = Path(__file__).resolve().parents[2]
+OUT = Path(__file__).resolve().parent
+AREAS = ("backend/app", "backend/tests", "frontend/src", "frontend/e2e", "frontend/scripts", "scripts")
+EXTRA = ("pyproject.toml", "requirements.lock", ".env.example", "frontend/package.json", "frontend/package-lock.json", "frontend/tsconfig.json", "frontend/vite.config.ts", "frontend/playwright.config.ts", "frontend/index.html", "run_batch_history.py", "start_batch_history.py", "test_batch_spy.py")
+EXT = {".py", ".sql", ".ts", ".tsx", ".css", ".json", ".mjs", ".sh"}
+files = sorted({p for area in AREAS for p in (ROOT / area).rglob("*") if p.is_file() and not p.is_symlink() and p.suffix in EXT and "__pycache__" not in p.parts} | {ROOT / p for p in EXTRA if (ROOT / p).is_file()})
+
+def rel(p):
+    return p.relative_to(ROOT).as_posix()
+
+if sys.argv[1:] == ["--check"]:
+    snapshot = json.loads((OUT / "源码快照.json").read_text(encoding="utf-8"))
+    previous = {x["path"]: x["sha256"] for x in snapshot["files"]}
+    current = {rel(p): hashlib.sha256(p.read_bytes()).hexdigest() for p in files}
+    changes = {"added": sorted(current.keys() - previous.keys()), "removed": sorted(previous.keys() - current.keys()), "changed": sorted(k for k in current.keys() & previous.keys() if current[k] != previous[k])}
+    print(json.dumps(changes, ensure_ascii=False, indent=2))
+    raise SystemExit(1 if any(changes.values()) else 0)
+if sys.argv[1:]:
+    raise SystemExit("用法: python3 生成索引.py [--check]")
+
+def link(p, line=None):
+    name = rel(p)
+    return f"[{name}{':' + str(line) if line else ''}](../../{name}{'#L' + str(line) if line else ''})"
+
+def esc(s):
+    return str(s).replace("|", "\\|").replace("\n", " ")
+
+def source(n):
+    try:
+        return ast.unparse(n)
+    except Exception:
+        return "?"
+
+def sig(n):
+    a = source(n.args)
+    return f"{n.name}({a})" + (f" -> {source(n.returns)}" if n.returns else "")
+
+trees = {}
+errors = []
+for p in files:
+    if p.suffix == ".py":
+        try:
+            trees[p] = ast.parse(p.read_text(encoding="utf-8"), filename=rel(p))
+        except (SyntaxError, UnicodeError) as ex:
+            errors.append(f"{rel(p)}: {type(ex).__name__} at line {getattr(ex, 'lineno', '?')}")
+
+manifest = {"description": "SHA-256 over selected local source files; excludes runtime, secrets, data and generated output", "captured_at": datetime.now(ZoneInfo("Asia/Singapore")).isoformat(timespec="seconds"), "git_revision": None, "roots": list(AREAS), "extra_files": list(EXTRA), "extensions": sorted(EXT), "files": [{"path":rel(p), "bytes":p.stat().st_size, "sha256":hashlib.sha256(p.read_bytes()).hexdigest()} for p in files], "parse_errors": errors}
+(OUT / "源码快照.json").write_text(json.dumps(manifest, ensure_ascii=False, indent=2) + "\n", encoding="utf-8")
+
+lines = ["# 静态接口与请求模型索引", "", "[FACT] 本索引从当前 Python AST 提取路由装饰器和模型的显式声明；不执行应用。无法识别运行时动态路由、继承字段及复杂验证。`api` 的相对路由前缀仅对 rule_validation.py 拼接。详情须查看处理函数。", "", "## HTTP 路由", "", "| 方法 | 路由 | 处理函数声明 | 源码 |", "|---|---|---|---|"]
+route_count = 0
+for p, tree in trees.items():
+    if rel(p) not in ("backend/app/main.py", "backend/app/api/rule_validation.py"):
+        continue
+    for n in ast.walk(tree):
+        if not isinstance(n, (ast.FunctionDef, ast.AsyncFunctionDef)):
+            continue
+        for d in n.decorator_list:
+            if not isinstance(d, ast.Call) or not isinstance(d.func, ast.Attribute) or not isinstance(d.func.value, ast.Name) or d.func.value.id not in ("app", "api") or d.func.attr not in ("get", "post", "put", "patch", "delete") or not d.args or not isinstance(d.args[0], ast.Constant) or not isinstance(d.args[0].value, str):
+                continue
+            path = d.args[0].value
+            if d.func.value.id == "api":
+                path = "/api/rule-validation" + path
+            lines.append(f"| {d.func.attr.upper()} | `{esc(path)}` | `{esc(sig(n))}` | {link(p,n.lineno)} |")
+            route_count += 1
+lines += ["", "## 请求模型及字段", "", "[FACT] 下列字段仅来自类体显式声明。省略号表示声明中未给默认值，并非对所有继承与动态校验的完整判断。", ""]
+model_count = 0
+for p, tree in trees.items():
+    if rel(p) not in ("backend/app/api/models.py", "backend/app/services/rule_validation_web/models.py"):
+        continue
+    for c in tree.body:
+        if not isinstance(c, ast.ClassDef):
+            continue
+        model_count += 1
+        lines += [f"### {c.name}", "", f"[FACT] 声明位置：{link(p,c.lineno)}；基类：`{esc(', '.join(source(x) for x in c.bases))}`。", "", "| 字段 | 类型声明 | 默认值声明 |", "|---|---|---|"]
+        count = 0
+        for n in c.body:
+            if isinstance(n, ast.AnnAssign) and isinstance(n.target, ast.Name):
+                lines.append(f"| `{esc(n.target.id)}` | `{esc(source(n.annotation))}` | `{esc(source(n.value) if n.value else '必填声明')}` |")
+                count += 1
+        if not count:
+            lines.append("| 无显式字段 | — | — |")
+        lines.append("")
+(OUT / "接口与数据模型索引.md").write_text("\n".join(lines)+"\n", encoding="utf-8")
+
+lines = ["# 代码符号与文件索引", "", "[FACT] Python 索引由 AST 提取模块顶层类、顶层函数和类的直接方法；不代表函数用途或已运行。前端和其他文件只列路径。测试列为存在的测试文件，并不表示测试通过。", ""]
+for area in AREAS:
+    members = [p for p in files if rel(p).startswith(area + "/")]
+    lines += [f"## {area}", ""]
+    for p in members:
+        lines.append(f"### {link(p)}")
+        tree = trees.get(p)
+        if tree is None:
+            lines.append("\n[FACT] 非 Python 文件或无法解析；具体内容需按路径查阅。\n")
+            continue
+        entries = []
+        for n in tree.body:
+            if isinstance(n, (ast.FunctionDef, ast.AsyncFunctionDef)):
+                entries.append(f"- 函数 `{esc(sig(n))}`：{link(p,n.lineno)}")
+            elif isinstance(n, ast.ClassDef):
+                entries.append(f"- 类 `{n.name}`：{link(p,n.lineno)}")
+                for method in n.body:
+                    if isinstance(method, (ast.FunctionDef, ast.AsyncFunctionDef)):
+                        entries.append(f"  - 方法 `{esc(sig(method))}`：{link(p,method.lineno)}")
+        lines += [""] + (entries or ["[FACT] 无顶层函数或类声明。 "]) + [""]
+lines += ["## 根目录及构建配置", ""]
+for p in files:
+    if not any(rel(p).startswith(a + "/") for a in AREAS):
+        lines.append(f"- {link(p)}")
+(OUT / "代码符号与文件索引.md").write_text("\n".join(lines)+"\n", encoding="utf-8")
+
+schema = ROOT / "backend/app/storage/schema.sql"
+cx = sqlite3.connect(":memory:")
+cx.executescript(schema.read_text(encoding="utf-8"))
+lines = ["# 主数据库静态结构索引", "", f"[FACT] 用内存 SQLite 执行 {link(schema)} 后提取结构；没有打开项目运行库，因而不能说明运行库迁移状态或实际数据。", ""]
+tables = [row[0] for row in cx.execute("SELECT name FROM sqlite_master WHERE type='table' AND name NOT LIKE 'sqlite_%' ORDER BY name")]
+for table in tables:
+    lines += [f"## 表 {table}", "", "| 字段 | SQLite 类型 | 非空 | 默认值 | 主键序号 |", "|---|---|---|---|---|"]
+    for _, name, typ, notnull, default, pk in cx.execute(f'PRAGMA table_info("{table}")'):
+        lines.append(f"| `{name}` | `{esc(typ)}` | {bool(notnull)} | `{esc(default if default is not None else 'NULL/未声明')}` | {pk} |")
+    fks = list(cx.execute(f'PRAGMA foreign_key_list("{table}")'))
+    indexes = list(cx.execute(f'PRAGMA index_list("{table}")'))
+    lines += ["", "外键：" + ("；".join(f"`{x[3]}` → `{x[2]}.{x[4]}`" for x in fks) if fks else "无显式外键") + "。", "", "索引：" + ("；".join(f"`{x[1]}`（{'唯一' if x[2] else '非唯一'}{'，部分索引' if x[4] else ''}）" for x in indexes) if indexes else "无") + "。", ""]
+lines += ["## 独立研究控制库", "", "[FACT] 独立控制库表在 `backend/app/services/rule_validation_web/store.py` 的 `Store.initialize` 中定义，而非本文件 schema；包括 objects、idempotency、audit。其数据不在主库本索引范围。", ""]
+(OUT / "数据库结构索引.md").write_text("\n".join(lines), encoding="utf-8")
+print(json.dumps({"files":len(files), "python_files":len(trees), "routes":route_count, "models":model_count, "tables":len(tables), "parse_errors":errors}, ensure_ascii=False))

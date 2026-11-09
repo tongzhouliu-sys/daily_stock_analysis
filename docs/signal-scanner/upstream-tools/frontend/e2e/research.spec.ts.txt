@@ -1,0 +1,309 @@
+import { test, expect } from "@playwright/test";
+import fs from "node:fs";
+import path from "node:path";
+const fixturePath = path.resolve(
+  "../runtime/research-web-browser/fixture.json",
+);
+test.skip(
+  !process.env.RESEARCH_WEB_E2E,
+  "requires explicit isolated research service",
+);
+test("real research API: catalog, preflight, persistent replay, charts, evidence, comparisons, download and responsive layouts", async ({
+  page,
+}) => {
+  test.setTimeout(180000);
+  const errors: string[] = [],
+    external: string[] = [];
+  const assets: string[] = [];
+  const beganAt = Date.now();
+  const admissionTimings: { path: string; milliseconds: number }[] = [];
+  page.on("requestfinished", (r) => {
+    if (r.method() === "POST" && r.url().includes("/api/rule-validation/")) {
+      admissionTimings.push({
+        path: new URL(r.url()).pathname,
+        milliseconds: r.timing().responseEnd,
+      });
+    }
+  });
+  page.on("pageerror", (e) => errors.push(e.message));
+  page.on("request", (r) => {
+    if (r.url().includes("/assets/")) assets.push(new URL(r.url()).pathname);
+    if (
+      !r
+        .url()
+        .startsWith(process.env.SCANNER_TEST_URL || "http://127.0.0.1:8767")
+    )
+      external.push(r.url());
+  });
+  await page.goto("/rule-validation");
+  await page
+    .getByLabel("本机访问密码")
+    .fill(
+      fs
+        .readFileSync(
+          path.resolve("../runtime/research-web-browser/app/首次登录密码.txt"),
+          "utf8",
+        )
+        .trim(),
+    );
+  await page.getByRole("button", { name: "进入工作台" }).click();
+  await expect(
+    page.getByRole("heading", { name: "规则验证", exact: true }),
+  ).toBeVisible();
+  await page.getByLabel("研究开始不早于").fill("2026-01-01");
+  const dateFiltered = page.waitForResponse(
+    (r) =>
+      r.url().includes("/api/rule-validation/runs?") &&
+      r.url().includes("end_date=2026-10-23") &&
+      r.status() === 200,
+  );
+  await page.getByLabel("研究结束不晚于").fill("2026-10-23");
+  await dateFiltered;
+  await expect(page.getByRole("alert")).toHaveCount(0);
+  await page.getByRole("link", { name: "新建实验", exact: true }).click();
+  await page
+    .getByLabel("选择已登记数据包")
+    .selectOption({ label: "合成工程浏览器验收数据 · 合成工程样本" });
+  await page.getByLabel("实验名称", { exact: true }).fill("浏览器完整闭环");
+  await page
+    .getByLabel("研究假设", { exact: true })
+    .fill("验证冻结事件、收益分布和分母");
+  await page.getByRole("button", { name: "提交异步预检", exact: true }).click();
+  await expect(
+    page.getByText("预检有效，请确认以下全部配置。启动后配置冻结。"),
+  ).toBeVisible({ timeout: 30000 });
+  // Editing a semantic field invalidates the prior token and requires new preflight.
+  await page.getByLabel("最低完成样本数").fill("29");
+  await expect(
+    page.getByRole("button", { name: "确认协议并启动回放" }),
+  ).toHaveCount(0);
+  await page.getByRole("button", { name: "提交异步预检", exact: true }).click();
+  await expect(
+    page.getByText("预检有效，请确认以下全部配置。启动后配置冻结。"),
+  ).toBeVisible({ timeout: 30000 });
+  await page.getByRole("button", { name: "确认协议并启动回放" }).click();
+  await expect(page).toHaveURL(/\/rule-validation\/runs\/web_/);
+  const runUrl = page.url();
+  await page.reload();
+  await expect(page.getByRole("link", { name: "查看可视化报告" })).toBeVisible({
+    timeout: 90000,
+  });
+  const reportBegan = Date.now();
+  await page.getByRole("link", { name: "查看可视化报告" }).click();
+  await expect(
+    page.getByRole("heading", { name: "当前口径分布", exact: true }),
+  ).toBeVisible();
+  const reportInteractiveMs = Date.now() - reportBegan;
+  expect(reportInteractiveMs).toBeLessThan(3000);
+  const reportUrl = page.url();
+  for (const label of [
+    "生命周期",
+    "后续分布",
+    "基准",
+    "分组",
+    "数据与协议",
+    "概览",
+  ]) {
+    await page.getByRole("button", { name: label, exact: true }).click();
+    await expect(
+      page.getByRole("navigation", { name: "报告页签" }),
+    ).toBeVisible();
+    const expected: Record<string, string> = {
+      生命周期: "12规则生命周期",
+      后续分布: "成本敏感性",
+      基准: "基准分布",
+      分组: "分组统计",
+      数据与协议: "数据质量",
+      概览: "研究切分与覆盖",
+    };
+    await expect(
+      page.getByRole("heading", { name: expected[label], exact: true }),
+    ).toBeVisible();
+  }
+  for (const width of [1440, 1280, 1024, 768, 375, 320]) {
+    await page.setViewportSize({ width, height: 1000 });
+    await page.getByRole("button", { name: "后续分布", exact: true }).click();
+    await expect(
+      page.getByRole("heading", { name: "成本敏感性" }),
+    ).toBeVisible();
+    expect(
+      await page.evaluate(
+        () => document.documentElement.scrollWidth <= innerWidth,
+      ),
+    ).toBe(true);
+    await page.screenshot({
+      path: `../runtime/research-web-browser/evidence/report-${width}.png`,
+      fullPage: true,
+    });
+  }
+  await page.setViewportSize({ width: 1440, height: 1050 });
+  await page
+    .getByRole("link", { name: "查看事件", exact: true })
+    .first()
+    .click();
+  await expect(page.getByRole("heading", { name: "事件时间轴" })).toBeVisible();
+  const eventUrl = page.url();
+  await page.screenshot({
+    path: "../runtime/research-web-browser/evidence/event.png",
+    fullPage: true,
+  });
+  await page.getByRole("link", { name: "返回报告与筛选" }).click();
+  await page.getByRole("button", { name: "概览", exact: true }).click();
+  const downloadPromise = page.waitForEvent("download");
+  await page.getByRole("link", { name: /^report.json/ }).click();
+  const download = await downloadPromise;
+  await download.saveAs(
+    "../runtime/research-web-browser/evidence/" + download.suggestedFilename(),
+  );
+  await page.goto("/rule-validation/compare");
+  const baseline = JSON.parse(fs.readFileSync(fixturePath, "utf8"));
+  const currentId = runUrl.split("/").pop()!;
+  await page.getByLabel("左侧实验").selectOption(baseline.run_id);
+  await page.getByLabel("右侧实验").selectOption(baseline.comparison_run_id);
+  await page.getByLabel("唯一变化轴").selectOption("data");
+  await page.getByRole("button", { name: "校验可比性并对比" }).click();
+  await expect(
+    page.getByText("仅为历史比较，不构成新的未见封存验证。", { exact: false }),
+  ).toBeVisible({ timeout: 30000 });
+  await page.getByLabel("右侧实验").selectOption(currentId);
+  await page.getByRole("button", { name: "校验可比性并对比" }).click();
+  await expect(page.getByRole("alert")).toContainText(
+    "INCOMPARABLE_EXPERIMENTS",
+    { timeout: 20000 },
+  );
+  for (const width of [1440, 1280, 1024, 768, 375, 320]) {
+    await page.setViewportSize({ width, height: 1000 });
+    for (const [name, url, heading] of [
+      ["list", "/rule-validation", "规则验证"],
+      ["new", "/rule-validation/new", "新建实验"],
+      ["run", runUrl, "浏览器完整闭环"],
+      ["event", eventUrl, "事件时间轴"],
+      ["compare", "/rule-validation/compare", "实验对比"],
+    ]) {
+      await page.goto(url);
+      await expect(
+        page.getByRole("heading", { name: heading, exact: true }),
+      ).toBeVisible();
+      if (name === "new")
+        await page
+          .getByLabel("选择已登记数据包")
+          .selectOption({ label: "合成工程浏览器验收数据 · 合成工程样本" });
+      expect(
+        await page.evaluate(
+          () => document.documentElement.scrollWidth <= innerWidth,
+        ),
+      ).toBe(true);
+      await page.screenshot({
+        path: `../runtime/research-web-browser/evidence/${name}-${width}.png`,
+        fullPage: true,
+      });
+    }
+  }
+  await page.goto(reportUrl);
+  await expect(
+    page.getByRole("heading", { name: "当前口径分布", exact: true }),
+  ).toBeVisible();
+  // Expire this isolated browser session, then recover the same report without resubmitting a run.
+  await page.evaluate(async () => {
+    const session = await (await fetch("/api/auth/session")).json();
+    await fetch("/api/auth/logout", {
+      method: "POST",
+      headers: {
+        "X-CSRF-Token": session.data.csrf_token,
+        "Idempotency-Key": crypto.randomUUID(),
+        "Content-Type": "application/json",
+      },
+      body: "{}",
+    });
+  });
+  await page.getByRole("button", { name: "基准", exact: true }).click();
+  await expect(page.getByLabel("本机访问密码")).toBeVisible();
+  await page
+    .getByLabel("本机访问密码")
+    .fill(
+      fs
+        .readFileSync(
+          path.resolve("../runtime/research-web-browser/app/首次登录密码.txt"),
+          "utf8",
+        )
+        .trim(),
+    );
+  await page.getByRole("button", { name: "进入工作台" }).click();
+  await expect(
+    page.getByRole("heading", { name: "基准分布", exact: true }),
+  ).toBeVisible();
+  await page.getByRole("button", { name: "概览", exact: true }).click();
+  await expect(
+    page.getByRole("heading", { name: "当前口径分布", exact: true }),
+  ).toBeVisible();
+  expect(
+    admissionTimings.filter((r) => r.path === "/api/rule-validation/runs"),
+  ).toHaveLength(1);
+  await page.keyboard.press("Tab");
+  expect(await page.evaluate(() => document.activeElement?.tagName)).not.toBe(
+    "BODY",
+  );
+  const contrast = await page.evaluate(() => {
+    function rgb(s: string) {
+      return (s.match(/[\d.]+/g) || []).slice(0, 3).map(Number);
+    }
+    function luminance(v: number[]) {
+      return v
+        .map((x) => {
+          x /= 255;
+          return x <= 0.04045 ? x / 12.92 : ((x + 0.055) / 1.055) ** 2.4;
+        })
+        .reduce((a, x, i) => a + x * [0.2126, 0.7152, 0.0722][i], 0);
+    }
+    return Array.from(
+      document.querySelectorAll(
+        ".rv h1,.rv p,.rv-note,.rv label,.rv th,.rv td,.rv-status,.rv button",
+      ),
+    )
+      .filter(
+        (e) => e.getClientRects().length && !(e as HTMLButtonElement).disabled,
+      )
+      .map((e) => {
+        const color = getComputedStyle(e).color;
+        let parent: Element | null = e,
+          bg = "rgb(1,1,2)";
+        while (parent) {
+          const value = getComputedStyle(parent).backgroundColor;
+          if (value !== "rgba(0, 0, 0, 0)" && value !== "transparent") {
+            bg = value;
+            break;
+          }
+          parent = parent.parentElement;
+        }
+        const a = luminance(rgb(color)),
+          b = luminance(rgb(bg));
+        return {
+          tag: e.tagName,
+          text: e.textContent?.slice(0, 30),
+          ratio: (Math.max(a, b) + 0.05) / (Math.min(a, b) + 0.05),
+        };
+      });
+  });
+  expect(contrast.every((r) => r.ratio >= 4.5)).toBe(true);
+  expect(
+    admissionTimings.every((r) => r.milliseconds >= 0 && r.milliseconds < 2000),
+  ).toBe(true);
+  fs.writeFileSync(
+    "../runtime/research-web-browser/evidence/browser-metrics.json",
+    JSON.stringify(
+      {
+        reportInteractiveMs,
+        admissionTimings,
+        assets: [...new Set(assets)],
+        contrast,
+        errors,
+        external,
+        elapsedMs: Date.now() - beganAt,
+      },
+      null,
+      2,
+    ),
+  );
+  expect(errors).toEqual([]);
+  expect(external).toEqual([]);
+});

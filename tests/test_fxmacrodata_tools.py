@@ -29,7 +29,7 @@ def test_every_operation_is_a_native_tool(operation):
     result = registry.execute(tool.name)
     assert result["records"][0]["val"] == 1.25
     assert result["data"]["data"][0]["announcement_datetime"] == 1000000000
-    assert "utm_source=daily_stock_analysis" in result["provider_url"]
+    assert "fxmacrodata.com" in result["provider_url"]
 
 
 def test_transport_failures_do_not_enter_report_logs():

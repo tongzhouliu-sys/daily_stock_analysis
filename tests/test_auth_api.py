@@ -86,7 +86,7 @@ class AuthApiTestCase(unittest.TestCase):
         response = asyncio.run(
             auth_endpoint.auth_login(
                 self._build_request(),
-                auth_endpoint.LoginRequest(password="newpass123", passwordConfirm="newpass123"),
+                auth_endpoint.LoginRequest(username="admin", password="newpass123", passwordConfirm="newpass123"),
             )
         )
         self.assertEqual(response.status_code, 200)
@@ -97,7 +97,7 @@ class AuthApiTestCase(unittest.TestCase):
         response = asyncio.run(
             auth_endpoint.auth_login(
                 self._build_request(),
-                auth_endpoint.LoginRequest(password="pass1", passwordConfirm="pass2"),
+                auth_endpoint.LoginRequest(username="admin", password="pass1", passwordConfirm="pass2"),
             )
         )
         self.assertEqual(response.status_code, 400)
@@ -107,7 +107,7 @@ class AuthApiTestCase(unittest.TestCase):
         first_response = asyncio.run(
             auth_endpoint.auth_login(
                 self._build_request(),
-                auth_endpoint.LoginRequest(password="mypass456", passwordConfirm="mypass456"),
+                auth_endpoint.LoginRequest(username="admin", password="mypass456", passwordConfirm="mypass456"),
             )
         )
         self.assertEqual(first_response.status_code, 200)
@@ -115,7 +115,7 @@ class AuthApiTestCase(unittest.TestCase):
         response = asyncio.run(
             auth_endpoint.auth_login(
                 self._build_request(),
-                auth_endpoint.LoginRequest(password="mypass456"),
+                auth_endpoint.LoginRequest(username="admin", password="mypass456"),
             )
         )
         self.assertEqual(response.status_code, 200)
@@ -125,7 +125,7 @@ class AuthApiTestCase(unittest.TestCase):
         first_response = asyncio.run(
             auth_endpoint.auth_login(
                 self._build_request(),
-                auth_endpoint.LoginRequest(password="correct", passwordConfirm="correct"),
+                auth_endpoint.LoginRequest(username="admin", password="correct", passwordConfirm="correct"),
             )
         )
         self.assertEqual(first_response.status_code, 200)
@@ -133,7 +133,7 @@ class AuthApiTestCase(unittest.TestCase):
         response = asyncio.run(
             auth_endpoint.auth_login(
                 self._build_request(),
-                auth_endpoint.LoginRequest(password="wrong"),
+                auth_endpoint.LoginRequest(username="admin", password="wrong"),
             )
         )
         self.assertEqual(response.status_code, 401)
@@ -147,7 +147,7 @@ class AuthApiTestCase(unittest.TestCase):
         login_response = asyncio.run(
             auth_endpoint.auth_login(
                 self._build_request(),
-                auth_endpoint.LoginRequest(password="passwd6", passwordConfirm="passwd6"),
+                auth_endpoint.LoginRequest(username="admin", password="passwd6", passwordConfirm="passwd6"),
             )
         )
         self.assertEqual(login_response.status_code, 200)
@@ -171,7 +171,7 @@ class AuthApiTestCase(unittest.TestCase):
         first_response = asyncio.run(
             auth_endpoint.auth_login(
                 self._build_request(),
-                auth_endpoint.LoginRequest(password="oldpass6", passwordConfirm="oldpass6"),
+                auth_endpoint.LoginRequest(username="admin", password="oldpass6", passwordConfirm="oldpass6"),
             )
         )
         self.assertEqual(first_response.status_code, 200)
@@ -191,7 +191,7 @@ class AuthApiTestCase(unittest.TestCase):
         first_response = asyncio.run(
             auth_endpoint.auth_login(
                 self._build_request(),
-                auth_endpoint.LoginRequest(password="actual6", passwordConfirm="actual6"),
+                auth_endpoint.LoginRequest(username="admin", password="actual6", passwordConfirm="actual6"),
             )
         )
         self.assertEqual(first_response.status_code, 200)
@@ -738,7 +738,7 @@ class AuthDisableViaRealASGITestCase(unittest.TestCase):
         """
         login_resp = self.client.post(
             "/api/v1/auth/login",
-            json={"password": "passwd6"},
+            json={"username": "admin", "password": "passwd6"},
         )
         self.assertEqual(login_resp.status_code, 200, login_resp.text)
 

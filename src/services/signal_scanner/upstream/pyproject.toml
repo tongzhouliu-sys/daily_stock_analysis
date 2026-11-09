@@ -1,0 +1,20 @@
+[project]
+name = "signal-scanner"
+version = "0.2.0"
+description = "Single-user, auditable EOD research scanner; no order execution"
+requires-python = ">=3.12,<3.15"
+dependencies = ["fastapi", "uvicorn", "httpx", "argon2-cffi", "exchange-calendars"]
+
+[project.optional-dependencies]
+test = ["pytest", "pytest-cov", "ruff"]
+
+[tool.pytest.ini_options]
+pythonpath = ["backend"]
+testpaths = ["backend/tests"]
+addopts = "-q"
+
+[tool.coverage.run]
+source = ["backend/app"]
+
+[tool.ruff]
+line-length = 110

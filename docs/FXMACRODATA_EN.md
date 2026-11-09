@@ -2,7 +2,7 @@
 
 The stock report and chat agent can call native macroeconomic tools. Each tool retains the complete public input schema, original payload, release timestamps and source provenance. The factory adds these tools to the same registry as the existing market tools.
 
-The core integration uses [FXMacroData](https://fxmacrodata.com/?utm_source=github&utm_medium=referral&utm_campaign=open_source_integrations&utm_content=daily_stock_analysis_readme) always-free public USD endpoints and requires no API key, account or credit card. Public indicator history currently covers the most recent 90 days; catalogue and release-calendar access also work without a key. Optional authenticated coverage follows the API contract.
+The core integration uses [FXMacroData](https://fxmacrodata.com/) always-free public USD endpoints and requires no API key, account or credit card. Public indicator history currently covers the most recent 90 days; catalogue and release-calendar access also work without a key. Optional authenticated coverage follows the API contract.
 
 ## Installation
 
@@ -24,7 +24,7 @@ Start with `data_catalogue` and parameters `{"currency":"USD"}`, then `indicator
 
 The `data` field preserves the original public response; `records` is an additive table view. Keep source fields, assumed-time flags and timezone offsets when using the data. The API contract distinguishes official forecasts, market consensus and FXMacroData-generated outputs. Historical observation filters do not by themselves establish point-in-time vintage safety. Streaming is bounded by the client; it is not a persistent subscription.
 
-[Public API reference](https://fxmacrodata.com/documentation/reference?utm_source=github&utm_medium=referral&utm_campaign=open_source_integrations&utm_content=daily_stock_analysis_docs)
+[Public API reference](https://fxmacrodata.com/documentation/reference)
 
 ## Coverage
 

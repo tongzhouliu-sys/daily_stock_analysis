@@ -9,7 +9,7 @@ import { formatDateTime } from '../../utils/format';
 import { getMarketPhaseSummaryLabel, getPartialBarLabel } from '../../utils/marketPhase';
 import { getReportText, normalizeReportLanguage } from '../../utils/reportLanguage';
 import { useUiLanguage } from '../../contexts/UiLanguageContext';
-import { ShareImageButton } from './ShareImageButton';
+import { ShareReportButton } from './ShareReportButton';
 
 interface ReportOverviewProps {
   meta: ReportMeta;
@@ -160,7 +160,7 @@ const buildPreparedRelatedBoards = (
 };
 
 /**
- * 报告概览区组件 - 终端风格
+ * 报告概览与情绪评分
  */
 export const ReportOverview: React.FC<ReportOverviewProps> = ({
   meta,
@@ -180,21 +180,13 @@ export const ReportOverview: React.FC<ReportOverviewProps> = ({
   const boardSignals = buildBoardSignalMaps(details);
   const preparedRelatedBoards = buildPreparedRelatedBoards(relatedBoards, boardSignals);
 
-  const getPriceChangeStyle = (changePct: number | undefined): React.CSSProperties | undefined => {
-    if (changePct === undefined || changePct === null) {
-      return undefined;
-    }
-
-    if (changePct > 0) {
-      return { color: 'var(--home-price-up)' };
-    }
-
-    if (changePct < 0) {
-      return { color: 'var(--home-price-down)' };
-    }
-
-    return undefined;
-  };
+  const priceTrend: 'up' | 'down' | 'flat' = meta.changePct === undefined || meta.changePct === null
+    ? 'flat'
+    : meta.changePct > 0
+      ? 'up'
+      : meta.changePct < 0
+        ? 'down'
+        : 'flat';
 
   const formatChangePct = (changePct: number | undefined): string => {
     if (changePct === undefined || changePct === null) return '--';
@@ -209,134 +201,118 @@ export const ReportOverview: React.FC<ReportOverviewProps> = ({
     return text.laggingBoard;
   };
 
-  const getBoardStatusVariant = (status: BoardStatus): 'success' | 'danger' => {
-    if (status === 'leading') {
-      return 'success';
-    }
-    return 'danger';
-  };
-
   const renderBoardChip = (board: PreparedBoard) => (
-    <div
-      key={board.key}
-      className="inline-flex shrink-0 items-center gap-2 text-sm"
-    >
-      <span className="home-accent-chip px-2 py-0.5 text-xs font-medium">
-        {board.name}
-      </span>
-      {board.signal && (
-        <Badge
-          variant={getBoardStatusVariant(board.signal.status)}
-          className="home-board-status-badge shadow-none"
-        >
-          {getBoardStatusLabel(board.signal.status)}
-        </Badge>
-      )}
-      {board.signal && board.signal.changePct !== undefined && board.signal.changePct !== null && (
-        <span
-          className="text-xs font-mono"
-          style={getPriceChangeStyle(board.signal.changePct)}
-        >
-          {formatChangePct(board.signal.changePct)}
-        </span>
-      )}
+    <div key={board.key} className="report-board-chip">
+      <span className="report-board-name">{board.name}</span>
+      {board.signal ? (
+        <>
+          <span className="report-board-signal" data-status={board.signal.status}>
+            {getBoardStatusLabel(board.signal.status)}
+          </span>
+          {board.signal.changePct !== undefined && board.signal.changePct !== null ? (
+            <span
+              className="report-board-change font-mono"
+              data-trend={board.signal.changePct > 0 ? 'up' : board.signal.changePct < 0 ? 'down' : 'flat'}
+            >
+              {formatChangePct(board.signal.changePct)}
+            </span>
+          ) : null}
+        </>
+      ) : null}
     </div>
   );
 
   return (
-    <div className="space-y-5">
+    <div className="report-sheet space-y-5">
       {/* 主信息区 - 两列布局 */}
-      <div className="grid grid-cols-1 lg:grid-cols-3 gap-5 items-start">
+      <div className="research-report-grid">
         {/* 左侧：股票信息与结论 */}
-        <div className="lg:col-span-2 space-y-5">
+        <div className="min-w-0 space-y-4">
           {/* 股票头部 */}
-          <Card variant="gradient" padding="md" className="home-report-hero">
-            <div className="mb-5 flex items-start justify-between gap-3">
-              <div className="min-w-0 flex-1">
-                <div className="flex items-center gap-3">
-                  <h2 className="text-[28px] font-bold leading-tight text-foreground">
-                    {meta.stockName || meta.stockCode}
-                  </h2>
-                  {/* 价格和涨跌幅 */}
-                  {meta.currentPrice != null && (
-                    <div className="flex items-baseline gap-2">
-                      <span className="text-xl font-bold font-mono" style={getPriceChangeStyle(meta.changePct)}>
-                        {meta.currentPrice.toFixed(2)}
-                      </span>
-                      <span className="text-sm font-semibold font-mono" style={getPriceChangeStyle(meta.changePct)}>
-                        {formatChangePct(meta.changePct)}
-                      </span>
-                    </div>
-                  )}
-                </div>
-                <div className="flex flex-wrap items-center gap-2 mt-1.5">
-                  <span className="home-accent-chip px-2 py-0.5 font-mono text-xs">
-                    {meta.stockCode}
-                  </span>
-                  {marketPhaseLabel ? (
-                    <Badge variant="info" className="shrink-0 gap-1.5 shadow-none" aria-label={marketPhaseLabel}>
-                      {marketPhaseLabel}
-                    </Badge>
-                  ) : null}
-                  {partialBarLabel ? (
-                    <Badge variant="warning" className="shrink-0 shadow-none" aria-label={partialBarLabel}>
-                      {partialBarLabel}
-                    </Badge>
-                  ) : null}
-                  <span className="text-xs text-muted-text flex items-center gap-1">
-                    <svg className="w-3.5 h-3.5" fill="none" stroke="currentColor" viewBox="0 0 24 24">
-                      <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M8 7V3m8 4V3m-9 8h10M5 21h14a2 2 0 002-2V7a2 2 0 00-2-2H5a2 2 0 00-2 2v12a2 2 0 002 2z" />
-                    </svg>
-                    {formatDateTime(meta.createdAt)}
-                  </span>
-                </div>
+          <Card variant="gradient" padding="md" className="home-report-hero report-hero">
+            <div className="report-hero-head">
+              <div className="report-hero-meta">
+                <span className="report-code-chip font-mono">{meta.stockCode}</span>
+                {marketPhaseLabel ? (
+                  <Badge variant="info" className="shrink-0 gap-1.5 shadow-none" aria-label={marketPhaseLabel}>
+                    {marketPhaseLabel}
+                  </Badge>
+                ) : null}
+                {partialBarLabel ? (
+                  <Badge variant="warning" className="shrink-0 shadow-none" aria-label={partialBarLabel}>
+                    {partialBarLabel}
+                  </Badge>
+                ) : null}
+                <span className="report-meta-date">
+                  <svg className="h-3.5 w-3.5" fill="none" stroke="currentColor" viewBox="0 0 24 24" aria-hidden="true">
+                    <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M8 7V3m8 4V3m-9 8h10M5 21h14a2 2 0 002-2V7a2 2 0 00-2-2H5a2 2 0 00-2 2v12a2 2 0 002 2z" />
+                  </svg>
+                  {formatDateTime(meta.createdAt)}
+                </span>
               </div>
-              <ShareImageButton
+              <ShareReportButton
                 recordId={meta.id}
                 reportTitle={`${meta.stockName || meta.stockCode}-${meta.stockCode}`}
                 reportLanguage={reportLanguage}
               />
             </div>
 
+            <div className="report-hero-title-row">
+              <h3 className="report-hero-name">
+                {meta.stockName || meta.stockCode}
+              </h3>
+              {meta.currentPrice != null && (
+                <div className="report-hero-price" data-trend={priceTrend}>
+                  <span className="report-hero-price-value font-mono">{meta.currentPrice.toFixed(2)}</span>
+                  {meta.changePct !== undefined && meta.changePct !== null ? (
+                    <span className="report-hero-price-change font-mono">{formatChangePct(meta.changePct)}</span>
+                  ) : null}
+                </div>
+              )}
+            </div>
+
             {/* 关键结论 */}
-            <div className="home-divider border-t pt-5">
-              <span className="label-uppercase">{text.keyInsights}</span>
-              <p className="mt-2 max-w-[62ch] whitespace-pre-wrap text-left text-[15px] leading-7 text-foreground">
+            <div className="report-rule" />
+            <section className="report-key-insight">
+              <h4 className="report-kicker">
+                <span className="report-kicker-index font-mono">01</span>
+                <span>{text.keyInsights}</span>
+              </h4>
+              <p className="report-lead">
                 {summary.analysisSummary || text.noAnalysisSummary}
               </p>
               {details?.emptyNewsDisclosure ? (
                 <p
                   role="note"
-                  className="mt-3 rounded-lg border border-warning/30 bg-warning/10 px-3 py-2 text-left text-sm leading-6 text-foreground"
+                  className="mt-4 rounded-sm border border-warning/30 bg-warning/10 px-3 py-2 text-left text-sm leading-6 text-foreground"
                 >
                   {details.emptyNewsDisclosure}
                 </p>
               ) : null}
-            </div>
+            </section>
           </Card>
 
-          <div className="grid grid-cols-1 md:grid-cols-2 gap-4 items-start">
+          <div className="research-report-insights">
             {/* 操作建议 */}
             <Card
               variant="bordered"
               padding="sm"
               hoverable
-              className="home-panel-card home-insight-card"
+              className="home-panel-card home-insight-card report-verdict-card"
               style={{ ['--home-insight-tone' as string]: 'var(--home-strategy-buy)' }}
             >
-              <div className="flex items-start gap-3">
-                <div className="home-insight-icon w-8 h-8 rounded-lg bg-success/10 flex items-center justify-center flex-shrink-0">
-                  <svg className="w-4 h-4 text-success" fill="none" stroke="currentColor" viewBox="0 0 24 24">
+              <div className="report-verdict-top">
+                <div className="report-verdict-icon bg-success/10 text-success">
+                  <svg className="h-4 w-4" fill="none" stroke="currentColor" viewBox="0 0 24 24" aria-hidden="true">
                     <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={1.5} d="M9 5H7a2 2 0 00-2 2v12a2 2 0 002 2h10a2 2 0 002-2V7a2 2 0 00-2-2h-2M9 5a2 2 0 002 2h2a2 2 0 002-2M9 5a2 2 0 012-2h2a2 2 0 012 2m-6 9l2 2 4-4" />
                   </svg>
                 </div>
-                <div className="space-y-1.5">
-                  <h4 className="home-insight-title text-[11px] font-medium uppercase tracking-[0.16em]">{text.actionAdvice}</h4>
-                  <p className="home-insight-body text-sm leading-6">
-                    {summary.operationAdvice || text.noAdvice}
-                  </p>
-                </div>
+                <span className="report-verdict-index font-mono" aria-hidden="true">01</span>
               </div>
+              <h4 className="report-verdict-label">{text.actionAdvice}</h4>
+              <p className="report-verdict-body">
+                {summary.operationAdvice || text.noAdvice}
+              </p>
             </Card>
 
             {/* 趋势预测 */}
@@ -344,31 +320,33 @@ export const ReportOverview: React.FC<ReportOverviewProps> = ({
               variant="bordered"
               padding="sm"
               hoverable
-              className="home-panel-card home-insight-card"
+              className="home-panel-card home-insight-card report-verdict-card"
               style={{ ['--home-insight-tone' as string]: 'var(--home-strategy-take)' }}
             >
-              <div className="flex items-start gap-3">
-                <div className="home-insight-icon w-8 h-8 rounded-lg bg-warning/10 flex items-center justify-center flex-shrink-0">
-                  <svg className="w-4 h-4 text-warning" fill="none" stroke="currentColor" viewBox="0 0 24 24">
+              <div className="report-verdict-top">
+                <div className="report-verdict-icon bg-warning/10 text-warning">
+                  <svg className="h-4 w-4" fill="none" stroke="currentColor" viewBox="0 0 24 24" aria-hidden="true">
                     <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={1.5} d="M13 7h8m0 0v8m0-8l-8 8-4-4-6 6" />
                   </svg>
                 </div>
-                <div className="space-y-1.5">
-                  <h4 className="home-insight-title text-[11px] font-medium uppercase tracking-[0.16em]">{text.trendPrediction}</h4>
-                  <p className="home-insight-body text-sm leading-6">
-                    {summary.trendPrediction || text.noPrediction}
-                  </p>
-                </div>
+                <span className="report-verdict-index font-mono" aria-hidden="true">02</span>
               </div>
+              <h4 className="report-verdict-label">{text.trendPrediction}</h4>
+              <p className="report-verdict-body">
+                {summary.trendPrediction || text.noPrediction}
+              </p>
             </Card>
           </div>
 
           {preparedRelatedBoards.length > 0 && (
-            <Card variant="bordered" padding="sm" className="home-panel-card min-w-0 max-w-full text-left">
+            <Card variant="bordered" padding="sm" className="home-panel-card report-boards min-w-0 max-w-full text-left">
               <section aria-label={text.relatedBoards} className="min-w-0 max-w-full">
-                <div className="mb-3 flex min-w-0 items-baseline gap-2">
-                  <span className="label-uppercase">{text.boardLinkage}</span>
-                  <h3 className="mt-0.5 text-base font-semibold text-foreground">{text.relatedBoards}</h3>
+                <div className="report-section-head">
+                  <div className="report-section-heading">
+                    <span className="label-uppercase">{text.boardLinkage}</span>
+                    <h3>{text.relatedBoards}</h3>
+                  </div>
+                  <span className="report-section-count font-mono">{preparedRelatedBoards.length}</span>
                 </div>
 
                 <div className="home-related-board-list flex min-h-6 w-full min-w-0 max-w-full flex-nowrap items-center gap-2 overflow-x-auto overscroll-x-contain touch-pan-x pb-1">
@@ -380,12 +358,12 @@ export const ReportOverview: React.FC<ReportOverviewProps> = ({
         </div>
 
         {/* 右侧：情绪指标 / 自选操作 */}
-        <div className="flex flex-col space-y-4">
+        <div className="report-rail flex flex-col space-y-4">
           {watchlist && meta.reportType !== 'market_review' && meta.assetType !== 'index' && (
-            <Card variant="bordered" padding="sm" className="home-panel-card">
-              <div className="text-center space-y-3">
+            <Card variant="bordered" padding="sm" className="home-panel-card report-rail-watchlist">
+              <div className="space-y-3">
                 <span className="label-uppercase">{t('report.watchlist')}</span>
-                <div className="text-xs text-muted-text font-mono">{meta.stockCode}</div>
+                <div className="report-rail-code font-mono">{meta.stockCode}</div>
                 <Button
                   variant={watchlist.isInWatchlist(meta.stockCode) ? 'danger-subtle' : 'secondary'}
                   size="sm"
@@ -401,11 +379,14 @@ export const ReportOverview: React.FC<ReportOverviewProps> = ({
               </div>
             </Card>
           )}
-          <Card variant="bordered" padding="md" className="home-panel-card home-rail-card !overflow-visible">
-            <div className="text-center">
-              <h3 className="mb-5 text-sm font-medium tracking-wide text-foreground">{text.marketSentiment}</h3>
-              <ScoreGauge score={summary.sentimentScore} size="lg" language={reportLanguage} />
+          <Card variant="bordered" padding="md" className="home-panel-card home-rail-card report-sentiment-card !overflow-visible">
+            <div className="report-section-head">
+              <div className="report-section-heading">
+                <span className="label-uppercase">{text.fearGreedIndex}</span>
+                <h3>{text.marketSentiment}</h3>
+              </div>
             </div>
+            <ScoreGauge score={summary.sentimentScore} size="lg" language={reportLanguage} />
           </Card>
         </div>
       </div>

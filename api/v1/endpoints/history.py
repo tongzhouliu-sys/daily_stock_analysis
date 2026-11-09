@@ -914,12 +914,17 @@ def get_history_share_image(
         structured_payload=_history_share_image_payload(result),
     )
     if image_bytes is None:
-        engine = getattr(config, "md2img_engine", "wkhtmltoimage")
+        engine = getattr(config, "md2img_engine", "auto")
         raise HTTPException(
             status_code=503,
             detail={
                 "error": "share_image_unavailable",
-                "message": f"分享图片生成失败，请检查 {engine} 转图工具是否已安装并可用",
+                "message": (
+                    f"分享图片生成失败：当前转图引擎 {engine} 不可用。"
+                    "请安装 Playwright（cd apps/dsa-web && npm ci）、markdown-to-file 或 wkhtmltopdf，"
+                    "或通过 MD2IMG_ENGINE 指定已安装的引擎后重试；"
+                    "也可以改用“复制链接”或“导出 PDF”分享报告。"
+                ),
             },
         )
 

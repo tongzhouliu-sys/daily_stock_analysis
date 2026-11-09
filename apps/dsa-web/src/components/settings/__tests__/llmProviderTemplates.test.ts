@@ -53,7 +53,7 @@ describe('llmProviderTemplates', () => {
       placeholderModels: 'gpt-6.1-sol',
       capabilities: ['openai-compatible', 'aggregator', 'model-discovery'],
       officialSources: [
-        { label: 'Modelflare 专属注册', url: 'https://modelflare.dev/sign-up?utm_source=daily_stock_analysis&utm_campaign=app' },
+        { label: 'Modelflare 专属注册', url: 'https://modelflare.dev/' },
         { label: 'Modelflare Docs', url: 'https://docs.modelflare.dev/' },
         { label: 'Modelflare Models & Pricing', url: 'https://modelflare.dev/pricing' },
       ],
@@ -127,10 +127,10 @@ describe('llmProviderTemplates', () => {
     expect(LLM_PROVIDER_TEMPLATE_BY_ID.openai.configHint).toBeUndefined();
   });
 
-  it('uses the mainland-accessible AIHubmix referral without changing its API base URL', () => {
+  it('uses the AIHubmix official site without changing its API base URL', () => {
     expect(LLM_PROVIDER_TEMPLATE_BY_ID.aihubmix).toMatchObject({
       baseUrl: 'https://aihubmix.com/v1',
-      officialSources: [{ label: 'AIHubmix', url: 'https://inferera.com/?aff=CfMq' }],
+      officialSources: [{ label: 'AIHubmix', url: 'https://aihubmix.com/' }],
     });
   });
 

@@ -1270,7 +1270,7 @@ class Config:
     # Markdown 转图片（Issue #289）：对不支持 Markdown 的渠道以图片发送
     markdown_to_image_channels: List[str] = field(default_factory=list)  # 逗号分隔：telegram,wechat,custom,email
     markdown_to_image_max_chars: int = 15000  # 超过此长度不转换，避免超大图片
-    md2img_engine: str = "wkhtmltoimage"  # wkhtmltoimage | markdown-to-file | playwright
+    md2img_engine: str = "auto"  # auto | wkhtmltoimage | markdown-to-file | playwright
     share_image_xiaohongshu_url: Optional[str] = None
     share_image_xiaohongshu_handle: Optional[str] = None
     share_image_xiaohongshu_id: Optional[str] = None
@@ -2268,7 +2268,7 @@ class Config:
                 field_name='MARKDOWN_TO_IMAGE_MAX_CHARS',
                 minimum=1,
             ),
-            md2img_engine=cls._parse_md2img_engine(os.getenv('MD2IMG_ENGINE', 'wkhtmltoimage')),
+            md2img_engine=cls._parse_md2img_engine(os.getenv('MD2IMG_ENGINE', 'auto')),
             share_image_xiaohongshu_url=(os.getenv('SHARE_IMAGE_XIAOHONGSHU_URL') or '').strip() or None,
             share_image_xiaohongshu_handle=(os.getenv('SHARE_IMAGE_XIAOHONGSHU_HANDLE') or '').strip() or None,
             share_image_xiaohongshu_id=(os.getenv('SHARE_IMAGE_XIAOHONGSHU_ID') or '').strip() or None,
@@ -2800,10 +2800,7 @@ class Config:
                         litellm_params['api_key'] = api_key
                     if ch['base_url']:
                         litellm_params['api_base'] = ch['base_url']
-                    # Auto-inject aihubmix sponsored header
                     headers = dict(ch.get('extra_headers') or {})
-                    if ch['base_url'] and 'aihubmix.com' in ch['base_url']:
-                        headers.setdefault('APP-Code', 'GPIJ3886')
                     if headers:
                         litellm_params['extra_headers'] = headers
 
@@ -2865,8 +2862,6 @@ class Config:
                 params: Dict[str, Any] = {'model': '__legacy_openai__', 'api_key': k}
                 if openai_base_url:
                     params['api_base'] = openai_base_url
-                if openai_base_url and 'aihubmix.com' in openai_base_url:
-                    params['extra_headers'] = {'APP-Code': 'GPIJ3886'}
                 model_list.append({
                     'model_name': '__legacy_openai__',
                     'litellm_params': params,
@@ -3129,17 +3124,17 @@ class Config:
 
     @classmethod
     def _parse_md2img_engine(cls, value: str) -> str:
-        """Parse MD2IMG_ENGINE, fallback to wkhtmltoimage for invalid values (Issue #455)."""
-        v = (value or 'wkhtmltoimage').strip().lower()
-        if v in ('wkhtmltoimage', 'markdown-to-file', 'playwright'):
+        """Parse MD2IMG_ENGINE, fallback to auto for invalid values (Issue #455)."""
+        v = (value or 'auto').strip().lower()
+        if v in ('auto', 'wkhtmltoimage', 'markdown-to-file', 'playwright'):
             return v
         if v:
             import logging
             logging.getLogger(__name__).warning(
-                f"MD2IMG_ENGINE '{value}' invalid, fallback to 'wkhtmltoimage' "
-                "(valid: wkhtmltoimage | markdown-to-file | playwright)"
+                f"MD2IMG_ENGINE '{value}' invalid, fallback to 'auto' "
+                "(valid: auto | wkhtmltoimage | markdown-to-file | playwright)"
             )
-        return 'wkhtmltoimage'
+        return 'auto'
 
     @classmethod
     def _resolve_realtime_source_priority(cls) -> str:
@@ -3925,8 +3920,6 @@ def extra_litellm_params(model: str, config: Config) -> Dict[str, Any]:
     if model.startswith("openai/") or "/" not in model:
         if config.openai_base_url:
             params["api_base"] = config.openai_base_url
-        if config.openai_base_url and "aihubmix.com" in config.openai_base_url:
-            params["extra_headers"] = {"APP-Code": "GPIJ3886"}
     return params
 
 

@@ -14,7 +14,7 @@ import { getReportText, normalizeReportLanguage } from '../../utils/reportLangua
 import { Card } from '../common';
 import { Tooltip } from '../common/Tooltip';
 import { ReportMarkdownBody } from './ReportMarkdownBody';
-import { ShareImageButton } from './ShareImageButton';
+import { ShareReportButton } from './ShareReportButton';
 
 interface MarketReviewReportViewProps {
   report?: AnalysisReport;
@@ -492,7 +492,7 @@ export const MarketReviewReportView: React.FC<MarketReviewReportViewProps> = ({
           </div>
 
           <div className="flex shrink-0 items-center gap-2">
-            <ShareImageButton
+            <ShareReportButton
               recordId={recordId}
               reportTitle={displayTitle}
               reportLanguage={reportLanguage}

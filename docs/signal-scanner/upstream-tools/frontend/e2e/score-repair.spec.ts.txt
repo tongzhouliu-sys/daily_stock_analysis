@@ -1,0 +1,139 @@
+import { test, expect } from "@playwright/test";
+import fs from "node:fs";
+import path from "node:path";
+
+test("real repaired scores, warning explanation and missing dependencies remain readable", async ({
+  page,
+}) => {
+  const errors: string[] = [];
+  page.on("pageerror", (e) => errors.push(e.message));
+  await page.goto("/signals");
+  await page
+    .getByLabel("本机访问密码")
+    .fill(
+      fs
+        .readFileSync(
+          path.resolve(
+            process.env.SCANNER_BROWSER_TEST_ROOT ||
+              "../runtime/quality-score-repair/isolated",
+            "首次登录密码.txt",
+          ),
+          "utf8",
+        )
+        .trim(),
+    );
+  await Promise.all([
+    page.waitForResponse(
+      (r) => r.url().endsWith("/api/auth/login") && r.status() === 200,
+    ),
+    page.getByRole("button", { name: "进入工作台" }).click(),
+  ]);
+  await expect(page.getByLabel("本机访问密码")).toHaveCount(0);
+  await page.goto("/signals");
+  const response = await page.request.get(
+    "/api/signals?view=RESEARCH&limit=100",
+  );
+  expect(response.ok()).toBeTruthy();
+  const payload = await response.json();
+  const cards = payload.data.items;
+  const scored = cards.filter((c: any) => c.quality_score != null);
+  const warning = cards.find((c: any) => c.kind === "WARNING");
+  expect(scored.length).toBeGreaterThan(0);
+  expect(warning).toBeTruthy();
+  expect(
+    cards
+      .filter((c: any) => c.kind !== "WARNING")
+      .every((c: any) => c.quality_score != null),
+  ).toBeTruthy();
+  await expect(page.getByText("风险提醒不参与质量评分").first()).toBeVisible();
+  for (const c of scored) {
+    const row = page
+      .locator("tbody tr")
+      .filter({ has: page.locator(`a[href="/signals/${c.id}"]`) })
+      .first();
+    await expect(row.locator("td").nth(2)).toContainText(
+      String(c.quality_score),
+    );
+  }
+  await page.screenshot({
+    path: "../runtime/quality-score-repair/scores-desktop.png",
+  });
+  await page.goto("/signals/" + warning.id);
+  await expect(page.getByText("风险提醒不参与质量评分").first()).toBeVisible();
+  await page.goto("/signals/" + scored[0].id);
+  await expect(
+    page.getByText("质量分 " + scored[0].quality_score, { exact: false }),
+  ).toBeVisible();
+  await expect(
+    page.locator("tbody tr").filter({ hasText: "participation" }),
+  ).toBeVisible();
+  await page.screenshot({
+    path: "../runtime/quality-score-repair/score-detail.png",
+  });
+  await page.goto("/signals");
+  await page.setViewportSize({ width: 375, height: 850 });
+  await expect(
+    page.locator("tbody tr").first().locator("td").nth(2),
+  ).toContainText(String(scored[0].quality_score));
+  expect(
+    await page.evaluate(
+      () => document.documentElement.scrollWidth <= window.innerWidth,
+    ),
+  ).toBeTruthy();
+  await page.screenshot({
+    path: "../runtime/quality-score-repair/scores-mobile.png",
+  });
+  await page.setViewportSize({ width: 1440, height: 1050 });
+  await page.goto("/screen");
+  await expect(page.locator(".sc-signal-list strong").first()).toHaveText(
+    String(scored[0].quality_score),
+    { timeout: 45000 },
+  );
+  await page.route("**/api/signals?*", async (route) =>
+    route.fulfill({
+      json: {
+        ...payload,
+        data: {
+          ...payload.data,
+          items: [
+            warning,
+            {
+              ...scored[0],
+              id: "missing-demo",
+              quality_score: null,
+              context: {
+                ...scored[0].context,
+                score_missing_inputs: ["sector_mapping", "sector_reference"],
+              },
+            },
+            { ...scored[0], id: "zero-demo", quality_score: 0 },
+          ],
+          total: 3,
+          next_cursor: null,
+        },
+      },
+    }),
+  );
+  await page.goto("/signals");
+  await expect(page.getByText("缺少：行业分类、行业ETF行情")).toBeVisible();
+  await expect(
+    page
+      .locator("tbody tr")
+      .filter({ has: page.locator('a[href="/signals/zero-demo"]') })
+      .first()
+      .locator("td")
+      .nth(2),
+  ).toContainText("0");
+  await page.setViewportSize({ width: 375, height: 850 });
+  expect(
+    await page.evaluate(
+      () => document.documentElement.scrollWidth <= window.innerWidth,
+    ),
+  ).toBeTruthy();
+  await expect(page.getByText("缺少：行业分类、行业ETF行情")).toBeVisible();
+  await page.screenshot({
+    path: "../runtime/quality-score-repair/score-states-mobile.png",
+    fullPage: true,
+  });
+  expect(errors).toEqual([]);
+});

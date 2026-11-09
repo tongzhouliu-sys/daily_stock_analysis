@@ -285,10 +285,9 @@ describe('HomePage', () => {
 
     const dashboard = await screen.findByTestId('home-dashboard');
     expect(dashboard).toBeInTheDocument();
-    expect(dashboard.className).toContain('h-[calc(100vh-5rem)]');
-    expect(dashboard.className).toContain('lg:h-[calc(100vh-2rem)]');
-    expect(dashboard.firstElementChild?.className).toContain('min-h-0');
-    expect(dashboard.querySelector('.flex-1.flex.min-h-0.overflow-hidden')).toBeTruthy();
+    expect(screen.queryByRole('heading', { name: '股票研究台', level: 1 })).not.toBeInTheDocument();
+    expect(screen.getByRole('region', { name: '分析报告' })).toContainElement(screen.getByTestId('home-dashboard-scroll'));
+    expect(screen.getByRole('complementary', { name: '研究记录' })).toBeInTheDocument();
     expect(screen.getByTestId('home-dashboard-scroll')).toBeInTheDocument();
     expect(screen.getByPlaceholderText('输入股票代码或名称，如 600519、贵州茅台、AAPL')).toBeInTheDocument();
     expect(await screen.findByText('趋势维持强势')).toBeInTheDocument();
@@ -345,7 +344,7 @@ describe('HomePage', () => {
 
     expect(await screen.findByText('开始分析')).toBeInTheDocument();
     expect(screen.getByRole('heading', { name: '开始分析', level: 3 })).toBeInTheDocument();
-    expect(screen.getByText('输入股票代码进行分析，或从左侧选择历史报告查看。')).toBeInTheDocument();
+    expect(screen.getByText('输入股票代码发起分析，或从研究记录中打开一份报告。')).toBeInTheDocument();
     expect(screen.getByText('暂无个股记录')).toBeInTheDocument();
   });
 
@@ -3036,7 +3035,7 @@ describe('HomePage', () => {
     );
   });
 
-  it('opens and closes the mobile history drawer without changing dashboard styles', async () => {
+  it('opens and closes the mobile research records drawer', async () => {
     vi.mocked(historyApi.getList).mockResolvedValue({
       total: 0,
       page: 1,
@@ -3044,23 +3043,18 @@ describe('HomePage', () => {
       items: [],
     });
 
-    const { container } = render(
+    render(
       <MemoryRouter>
         <HomePage />
       </MemoryRouter>,
     );
 
-    const trigger = await screen.findByRole('button', { name: '历史记录' });
+    const trigger = await screen.findByRole('button', { name: '研究记录' });
     fireEvent.click(trigger);
+    expect(screen.getByRole('dialog', { name: '研究记录' })).toBeInTheDocument();
 
-    expect(container.querySelector('.page-drawer-overlay')).toBeTruthy();
-    expect(container.querySelector('.dashboard-card')).toBeTruthy();
-
-    fireEvent.click(container.querySelector('.fixed.inset-0.z-40') as HTMLElement);
-
-    await waitFor(() => {
-      expect(container.querySelector('.page-drawer-overlay')).toBeFalsy();
-    });
+    fireEvent.keyDown(document, { key: 'Escape' });
+    expect(screen.queryByRole('dialog', { name: '研究记录' })).not.toBeInTheDocument();
   });
 
   it('keeps same-stock history range controls in empty result state and allows switching back', async () => {

@@ -11,18 +11,18 @@
   -> AnalysisResult.to_dict() 结构化 JSON + 稳定 Markdown
   -> share_image 优先读取 JSON，Markdown 兼容回退
   -> 个股决策卡 HTML
-  -> wkhtmltoimage / markdown-to-file / Playwright 输出 PNG
+  -> Playwright / markdown-to-file / wkhtmltoimage（auto 依次降级）输出 PNG
 
 大盘 MarketOverview + market_light + LLM 复盘
   -> MarketAnalyzer 生成 market_review_payload + 稳定 Markdown
   -> share_image 优先读取 payload，Markdown 兼容回退
   -> 市场复盘卡 HTML
-  -> wkhtmltoimage / markdown-to-file / Playwright 输出 PNG
+  -> Playwright / markdown-to-file / wkhtmltoimage（auto 依次降级）输出 PNG
 ```
 
-`MARKDOWN_TO_IMAGE_CHANNELS`、`MD2IMG_ENGINE`、`MARKDOWN_TO_IMAGE_MAX_CHARS` 继续控制哪些通知渠道转图、使用哪个引擎以及最大输入长度。转换失败时仍回退为文本通知。
+`MARKDOWN_TO_IMAGE_CHANNELS`、`MD2IMG_ENGINE`、`MARKDOWN_TO_IMAGE_MAX_CHARS` 继续控制哪些通知渠道转图、使用哪个引擎以及最大输入长度。转换失败时仍回退为文本通知。`MD2IMG_ENGINE` 默认 `auto`，按 `playwright -> markdown-to-file -> wkhtmltoimage` 顺序降级，因此不再强制依赖 `wkhtmltoimage`；只有把引擎显式钉死为某个值时才会只使用该工具。
 
-分享图需要运行环境提供对应语言字体。官方 Docker 镜像已内置 Noto CJK 字体；Debian/Ubuntu 源码部署使用默认 `wkhtmltoimage` 引擎时，应安装 `wkhtmltopdf fonts-noto-cjk`。如果只安装转图工具而缺少 CJK 字体，中文或韩文可能在 PNG 中消失，只剩数字、英文和边框。
+分享图需要运行环境提供对应语言字体。官方 Docker 镜像已内置 Noto CJK 字体。Debian/Ubuntu 源码部署无论使用哪个引擎，都建议安装 `fonts-noto-cjk`；使用 `wkhtmltoimage` 引擎时还需安装 `wkhtmltopdf`。如果只安装转图工具而缺少 CJK 字体，中文或韩文可能在 PNG 中消失，只剩数字、英文和边框。
 `fonts-noto-cjk` 是 Debian 字体包名，不代表新增日文报告语言。项目的报告输出仍只支持 `REPORT_LANGUAGE=zh|en|ko`；日股个股和日本市场复盘中的日文原生名称由通用 Noto CJK fallback 覆盖，页面语言仍跟随所选报告语言，不会根据 `7203.T` 或 `region=jp` 切换成未支持的 `ja` 输出。
 
 小红书品牌使用以下可选配置。全部留空时展示仓库内置二维码及昵称 `@霸天土小豆`；配置任一自定义值后仅使用这组自定义品牌信息，避免把自定义账号与默认二维码混合：
@@ -37,17 +37,25 @@ SHARE_IMAGE_XIAOHONGSHU_QR_PATH=assets/my-xiaohongshu-qr.png
 
 ## Web 一键分享
 
-浏览器版历史个股报告、市场复盘和完整报告抽屉右上角都会显示“分享”按钮。页面加载报告时不会生成图片；只有用户点击“分享”后，页面才调用 `GET /api/v1/history/{record_id}/share-image` 按需生成或读取缓存 PNG。支持文件分享的浏览器会在图片准备好后提示“再次点击分享”，由第二次点击同步打开系统分享面板，避免异步生成过程使浏览器的用户激活状态失效；其他浏览器会在首次生成完成后直接下载 PNG。如果系统分享面板打开失败，除用户主动取消外也会自动回退下载已经生成的 PNG。
+浏览器版历史个股报告、市场复盘和完整报告抽屉右上角都会显示“分享”菜单，包含三个动作：
 
-Electron 桌面端同样展示“分享”按钮，但不依赖额外分发 `wkhtmltoimage`、`markdown-to-file` 或 Playwright。用户点击后，桌面 preload 通过受限 IPC 让主进程打开本地 `GET /api/v1/history/{record_id}/share-image-html`，使用 Electron 自带的隐藏 Chromium 窗口按完整页面高度截图为 PNG，随后走与浏览器一致的下载回退。IPC 只接受正整数记录 ID，主进程只允许当前桌面窗口请求本次启动时确定的后端 origin（包括显式配置的局域网 `WEBUI_HOST`），HTML 响应使用 CSP 禁止脚本、外部资源和网络加载。
+- **复制链接**：把当前报告深链 `/?recordId=<id>` 复制到剪贴板，打开后直接定位到该报告。该动作完全在前端完成，不依赖任何转图引擎。
+- **导出 PDF**：复用同一张分享海报，在浏览器本地切页后导出 A4 PDF，不依赖后端转图工具。
+- **分享图片**：按需调用 `GET /api/v1/history/{record_id}/share-image` 生成或读取缓存 PNG。
 
-Web 手工生成不受 `MARKDOWN_TO_IMAGE_CHANNELS` 限制，但服务端仍需配置可用的 `MD2IMG_ENGINE`。桌面端手工生成复用 Electron，不读取 `MD2IMG_ENGINE`。Web 使用 Playwright 时先执行：
+页面加载报告时不会生成任何文件；只有用户点击具体动作后才按需执行。导出 PDF 会在文件准备好后直接下载。分享图片在支持文件分享的浏览器中会提示“再次点击分享”，由第二次点击同步打开系统分享面板，避免异步生成过程使浏览器的用户激活状态失效；其他浏览器会在首次生成完成后直接下载 PNG。如果系统分享面板打开失败，除用户主动取消外也会自动回退下载已经生成的 PNG。
+
+Electron 桌面端同样展示“分享”菜单。“复制链接”使用同一个深链；“分享图片”不依赖额外分发 `wkhtmltoimage`、`markdown-to-file` 或 Playwright，桌面 preload 通过受限 IPC 让主进程打开本地 `GET /api/v1/history/{record_id}/share-image-html`，使用 Electron 自带的隐藏 Chromium 窗口按完整页面高度截图为 PNG，随后走与浏览器一致的下载回退。IPC 只接受正整数记录 ID，主进程只允许当前桌面窗口请求本次启动时确定的后端 origin（包括显式配置的局域网 `WEBUI_HOST`），HTML 响应使用 CSP 禁止脚本、外部资源和网络加载。
+
+Web 手工生成分享图片不受 `MARKDOWN_TO_IMAGE_CHANNELS` 限制，但服务端需至少有一个可用的转图引擎。默认 `MD2IMG_ENGINE=auto` 会按 `playwright -> markdown-to-file -> wkhtmltoimage` 降级，因此本地没有 `wkhtmltoimage` 时安装 Playwright 即可。使用 Playwright 时先执行：
 
 ```bash
 cd apps/dsa-web
 npm ci
 npx playwright install chromium
 ```
+
+如果下载 Chromium 受网络限制，Playwright 引擎在检测到自带浏览器缺失时会自动回退到本机安装的 Google Chrome（Playwright `--channel chrome`），无需额外配置；本机未安装 Chrome 时仍会返回生成失败并提示安装依赖。若三个引擎都不可用，分享图片会返回 503，但“复制链接”和“导出 PDF”不受影响。
 
 结构化数据用于精确填充名称、动作、评分、价格、宽度和板块等字段；Markdown 仍负责兼容旧调用以及计划、风险等文本章节。部分历史 JSON 只覆盖其中实际存在的字段，不会清空 Markdown 中已有的行情、技术参考或执行点位。模板不根据分数自行推导操作，也不补造价格或指标。字段为 `N/A`、`-`、空值或没有对应模块时，相关卡片自动隐藏。
 

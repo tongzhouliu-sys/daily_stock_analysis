@@ -5,7 +5,9 @@ Markdown 转图片工具模块
 ===================================
 
 将 Markdown 转为 PNG 图片（用于不支持 Markdown 的通知渠道）。
-支持 wkhtmltoimage (imgkit) 与 markdown-to-file (m2f)，后者对 emoji 支持更好 (Issue #455)。
+支持 playwright、markdown-to-file (m2f) 与 wkhtmltoimage (imgkit)。
+默认 auto：按 playwright -> markdown-to-file -> wkhtmltoimage 顺序降级，
+任一引擎可用即可出图，因此不再强制要求安装 wkhtmltoimage。
 
 Security note: imgkit passes HTML to wkhtmltoimage via stdin, not argv, so
 command injection from content is not applicable. Output is rasterized to PNG
@@ -48,6 +50,32 @@ def _resolve_playwright_command() -> Optional[str]:
     return None
 
 
+def _run_playwright_screenshot(
+    playwright_command: str,
+    html_url: str,
+    png_path: str,
+    channel: Optional[str] = None,
+) -> subprocess.CompletedProcess:
+    """Run the Playwright screenshot CLI, optionally against a browser channel."""
+    args = [
+        playwright_command,
+        "screenshot",
+        "--browser",
+        "chromium",
+        "--viewport-size",
+        "1080,720",
+    ]
+    if channel:
+        args.extend(["--channel", channel])
+    args.extend(["--full-page", html_url, png_path])
+    return subprocess.run(args, capture_output=True, timeout=60, check=False)
+
+
+def _is_missing_playwright_browser(stderr: str) -> bool:
+    """Detect the Playwright CLI error shown when bundled browsers are absent."""
+    return "Executable doesn't exist" in stderr or "playwright install" in stderr
+
+
 def _markdown_to_image_playwright(
     markdown_text: str,
     structured_payload: Optional[Mapping[str, Any]] = None,
@@ -74,26 +102,27 @@ def _markdown_to_image_playwright(
             ),
             encoding="utf-8",
         )
-        result = subprocess.run(
-            [
-                playwright_command,
-                "screenshot",
-                "--browser",
-                "chromium",
-                "--viewport-size",
-                "1080,720",
-                "--full-page",
-                html_path.resolve().as_uri(),
-                str(png_path),
-            ],
-            capture_output=True,
-            timeout=60,
-            check=False,
-        )
+        html_url = html_path.resolve().as_uri()
+        result = _run_playwright_screenshot(playwright_command, html_url, str(png_path))
         if result.returncode == 0 and png_path.exists():
             return png_path.read_bytes()
 
         stderr = result.stderr.decode("utf-8", errors="replace")
+        if _is_missing_playwright_browser(stderr):
+            logger.info(
+                "Playwright bundled Chromium is unavailable, retrying with the "
+                "system Google Chrome channel."
+            )
+            result = _run_playwright_screenshot(
+                playwright_command,
+                html_url,
+                str(png_path),
+                channel="chrome",
+            )
+            if result.returncode == 0 and png_path.exists():
+                return png_path.read_bytes()
+            stderr = result.stderr.decode("utf-8", errors="replace")
+
         logger.error("Playwright image conversion failed: %s", stderr[:500])
         return None
     except Exception as exc:
@@ -208,6 +237,31 @@ def _markdown_to_image_wkhtml(
         return None
 
 
+def _markdown_to_image_auto(
+    markdown_text: str,
+    structured_payload: Optional[Mapping[str, Any]] = None,
+    branding: Optional[ShareImageBranding] = None,
+) -> Optional[bytes]:
+    """Render with the first available engine so no single tool is mandatory."""
+    engines = (
+        ("playwright", _markdown_to_image_playwright),
+        ("markdown-to-file", _markdown_to_image_m2f),
+        ("wkhtmltoimage", _markdown_to_image_wkhtml),
+    )
+    for engine, renderer in engines:
+        result = renderer(markdown_text, structured_payload, branding)
+        if result:
+            logger.debug("Markdown rendered to image with engine: %s", engine)
+            return result
+        logger.info("md2img engine '%s' is unavailable, trying next engine", engine)
+    logger.warning(
+        "No md2img engine could render the report. Install one of: "
+        "Playwright (cd apps/dsa-web && npm ci), markdown-to-file "
+        "(npm i -g markdown-to-file), or wkhtmltopdf."
+    )
+    return None
+
+
 def markdown_to_image(
     markdown_text: str,
     max_chars: int = 15000,
@@ -216,8 +270,9 @@ def markdown_to_image(
     """
     Convert Markdown to PNG image bytes.
 
-    Engine is read from config.md2img_engine: wkhtmltoimage (default),
-    markdown-to-file, or playwright.
+    Engine is read from config.md2img_engine: auto (default, tries
+    playwright -> markdown-to-file -> wkhtmltoimage), or an explicit engine
+    name to pin a single renderer.
 
     When conversion fails or dependencies unavailable, returns None so caller
     can fall back to text sending.
@@ -244,14 +299,16 @@ def markdown_to_image(
         from src.config import get_config
 
         config = get_config()
-        engine = getattr(config, "md2img_engine", "wkhtmltoimage")
+        engine = getattr(config, "md2img_engine", "auto")
         branding = _share_image_branding(config)
     except Exception:
-        engine = "wkhtmltoimage"
+        engine = "auto"
         branding = share_image_branding_from_config(object())
 
     if engine == "markdown-to-file":
         return _markdown_to_image_m2f(markdown_text, structured_payload, branding)
     if engine == "playwright":
         return _markdown_to_image_playwright(markdown_text, structured_payload, branding)
-    return _markdown_to_image_wkhtml(markdown_text, structured_payload, branding)
+    if engine == "wkhtmltoimage":
+        return _markdown_to_image_wkhtml(markdown_text, structured_payload, branding)
+    return _markdown_to_image_auto(markdown_text, structured_payload, branding)

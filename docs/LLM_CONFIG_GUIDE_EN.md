@@ -141,7 +141,7 @@ Existing Anspire setups that share a key between search and LLMs remain supporte
 
 ```env
 # Anspire Open API keys (multiple keys supported, separated by commas)
-# Get your key at: https://open.anspire.cn/dsa?share_code=QFBC0FYC
+# Get your key at: https://open.anspire.cn/
 # When no higher-priority OpenAI-compatible source is set, this key is reused for Anspire search + LLM path (example fallback behavior only).
 # Example model: Doubao-Seed-2.0-lite; example gateway: https://open-gateway.anspire.cn/v6
 ANSPIRE_API_KEYS=sk-xxxxxxxxxxxxxxxx
@@ -196,7 +196,7 @@ The backend exposes a read-only status endpoint at `GET /api/v1/system/config/se
 - OpenAI-compatible routing in LiteLLM: <https://docs.litellm.ai/docs/providers/openai_compatible>
 - OpenAI official API docs: <https://platform.openai.com/docs/api-reference/chat>
 - DeepSeek official API docs: <https://api-docs.deepseek.com/>
-- Anspire Open: <https://open.anspire.cn/dsa?share_code=QFBC0FYC>
+- Anspire Open: <https://open.anspire.cn/>
 - DashScope OpenAI-compatible mode: <https://help.aliyun.com/zh/model-studio/compatibility-of-openai-with-dashscope>
 - Moonshot / Kimi official compatibility docs: <https://platform.moonshot.ai/docs/guide/compatibility>
 - Anthropic official Messages API: <https://docs.anthropic.com/en/api/messages>
@@ -217,7 +217,7 @@ If you prefer modifying files, configuring this in the `.env` file is also very 
 
 ### Example: Modelflare
 
-[Register with Modelflare](https://modelflare.dev/sign-up?utm_source=github&utm_campaign=daily_stock_analysis), create an API key in the console, and configure:
+Register with Modelflare, create an API key in the console, and configure:
 
 ```env
 MODELFLARE_KEY=sk-xxx

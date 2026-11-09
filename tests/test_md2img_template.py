@@ -108,6 +108,53 @@ def test_playwright_renderer_receives_the_same_share_poster(tmp_path, monkeypatc
     assert "123456" not in captured["html"]
 
 
+def test_playwright_renderer_falls_back_to_system_chrome(tmp_path, monkeypatch):
+    calls = []
+    resolved_playwright = str(tmp_path / "playwright")
+
+    def fake_run(args, **_kwargs):
+        calls.append(args)
+        if "--channel" not in args:
+            return SimpleNamespace(
+                returncode=1,
+                stderr=(
+                    b"Error: Executable doesn't exist at chromium_headless_shell-1208\n"
+                    b"Please run the following command to download new browsers: "
+                    b"npx playwright install"
+                ),
+            )
+        Path(args[-1]).write_bytes(b"png")
+        return SimpleNamespace(returncode=0, stderr=b"")
+
+    monkeypatch.setattr("src.md2img._resolve_playwright_command", lambda: resolved_playwright)
+    monkeypatch.setattr("src.md2img.tempfile.mkdtemp", lambda: str(tmp_path))
+    monkeypatch.setattr("src.md2img.subprocess.run", fake_run)
+    monkeypatch.setattr("src.md2img.shutil.rmtree", lambda _path: None)
+
+    assert _markdown_to_image_playwright("# 大盘复盘", branding=TEST_BRANDING) == b"png"
+    assert len(calls) == 2
+    assert "--channel" not in calls[0]
+    channel_index = calls[1].index("--channel")
+    assert calls[1][channel_index + 1] == "chrome"
+
+
+def test_playwright_renderer_does_not_retry_unrelated_failures(tmp_path, monkeypatch):
+    calls = []
+    resolved_playwright = str(tmp_path / "playwright")
+
+    def fake_run(args, **_kwargs):
+        calls.append(args)
+        return SimpleNamespace(returncode=1, stderr=b"Error: page.goto: net::ERR_FILE_NOT_FOUND")
+
+    monkeypatch.setattr("src.md2img._resolve_playwright_command", lambda: resolved_playwright)
+    monkeypatch.setattr("src.md2img.tempfile.mkdtemp", lambda: str(tmp_path))
+    monkeypatch.setattr("src.md2img.subprocess.run", fake_run)
+    monkeypatch.setattr("src.md2img.shutil.rmtree", lambda _path: None)
+
+    assert _markdown_to_image_playwright("# 大盘复盘", branding=TEST_BRANDING) is None
+    assert len(calls) == 1
+
+
 def test_config_accepts_playwright_image_engine():
     assert Config._parse_md2img_engine("playwright") == "playwright"
 
@@ -178,3 +225,75 @@ def test_markdown_to_file_renderer_returns_none_when_share_poster_build_fails(mo
 
     with patch("src.md2img.build_share_image_html", side_effect=FileNotFoundError("missing qr")):
         assert _markdown_to_image_m2f("# 贵州茅台 600519") is None
+
+
+def test_config_md2img_engine_defaults_to_auto():
+    assert Config._parse_md2img_engine("") == "auto"
+    assert Config._parse_md2img_engine("AUTO") == "auto"
+    assert Config._parse_md2img_engine("not-a-real-engine") == "auto"
+
+
+def test_markdown_to_image_auto_falls_back_until_an_engine_succeeds():
+    calls = []
+
+    def renderer(name, result):
+        def _render(*_args, **_kwargs):
+            calls.append(name)
+            return result
+        return _render
+
+    config = SimpleNamespace(md2img_engine="auto")
+    with (
+        patch("src.config.get_config", return_value=config),
+        patch("src.md2img._markdown_to_image_playwright", side_effect=renderer("playwright", None)),
+        patch("src.md2img._markdown_to_image_m2f", side_effect=renderer("markdown-to-file", None)),
+        patch("src.md2img._markdown_to_image_wkhtml", side_effect=renderer("wkhtmltoimage", b"png")),
+    ):
+        assert markdown_to_image("# 大盘复盘") == b"png"
+
+    assert calls == ["playwright", "markdown-to-file", "wkhtmltoimage"]
+
+
+def test_markdown_to_image_auto_stops_at_first_success():
+    calls = []
+
+    def renderer(name, result):
+        def _render(*_args, **_kwargs):
+            calls.append(name)
+            return result
+        return _render
+
+    config = SimpleNamespace(md2img_engine="auto")
+    with (
+        patch("src.config.get_config", return_value=config),
+        patch("src.md2img._markdown_to_image_playwright", side_effect=renderer("playwright", b"png")),
+        patch("src.md2img._markdown_to_image_m2f", side_effect=renderer("markdown-to-file", b"png")),
+        patch("src.md2img._markdown_to_image_wkhtml", side_effect=renderer("wkhtmltoimage", b"png")),
+    ):
+        assert markdown_to_image("# 大盘复盘") == b"png"
+
+    assert calls == ["playwright"]
+
+
+def test_markdown_to_image_auto_returns_none_when_no_engine_is_available():
+    config = SimpleNamespace(md2img_engine="auto")
+    with (
+        patch("src.config.get_config", return_value=config),
+        patch("src.md2img._markdown_to_image_playwright", return_value=None),
+        patch("src.md2img._markdown_to_image_m2f", return_value=None),
+        patch("src.md2img._markdown_to_image_wkhtml", return_value=None),
+    ):
+        assert markdown_to_image("# 大盘复盘") is None
+
+
+def test_markdown_to_image_pins_explicit_engine_without_fallback():
+    config = SimpleNamespace(md2img_engine="wkhtmltoimage")
+    with (
+        patch("src.config.get_config", return_value=config),
+        patch("src.md2img._markdown_to_image_playwright", return_value=b"png") as playwright_renderer,
+        patch("src.md2img._markdown_to_image_wkhtml", return_value=None) as wkhtml_renderer,
+    ):
+        assert markdown_to_image("# 大盘复盘") is None
+
+    playwright_renderer.assert_not_called()
+    wkhtml_renderer.assert_called_once()

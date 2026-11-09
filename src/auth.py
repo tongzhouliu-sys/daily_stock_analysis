@@ -2,7 +2,7 @@
 """
 Web admin authentication module.
 
-Single toggle (ADMIN_AUTH_ENABLED) + file-based credentials.
+Single administrator account (ADMIN_USERNAME) + file-based password hash.
 First login sets initial password; supports web change-password and CLI reset.
 """
 
@@ -201,6 +201,12 @@ def is_auth_enabled() -> bool:
         return _auth_enabled
     _auth_enabled = _is_auth_enabled_from_env()
     return _auth_enabled
+
+
+def verify_admin_username(username: str) -> bool:
+    """Match the configured administrator username after auth config is loaded."""
+    configured_username = os.getenv("ADMIN_USERNAME", "").strip() or "admin"
+    return username.strip() == configured_username
 
 
 def has_stored_password() -> bool:

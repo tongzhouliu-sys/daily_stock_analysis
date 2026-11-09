@@ -13,26 +13,52 @@ interface StrategyItemProps {
   label: string;
   value?: string;
   tone: string;
+  index: number;
 }
+
+/**
+ * 把 "195.42（回抽 MA5 阻力位）" 这类值拆成主价格与括号说明，
+ * 让数字成为视觉主体、说明退为辅助信息。
+ */
+const splitStrategyValue = (raw?: string): { main: string; note: string } => {
+  const value = (raw || '').trim();
+  if (!value) {
+    return { main: '—', note: '' };
+  }
+  const bracketed = value.match(/^(.*?)[（(]\s*(.+?)\s*[）)]\s*$/s);
+  if (bracketed) {
+    return {
+      main: bracketed[1].trim() || '—',
+      note: bracketed[2].trim(),
+    };
+  }
+  return { main: value, note: '' };
+};
 
 const StrategyItem: React.FC<StrategyItemProps> = ({
   label,
   value,
   tone,
-}) => (
-  <div className="home-subpanel home-strategy-card p-3" style={{ ['--home-strategy-tone' as string]: `var(${tone})` }}>
-    <div className="flex flex-col">
-      <span className="home-strategy-label mb-0.5 text-xs">{label}</span>
-      <span className="home-strategy-value text-lg font-bold font-mono" style={!value ? { color: 'var(--text-muted-text)' } : undefined}>
-        {value || '—'}
-      </span>
-    </div>
+  index,
+}) => {
+  const { main, note } = splitStrategyValue(value);
+  const isEmpty = !value?.trim() || /^[无—–-]+$/.test(main);
+  return (
     <div
-      className="absolute bottom-0 left-0 right-0 h-0.5"
-      style={{ background: `linear-gradient(90deg, transparent, var(${tone}), transparent)` }}
-    />
-  </div>
-);
+      className="report-strategy-item"
+      style={{ ['--report-strategy-tone' as string]: `var(${tone})` }}
+    >
+      <div className="report-strategy-top">
+        <span className="report-strategy-label">{label}</span>
+        <span className="report-strategy-index font-mono" aria-hidden="true">
+          {String(index + 1).padStart(2, '0')}
+        </span>
+      </div>
+      <div className="report-strategy-value font-mono" data-empty={isEmpty ? 'true' : undefined}>{main}</div>
+      {note ? <p className="report-strategy-note">{note}</p> : null}
+    </div>
+  );
+};
 
 /**
  * 策略点位区组件 - 终端风格
@@ -69,15 +95,16 @@ export const ReportStrategy: React.FC<ReportStrategyProps> = ({ strategy, langua
   ];
 
   return (
-    <Card variant="bordered" padding="md" className="home-panel-card">
+    <Card variant="bordered" padding="md" className="home-panel-card report-strategy">
       <DashboardPanelHeader
         eyebrow={text.strategyPoints}
         title={text.sniperLevels}
-        className="mb-3"
+        className="report-section-head mb-4"
+        titleClassName="report-section-title"
       />
-      <div className="grid grid-cols-2 md:grid-cols-4 gap-3">
-        {strategyItems.map((item) => (
-          <StrategyItem key={item.label} {...item} />
+      <div className="report-strategy-grid">
+        {strategyItems.map((item, index) => (
+          <StrategyItem key={item.label} {...item} index={index} />
         ))}
       </div>
     </Card>

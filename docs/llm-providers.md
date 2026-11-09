@@ -45,7 +45,7 @@ Codex App Server 问股后端已移除。`AGENT_BACKEND` 仅支持 `auto`（推�
 
 ### Modelflare
 
-[注册 Modelflare](https://modelflare.dev/sign-up?utm_source=github&utm_campaign=daily_stock_analysis)，创建 API Key 后使用 OpenAI-compatible 渠道：
+注册 Modelflare，创建 API Key 后使用 OpenAI-compatible 渠道：
 
 ```env
 MODELFLARE_KEY=sk-xxx
@@ -141,7 +141,7 @@ LITELLM_FALLBACK_MODELS=openai/gpt-5.6-terra,openai/gpt-5.6-luna
 | SiliconFlow | [模型列表](https://docs.siliconflow.cn/quickstart/models)、[获取模型列表 API](https://docs.siliconflow.cn/cn/api-reference/models/get-model-list) | 平台模型实时更新且 `/models` 需要 API Key；模板只给常见新模型示例，保存前建议在 Web 设置页点击「获取模型」确认账号可见性。 |
 | OpenRouter | [Models API](https://openrouter.ai/docs/api/api-reference/models/get-models) | OpenRouter 支持 `~anthropic/claude-sonnet-latest`、`~openai/gpt-latest` 等 latest router alias；2026-05-03 的一次手动 live smoke 以 Claude Sonnet latest 作为默认示例通过，GPT latest 保留为可按账号权限切换的备选。 |
 | Requesty | [Models API](https://docs.requesty.ai/api-reference/endpoint/models-list)、[EU Routing](https://docs.requesty.ai/features/eu-routing) | 模板示例为无斜杠的 managed 模型 ID，运行时按 `openai/<model>` 路由；Base URL 为 `requesty.ai` 域名时，Web「获取模型」返回的 vendor/model ID 会保存为 `openai/<vendor>/<model>`（如 `openai/openai/gpt-4o-mini`、`openai/anthropic/claude-sonnet-4-6`），手动填写的 `anthropic/...`、`vertex/...` 也会自动补上 `openai/` 网关路由，完整 ID 原样发送给 Requesty；仅 `openai/` 开头的 ID 与 LiteLLM 路由前缀重名，手动填写时需写成 `openai/openai/gpt-4o-mini`。同一 API Key 可用于 EU 端点 `https://router.eu.requesty.ai/v1`。 |
-| Anspire Open（兼容） | [Anspire Open](https://open.anspire.cn/dsa?share_code=QFBC0FYC) | `ANSPIRE_API_KEYS` 在未配置更高优先级 OpenAI-compatible 来源时可用于大模型网关与搜索；兼容示例为 `openai/Doubao-Seed-2.0-lite` + `https://open-gateway.anspire.cn/v6`，是否可用以控制台与模型权限为准。 |
+| Anspire Open（兼容） | Anspire Open | `ANSPIRE_API_KEYS` 在未配置更高优先级 OpenAI-compatible 来源时可用于大模型网关与搜索；兼容示例为 `openai/Doubao-Seed-2.0-lite` + `https://open-gateway.anspire.cn/v6`，是否可用以控制台与模型权限为准。 |
 | LiteLLM | [OpenAI-Compatible Endpoints](https://docs.litellm.ai/docs/providers/openai_compatible) | OpenAI-compatible 端点需要把运行时模型写成 `openai/<model>`，Base URL 只填到服务商兼容入口，不额外拼接 `/chat/completions`。 |
 
 本页预设只保证配置形状与当前依赖的 OpenAI-compatible 路由规则一致；实际连通性仍取决于服务商账号权限、地域、额度和模型开通状态。当前 LiteLLM 版本约束为 `litellm>=1.80.10,!=1.82.7,!=1.82.8,<1.99.0`（见 `requirements.txt`），保留历史最低版本、显式排除 PyPI 事故版本，并将上界收敛到已验证的 `<1.99.0`，避免未来大版本自动进入。

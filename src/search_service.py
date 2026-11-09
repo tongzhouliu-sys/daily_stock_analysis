@@ -577,7 +577,7 @@ class SerpAPISearchProvider(BaseSearchProvider):
     - 免费版每月 100 次请求
     - 返回真实的搜索结果
     
-    文档：https://serpapi.com/github-daily-stock-analysis
+    文档：https://serpapi.com/
     """
 
     _ORGANIC_CONTENT_FETCH_LIMIT = 1

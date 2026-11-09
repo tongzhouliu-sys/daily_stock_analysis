@@ -1,0 +1,20 @@
+import { defineConfig } from "@playwright/test";
+export default defineConfig({
+  testDir: "./e2e",
+  timeout: 60000,
+  fullyParallel: false,
+  workers: 1,
+  outputDir: "../runtime/e2e-results",
+  reporter: [
+    ["list"],
+    ["json", { outputFile: "../runtime/e2e-results/report.json" }],
+  ],
+  use: {
+    baseURL: process.env.SCANNER_TEST_URL || "http://127.0.0.1:8765",
+    headless: true,
+    viewport: { width: 1440, height: 1050 },
+    trace: "off",
+    video: "off",
+    screenshot: "only-on-failure",
+  },
+});

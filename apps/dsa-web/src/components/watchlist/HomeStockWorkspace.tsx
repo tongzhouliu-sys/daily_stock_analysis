@@ -17,7 +17,7 @@ import { Badge, Button, InlineAlert, Input, ScrollArea, StatusDot } from '../com
 import { DashboardPanelHeader, DashboardStateBlock } from '../dashboard';
 import { StockBar } from '../history';
 import type { StockBarItem, TaskInfo } from '../../types/analysis';
-import { getSentimentColor } from '../../types/analysis';
+import { getSentimentTone } from '../../types/analysis';
 import { buildDecisionActionLabelMap, getDecisionActionLabel } from '../../utils/decisionAction';
 import { formatDateTime } from '../../utils/format';
 import { areAssetAwareCodesEquivalent, toAssetAwareCodeKey, type AssetAwareAssetType } from '../../utils/stockCode';
@@ -196,8 +196,7 @@ function rowHasSelectedIdentity(
 const ScoreBadge: React.FC<{ item?: StockBarItem }> = ({ item }) => {
   const { t } = useUiLanguage();
   const score = typeof item?.sentimentScore === 'number' ? item.sentimentScore : null;
-  const color = score !== null ? getSentimentColor(score) : null;
-  if (score === null || !color) {
+  if (score === null) {
     return <span className="text-[11px] text-muted-text">{t('common.noData')}</span>;
   }
 
@@ -212,14 +211,9 @@ const ScoreBadge: React.FC<{ item?: StockBarItem }> = ({ item }) => {
 
   return (
     <Badge
-      variant="default"
+      variant={getSentimentTone(score)}
       size="sm"
-      className="shrink-0 shadow-none text-[11px] font-semibold leading-none"
-      style={{
-        color,
-        borderColor: `${color}30`,
-        backgroundColor: `${color}10`,
-      }}
+      className="shrink-0 tabular-nums text-[11px] font-medium"
     >
       {operationLabel} {score}
     </Badge>
@@ -475,7 +469,7 @@ export const HomeStockWorkspace: React.FC<HomeStockWorkspaceProps> = ({
   };
 
   const renderTabs = (
-    <div className="grid grid-cols-3 gap-1 rounded-xl border border-subtle bg-base/40 p-1">
+    <div className="research-workspace-tabs">
       {tabs.map((tab) => {
         const selected = activeTab === tab.key;
         return (
@@ -483,9 +477,7 @@ export const HomeStockWorkspace: React.FC<HomeStockWorkspaceProps> = ({
             key={tab.key}
             type="button"
             aria-pressed={selected}
-            className={`h-8 rounded-lg px-2 text-xs font-medium transition-colors ${
-              selected ? 'bg-primary/15 text-primary shadow-inner' : 'text-secondary-text hover:bg-hover hover:text-foreground'
-            }`}
+            className="research-workspace-tab"
             onClick={() => {
               setWorkspaceNotice(null);
               onTabChange(tab.key);

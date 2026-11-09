@@ -1,0 +1,88 @@
+#!/usr/bin/env python3
+"""启动批量历史数据拉取作业"""
+
+import os
+import sys
+from pathlib import Path
+
+# 添加backend到路径
+sys.path.insert(0, str(Path(__file__).parent / "backend"))
+
+from app.core import Settings, now, stamp, uid
+from app.services.source_data import read_private_env
+from app.domain.calendar import Calendar
+from app.storage.db import Database, one
+from app.worker.jobs import Worker, enqueue
+
+def main():
+    env_file = os.environ.get("SCANNER_ENV_FILE")
+    if env_file:
+        read_private_env(Path(env_file))
+    settings = Settings.load()
+    db = Database(settings.db_path)
+    cal = Calendar()
+    
+    # 计算日期范围（3年）
+    end_date = cal.last_completed(now())
+    start_date = cal.shift(end_date, -(3 * 252))
+    
+    print(f"批量历史数据拉取")
+    print(f"  开始日期: {start_date}")
+    print(f"  结束日期: {end_date}")
+    print(f"  CSV文件: universe_100.csv")
+    print(f"  标的数量: 100")
+    print()
+    
+    # 创建作业
+    with db.transaction() as cx:
+        jid = enqueue(
+            cx,
+            "BATCH_HISTORY",
+            f"BATCH_HISTORY:universe_100.csv:3y",
+            end_date,
+            progress={
+                "csv_filename": "universe_100.csv",
+                "years": 3,
+                "total": 100,
+                "processed": 0,
+                "current_ticker": None,
+                "results": [],
+                "started_at": stamp(),
+            },
+        )
+    
+    print(f"作业已创建: {jid}")
+    print(f"开始执行...")
+    print()
+    
+    # 执行作业
+    worker = Worker(settings)
+    worker.batch_history(one(db.connect(), "SELECT * FROM job_runs WHERE id=?", (jid,)))
+    
+    # 查询结果
+    with db.read() as cx:
+        job = one(cx, "SELECT * FROM job_runs WHERE id=?", (jid,))
+        progress = job["progress_json"]
+        
+        print()
+        print("=" * 60)
+        print("批量拉取完成")
+        print("=" * 60)
+        print(f"状态: {job['status']}")
+        print(f"总数: {progress.get('total', 0)}")
+        print(f"已处理: {progress.get('processed', 0)}")
+        print(f"成功: {progress.get('succeeded', 0)}")
+        print(f"失败: {progress.get('failed', 0)}")
+        print(f"跳过: {progress.get('skipped', 0)}")
+        print(f"历史不足: {progress.get('insufficient', 0)}")
+        
+        if job.get("output_manifest_ref"):
+            from app.storage.files import Artifacts
+            files = Artifacts(settings.runtime / "artifacts")
+            report = files.read(job["output_manifest_ref"])
+            print()
+            print(f"覆盖率: {report.get('coverage_rate', 'N/A')}")
+            print(f"详细报告: {job['output_manifest_ref']}")
+
+if __name__ == "__main__":
+    main()

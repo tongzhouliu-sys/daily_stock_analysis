@@ -73,6 +73,7 @@ jinja2>=3.1.0               # Jinja2 template engine for report rendering
 
 # FastAPI Web framework
 fastapi>=0.109.0            # Modern Python Web framework
+argon2-cffi>=25.1.0         # Scanner standalone CLI authentication and migration compatibility
 uvicorn[standard]>=0.27.0   # ASGI server
 python-multipart>=0.0.6     # FastAPI File/Form upload support
 fastapi-guard>=8.1.1        # Optional security middleware (GUARD_ENABLED=true): rate limit, IP allowlist, request screening

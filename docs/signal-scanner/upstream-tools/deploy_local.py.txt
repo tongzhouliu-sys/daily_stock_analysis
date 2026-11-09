@@ -1,0 +1,58 @@
+"""Publish code to the installed local service; preserve its existing production data."""
+
+import hashlib
+import json
+import os
+import shutil
+import subprocess
+from datetime import datetime, timezone
+from pathlib import Path
+
+source = Path(__file__).resolve().parents[2]
+base = Path.home() / "Library/Application Support/SignalScanner"
+current = base / "current"
+if not current.is_symlink() or not (base / "service.env").is_file():
+    raise SystemExit("Local service must already be installed")
+env = dict(os.environ)
+for line in (base / "service.env").read_text().splitlines():
+    if line.strip() and not line.lstrip().startswith("#"):
+        k, v = line.split("=", 1)
+        env[k] = v
+env["PYTHONPATH"] = str(current / "backend")
+subprocess.run(
+    [str(base / "venv/bin/python"), "-m", "src.services.signal_scanner.cli", "run", "BACKUP"], cwd=current, env=env, check=True
+)
+release_id = datetime.now(timezone.utc).strftime("%Y%m%dT%H%M%SZ")
+release = base / "releases" / release_id
+release.mkdir(mode=0o700)
+for name in ("backend", "scripts", "docs"):
+    shutil.copytree(source / name, release / name, ignore=shutil.ignore_patterns("__pycache__", "*.pyc"))
+(release / "frontend").mkdir()
+shutil.copytree(source / "frontend/dist", release / "frontend/dist")
+(release / "doc").mkdir()
+for name in ("使用说明.md", "系统介绍.md", "本机部署说明.md", "接入验收记录.md"):
+    if (source / "doc" / name).is_file():
+        shutil.copy2(source / "doc" / name, release / "doc" / name)
+for name in ("README.md", "DESIGN.md", "requirements.lock", "pyproject.toml"):
+    shutil.copy2(source / name, release / name)
+manifest = {
+    str(p.relative_to(release)): hashlib.sha256(p.read_bytes()).hexdigest()
+    for p in release.rglob("*")
+    if p.is_file()
+}
+old = str(current.resolve())
+(release / "release-manifest.json").write_text(
+    json.dumps(dict(release=release_id, previous_release=old, files=manifest), ensure_ascii=False, indent=2)
+    + "\n"
+)
+temporary = base / "current.new"
+temporary.unlink(missing_ok=True)
+temporary.symlink_to(release, target_is_directory=True)
+os.replace(temporary, current)
+subprocess.run(["launchctl", "kickstart", "-k", f"gui/{os.getuid()}/kg.edu.985.scan.app"], check=True)
+print(
+    json.dumps(
+        dict(release=release_id, previous_release=old, files=len(manifest), data_preserved=True),
+        ensure_ascii=False,
+    )
+)

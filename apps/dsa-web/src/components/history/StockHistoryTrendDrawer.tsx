@@ -1,7 +1,7 @@
 import type React from 'react';
 import { useEffect, useMemo, useState } from 'react';
 import type { AnalysisReport, HistoryItem, StockHistoryFilters, StockHistoryRange } from '../../types/analysis';
-import { getSentimentColor } from '../../types/analysis';
+import { getSentimentTone } from '../../types/analysis';
 import {
   buildDecisionActionLabelMap,
   getDecisionActionLabel,
@@ -321,9 +321,6 @@ export const StockHistoryTrendDrawer: React.FC<StockHistoryTrendDrawerProps> = (
                 <tbody className="divide-y divide-border/55">
                   {items.map((item) => {
                     const isSelected = item.id === selectedRecordId;
-                    const sentimentColor = isPresent(item.sentimentScore)
-                      ? getSentimentColor(item.sentimentScore)
-                      : undefined;
                     return (
                       <tr
                         key={item.id}
@@ -344,11 +341,12 @@ export const StockHistoryTrendDrawer: React.FC<StockHistoryTrendDrawerProps> = (
                             {formatAdvice(item, actionLabels)}
                           </Badge>
                         </td>
-                        <td
-                          className="px-3 py-3 font-mono text-lg font-semibold"
-                          style={sentimentColor ? { color: sentimentColor } : undefined}
-                        >
-                          {formatNumber(item.sentimentScore, 0)}
+                        <td className="px-3 py-3 font-mono tabular-nums">
+                          {isPresent(item.sentimentScore) ? (
+                            <Badge variant={getSentimentTone(item.sentimentScore)}>
+                              {formatNumber(item.sentimentScore, 0)}
+                            </Badge>
+                          ) : formatNumber(item.sentimentScore, 0)}
                         </td>
                         <td className="px-3 py-3 font-mono text-secondary-text">
                           {formatNumber(item.currentPrice, 2)}
