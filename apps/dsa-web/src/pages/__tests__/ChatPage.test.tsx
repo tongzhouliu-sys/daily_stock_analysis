@@ -5,12 +5,15 @@ import { beforeAll, beforeEach, describe, expect, it, vi } from 'vitest';
 import { createParsedApiError } from '../../api/error';
 import { UiLanguageProvider } from '../../contexts/UiLanguageContext';
 import { historyApi } from '../../api/history';
+import { api as scannerApi } from '../../components/scanner/api/client';
 import type { ActiveStockContext } from '../../api/agent';
 import type { Message, ProgressStep } from '../../stores/agentChatStore';
 import type { StockIndexItem } from '../../types/stockIndex';
 import { UI_LANGUAGE_STORAGE_KEY } from '../../utils/uiLanguage';
 import ChatPage from '../ChatPage';
 import { extractStockCodeFromMessage, extractStockCodesFromMessage } from '../../utils/chatStockCode';
+
+vi.mock('../../components/scanner/api/client', () => ({ api: vi.fn() }));
 
 function createDeferred<T>() {
   let resolve!: (value: T) => void;
@@ -586,6 +589,10 @@ describe('ChatPage', () => {
       </MemoryRouter>
     );
 
+    // Open advanced options panel first
+    const advancedToggle = await screen.findByRole('button', { name: /高级选项/ });
+    fireEvent.click(advancedToggle);
+
     const compressionToggle = await screen.findByRole('checkbox', { name: /上下文压缩/ });
 
     await waitFor(() => {
@@ -640,6 +647,10 @@ describe('ChatPage', () => {
         <ChatPage />
       </MemoryRouter>
     );
+
+    // Open advanced options panel first
+    const advancedToggle = await screen.findByRole('button', { name: /高级选项/ });
+    fireEvent.click(advancedToggle);
 
     const compressionToggle = await screen.findByRole('checkbox', { name: /上下文压缩/ });
 
@@ -844,6 +855,10 @@ describe('ChatPage', () => {
       </MemoryRouter>
     );
 
+    // Open advanced options panel first
+    const advancedToggle = await screen.findByRole('button', { name: /高级选项/ });
+    fireEvent.click(advancedToggle);
+
     expect(await screen.findByRole('checkbox', { name: '趋势分析' })).toBeChecked();
     expect(screen.getByRole('checkbox', { name: '通用分析' })).not.toBeChecked();
   });
@@ -863,6 +878,10 @@ describe('ChatPage', () => {
         <ChatPage />
       </MemoryRouter>
     );
+
+    // Open advanced options panel first
+    const advancedToggle = await screen.findByRole('button', { name: /高级选项/ });
+    fireEvent.click(advancedToggle);
 
     expect(await screen.findByRole('checkbox', { name: '均线金叉' })).toBeChecked();
     expect(screen.getByRole('checkbox', { name: '趋势分析' })).not.toBeChecked();
@@ -887,6 +906,10 @@ describe('ChatPage', () => {
       </MemoryRouter>
     );
 
+    // Open advanced options panel first
+    const advancedToggle = await screen.findByRole('button', { name: /高级选项/ });
+    fireEvent.click(advancedToggle);
+
     expect(await screen.findByRole('checkbox', { name: '趋势分析' })).toBeChecked();
     fireEvent.change(screen.getByPlaceholderText(/分析 600519/), {
       target: { value: '分析 AAPL' },
@@ -909,6 +932,10 @@ describe('ChatPage', () => {
         <ChatPage />
       </MemoryRouter>
     );
+
+    // Open advanced options panel first
+    const advancedToggle = await screen.findByRole('button', { name: /高级选项/ });
+    fireEvent.click(advancedToggle);
 
     expect(await screen.findByRole('checkbox', { name: '趋势分析' })).toBeChecked();
     fireEvent.change(screen.getByPlaceholderText(/分析 600519/), {
@@ -940,6 +967,8 @@ describe('ChatPage', () => {
         <ChatPage />
       </MemoryRouter>
     );
+
+    fireEvent.click(await screen.findByRole('button', { name: '高级选项' }));
 
     fireEvent.click(await screen.findByRole('checkbox', { name: '均线金叉' }));
     fireEvent.change(screen.getByPlaceholderText(/分析 600519/), {
@@ -991,7 +1020,7 @@ describe('ChatPage', () => {
     });
   });
 
-  it('collapses the mobile skill picker by default and keeps selected skills when sending', async () => {
+  it('collapses the advanced options panel by default and keeps selected skills when sending', async () => {
     mockGetSkills.mockResolvedValue({
       skills: [
         { id: 'bull_trend', name: '趋势分析', description: '默认趋势' },
@@ -1006,16 +1035,15 @@ describe('ChatPage', () => {
       </MemoryRouter>
     );
 
-    const mobileToggle = await screen.findByRole('button', { name: '展开策略选择' });
+    const advancedToggle = await screen.findByRole('button', { name: /高级选项/ });
+    expect(advancedToggle).toHaveAttribute('aria-expanded', 'false');
+    expect(screen.queryByTestId('chat-skill-picker-panel')).not.toBeInTheDocument();
+
+    fireEvent.click(advancedToggle);
+
+    expect(advancedToggle).toHaveAttribute('aria-expanded', 'true');
     const skillPanel = screen.getByTestId('chat-skill-picker-panel');
-    expect(mobileToggle).toHaveAttribute('aria-expanded', 'false');
-    expect(skillPanel).toHaveClass('hidden');
-
-    fireEvent.click(mobileToggle);
-
-    expect(screen.getByRole('button', { name: '收起策略选择' })).toHaveAttribute('aria-expanded', 'true');
-    expect(skillPanel).not.toHaveClass('hidden');
-    expect(skillPanel).toHaveClass('flex');
+    expect(skillPanel).toBeInTheDocument();
 
     fireEvent.click(screen.getByRole('checkbox', { name: '均线金叉' }));
     fireEvent.change(screen.getByPlaceholderText(/分析 600519/), {
@@ -1034,9 +1062,6 @@ describe('ChatPage', () => {
         }),
       );
     });
-
-    expect(screen.getByRole('button', { name: '展开策略选择' })).toHaveAttribute('aria-expanded', 'false');
-    expect(skillPanel).toHaveClass('hidden');
   });
 
   it('sends an explicit empty skills list when all concrete skills are cleared', async () => {
@@ -1045,6 +1070,8 @@ describe('ChatPage', () => {
         <ChatPage />
       </MemoryRouter>
     );
+
+    fireEvent.click(await screen.findByRole('button', { name: '高级选项' }));
 
     fireEvent.click(await screen.findByRole('checkbox', { name: '趋势分析' }));
     expect(screen.getByRole('checkbox', { name: '通用分析' })).toBeChecked();
@@ -1085,6 +1112,8 @@ describe('ChatPage', () => {
       </MemoryRouter>
     );
 
+    fireEvent.click(await screen.findByRole('button', { name: '高级选项' }));
+
     fireEvent.click(await screen.findByRole('checkbox', { name: '均线金叉' }));
     fireEvent.click(screen.getByRole('checkbox', { name: '缠论' }));
 
@@ -1110,6 +1139,8 @@ describe('ChatPage', () => {
         <ChatPage />
       </MemoryRouter>
     );
+
+    fireEvent.click(await screen.findByRole('button', { name: '高级选项' }));
 
     fireEvent.click(await screen.findByRole('checkbox', { name: '均线金叉' }));
     fireEvent.click(screen.getByRole('button', { name: '用缠论分析茅台' }));
@@ -1482,6 +1513,27 @@ describe('ChatPage', () => {
         }),
       );
     });
+  });
+
+  it('loads pinned scanner evidence as an editable draft without sending it', async () => {
+    vi.mocked(scannerApi).mockResolvedValue({ id: 'card-1', revision: 2, instrument: { ticker: 'AAPL' },
+      primary_rule: 'TR-01', quality_score: null, bear_cases: ['数据仍需复核'] });
+    render(<MemoryRouter initialEntries={['/chat?stock=AAPL&scannerSignal=card-1&scannerRevision=2']}><ChatPage /></MemoryRouter>);
+    const draft = await screen.findByDisplayValue(/请结合以下冻结扫描证据深入分析 AAPL/);
+    expect((draft as HTMLTextAreaElement).value).toContain('数据仍需复核');
+    expect(scannerApi).toHaveBeenCalledWith('/api/signals/card-1?revision=2');
+    expect(mockStartStream).not.toHaveBeenCalled();
+  });
+
+  it('keeps user edits when scanner evidence arrives late', async () => {
+    const pending = createDeferred<Record<string, unknown>>();
+    vi.mocked(scannerApi).mockReturnValue(pending.promise);
+    render(<MemoryRouter initialEntries={['/chat?stock=AAPL&scannerSignal=card-1&scannerRevision=2']}><ChatPage /></MemoryRouter>);
+    const draft = await screen.findByDisplayValue('请深入分析 AAPL');
+    fireEvent.change(draft, { target: { value: '我想先看财报' } });
+    await act(async () => pending.resolve({ id: 'card-1', revision: 2, instrument: { ticker: 'AAPL' } }));
+    expect(draft).toHaveValue('我想先看财报');
+    expect(mockStartStream).not.toHaveBeenCalled();
   });
 
   it('falls back to base stock context when recordId is missing', async () => {

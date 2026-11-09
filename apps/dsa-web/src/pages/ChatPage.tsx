@@ -1367,6 +1367,7 @@ const ChatPage: React.FC = () => {
                   type="button"
                   className="flex w-full items-center justify-between gap-2 px-3 py-1.5 text-xs text-muted-text hover:text-secondary-text transition-colors"
                   onClick={() => setAdvancedOptionsOpen((open) => !open)}
+                  aria-label={t('chat.advancedOptions')}
                   aria-expanded={advancedOptionsOpen}
                   aria-controls="chat-advanced-options-panel"
                 >
