@@ -19,13 +19,18 @@ pytdx>=1.72                 # Priority 2: Tongdaxin quote servers
 baostock>=0.8.0             # Priority 3: Baostock data
 yfinance>=0.2.0             # Priority 4: Yahoo Finance (Fallback)
 # Longbridge 4.x Linux wheels currently require manylinux_2_39; Docker uses bookworm/glibc 2.36.
-# Priority 5: Docker/Linux fallback SDK.
+# Priority 5: Docker/Linux fallback.
 longbridge==0.2.74; platform_system == "Linux" and python_version < "3.12"
 # Priority 5: Longbridge OpenAPI SDK with OAuth support.
 longbridge>=4.0.5,<5; platform_system != "Linux" or python_version >= "3.12"
 tickflow>=0.1.24           # TickFlow official SDK; 0.1.24 verified for klines/get batch quotes/universes
 futu-api==10.8.6808        # Futu OpenAPI SDK for read-only --portfolio futu holdings import
 # The screening engine is maintained in src/services/screening.
+
+# Market data router dependencies (multi-source fallback)
+tj-calendar>=1.0.0         # Offline trading calendar (1990-2035, SSE/SZSE/BSE)
+ashareapi[pandas]>=0.1.0   # A-share API (realtime + kline)
+zzshare>=0.1.0             # ZZShare data API (daily + minute + realtime)
 
 # Feishu
 lark-oapi>=1.0.0             # Feishu API
@@ -43,7 +48,7 @@ orjson>=3.10,<4             # LiteLLM runtime JSON dependency; explicitly bundle
 litellm>=1.80.10,!=1.82.7,!=1.82.8,<1.99.0; python_version >= "3.11"   # Unified LLM client (Gemini/Anthropic/OpenAI/DeepSeek etc.)
 litellm>=1.80.10,!=1.82.7,!=1.82.8,<1.98.0; python_version < "3.11"    # 1.98 imports typing.NotRequired, which needs Python 3.11
 tiktoken>=0.8.0,<0.12.0    # BPE tokenizer for LLM token counting (pin <0.12 to avoid plugin registration issues, #537)
-openai>=1.0.0               # OpenAI SDK (transitive dependency of litellm, kept explicit)
+openai>=1.0.0               # OpenAI SDK (transitive dependency of litellm)
 PyYAML>=6.0                 # YAML parser for LITELLM_CONFIG support
 
 # Search engines for stock news
@@ -65,7 +70,7 @@ discord.py>=2.0.0              # Discord bot development library
 PyNaCl>=1.5.0                  # Discord Interaction/Webhook Ed25519 signature verification
 
 # Web Content Extraction
-newspaper3k>=0.2.8          # Article extraction
+newspaper3k>=0.8.1          # Article extraction
 lxml_html_clean             # Fix for lxml.html.clean ImportError in newer lxml versions
 
 # Report template engine (Report Engine P0)
