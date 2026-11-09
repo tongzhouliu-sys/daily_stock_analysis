@@ -395,8 +395,9 @@ def create_app(static_dir: Optional[Path] = None) -> FastAPI:
     if not guard_enabled:
         add_auth_middleware(app)
 
-    from api.middlewares.legacy_scanner import LegacyScannerRedirectMiddleware
-    app.add_middleware(LegacyScannerRedirectMiddleware)
+    if os.environ.get("SCANNER_LEGACY_HOST", "").strip():
+        from api.middlewares.legacy_scanner import LegacyScannerRedirectMiddleware
+        app.add_middleware(LegacyScannerRedirectMiddleware)
     
     # ============================================================
     # 注册路由
