@@ -89,7 +89,6 @@ const ChatPage: React.FC = () => {
   const [skills, setSkills] = useState<SkillInfo[]>([]);
   const [defaultSkillIds, setDefaultSkillIds] = useState<string[]>([]);
   const [showSkillDesc, setShowSkillDesc] = useState<string | null>(null);
-  const [mobileSkillPickerOpen, setMobileSkillPickerOpen] = useState(false);
   const [advancedOptionsOpen, setAdvancedOptionsOpen] = useState(false);
   const [expandedThinking, setExpandedThinking] = useState<Set<string>>(new Set());
   const [deleteConfirmId, setDeleteConfirmId] = useState<string | null>(null);
