@@ -880,6 +880,7 @@ const StockScreeningPage: React.FC = () => {
   const [error, setError] = useState('');
   const [strategyLoadError, setStrategyLoadError] = useState('');
   const [activeTaskId, setActiveTaskId] = useState<string | null>(restoredTask?.taskId ?? null);
+  const activeTaskContextRef = useRef<PersistedScreenTask | null>(restoredTask);
   const [taskProgress, setTaskProgress] = useState(restoredTask?.taskId ? 10 : 0);
   const [taskMessage, setTaskMessage] = useState(restoredTask?.taskId ? '正在恢复选股任务状态...' : '');
 
@@ -1287,6 +1288,8 @@ const StockScreeningPage: React.FC = () => {
     }
 
     const pollingTaskId = activeTaskId;
+    const taskContext = activeTaskContextRef.current?.taskId === pollingTaskId
+      ? activeTaskContextRef.current : null;
     let active = true;
     let timer: ReturnType<typeof window.setTimeout> | undefined;
 
@@ -1305,14 +1308,11 @@ const StockScreeningPage: React.FC = () => {
           applyScreenResult(task.result);
           setError('');
           // 持久化 runId：刷新后优先从 history API 恢复结果，而非依赖内存 task
-          const completedRunId = task.result.runId || screenMeta?.runId;
-          if (completedRunId) {
+          const completedRunId = task.result.runId || taskContext?.runId;
+          if (completedRunId && taskContext) {
             persistScreenTask({
-              taskId: pollingTaskId,
+              ...taskContext,
               runId: completedRunId,
-              market,
-              strategy,
-              maxResults,
             });
           }
         } else {
@@ -1379,7 +1379,7 @@ const StockScreeningPage: React.FC = () => {
         window.clearTimeout(timer);
       }
     };
-  }, [activeTaskId, applyScreenResult, restoreResolved, market, strategy, maxResults, screenMeta?.runId]);
+  }, [activeTaskId, applyScreenResult, restoreResolved]);
 
   const handleEnable = async () => {
     setEnabling(true);
@@ -1439,12 +1439,14 @@ const StockScreeningPage: React.FC = () => {
     setTaskMessage('正在提交选股任务...');
     try {
       const task = await screeningApi.startScreen({ market, strategy, maxResults });
-      persistScreenTask({
+      const taskContext = {
         taskId: task.taskId,
         market,
         strategy,
         maxResults,
-      });
+      };
+      activeTaskContextRef.current = taskContext;
+      persistScreenTask(taskContext);
       setActiveTaskId(task.taskId);
       setTaskProgress(0);
       setTaskMessage(task.message || '选股任务已提交');
