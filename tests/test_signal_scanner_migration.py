@@ -60,3 +60,19 @@ def test_legacy_entry_redirects_to_one_login_without_replaying_writes(monkeypatc
     assert client.post("/api/auth/login", json={"password": "old-password"}).status_code == 409
     assert client.get("/login", follow_redirects=False).headers["location"] == "https://research.example.test/scanner"
     assert client.get("https://research.example.test/scanner", follow_redirects=False).status_code == 404
+
+
+def test_legacy_redirect_in_real_host_keeps_canonical_api_authenticated(tmp_path, monkeypatch):
+    from api.app import create_app
+
+    env_file = tmp_path / ".env"
+    env_file.write_text("ADMIN_AUTH_ENABLED=true\n")
+    monkeypatch.setenv("ENV_FILE", str(env_file))
+    monkeypatch.setenv("DATABASE_PATH", str(tmp_path / "host.db"))
+    monkeypatch.setenv("SCANNER_LEGACY_HOST", "old.example.test")
+    monkeypatch.setenv("SCANNER_ORIGIN", "https://research.example.test")
+    client = TestClient(create_app(static_dir=tmp_path), base_url="https://research.example.test")
+    assert client.get("/api/v1/scanner/dashboard").status_code == 401
+    response = client.get("https://old.example.test/signals/card-1", follow_redirects=False)
+    assert response.status_code == 302
+    assert response.headers["location"] == "https://research.example.test/scanner/signals/card-1"
