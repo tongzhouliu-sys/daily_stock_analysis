@@ -299,37 +299,112 @@ class TushareFetcher(BaseFetcher):
         return datetime.now(ZoneInfo("Asia/Shanghai"))
 
     def _get_trade_dates(self, end_date: Optional[str] = None) -> List[str]:
-        """按自然日刷新交易日历缓存，避免服务跨日后继续复用旧日历。"""
+        """获取交易日期列表，优先使用本地 trading_calendar，失败时降级到 Baostock。
+        
+        避免直接调用 Tushare trade_cal API，防止低积分账号触发"1 次/小时"限频。
+        """
         if self._api is None:
             return []
 
         china_now = self._get_china_now()
         requested_end_date = end_date or china_now.strftime("%Y%m%d")
 
+        # 缓存命中
         if self.date_list is not None and self._date_list_end == requested_end_date:
             return self.date_list
 
-        start_date = (china_now - timedelta(days=20)).strftime("%Y%m%d")
-        df_cal = self._call_api_with_rate_limit(
-            "trade_cal",
-            exchange="SSE",
-            start_date=start_date,
-            end_date=requested_end_date,
-        )
-
-        if df_cal is None or df_cal.empty or "cal_date" not in df_cal.columns:
-            logger.warning("[Tushare] trade_cal 返回为空，无法更新交易日历缓存")
-            self.date_list = []
+        # 优先使用 trading_calendar 模块（本地计算，无 API 调用）
+        trade_dates = self._get_trade_dates_from_calendar(requested_end_date)
+        if trade_dates:
+            self.date_list = trade_dates
             self._date_list_end = requested_end_date
-            return self.date_list
+            return trade_dates
 
-        trade_dates = sorted(
-            df_cal[df_cal["is_open"] == 1]["cal_date"].astype(str).tolist(),
-            reverse=True,
-        )
-        self.date_list = trade_dates
+        # Fallback: 使用 Baostock
+        logger.warning("[Tushare] trading_calendar 获取失败，尝试 Baostock fallback")
+        trade_dates = self._get_trade_dates_from_baostock(requested_end_date)
+        if trade_dates:
+            self.date_list = trade_dates
+            self._date_list_end = requested_end_date
+            return trade_dates
+
+        logger.error("[Tushare] 所有交易日历来源均失败")
+        self.date_list = []
         self._date_list_end = requested_end_date
-        return trade_dates
+        return self.date_list
+
+    def _get_trade_dates_from_calendar(self, end_date: str) -> List[str]:
+        """使用 trading_calendar 模块获取交易日期（本地计算，无 API 调用）。"""
+        try:
+            from src.core.trading_calendar import get_trading_dates
+            
+            end_dt = datetime.strptime(end_date, "%Y%m%d").date()
+            start_dt = end_dt - timedelta(days=30)
+            
+            trading_dates = get_trading_dates("cn", start_dt, end_dt)
+            if trading_dates is not None and len(trading_dates) > 0:
+                # 转换为 YYYYMMDD 格式，倒序排列
+                trade_dates = [dt.strftime("%Y%m%d") for dt in trading_dates]
+                trade_dates = sorted(trade_dates, reverse=True)
+                logger.debug(f"[Tushare] 从 trading_calendar 获取 {len(trade_dates)} 个交易日")
+                return trade_dates
+        except Exception as e:
+            logger.warning(f"[Tushare] trading_calendar 获取交易日期失败: {e}")
+        
+        return []
+
+    def _get_trade_dates_from_baostock(self, end_date: str) -> List[str]:
+        """从 Baostock 获取交易日期作为 fallback。"""
+        try:
+            import baostock as bs
+            
+            end_dt = datetime.strptime(end_date, "%Y%m%d").date()
+            start_dt = end_dt - timedelta(days=30)
+            
+            # 登录 Baostock
+            lg = bs.login()
+            if lg.error_code != '0':
+                logger.warning(f"[Tushare] Baostock 登录失败: {lg.error_msg}")
+                return []
+            
+            try:
+                # 查询交易日期
+                rs = bs.query_trade_dates(
+                    start_date=start_dt.strftime("%Y-%m-%d"),
+                    end_date=end_dt.strftime("%Y-%m-%d")
+                )
+                
+                if rs.error_code != '0':
+                    logger.warning(f"[Tushare] Baostock 查询交易日期失败: {rs.error_msg}")
+                    return []
+                
+                data = []
+                while (rs.error_code == "0") and rs.next():
+                    data.append(rs.get_row_data())
+                
+                if not data:
+                    return []
+                
+                df = pd.DataFrame(data, columns=rs.fields)
+                trading_days = df.loc[df["is_trading_day"] == "1", "calendar_date"]
+                # 转换为 YYYYMMDD 格式
+                trade_dates = [dt.replace("-", "") for dt in trading_days]
+                trade_dates = sorted(trade_dates, reverse=True)
+                
+                logger.debug(f"[Tushare] 从 Baostock fallback 获取 {len(trade_dates)} 个交易日")
+                return trade_dates
+            finally:
+                # 确保登出
+                try:
+                    bs.logout()
+                except Exception:
+                    pass
+        except ImportError:
+            logger.warning("[Tushare] baostock 模块未安装，无法使用 fallback")
+        except Exception as e:
+            logger.warning(f"[Tushare] Baostock fallback 失败: {e}")
+        
+        return []
 
     @staticmethod
     def _pick_trade_date(trade_dates: List[str], use_today: bool) -> Optional[str]:

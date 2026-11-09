@@ -37,10 +37,6 @@ class TestTushareFetcherFollowUps(unittest.TestCase):
 
     def test_get_trade_time_refreshes_trade_calendar_when_day_changes(self) -> None:
         fetcher = self._make_fetcher()
-        fetcher._api.trade_cal.side_effect = [
-            pd.DataFrame({"cal_date": ["20260317", "20260314"], "is_open": [1, 1]}),
-            pd.DataFrame({"cal_date": ["20260318", "20260317"], "is_open": [1, 1]}),
-        ]
 
         with patch.object(
             fetcher,
@@ -51,27 +47,29 @@ class TestTushareFetcherFollowUps(unittest.TestCase):
                 datetime(2026, 3, 18, 20, 0),
                 datetime(2026, 3, 18, 20, 0),
             ],
-        ), patch.object(fetcher, "_check_rate_limit") as rate_limit_mock:
+        ), patch.object(
+            fetcher,
+            "_get_trade_dates_from_calendar",
+            side_effect=[["20260317", "20260314"], ["20260318", "20260317"]],
+        ) as calendar_mock:
             self.assertEqual(fetcher.get_trade_time(early_time="00:00", late_time="19:00"), "20260317")
             self.assertEqual(fetcher.get_trade_time(early_time="00:00", late_time="19:00"), "20260318")
 
-        self.assertEqual(fetcher._api.trade_cal.call_count, 2)
-        self.assertEqual(rate_limit_mock.call_count, 2)
+        # trading_calendar should be called twice (once per day change)
+        self.assertEqual(calendar_mock.call_count, 2)
+        # trade_cal API should NOT be called at all
+        fetcher._api.trade_cal.assert_not_called()
     def test_get_trade_time_returns_latest_trade_date_on_non_trade_day(self) -> None:
         """Non-trade day (e.g. Saturday) should return the most recent trade
         date (Friday), not the one before it (Thursday).  Fixes #1009."""
         fetcher = self._make_fetcher()
         # 2026-03-21 is Saturday; Friday 20 and Thursday 19 are trade dates
-        fetcher._api.trade_cal.return_value = pd.DataFrame(
-            {
-                "cal_date": ["20260314", "20260315", "20260316",
-                             "20260317", "20260318", "20260319",
-                             "20260320", "20260321"],
-                "is_open": [0, 0, 1, 1, 1, 1, 1, 0],
-            }
-        )
-
+        # Mock the trading calendar to return the correct trade dates
         with patch.object(
+            fetcher,
+            "_get_trade_dates_from_calendar",
+            return_value=["20260320", "20260319", "20260318", "20260317"],
+        ), patch.object(
             fetcher,
             "_get_china_now",
             # called twice: once by get_trade_time, once by _get_trade_dates
@@ -81,19 +79,19 @@ class TestTushareFetcherFollowUps(unittest.TestCase):
 
         # Should be Friday (20th), NOT Thursday (19th)
         self.assertEqual(result, "20260320")
+        # trade_cal API should NOT be called
+        fetcher._api.trade_cal.assert_not_called()
 
     def test_get_trade_time_trade_day_before_data_ready_returns_previous(self) -> None:
         """On a trade day within the early-late window, should return the
         previous trade date (data not ready yet for today)."""
         fetcher = self._make_fetcher()
-        fetcher._api.trade_cal.return_value = pd.DataFrame(
-            {
-                "cal_date": ["20260319", "20260320"],
-                "is_open": [1, 1],
-            }
-        )
 
         with patch.object(
+            fetcher,
+            "_get_trade_dates_from_calendar",
+            return_value=["20260320", "20260319"],
+        ), patch.object(
             fetcher,
             "_get_china_now",
             # Friday 10:00 AM - within 00:00~19:00 window, data not ready
@@ -103,13 +101,12 @@ class TestTushareFetcherFollowUps(unittest.TestCase):
 
         # Data not ready, should fall back to Thursday (19th)
         self.assertEqual(result, "20260319")
+        # trade_cal API should NOT be called
+        fetcher._api.trade_cal.assert_not_called()
         
           
     def test_get_sector_rankings_rate_limits_calendar_and_rankings_api(self) -> None:
         fetcher = self._make_fetcher()
-        fetcher._api.trade_cal.return_value = pd.DataFrame(
-            {"cal_date": ["20260317", "20260314"], "is_open": [1, 1]}
-        )
         fetcher._api.moneyflow_ind_ths.return_value = pd.DataFrame(
             {
                 "industry": ["AI", "消费"],
@@ -117,20 +114,28 @@ class TestTushareFetcherFollowUps(unittest.TestCase):
             }
         )
 
-        with patch.object(fetcher, "_get_china_now", return_value=datetime(2026, 3, 17, 16, 0)), patch.object(
+        with patch.object(
+            fetcher,
+            "_get_trade_dates_from_calendar",
+            return_value=["20260317", "20260314"],
+        ), patch.object(
+            fetcher,
+            "_get_china_now",
+            return_value=datetime(2026, 3, 17, 16, 0),
+        ), patch.object(
             fetcher, "_check_rate_limit"
         ) as rate_limit_mock:
             top, bottom = fetcher.get_sector_rankings(n=1)
 
         self.assertEqual(top, [{"name": "AI", "change_pct": 1.8}])
         self.assertEqual(bottom, [{"name": "消费", "change_pct": -0.6}])
-        self.assertEqual(rate_limit_mock.call_count, 2)
+        # rate_limit should be called for moneyflow_ind_ths only (not for trade_cal)
+        self.assertEqual(rate_limit_mock.call_count, 1)
+        # trade_cal API should NOT be called
+        fetcher._api.trade_cal.assert_not_called()
 
     def test_get_chip_distribution_rate_limits_all_tushare_calls(self) -> None:
         fetcher = self._make_fetcher()
-        fetcher._api.trade_cal.return_value = pd.DataFrame(
-            {"cal_date": ["20260317", "20260314"], "is_open": [1, 1]}
-        )
         fetcher._api.cyq_chips.return_value = pd.DataFrame(
             {
                 "price": [9.0, 10.0, 11.0],
@@ -139,7 +144,15 @@ class TestTushareFetcherFollowUps(unittest.TestCase):
         )
         fetcher._api.daily.return_value = pd.DataFrame({"close": [10.5]})
 
-        with patch.object(fetcher, "_get_china_now", return_value=datetime(2026, 3, 17, 20, 0)), patch.object(
+        with patch.object(
+            fetcher,
+            "_get_trade_dates_from_calendar",
+            return_value=["20260317", "20260314"],
+        ), patch.object(
+            fetcher,
+            "_get_china_now",
+            return_value=datetime(2026, 3, 17, 20, 0),
+        ), patch.object(
             fetcher, "_check_rate_limit"
         ) as rate_limit_mock:
             chip = fetcher.get_chip_distribution("600519")
@@ -152,7 +165,10 @@ class TestTushareFetcherFollowUps(unittest.TestCase):
         self.assertAlmostEqual(chip.avg_cost, 10.1)
         self.assertAlmostEqual(chip.concentration_90, 0.1)
         self.assertAlmostEqual(chip.concentration_70, 0.1)
-        self.assertEqual(rate_limit_mock.call_count, 3)
+        # rate_limit should be called for cyq_chips and daily only (not for trade_cal)
+        self.assertEqual(rate_limit_mock.call_count, 2)
+        # trade_cal API should NOT be called
+        fetcher._api.trade_cal.assert_not_called()
 
     def test_convert_stock_code_accepts_exchange_prefixed_a_share(self) -> None:
         fetcher = self._make_fetcher()
