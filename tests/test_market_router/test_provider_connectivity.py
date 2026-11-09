@@ -7,6 +7,7 @@ T6.1: 单源连通性测试
 
 import pytest
 import logging
+pytestmark = pytest.mark.network
 from data_provider.market_router.providers import (
     TencentRealtimeProvider,
     TencentKlineProvider,

@@ -62,7 +62,7 @@ class TradingCalendar:
         self._validate_date_range(start, end)
         
         try:
-            return module['trade_days_between'](start, end)
+            return [day.isoformat() for day in module['trade_days_between'](start, end)]
         except Exception as e:
             logger.error(f"获取交易日历失败: {start} ~ {end}, 错误: {e}")
             raise CalendarRangeError(f"获取交易日历失败: {e}") from e
@@ -110,7 +110,7 @@ class TradingCalendar:
         self._validate_date(date)
         
         try:
-            return module['next_trade_day'](date)
+            return module['next_trade_day'](date).isoformat()
         except Exception as e:
             logger.error(f"获取下一交易日失败: {date}, 错误: {e}")
             raise CalendarRangeError(f"获取下一交易日失败: {e}") from e
