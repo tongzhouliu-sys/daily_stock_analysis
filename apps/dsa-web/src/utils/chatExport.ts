@@ -83,7 +83,7 @@ export const downloadSession = downloadSessionAsMarkdown;
  * Uses a simple markdown-to-HTML conversion.
  */
 function markdownToHtml(markdown: string): string {
-  let html = markdown
+  const html = markdown
     // Escape HTML
     .replace(/&/g, '&amp;')
     .replace(/</g, '&lt;')
@@ -216,7 +216,7 @@ export async function downloadSessionAsWord(messages: Message[]): Promise<void> 
     minute: '2-digit',
   });
 
-  const children: Paragraph[] = [
+  const children = [
     new Paragraph({
       text: '问股会话',
       heading: HeadingLevel.HEADING_1,
