@@ -742,14 +742,20 @@ def _format_feishu_markdown_unprotected(content: str) -> str:
             _flush_table_as_key_value_rows(table_buffer, lines, bullet="•")
             table_buffer = []
 
-        # 转换标题（# ## ### 等）
-        if re.match(r'^#{1,6}\s+', line):
-            title = re.sub(r'^#{1,6}\s+', '', line).strip()
-            line = f"**{title}**" if title else ""
+        # 转换标题（# ## ### 等）：飞书 lark_md 无标题语法，用加粗 + 前缀区分层级
+        title_match = re.match(r'^(#{1,6})\s+', line)
+        if title_match:
+            title = line[title_match.end():].strip()
+            if title:
+                level = len(title_match.group(1))
+                prefix = "" if level == 1 else ("▎ " if level == 2 else "· ")
+                line = f"{prefix}**{title}**"
+            else:
+                line = ""
         # 转换引用块
         elif line.startswith('> '):
             quote = line[2:].strip()
-            line = quote
+            line = f"<font color='grey'>💬 {quote}</font>" if quote else ""
         # 转换分隔线
         elif line.strip() == '---':
             line = '────────'
@@ -763,7 +769,7 @@ def _format_feishu_markdown_unprotected(content: str) -> str:
     if table_buffer:
         _flush_table_as_key_value_rows(table_buffer, lines, bullet="•")
 
-    return "\n".join(lines).strip()
+    return re.sub(r'\n{3,}', '\n\n', "\n".join(lines)).strip()
 
 
 def format_feishu_markdown(content: str) -> str:
@@ -771,10 +777,12 @@ def format_feishu_markdown(content: str) -> str:
     将通用 Markdown 转换为飞书 lark_md 更友好的格式
 
     转换规则：
-    - 飞书不支持 Markdown 标题（# / ## / ###），用加粗代替
-    - 引用块使用前缀替代
+    - 飞书不支持 Markdown 标题（# / ## / ###），用加粗代替；## / ### 分别带
+      「▎」「·」前缀保留层级，供消息卡片渲染章节标签
+    - 引用块使用灰色小字 + 前缀替代
     - 分隔线统一为细线
     - 表格转换为条目列表
+    - 连续空行压缩，避免卡片中出现大片留白
 
     Args:
         content: 原始 Markdown 内容
@@ -787,7 +795,7 @@ def format_feishu_markdown(content: str) -> str:
         >>> formatted = format_feishu_markdown(markdown)
         >>> print(formatted)
         **标题**
-        💬 引用
+        <font color='grey'>💬 引用</font>
         • 列1：值1 | 列2：值2
     """
     def _flush_table_rows(buffer: List[str], output: List[str]) -> None:
@@ -838,14 +846,20 @@ def format_feishu_markdown(content: str) -> str:
             _flush_table_rows(table_buffer, lines)
             table_buffer = []
 
-        # 转换标题（# ## ### 等）
-        if re.match(r'^#{1,6}\s+', line):
-            title = re.sub(r'^#{1,6}\s+', '', line).strip()
-            line = f"**{title}**" if title else ""
+        # 转换标题（# ## ### 等）：飞书 lark_md 无标题语法，用加粗 + 前缀区分层级
+        title_match = re.match(r'^(#{1,6})\s+', line)
+        if title_match:
+            title = line[title_match.end():].strip()
+            if title:
+                level = len(title_match.group(1))
+                prefix = "" if level == 1 else ("▎ " if level == 2 else "· ")
+                line = f"{prefix}**{title}**"
+            else:
+                line = ""
         # 转换引用块
         elif line.startswith('> '):
             quote = line[2:].strip()
-            line = f"💬 {quote}" if quote else ""
+            line = f"<font color='grey'>💬 {quote}</font>" if quote else ""
         # 转换分隔线
         elif line.strip() == '---':
             line = '────────'
@@ -859,7 +873,7 @@ def format_feishu_markdown(content: str) -> str:
     if table_buffer:
         _flush_table_rows(table_buffer, lines)
 
-    return "\n".join(lines).strip()
+    return re.sub(r'\n{3,}', '\n\n', "\n".join(lines)).strip()
 
 
 def _format_telegram_markdown_unprotected(content: str) -> str:
@@ -964,6 +978,16 @@ def _chunk_by_separators(content: str) -> tuple[list[str], str]:
         # 按 ** 加粗标题分割 (兼容 AI 未输出标准 Markdown 标题的情况)
         parts = content.split("\n**")
         sections = [parts[0]] + [f"**{p}" for p in parts[1:]]
+        separator = "\n"
+    elif "\n▎ **" in content:
+        # 飞书格式化后的二级标题（## -> ▎ **标题**）
+        parts = content.split("\n▎ **")
+        sections = [parts[0]] + [f"▎ **{p}" for p in parts[1:]]
+        separator = "\n"
+    elif "\n· **" in content:
+        # 飞书格式化后的三级标题（### -> · **标题**）
+        parts = content.split("\n· **")
+        sections = [parts[0]] + [f"· **{p}" for p in parts[1:]]
         separator = "\n"
     elif "\n" in content:
         # 按 \n 分割

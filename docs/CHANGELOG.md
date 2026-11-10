@@ -47,6 +47,7 @@ and this project adheres to [Semantic Versioning](https://semver.org/).
 - [改进] `MD2IMG_ENGINE` 默认值从 `wkhtmltoimage` 改为 `auto`，按 `playwright -> markdown-to-file -> wkhtmltoimage` 依次降级，不再强制安装 `wkhtmltoimage`；显式配置仍可钉死单一引擎。分享图 503 文案改为给出可执行的安装步骤，并提示改用复制链接或导出 PDF。
 - [改进] 问股新建会话界面收紧：标题栏介绍在宽屏与「问股」同行、窄屏独立一行且不撑破标题；空会话欢迎区改为紧凑引导卡，图标与「开始问股」在桌面和移动端均同行，说明并排、示例问题按网格排列并贴近标题区，提升信息密度。
 - [修复] Tushare 交易日历改用本地 `trading_calendar` 模块（基于 `exchange-calendars`），失败时降级到 Baostock，不再直接调用 `trade_cal` API，避免低积分账号触发"1 次/小时"限频影响市场统计、筹码分布、行业板块排名等功能。
+- [改进] 飞书推送卡片深度美化：长报告按章节分节，新增主题色标题栏、语义色章节标签、双列关键指标与页脚备注；短通知和超字节预算的卡片自动退化为紧凑样式。`format_feishu_markdown` 补充标题层级前缀、灰色引用与空行压缩，分片同步识别二级/三级标题边界；关键词、加签、分片预算、文件发送与纯文本兜底逻辑保持不变，回归测试见 `tests/test_feishu_card.py`。
 
 ## [3.33.0] - 2026-10-15
 
