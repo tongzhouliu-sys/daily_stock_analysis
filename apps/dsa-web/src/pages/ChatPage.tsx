@@ -1,12 +1,31 @@
-import React, { useState, useRef, useEffect, useCallback } from 'react';
+import React, { useState, useRef, useEffect, useCallback, useMemo } from 'react';
 import { useNavigate, useSearchParams } from 'react-router-dom';
 import Markdown from 'react-markdown';
 import remarkGfm from 'remark-gfm';
-import { Check, ChevronDown, PanelLeftClose, PanelLeftOpen, Pencil, SlidersHorizontal, Square, X } from 'lucide-react';
+import {
+  ArrowUp,
+  ArrowUpRight,
+  Check,
+  ChevronDown,
+  Copy,
+  Download,
+  MoreHorizontal,
+  PanelLeftClose,
+  PanelLeftOpen,
+  Pencil,
+  Plus,
+  Send,
+  SlidersHorizontal,
+  Sparkles,
+  Square,
+  Star,
+  Trash2,
+  X,
+} from 'lucide-react';
 import { cn } from '../utils/cn';
 import { agentApi } from '../api/agent';
 import { systemConfigApi } from '../api/systemConfig';
-import { ApiErrorAlert, Badge, Button, ConfirmDialog, InlineAlert, ScrollArea, Tooltip } from '../components/common';
+import { ApiErrorAlert, Badge, Button, ConfirmDialog, InlineAlert, ScrollArea } from '../components/common';
 import { createParsedApiError, getParsedApiError } from '../api/error';
 import type { AgentStatusResponse, SkillInfo } from '../api/agent';
 import { DashboardStateBlock } from '../components/dashboard';
@@ -53,6 +72,54 @@ const QUICK_QUESTIONS: Array<{
 
 const MAX_SELECTED_SKILLS = 3;
 const CONTEXT_COMPRESSION_CONFIG_KEY = 'AGENT_CONTEXT_COMPRESSION_ENABLED';
+
+type SessionListItem = {
+  session_id: string;
+  title: string;
+  message_count: number;
+  created_at: string | null;
+  last_active: string | null;
+};
+
+type SessionBucket = {
+  key: 'today' | 'yesterday' | 'earlier';
+  label: string;
+  items: SessionListItem[];
+};
+
+// The same rename/delete menu is reachable from a history row and from the
+// active conversation title; the origin decides which inline editor opens.
+type SessionMenuOrigin = 'sidebar' | 'header';
+
+const groupSessionsByDate = (
+  sessions: SessionListItem[],
+  labels: { today: string; yesterday: string; earlier: string },
+): SessionBucket[] => {
+  const startOfToday = new Date();
+  startOfToday.setHours(0, 0, 0, 0);
+  const todayTimestamp = startOfToday.getTime();
+  const yesterdayTimestamp = todayTimestamp - 24 * 60 * 60 * 1000;
+
+  const buckets: SessionBucket[] = [
+    { key: 'today', label: labels.today, items: [] },
+    { key: 'yesterday', label: labels.yesterday, items: [] },
+    { key: 'earlier', label: labels.earlier, items: [] },
+  ];
+
+  sessions.forEach((session) => {
+    const rawTimestamp = session.last_active || session.created_at;
+    const timestamp = rawTimestamp ? new Date(rawTimestamp).getTime() : 0;
+    const bucket = timestamp >= todayTimestamp
+      ? buckets[0]
+      : timestamp >= yesterdayTimestamp
+        ? buckets[1]
+        : buckets[2];
+    bucket.items.push(session);
+  });
+
+  return buckets.filter((bucket) => bucket.items.length > 0);
+};
+
 const getMessageSkillNames = (msg: Message): string[] => {
   if (msg.skillNames?.length) return msg.skillNames;
   if (msg.skillName) return [msg.skillName];
@@ -94,7 +161,14 @@ const ChatPage: React.FC = () => {
   const [deleteConfirmId, setDeleteConfirmId] = useState<string | null>(null);
   const [sidebarOpen, setSidebarOpen] = useState(false);
   const [sidebarCollapsed, setSidebarCollapsed] = useState(() => localStorage.getItem('dsa.chat.sidebarCollapsed') === 'true');
+  const [sessionMenu, setSessionMenu] = useState<{
+    sessionId: string;
+    top: number;
+    left: number;
+    origin: SessionMenuOrigin;
+  } | null>(null);
   const [editingSessionId, setEditingSessionId] = useState<string | null>(null);
+  const [titleEditorOrigin, setTitleEditorOrigin] = useState<SessionMenuOrigin | null>(null);
   const [sessionTitle, setSessionTitle] = useState('');
   const [titleError, setTitleError] = useState('');
   const [titleSaving, setTitleSaving] = useState(false);
@@ -248,6 +322,12 @@ const ChatPage: React.FC = () => {
   } = useAgentChatStore();
   const selectedSkillIds = sessionSelectedSkillIds ?? defaultSkillIds;
 
+  const closeTitleEditor = useCallback(() => {
+    setEditingSessionId(null);
+    setTitleEditorOrigin(null);
+    setTitleError('');
+  }, []);
+
   const saveSessionTitle = async () => {
     const title = sessionTitle.trim();
     if (!editingSessionId || titleSaving) return;
@@ -256,7 +336,7 @@ const ChatPage: React.FC = () => {
     setTitleError('');
     try {
       await agentApi.renameChatSession(editingSessionId, title);
-      setEditingSessionId(null);
+      closeTitleEditor();
       await loadSessions();
     } catch {
       setTitleError(t('chat.titleSaveFailed'));
@@ -266,6 +346,66 @@ const ChatPage: React.FC = () => {
   };
 
   const activeStockCode = activeStockContext?.stock_code ?? null;
+
+  const activeSession = sessions.find((session) => session.session_id === sessionId);
+  const activeSessionTitle = activeSession?.title?.trim() || t('chat.untitled');
+
+  const sessionGroups = useMemo(
+    () => groupSessionsByDate(sessions, {
+      today: t('chat.groupToday'),
+      yesterday: t('chat.groupYesterday'),
+      earlier: t('chat.groupEarlier'),
+    }),
+    [sessions, t],
+  );
+
+  useEffect(() => {
+    if (!sessionMenu) return;
+    const close = () => setSessionMenu(null);
+    const handleKeyDown = (event: KeyboardEvent) => {
+      if (event.key === 'Escape') close();
+    };
+    window.addEventListener('resize', close);
+    window.addEventListener('scroll', close, true);
+    window.addEventListener('keydown', handleKeyDown);
+    return () => {
+      window.removeEventListener('resize', close);
+      window.removeEventListener('scroll', close, true);
+      window.removeEventListener('keydown', handleKeyDown);
+    };
+  }, [sessionMenu]);
+
+  const toggleSidebar = useCallback(() => {
+    setSidebarCollapsed((value) => {
+      const next = !value;
+      localStorage.setItem('dsa.chat.sidebarCollapsed', String(next));
+      return next;
+    });
+  }, []);
+
+  const openSessionMenu = useCallback((
+    event: React.MouseEvent<HTMLButtonElement>,
+    targetSessionId: string,
+    origin: SessionMenuOrigin = 'sidebar',
+  ) => {
+    const rect = event.currentTarget.getBoundingClientRect();
+    setSessionMenu((current) => (current?.sessionId === targetSessionId && current.origin === origin
+      ? null
+      : {
+          sessionId: targetSessionId,
+          top: rect.bottom + 4,
+          left: Math.max(8, rect.right - 150),
+          origin,
+        }));
+  }, []);
+
+  const startRenamingSession = useCallback((session: SessionListItem, origin: SessionMenuOrigin = 'sidebar') => {
+    setSessionMenu(null);
+    setSessionTitle(session.title);
+    setTitleError('');
+    setEditingSessionId(session.session_id);
+    setTitleEditorOrigin(origin);
+  }, []);
 
   const syncScrollState = useCallback(() => {
     const viewport = messagesViewportRef.current;
@@ -487,12 +627,16 @@ const ChatPage: React.FC = () => {
 
   const handleStartNewChat = useCallback(() => {
     followUpContextRef.current = null;
+    setSessionMenu(null);
+    closeTitleEditor();
     requestScrollToBottom('auto');
     useAgentChatStore.getState().startNewChat();
     setSidebarOpen(false);
-  }, [requestScrollToBottom]);
+  }, [closeTitleEditor, requestScrollToBottom]);
 
   const handleSwitchSession = useCallback((targetSessionId: string) => {
+    setSessionMenu(null);
+    closeTitleEditor();
     if (targetSessionId === sessionId) {
       setSidebarOpen(false);
       return;
@@ -501,7 +645,7 @@ const ChatPage: React.FC = () => {
     requestScrollToBottom('auto');
     switchSession(targetSessionId);
     setSidebarOpen(false);
-  }, [requestScrollToBottom, sessionId, switchSession]);
+  }, [closeTitleEditor, requestScrollToBottom, sessionId, switchSession]);
 
   const confirmDelete = useCallback(() => {
     if (!deleteConfirmId) return;
@@ -823,158 +967,133 @@ const ChatPage: React.FC = () => {
       })}
     </div>
   );
+  const selectedSkillSummary = selectedSkillIds.length > 0
+    ? getSkillNames(selectedSkillIds).join('、')
+    : '通用分析';
+
+  const sessionMenuTarget = sessionMenu
+    ? sessions.find((session) => session.session_id === sessionMenu.sessionId) ?? null
+    : null;
 
   const sidebarContent = (
     <>
-      <div className="flex items-center justify-between border-b border-white/5 bg-white/2 p-3.5">
-        <h2 className="text-sm font-semibold text-cyan uppercase tracking-[0.2em] flex items-center gap-2">
-          <svg className="w-5 h-5" fill="none" stroke="currentColor" viewBox="0 0 24 24">
-            <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M12 8v4l3 3m6-3a9 9 0 11-18 0 9 9 0 0118 0z" />
-          </svg>
-          历史对话
-        </h2>
+      <div className="chat-sessions-head">
+        <button type="button" className="chat-new-btn" onClick={handleStartNewChat}>
+          <Plus size={15} aria-hidden="true" />
+          <span>{t('chat.newChat')}</span>
+        </button>
         <button
-          onClick={handleStartNewChat}
-          className="rounded-lg p-1.5 text-muted-text transition-all hover:bg-white/10 hover:text-foreground"
-          aria-label="开启新对话"
+          type="button"
+          className="chat-icon-btn chat-sidebar-collapse"
+          aria-label={t('chat.hideHistory')}
+          onClick={toggleSidebar}
         >
-          <svg
-            className="w-4 h-4"
-            fill="none"
-            stroke="currentColor"
-            viewBox="0 0 24 24"
-          >
-            <path
-              strokeLinecap="round"
-              strokeLinejoin="round"
-              strokeWidth={2}
-              d="M12 4v16m8-8H4"
-            />
-          </svg>
+          <PanelLeftClose size={16} aria-hidden="true" />
         </button>
       </div>
-      <ScrollArea testId="chat-session-list-scroll" viewportClassName="p-3">
+      <ScrollArea testId="chat-session-list-scroll" className="chat-sessions-scroll" viewportClassName="chat-sessions-viewport">
         {sessionsLoading ? (
           <DashboardStateBlock
             loading
             compact
             title="加载对话中..."
-            className="rounded-2xl border border-dashed border-border/50 bg-surface/30"
+            className="chat-sessions-state"
           />
         ) : sessions.length === 0 ? (
           <DashboardStateBlock
             compact
             title="暂无历史对话"
             description="开始提问后，这里会保留会话记录。"
-            className="rounded-2xl border border-dashed border-border/50 bg-surface/30"
+            className="chat-sessions-state"
           />
         ) : (
-          <div className="space-y-2">
-            {sessions.map((s) => (
-              <div key={s.session_id} className="session-item-row">
-                {editingSessionId === s.session_id ? (
-                  <div className="chat-title-editor">
-                    <form onSubmit={(event) => { event.preventDefault(); void saveSessionTitle(); }}>
-                      <input aria-label={t('chat.editTitle')} value={sessionTitle} maxLength={60} autoFocus
-                        onChange={(event) => setSessionTitle(event.target.value)}
-                        onKeyDown={(event) => { if (event.key === 'Escape') setEditingSessionId(null); }} />
-                      <button type="submit" disabled={titleSaving} aria-label={t('chat.saveTitle')}><Check size={15} /></button>
-                      <button type="button" disabled={titleSaving} onClick={() => setEditingSessionId(null)} aria-label={t('common.cancel')}><X size={15} /></button>
-                    </form>
-                    {titleError && <p role="alert">{titleError}</p>}
+          sessionGroups.map((group) => (
+            <div key={group.key} className="chat-session-group">
+              <p className="chat-session-group-label">{group.label}</p>
+              <div className="chat-session-list">
+                {group.items.map((s) => (
+                  <div key={s.session_id} className="chat-session-row">
+                    {editingSessionId === s.session_id && titleEditorOrigin === 'sidebar' ? (
+                      <div className="chat-title-editor">
+                        <form onSubmit={(event) => { event.preventDefault(); void saveSessionTitle(); }}>
+                          <input
+                            aria-label={t('chat.editTitle')}
+                            value={sessionTitle}
+                            maxLength={60}
+                            autoFocus
+                            onChange={(event) => setSessionTitle(event.target.value)}
+                            onKeyDown={(event) => { if (event.key === 'Escape') closeTitleEditor(); }}
+                          />
+                          <button type="submit" disabled={titleSaving} aria-label={t('chat.saveTitle')}>
+                            <Check size={15} aria-hidden="true" />
+                          </button>
+                          <button type="button" disabled={titleSaving} onClick={closeTitleEditor} aria-label={t('common.cancel')}>
+                            <X size={15} aria-hidden="true" />
+                          </button>
+                        </form>
+                        {titleError && <p role="alert">{titleError}</p>}
+                      </div>
+                    ) : (
+                      <>
+                        <button
+                          type="button"
+                          onClick={() => handleSwitchSession(s.session_id)}
+                          className={cn('chat-session', s.session_id === sessionId && 'is-active')}
+                          aria-label={`切换到对话 ${s.title}`}
+                          aria-current={s.session_id === sessionId ? 'page' : undefined}
+                        >
+                          <span className="chat-session-title">{s.title}</span>
+                        </button>
+                        <button
+                          type="button"
+                          className="chat-session-more"
+                          aria-label={`${t('chat.moreActions')} ${s.title}`}
+                          aria-haspopup="menu"
+                          aria-expanded={sessionMenu?.sessionId === s.session_id}
+                          onClick={(event) => openSessionMenu(event, s.session_id)}
+                        >
+                          <MoreHorizontal size={15} aria-hidden="true" />
+                        </button>
+                      </>
+                    )}
                   </div>
-                ) : <>
-                <button
-                  type="button"
-                  onClick={() => handleSwitchSession(s.session_id)}
-                  className={`session-item ${s.session_id === sessionId ? 'active' : ''}`}
-                  aria-label={`切换到对话 ${s.title}`}
-                  aria-current={s.session_id === sessionId ? 'page' : undefined}
-                >
-                  <div className="indicator" />
-                  <div className="content">
-                    <span className="title">{s.title}</span>
-                    <div className="mt-0.5 flex items-center gap-2">
-                      <span className="meta">
-                        {s.message_count} 条对话
-                      </span>
-                      {s.last_active && (
-                        <>
-                          <span className="separator" />
-                          <span className="meta">
-                            {new Date(s.last_active).toLocaleDateString('zh-CN', { month: 'short', day: 'numeric' })}
-                          </span>
-                        </>
-                      )}
-                    </div>
-                  </div>
-                </button>
-                <button type="button" className="rename-btn" aria-label={`${t('chat.editTitle')} ${s.title}`}
-                  onClick={() => { setSessionTitle(s.title); setTitleError(''); setEditingSessionId(s.session_id); }}>
-                  <Pencil size={14} />
-                </button>
-                <button
-                  type="button"
-                  className="delete-btn"
-                  onClick={() => {
-                    setDeleteConfirmId(s.session_id);
-                  }}
-                  aria-label={`删除对话 ${s.title}`}
-                >
-                  <svg
-                    className="w-3.5 h-3.5"
-                    fill="none"
-                    stroke="currentColor"
-                    viewBox="0 0 24 24"
-                  >
-                    <path
-                      strokeLinecap="round"
-                      strokeLinejoin="round"
-                      strokeWidth={2}
-                      d="M19 7l-.867 12.142A2 2 0 0116.138 21H7.862a2 2 0 01-1.995-1.858L5 7m5 4v6m4-6v6m1-10V4a1 1 0 00-1-1h-4a1 1 0 00-1 1v3M4 7h16"
-                    />
-                  </svg>
-                </button>
-                </>}
+                ))}
               </div>
-            ))}
-          </div>
+            </div>
+          ))
         )}
       </ScrollArea>
     </>
   );
 
-  const selectedSkillSummary = selectedSkillIds.length > 0
-    ? getSkillNames(selectedSkillIds).join('、')
-    : '通用分析';
+  const objectStatusText = activeStockContext
+    ? t('chat.currentObject', {
+        object: `${activeStockContext.stock_name ? `${activeStockContext.stock_name} · ` : ''}${activeStockContext.stock_code}`,
+      })
+    : t(stateContract === 'legacy' ? 'chat.objectUnconfirmedLegacy' : 'chat.objectUnconfirmed');
 
   return (
-    <div
-      data-testid="chat-workspace"
-      className="research-chat flex min-w-0 gap-4 overflow-hidden"
-    >
-      {/* Desktop sidebar */}
-      {!sidebarCollapsed && <div className="research-chat-sessions hidden h-full w-64 shrink-0 flex-col overflow-hidden border border-border bg-card md:flex">
-        {sidebarContent}
-      </div>}
+    <div data-testid="chat-workspace" className="research-chat chat-workspace">
+      {/* Desktop conversation list */}
+      {!sidebarCollapsed && (
+        <aside className="chat-sessions-panel">
+          {sidebarContent}
+        </aside>
+      )}
 
-      {/* Mobile sidebar overlay */}
+      {/* Mobile conversation list */}
       {sidebarOpen && (
-        <div
-          className="fixed inset-0 z-40 md:hidden"
-          onClick={() => setSidebarOpen(false)}
-        >
+        <div className="chat-mobile-drawer fixed inset-0 z-40" onClick={() => setSidebarOpen(false)}>
           <div className="page-drawer-overlay absolute inset-0" />
           <div
-            className="absolute left-0 top-0 bottom-0 w-72 flex flex-col glass-card overflow-hidden border-r border-white/10 bg-card/90 shadow-2xl"
-            onClick={(e) => e.stopPropagation()}
+            className="chat-sessions-panel chat-sessions-drawer absolute bottom-0 left-0 top-0 flex w-[17.5rem] flex-col overflow-hidden shadow-2xl"
+            onClick={(event) => event.stopPropagation()}
           >
             {sidebarContent}
           </div>
         </div>
       )}
 
-      {/* Delete confirmation dialog */}
       <ConfirmDialog
         isOpen={Boolean(deleteConfirmId)}
         title="删除对话"
@@ -986,387 +1105,316 @@ const ChatPage: React.FC = () => {
         onCancel={() => setDeleteConfirmId(null)}
       />
 
-      {/* Main chat area */}
-      <div className="flex h-full min-w-0 flex-1 flex-col overflow-hidden">
-        <header className="research-chat-header mb-3 shrink-0 space-y-1.5">
-          <div className="flex items-start justify-between gap-4">
-            <div className="flex min-w-0 flex-wrap items-center gap-3">
-              <h1 className="research-display flex flex-wrap items-center gap-2 text-foreground">
-                <button type="button" className="hidden rounded-lg p-1.5 text-secondary-text hover:bg-hover hover:text-foreground md:inline-flex"
-                  aria-label={t(sidebarCollapsed ? 'chat.showHistory' : 'chat.hideHistory')}
-                  aria-expanded={!sidebarCollapsed}
-                  onClick={() => setSidebarCollapsed((value) => { localStorage.setItem('dsa.chat.sidebarCollapsed', String(!value)); return !value; })}>
-                  {sidebarCollapsed ? <PanelLeftOpen size={19} /> : <PanelLeftClose size={19} />}
+      {sessionMenu && sessionMenuTarget ? (
+        <>
+          <button
+            type="button"
+            className="chat-menu-backdrop"
+            aria-label={t('common.close')}
+            onClick={() => setSessionMenu(null)}
+          />
+          <div
+            className="chat-session-menu"
+            role="menu"
+            aria-label={t('chat.moreActions')}
+            style={{ top: sessionMenu.top, left: sessionMenu.left }}
+          >
+            <button
+              type="button"
+              role="menuitem"
+              className="chat-session-menu-item"
+              onClick={() => startRenamingSession(sessionMenuTarget, sessionMenu?.origin ?? 'sidebar')}
+            >
+              <Pencil size={13} aria-hidden="true" />
+              {t('chat.rename')}
+            </button>
+            <button
+              type="button"
+              role="menuitem"
+              className="chat-session-menu-item is-danger"
+              aria-label={`${t('chat.deleteSession')} ${sessionMenuTarget.title}`}
+              onClick={() => {
+                setSessionMenu(null);
+                setDeleteConfirmId(sessionMenuTarget.session_id);
+              }}
+            >
+              <Trash2 size={13} aria-hidden="true" />
+              {t('chat.deleteSession')}
+            </button>
+          </div>
+        </>
+      ) : null}
+
+      <section className="chat-main">
+        <header className="chat-topbar">
+          <div className="chat-topbar-main">
+            <button
+              type="button"
+              onClick={() => setSidebarOpen(true)}
+              className="chat-icon-btn chat-history-toggle-mobile"
+              aria-label="历史对话"
+            >
+              <PanelLeftOpen size={17} aria-hidden="true" />
+            </button>
+            {sidebarCollapsed ? (
+              <button
+                type="button"
+                onClick={toggleSidebar}
+                className="chat-icon-btn chat-history-toggle-desktop"
+                aria-label={t('chat.showHistory')}
+              >
+                <PanelLeftOpen size={17} aria-hidden="true" />
+              </button>
+            ) : null}
+            <h1 className="chat-topbar-title">问股</h1>
+            <span className="chat-topbar-divider" aria-hidden="true">/</span>
+            {editingSessionId === sessionId && titleEditorOrigin === 'header' ? (
+              <form className="chat-title-editor-inline" onSubmit={(event) => { event.preventDefault(); void saveSessionTitle(); }}>
+                <input
+                  aria-label={t('chat.editTitle')}
+                  value={sessionTitle}
+                  maxLength={60}
+                  autoFocus
+                  onChange={(event) => setSessionTitle(event.target.value)}
+                  onKeyDown={(event) => { if (event.key === 'Escape') closeTitleEditor(); }}
+                />
+                <button type="submit" disabled={titleSaving} aria-label={t('chat.saveTitle')}>
+                  <Check size={14} aria-hidden="true" />
                 </button>
-                <button
-                  onClick={() => setSidebarOpen(true)}
-                  className="md:hidden p-1.5 -ml-1 rounded-lg hover:bg-hover transition-colors text-secondary-text hover:text-foreground"
-                  aria-label="历史对话"
-                >
-                  <svg
-                    className="w-5 h-5"
-                    fill="none"
-                    stroke="currentColor"
-                    viewBox="0 0 24 24"
-                  >
-                    <path
-                      strokeLinecap="round"
-                      strokeLinejoin="round"
-                      strokeWidth={2}
-                      d="M4 6h16M4 12h16M4 18h16"
-                    />
-                  </svg>
+                <button type="button" disabled={titleSaving} onClick={closeTitleEditor} aria-label={t('common.cancel')}>
+                  <X size={14} aria-hidden="true" />
                 </button>
-                <svg
-                  className="w-6 h-6 text-cyan"
-                  fill="none"
-                  stroke="currentColor"
-                  viewBox="0 0 24 24"
-                >
-                  <path
-                    strokeLinecap="round"
-                    strokeLinejoin="round"
-                    strokeWidth={2}
-                    d="M9.663 17h4.673M12 3v1m6.364 1.636l-.707.707M21 12h-1M4 12H3m3.343-5.657l-.707-.707m2.828 9.9a5 5 0 117.072 0l-.548.547A3.374 3.374 0 0014 18.469V19a2 2 0 11-4 0v-.531c0-.895-.356-1.754-.988-2.386l-.548-.547z"
-                  />
-                </svg>
-                <span className="whitespace-nowrap">问股</span>
-                {agentStatus ? (
-                  <Badge
-                    variant={agentStatus.errorCode === 'backend_removed' ? 'warning' : 'history'}
-                    size="sm"
+                {titleError ? <span role="alert" className="chat-title-error">{titleError}</span> : null}
+              </form>
+            ) : (
+              <div className="chat-current-title-wrap">
+                <span className="chat-current-title" title={activeSessionTitle}>{activeSessionTitle}</span>
+                {activeSession ? (
+                  <button
+                    type="button"
+                    className="chat-current-more"
+                    aria-label={`${t('chat.currentSessionActions')} ${activeSessionTitle}`}
+                    aria-haspopup="menu"
+                    aria-expanded={sessionMenu?.sessionId === sessionId && sessionMenu.origin === 'header'}
+                    onClick={(event) => openSessionMenu(event, sessionId, 'header')}
                   >
-                    {t(agentStatus.errorCode === 'backend_removed' ? 'settings.agentBackendRemovedLabel' : 'chat.defaultBackendBadge')}
-                  </Badge>
+                    <MoreHorizontal size={15} aria-hidden="true" />
+                  </button>
                 ) : null}
-              </h1>
-              <span className="hidden text-sm font-normal text-muted-text lg:inline">
-                {t('chat.introDefault')}
-              </span>
-            </div>
-            {messages.length > 0 && (
-              <div className="flex flex-shrink-0 flex-wrap items-center justify-end gap-2">
-                <Tooltip content="导出会话为 Markdown 文件">
-                  <span className="inline-flex">
-                    <Button
-                      variant="action-primary"
-                      size="sm"
-                      onClick={() => downloadSession(messages)}
-                      aria-label="导出会话为 Markdown 文件"
-                    >
-                      <svg
-                        className="w-4 h-4"
-                        fill="none"
-                        stroke="currentColor"
-                        viewBox="0 0 24 24"
-                      >
-                        <path
-                          strokeLinecap="round"
-                          strokeLinejoin="round"
-                          strokeWidth={2}
-                          d="M4 16v1a3 3 0 003 3h10a3 3 0 003-3v-1m-4-4l-4 4m0 0l-4-4m4 4V4"
-                        />
-                      </svg>
-                      导出会话
-                    </Button>
-                  </span>
-                </Tooltip>
-                <Tooltip content="发送到已配置的通知机器人/邮箱">
-                  <span className="inline-flex">
-                    <Button
-                      variant="action-primary"
-                      size="sm"
-                      disabled={sending}
-                      onClick={async () => {
-                        if (sending) return;
-                        setSending(true);
-                        setSendToast(null);
-                        try {
-                          const content = formatSessionAsMarkdown(messages);
-                          await agentApi.sendChat(content);
-                          showSendFeedback({ type: 'success', message: '已发送到通知渠道' }, 3000);
-                        } catch (err) {
-                          const parsed = getParsedApiError(err);
-                          showSendFeedback({
-                            type: 'error',
-                            message: parsed.message || '发送失败',
-                          }, 5000);
-                        } finally {
-                          setSending(false);
-                        }
-                      }}
-                      aria-label="发送到已配置的通知机器人/邮箱"
-                    >
-                      {sending ? (
-                        <svg
-                          className="w-4 h-4 animate-spin"
-                          fill="none"
-                          viewBox="0 0 24 24"
-                        >
-                          <circle
-                            className="opacity-25"
-                            cx="12"
-                            cy="12"
-                            r="10"
-                            stroke="currentColor"
-                            strokeWidth="4"
-                          />
-                          <path
-                            className="opacity-75"
-                            fill="currentColor"
-                            d="M4 12a8 8 0 018-8V0C5.373 0 0 5.373 0 12h4z"
-                          />
-                        </svg>
-                      ) : (
-                        <svg
-                          className="w-4 h-4"
-                          fill="none"
-                          stroke="currentColor"
-                          viewBox="0 0 24 24"
-                        >
-                          <path
-                            strokeLinecap="round"
-                            strokeLinejoin="round"
-                            strokeWidth={2}
-                            d="M12 19l9 2-9-18-9 18 9-2zm0 0v-8"
-                          />
-                        </svg>
-                      )}
-                      发送
-                    </Button>
-                  </span>
-                </Tooltip>
               </div>
             )}
           </div>
-          <p className="text-sm text-secondary-text lg:hidden">
-            {t('chat.introDefault')}
-          </p>
-          {followUpEvidenceError && <InlineAlert variant="danger" title="扫描证据未载入" message={followUpEvidenceError} />}
-          {sendToast ? (
-            <InlineAlert
-              variant={sendToast.type === 'success' ? 'success' : 'danger'}
-              title={sendToast.type === 'success' ? '发送成功' : '发送失败'}
-              message={sendToast.message}
-              className="max-w-md rounded-xl px-3 py-2 text-xs shadow-none"
-            />
-          ) : null}
+          <div className="chat-topbar-actions">
+            {agentStatus ? (
+              <Badge
+                variant={agentStatus.errorCode === 'backend_removed' ? 'warning' : 'history'}
+                size="sm"
+              >
+                {t(agentStatus.errorCode === 'backend_removed' ? 'settings.agentBackendRemovedLabel' : 'chat.defaultBackendBadge')}
+              </Badge>
+            ) : null}
+            {messages.length > 0 && (
+              <>
+                <button
+                  type="button"
+                  className="chat-icon-btn"
+                  onClick={() => downloadSession(messages)}
+                  aria-label="导出会话为 Markdown 文件"
+                >
+                  <Download size={16} aria-hidden="true" />
+                </button>
+                <button
+                  type="button"
+                  className="chat-icon-btn"
+                  disabled={sending}
+                  aria-busy={sending}
+                  onClick={async () => {
+                    if (sending) return;
+                    setSending(true);
+                    setSendToast(null);
+                    try {
+                      const content = formatSessionAsMarkdown(messages);
+                      await agentApi.sendChat(content);
+                      showSendFeedback({ type: 'success', message: '已发送到通知渠道' }, 3000);
+                    } catch (err) {
+                      const parsed = getParsedApiError(err);
+                      showSendFeedback({
+                        type: 'error',
+                        message: parsed.message || '发送失败',
+                      }, 5000);
+                    } finally {
+                      setSending(false);
+                    }
+                  }}
+                  aria-label="发送到已配置的通知机器人/邮箱"
+                >
+                  {sending
+                    ? <span className="chat-send-spinner" aria-hidden="true" />
+                    : <Send size={16} aria-hidden="true" />}
+                </button>
+              </>
+            )}
+          </div>
         </header>
 
-        <div className="relative z-10 flex min-h-0 flex-1 flex-col overflow-hidden glass-card">
-          {/* Messages */}
+        <div className="chat-body">
           <ScrollArea
-            className="relative z-10 flex-1"
+            className="chat-thread-scroll"
             viewportRef={messagesViewportRef}
             onScroll={handleMessagesScroll}
-            viewportClassName="space-y-6 p-4 md:p-6"
+            viewportClassName="chat-thread-viewport"
             testId="chat-message-scroll"
           >
-            {messages.length === 0 && !loading ? (
-              <div className="flex h-full min-h-fit items-start pt-3">
-                <section className="research-chat-welcome" data-testid="chat-welcome" aria-labelledby="chat-welcome-title">
-                  <div className="chat-welcome-head">
-                    <span className="chat-welcome-icon" aria-hidden="true">
-                      <svg
-                        className="h-5 w-5"
-                        fill="none"
-                        stroke="currentColor"
-                        viewBox="0 0 24 24"
-                      >
-                        <path
-                          strokeLinecap="round"
-                          strokeLinejoin="round"
-                          strokeWidth={1.5}
-                          d="M9.663 17h4.673M12 3v1m6.364 1.636l-.707.707M21 12h-1M4 12H3m3.343-5.657l-.707-.707m2.828 9.9a5 5 0 117.072 0l-.548.547A3.374 3.374 0 0014 18.469V19a2 2 0 11-4 0v-.531c0-.895-.356-1.754-.988-2.386l-.548-.547z"
-                        />
-                      </svg>
-                    </span>
-                    <div className="chat-welcome-copy">
-                      <h3 id="chat-welcome-title">开始问股</h3>
-                      <p>{t('chat.emptyDescriptionDefault')}</p>
-                    </div>
-                  </div>
-                  <div className="chat-welcome-prompts">
-                    <span className="chat-welcome-label">{t('chat.quickQuestionLabel')}</span>
-                    <div className="chat-welcome-grid">
-                      {quickQuestions.map((q, i) => (
+            <div className="chat-thread">
+              {messages.length === 0 && !loading ? (
+                <section className="chat-empty" data-testid="chat-welcome" aria-labelledby="chat-welcome-title">
+                  <span className="chat-empty-icon" aria-hidden="true">
+                    <Sparkles size={20} />
+                  </span>
+                  <h3 id="chat-welcome-title" className="chat-empty-title">{t('chat.welcomeTitle')}</h3>
+                  <p className="chat-empty-description">{t('chat.emptyDescriptionDefault')}</p>
+                  <div className="chat-quick">
+                    <span className="chat-quick-label">{t('chat.quickQuestionLabel')}</span>
+                    <div className="chat-quick-grid">
+                      {quickQuestions.map((q, index) => (
                         <button
-                          key={i}
+                          key={index}
                           type="button"
                           onClick={() => handleQuickQuestion(q)}
                           disabled={!agentAvailable}
                           aria-label={q.label}
-                          className="quick-question-btn chat-welcome-prompt disabled:cursor-not-allowed disabled:opacity-60"
+                          className="chat-quick-btn"
                         >
-                          {q.label}
+                          <span>{q.label}</span>
+                          <ArrowUpRight size={14} aria-hidden="true" />
                         </button>
                       ))}
                     </div>
                   </div>
                 </section>
-              </div>
-            ) : (
-              messages.map((msg) => {
-                const skillLabel = getMessageSkillLabel(msg);
-                return (
-                <div
-                  key={msg.id}
-                  className={`flex gap-4 ${msg.role === 'user' ? 'flex-row-reverse' : ''}`}
-                >
-                  <div
-                    className={cn(
-                      'flex h-8 w-8 shrink-0 items-center justify-center rounded-xs text-[10px] font-semibold',
-                      msg.role === 'user' ? 'chat-avatar-user' : 'chat-avatar-ai'
-                    )}
-                  >
-                    {msg.role === 'user' ? 'U' : 'AI'}
-                  </div>
-                  <div
-                    className={cn(
-                      'group/message min-w-0 w-fit max-w-[min(100%,48rem)] overflow-hidden px-5 py-3.5 transition-colors',
-                      msg.role === 'user' ? 'chat-bubble-user' : 'chat-bubble-ai'
-                    )}
-                  >
-                    {msg.role === 'assistant' && (skillLabel || msg.backend) && (
-                      <div className="mb-2 flex flex-wrap gap-2">
-                        {skillLabel ? <Badge variant="info" className="chat-skill-badge shadow-none" aria-label={`技能 ${skillLabel}`}>
-                          <svg
-                            className="w-3 h-3"
-                            fill="none"
-                            stroke="currentColor"
-                            viewBox="0 0 24 24"
-                          >
-                            <path
-                              strokeLinecap="round"
-                              strokeLinejoin="round"
-                              strokeWidth={2}
-                              d="M13 10V3L4 14h7v7l9-11h-7z"
-                            />
-                          </svg>
-                          {skillLabel}
-                        </Badge> : null}
-                        {msg.backend ? (
-                          <Badge variant={msg.backend === 'codex_app_server' ? 'warning' : 'history'} size="sm">
-                            {t(msg.backend === 'codex_app_server' ? 'chat.historicalCodexBackendBadge' : 'chat.defaultBackendBadge')}
-                          </Badge>
-                        ) : null}
-                      </div>
-                    )}
-                    {msg.role === 'assistant' && renderThinkingBlock(msg)}
-                    {msg.role === 'assistant' &&
-                      expandedThinking.has(msg.id) &&
-                      msg.thinkingSteps &&
-                      renderThinkingDetails(msg.thinkingSteps)}
-                    {msg.role === 'assistant' ? (
-                      <div className="relative">
-                        <div className="chat-message-actions">
-                          <button
-                            type="button"
-                            onClick={() => copyMessageToClipboard(msg.id, msg.content)}
-                            className="chat-copy-btn"
-                            aria-label={copiedMessages.has(msg.id) ? text.copied : text.copy}
-                          >
-                            {copiedMessages.has(msg.id) ? text.copied : text.copy}
-                          </button>
-                          <button
-                            type="button"
-                            onClick={() => downloadMessageAsMarkdown(msg)}
-                            className="chat-copy-btn"
-                            aria-label="导出此条消息为 Markdown"
-                          >
-                            导出
-                          </button>
+              ) : (
+                messages.map((msg) => {
+                  const skillLabel = getMessageSkillLabel(msg);
+                  return (
+                    <div
+                      key={msg.id}
+                      className={cn('chat-msg', msg.role === 'user' ? 'chat-msg-user' : 'chat-msg-ai')}
+                    >
+                      {msg.role === 'assistant' && (skillLabel || msg.backend) && (
+                        <div className="chat-msg-meta">
+                          {skillLabel ? (
+                            <Badge variant="info" className="chat-skill-badge shadow-none" aria-label={`技能 ${skillLabel}`}>
+                              <Sparkles size={12} aria-hidden="true" />
+                              {skillLabel}
+                            </Badge>
+                          ) : null}
+                          {msg.backend ? (
+                            <Badge variant={msg.backend === 'codex_app_server' ? 'warning' : 'history'} size="sm">
+                              {t(msg.backend === 'codex_app_server' ? 'chat.historicalCodexBackendBadge' : 'chat.defaultBackendBadge')}
+                            </Badge>
+                          ) : null}
                         </div>
-                        <div className="chat-prose pr-20 sm:pr-24">
-                          <Markdown remarkPlugins={[remarkGfm]}>
-                            {msg.content}
-                          </Markdown>
-                        </div>
-                      </div>
-                    ) : (
-                      msg.content
-                        .split('\n')
-                        .map((line, i) => (
-                          <p
-                            key={i}
-                            className="mb-1 last:mb-0 leading-relaxed"
-                          >
-                            {line || '\u00A0'}
-                          </p>
-                        ))
-                    )}
-                  </div>
-                </div>
-                );
-              })
-            )}
-
-            {loading && (
-              <div className="flex gap-4">
-                <div className="w-8 h-8 rounded-full bg-elevated text-foreground flex items-center justify-center flex-shrink-0 text-xs font-bold">
-                  AI
-                </div>
-                <div role="status" aria-live="polite" className="chat-live-progress min-w-[200px] max-w-[min(100%,48rem)] overflow-hidden rounded-2xl rounded-tl-sm border border-border bg-card px-5 py-4">
-                  <div className="flex items-center gap-2.5 text-sm text-secondary-text">
-                    <div className="relative w-4 h-4 flex-shrink-0">
-                      <div className="absolute inset-0 rounded-full border-2 border-cyan/20" />
-                      <div className="absolute inset-0 rounded-full border-2 border-cyan border-t-transparent animate-spin" />
+                      )}
+                      {msg.role === 'assistant' && renderThinkingBlock(msg)}
+                      {msg.role === 'assistant' &&
+                        expandedThinking.has(msg.id) &&
+                        msg.thinkingSteps &&
+                        renderThinkingDetails(msg.thinkingSteps)}
+                      {msg.role === 'assistant' ? (
+                        <>
+                          <div className="chat-prose">
+                            <Markdown remarkPlugins={[remarkGfm]}>
+                              {msg.content}
+                            </Markdown>
+                          </div>
+                          <div className="chat-message-actions">
+                            <button
+                              type="button"
+                              onClick={() => copyMessageToClipboard(msg.id, msg.content)}
+                              className="chat-action-btn"
+                              aria-label={copiedMessages.has(msg.id) ? text.copied : text.copy}
+                            >
+                              {copiedMessages.has(msg.id)
+                                ? <Check size={14} aria-hidden="true" />
+                                : <Copy size={14} aria-hidden="true" />}
+                            </button>
+                            <button
+                              type="button"
+                              onClick={() => downloadMessageAsMarkdown(msg)}
+                              className="chat-action-btn"
+                              aria-label={t('chat.exportMessage')}
+                            >
+                              <Download size={14} aria-hidden="true" />
+                            </button>
+                          </div>
+                        </>
+                      ) : (
+                        <div className="chat-user-bubble">{msg.content}</div>
+                      )}
                     </div>
-                    <span className="text-secondary-text">
-                      {getCurrentStage(progressSteps)}
-                    </span>
-                  </div>
-                  {progressSteps.length > 0 && <div className="chat-live-details">
-                    {progressSteps.filter((step) => ['stage_start', 'stage_done', 'tool_start', 'tool_done', 'generating'].includes(step.type)).slice(-6).map((step, index) => (
-                      <div className="chat-live-step" key={`${index}-${step.type}-${step.stage || step.tool || ''}`}>
-                        <span className={cn('chat-live-step-dot', step.type.endsWith('_done') && 'is-done',
-                          ((step.type === 'stage_done' && !isStageDoneSuccessful(step.status)) || (step.type === 'tool_done' && step.success === false)) && 'is-error')} />
-                        <span>{getCurrentStage([step])}</span>
-                      </div>
-                    ))}
-                  </div>}
-                </div>
-              </div>
-            )}
+                  );
+                })
+              )}
 
-            <div ref={messagesEndRef} />
+              {loading && (
+                <div className="chat-msg chat-msg-ai">
+                  <div role="status" aria-live="polite" className="chat-live-progress">
+                    <div className="chat-live-head">
+                      <span className="chat-live-spinner" aria-hidden="true" />
+                      <span>{getCurrentStage(progressSteps)}</span>
+                    </div>
+                    {progressSteps.length > 0 && (
+                      <div className="chat-live-details">
+                        {progressSteps
+                          .filter((step) => ['stage_start', 'stage_done', 'tool_start', 'tool_done', 'generating'].includes(step.type))
+                          .slice(-6)
+                          .map((step, index) => (
+                            <div className="chat-live-step" key={`${index}-${step.type}-${step.stage || step.tool || ''}`}>
+                              <span
+                                className={cn(
+                                  'chat-live-step-dot',
+                                  step.type.endsWith('_done') && 'is-done',
+                                  ((step.type === 'stage_done' && !isStageDoneSuccessful(step.status))
+                                    || (step.type === 'tool_done' && step.success === false)) && 'is-error',
+                                )}
+                              />
+                              <span>{getCurrentStage([step])}</span>
+                            </div>
+                          ))}
+                      </div>
+                    )}
+                  </div>
+                </div>
+              )}
+
+              <div ref={messagesEndRef} />
+            </div>
           </ScrollArea>
 
           {showJumpToBottom && (
-            <div className="pointer-events-none absolute bottom-[5.75rem] right-4 z-20 md:bottom-24 md:right-6">
+            <div className="chat-jump-wrap">
               <button
                 type="button"
-                className="pointer-events-auto chat-copy-btn shadow-soft-card"
+                className="chat-jump-btn"
                 onClick={() => {
                   requestScrollToBottom('smooth');
                   scrollToBottom('smooth');
                 }}
                 aria-label="查看最新消息"
               >
-                <svg
-                  className="h-3.5 w-3.5"
-                  fill="none"
-                  stroke="currentColor"
-                  viewBox="0 0 24 24"
-                >
-                  <path
-                    strokeLinecap="round"
-                    strokeLinejoin="round"
-                    strokeWidth={2}
-                    d="M19 14l-7 7m0 0l-7-7m7 7V3"
-                  />
-                </svg>
+                <ChevronDown size={14} aria-hidden="true" />
                 有新消息
               </button>
             </div>
           )}
 
-          {/* Input area */}
-          <div className="border-t border-white/6 bg-card/88 p-4 md:p-6 relative z-20">
-            <div className="space-y-3">
-              {chatError ? <ApiErrorAlert error={chatError.code === 'backend_removed'
-                ? { ...chatError, title: t('settings.agentBackendRemovedLabel'), message: t('settings.agentBackendRemoved') }
-                : chatError} /> : null}
+          <div className="chat-composer-area">
+            <div className="chat-composer-stack">
+              {chatError ? (
+                <ApiErrorAlert error={chatError.code === 'backend_removed'
+                  ? { ...chatError, title: t('settings.agentBackendRemovedLabel'), message: t('settings.agentBackendRemoved') }
+                  : chatError} />
+              ) : null}
               {chatError?.code === 'backend_removed' && (
                 <Button variant="secondary" size="sm" onClick={() => navigate('/settings?category=agent')}>
                   {t('chat.openAgentSettings')}
@@ -1378,11 +1426,13 @@ const ChatPage: React.FC = () => {
                 </Button>
               )}
               {terminalStatus === 'timeout' ? (
-                <div role="status" className="rounded-xl border border-amber-500/20 bg-amber-500/5 px-4 py-3 text-sm">
+                <div role="status" className="chat-notice">
                   {t('chat.analysisTimedOut')}
                 </div>
               ) : null}
-              {terminalStatus === 'stopped' && <div role="status" className="rounded-xl border border-border px-4 py-3 text-sm text-secondary-text">{t('chat.stoppedNotice')}</div>}
+              {terminalStatus === 'stopped' && (
+                <div role="status" className="chat-notice is-muted">{t('chat.stoppedNotice')}</div>
+              )}
               {agentUnavailableError ? (
                 <div className="space-y-2">
                   <ApiErrorAlert
@@ -1405,7 +1455,7 @@ const ChatPage: React.FC = () => {
                       {t('chat.recheckAgentStatus')}
                     </Button>
                   )}
-                  className="rounded-xl px-3 py-2 text-xs shadow-none"
+                  className="chat-inline-notice"
                 />
               ) : null}
               {agentStatusChecking ? (
@@ -1413,7 +1463,7 @@ const ChatPage: React.FC = () => {
                   variant="info"
                   title={t('chat.statusCheckingTitle')}
                   message={t('chat.statusCheckingMessage')}
-                  className="rounded-xl px-3 py-2 text-xs shadow-none"
+                  className="chat-inline-notice"
                 />
               ) : null}
               {isFollowUpContextLoading ? (
@@ -1421,193 +1471,197 @@ const ChatPage: React.FC = () => {
                   variant="info"
                   title="追问上下文加载中"
                   message="正在加载历史分析上下文；现在可直接发送追问。"
-                  className="rounded-xl px-3 py-2 text-xs shadow-none"
+                  className="chat-inline-notice"
                 />
               ) : null}
-              {/* 高级选项：折叠式，默认只显示摘要 */}
-              <div className="rounded-lg border border-white/4 bg-surface/15">
-                <button
-                  type="button"
-                  className="flex w-full items-center justify-between gap-2 px-3 py-1.5 text-xs text-muted-text hover:text-secondary-text transition-colors"
-                  onClick={() => setAdvancedOptionsOpen((open) => !open)}
-                  aria-label={t('chat.advancedOptions')}
-                  aria-expanded={advancedOptionsOpen}
-                  aria-controls="chat-advanced-options-panel"
-                >
-                  <span className="flex items-center gap-2 min-w-0">
-                    <SlidersHorizontal className="h-3 w-3 flex-shrink-0" aria-hidden="true" />
-                    <span className="truncate">
-                      <span className="text-secondary-text font-medium">策略</span>
-                      <span className="mx-1.5 text-muted-text/40">·</span>
-                      <span className="text-muted-text">{selectedSkillSummary}</span>
-                      <span className="mx-1.5 text-muted-text/40">·</span>
-                      <span>压缩 {contextCompressionEnabled ? '已启用' : '未启用'}</span>
-                    </span>
-                  </span>
-                  <ChevronDown
-                    className={cn(
-                      'h-3 w-3 flex-shrink-0 transition-transform',
-                      advancedOptionsOpen ? 'rotate-180' : '',
-                    )}
-                    aria-hidden="true"
-                  />
-                </button>
-                {advancedOptionsOpen && (
-                  <div id="chat-advanced-options-panel" className="border-t border-white/4 px-3 py-2 space-y-2">
-                    {/* 策略选择 */}
-                    {skills.length > 0 && (
-                      <div
-                        id="chat-skill-picker-panel"
-                        data-testid="chat-skill-picker-panel"
-                        className="flex flex-wrap items-center gap-x-3 gap-y-1.5"
-                      >
-                        <span className="text-[11px] text-muted-text font-medium flex-shrink-0">策略</span>
-                        <label className="flex items-center gap-1 text-xs cursor-pointer group">
-                          <input
-                            type="checkbox"
-                            name="general-analysis"
-                            value=""
-                            checked={selectedSkillIds.length === 0}
-                            onChange={() => setSelectedSkillIds([])}
-                            className="chat-skill-checkbox"
-                          />
-                          <span
-                            className={`transition-colors text-xs ${selectedSkillIds.length === 0 ? 'text-foreground font-medium' : 'text-secondary-text group-hover:text-foreground'}`}
-                          >
-                            通用分析
-                          </span>
-                        </label>
-                        {skills.map((s) => {
-                          const checked = selectedSkillIdSet.has(s.id);
-                          const disabled = !checked && skillLimitReached;
-                          return (
-                            <label
-                              key={s.id}
-                              className={`flex items-center gap-1 cursor-pointer group relative ${disabled ? 'opacity-60 cursor-not-allowed' : ''}`}
-                              onMouseEnter={() => setShowSkillDesc(s.id)}
-                              onMouseLeave={() => setShowSkillDesc(null)}
-                            >
-                              <input
-                                type="checkbox"
-                                name="skills"
-                                value={s.id}
-                                checked={checked}
-                                disabled={disabled}
-                                onChange={() => toggleSkillSelection(s.id)}
-                                className="chat-skill-checkbox"
-                              />
-                              <span
-                                className={`transition-colors text-xs ${checked ? 'text-foreground font-medium' : 'text-secondary-text group-hover:text-foreground'}`}
-                              >
-                                {s.name}
-                              </span>
-                              {showSkillDesc === s.id && s.description && (
-                                <div className="skill-desc-tooltip">
-                                  <p className="skill-title">{s.name}</p>
-                                  <p>{s.description}</p>
-                                </div>
-                              )}
-                            </label>
-                          );
-                        })}
-                      </div>
-                    )}
-                    {/* 上下文压缩 */}
-                    <div className="flex flex-wrap items-center gap-3 text-xs">
-                      <label
-                        className={cn(
-                          'inline-flex items-center gap-1.5',
-                          contextCompressionLoaded && !contextCompressionSaving
-                            ? 'cursor-pointer text-foreground'
-                            : 'cursor-not-allowed text-muted-text',
-                        )}
-                      >
+              {followUpEvidenceError ? (
+                <InlineAlert variant="danger" title="扫描证据未载入" message={followUpEvidenceError} className="chat-inline-notice" />
+              ) : null}
+              {sendToast ? (
+                <InlineAlert
+                  variant={sendToast.type === 'success' ? 'success' : 'danger'}
+                  title={sendToast.type === 'success' ? '发送成功' : '发送失败'}
+                  message={sendToast.message}
+                  className="chat-inline-notice"
+                />
+              ) : null}
+
+              {advancedOptionsOpen && (
+                <div id="chat-advanced-options-panel" className="chat-advanced-panel">
+                  {skills.length > 0 && (
+                    <div
+                      id="chat-skill-picker-panel"
+                      data-testid="chat-skill-picker-panel"
+                      className="chat-skill-picker"
+                    >
+                      <span className="chat-advanced-label">策略</span>
+                      <label className="chat-skill-option">
                         <input
                           type="checkbox"
-                          checked={contextCompressionEnabled}
-                          disabled={!contextCompressionLoaded || contextCompressionSaving}
-                          onChange={(event) => void updateContextCompressionEnabled(event.target.checked)}
+                          name="general-analysis"
+                          value=""
+                          checked={selectedSkillIds.length === 0}
+                          onChange={() => setSelectedSkillIds([])}
                           className="chat-skill-checkbox"
                         />
-                        <span className="font-medium">上下文压缩</span>
-                        <span className="text-muted-text">节省长会话 token</span>
+                        <span className={cn(selectedSkillIds.length === 0 ? 'is-selected' : '')}>通用分析</span>
                       </label>
-                      <span className="text-muted-text">
-                        {contextCompressionSaving
-                          ? '保存中...'
-                          : contextCompressionEnabled
-                            ? '已启用'
-                            : '未启用'}
-                      </span>
+                      {skills.map((s) => {
+                        const checked = selectedSkillIdSet.has(s.id);
+                        const disabled = !checked && skillLimitReached;
+                        return (
+                          <label
+                            key={s.id}
+                            className={cn('chat-skill-option', disabled && 'is-disabled')}
+                            onMouseEnter={() => setShowSkillDesc(s.id)}
+                            onMouseLeave={() => setShowSkillDesc(null)}
+                          >
+                            <input
+                              type="checkbox"
+                              name="skills"
+                              value={s.id}
+                              checked={checked}
+                              disabled={disabled}
+                              onChange={() => toggleSkillSelection(s.id)}
+                              className="chat-skill-checkbox"
+                            />
+                            <span className={cn(checked ? 'is-selected' : '')}>{s.name}</span>
+                            {showSkillDesc === s.id && s.description && (
+                              <div className="skill-desc-tooltip">
+                                <p className="skill-title">{s.name}</p>
+                                <p>{s.description}</p>
+                              </div>
+                            )}
+                          </label>
+                        );
+                      })}
                     </div>
-                    {contextCompressionError ? (
-                      <InlineAlert
-                        variant="danger"
-                        title="上下文压缩设置未保存"
-                        message={contextCompressionError}
-                        className="rounded-xl px-3 py-2 text-xs shadow-none"
+                  )}
+                  <div className="chat-compression-row">
+                    <label
+                      className={cn(
+                        'chat-skill-option',
+                        contextCompressionLoaded && !contextCompressionSaving ? '' : 'is-disabled',
+                      )}
+                    >
+                      <input
+                        type="checkbox"
+                        checked={contextCompressionEnabled}
+                        disabled={!contextCompressionLoaded || contextCompressionSaving}
+                        onChange={(event) => void updateContextCompressionEnabled(event.target.checked)}
+                        className="chat-skill-checkbox"
                       />
-                    ) : null}
+                      <span className="is-selected">上下文压缩</span>
+                      <span className="chat-advanced-hint">节省长会话 token</span>
+                    </label>
+                    <span className="chat-advanced-status">
+                      {contextCompressionSaving
+                        ? '保存中...'
+                        : contextCompressionEnabled
+                          ? '已启用'
+                          : '未启用'}
+                    </span>
                   </div>
-                )}
-              </div>
+                  {contextCompressionError ? (
+                    <InlineAlert
+                      variant="danger"
+                      title="上下文压缩设置未保存"
+                      message={contextCompressionError}
+                      className="chat-inline-notice"
+                    />
+                  ) : null}
+                </div>
+              )}
 
-            <div className="text-xs text-muted-text" aria-label={t('chat.currentObjectLabel')}>
-              {activeStockContext
-                ? t('chat.currentObject', { object: `${activeStockContext.stock_name ? `${activeStockContext.stock_name} · ` : ''}${activeStockContext.stock_code}` })
-                : t(stateContract === 'legacy' ? 'chat.objectUnconfirmedLegacy' : 'chat.objectUnconfirmed')}
-            </div>
-            {activeStockCode && activeStockContext?.asset_type === 'stock' && (
-              <div className="flex items-center gap-2">
-                <span className="text-xs text-muted-text font-mono">{activeStockCode}</span>
-                <Button
-                  variant="secondary"
-                  size="xsm"
-                  isLoading={isWatchlistActioning}
-                  onClick={() => void handleToggleWatchlist(activeStockCode)}
-                  className="text-[11px]"
-                >
-                  {stockInWatchlist(activeStockCode) ? '从自选删除' : '加入自选'}
-                </Button>
-                {watchlistMessage && (
-                  <span className="text-[11px] text-secondary-text animate-in fade-in">{watchlistMessage}</span>
-                )}
-              </div>
-            )}
-
-              <div className="flex items-end gap-3">
+              <div className="chat-composer">
                 <textarea
                   value={input}
-                  onChange={(e) => setInput(e.target.value)}
+                  onChange={(event) => setInput(event.target.value)}
                   onKeyDown={handleKeyDown}
-                  placeholder="例如：分析 600519 / 茅台现在适合买入吗？ (Enter 发送, Shift+Enter 换行)"
+                  placeholder={t('chat.composerPlaceholder')}
                   disabled={loading || !agentAvailable}
                   rows={1}
-                  className="input-surface input-focus-glow flex-1 min-h-[44px] max-h-[200px] rounded-xl border bg-transparent px-4 py-2.5 text-sm transition-all focus:outline-none resize-none disabled:cursor-not-allowed disabled:opacity-60"
+                  className="chat-composer-input"
                   style={{ height: 'auto' }}
-                  onInput={(e) => {
-                    const t = e.target as HTMLTextAreaElement;
-                    t.style.height = 'auto';
-                    t.style.height = `${Math.min(t.scrollHeight, 200)}px`;
+                  onInput={(event) => {
+                    const target = event.target as HTMLTextAreaElement;
+                    target.style.height = 'auto';
+                    target.style.height = `${Math.min(target.scrollHeight, 200)}px`;
                   }}
                 />
-                  {loading ? <Button variant="secondary" onClick={() => void stopStream()} className="flex-shrink-0" aria-label={t('chat.stop')}>
-                    <Square size={14} fill="currentColor" aria-hidden="true" /> {t('chat.stop')}
-                  </Button> : <Button
-                    variant="primary"
-                    onClick={() => handleSend()}
-                    disabled={!input.trim() || loading || !agentAvailable}
-                    isLoading={loading}
-                    className="btn-primary flex-shrink-0"
+                <div className="chat-composer-bar">
+                  <button
+                    type="button"
+                    className={cn('chat-chip', advancedOptionsOpen && 'is-active')}
+                    onClick={() => setAdvancedOptionsOpen((open) => !open)}
+                    aria-label={t('chat.advancedOptions')}
+                    aria-expanded={advancedOptionsOpen}
+                    aria-controls="chat-advanced-options-panel"
                   >
-                    发送
-                  </Button>}
+                    <SlidersHorizontal size={13} aria-hidden="true" />
+                    <span className="chat-chip-label">{selectedSkillSummary}</span>
+                    <ChevronDown
+                      className={cn('chat-chip-chevron', advancedOptionsOpen && 'is-open')}
+                      size={13}
+                      aria-hidden="true"
+                    />
+                  </button>
 
+                  {activeStockCode && activeStockContext?.asset_type === 'stock' && (
+                    <button
+                      type="button"
+                      className="chat-chip"
+                      disabled={isWatchlistActioning}
+                      onClick={() => void handleToggleWatchlist(activeStockCode)}
+                    >
+                      <Star size={13} aria-hidden="true" />
+                      <span>{stockInWatchlist(activeStockCode) ? t('chat.watchlistRemove') : t('chat.watchlistAdd')}</span>
+                    </button>
+                  )}
+
+                  {watchlistMessage && (
+                    <span className="chat-watchlist-message">{watchlistMessage}</span>
+                  )}
+
+                  <span className="chat-composer-spacer" />
+
+                  {loading ? (
+                    <button
+                      type="button"
+                      className="chat-stop-btn"
+                      onClick={() => void stopStream()}
+                      aria-label={t('chat.stop')}
+                    >
+                      <Square size={12} fill="currentColor" aria-hidden="true" />
+                      {t('chat.stop')}
+                    </button>
+                  ) : (
+                    <button
+                      type="button"
+                      className="chat-send-btn"
+                      onClick={() => handleSend()}
+                      disabled={!input.trim() || loading || !agentAvailable}
+                      aria-label="发送"
+                    >
+                      <ArrowUp size={16} aria-hidden="true" />
+                    </button>
+                  )}
+                </div>
+              </div>
+              <div className="chat-composer-footer">
+                <span className="chat-object-status" aria-label={t('chat.currentObjectLabel')}>
+                  {objectStatusText}
+                </span>
+                <span className="chat-disclaimer">
+                  {t('chat.generatedDisclaimer')}
+                  <span className="chat-disclaimer-separator" aria-hidden="true">·</span>
+                  {t('chat.composerHint')}
+                </span>
               </div>
             </div>
           </div>
         </div>
-      </div>
+      </section>
     </div>
   );
 };
