@@ -130,6 +130,7 @@ export interface ChatSessionMessage {
   role: 'user' | 'assistant';
   content: string;
   created_at: string | null;
+  thinking_steps?: ProgressStep[];
 }
 
 export interface ChatSessionDetail extends ChatStateFields {
@@ -138,6 +139,8 @@ export interface ChatSessionDetail extends ChatStateFields {
   session_state: {
     selected_skill_ids: string[] | null;
   };
+  is_running: boolean;
+  running_progress_steps: ProgressStep[];
 }
 
 export const agentApi = {

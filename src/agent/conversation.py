@@ -23,10 +23,17 @@ class ConversationSession:
     created_at: datetime = field(default_factory=datetime.now)
     last_active: datetime = field(default_factory=datetime.now)
 
-    def add_message(self, role: str, content: str, *, accepted_turn=None, db_manager=None) -> Optional[int]:
+    def add_message(
+        self, role: str, content: str, *, accepted_turn=None, db_manager=None,
+        thinking_steps: Optional[List[Dict[str, Any]]] = None,
+    ) -> Optional[int]:
         """Add a message to the session history."""
         db = db_manager if db_manager is not None else get_db()
-        message_id = db.save_conversation_message(self.session_id, role, content, accepted_turn=accepted_turn)
+        message_id = db.save_conversation_message(
+            self.session_id, role, content,
+            accepted_turn=accepted_turn,
+            thinking_steps=thinking_steps,
+        )
         self.last_active = datetime.now()
         return message_id
 
@@ -76,10 +83,26 @@ class ConversationManager:
 
             return self._sessions[session_id]
 
-    def add_message(self, session_id: str, role: str, content: str, *, accepted_turn=None, db_manager=None) -> Optional[int]:
+    def add_message(
+        self, session_id: str, role: str, content: str, *, accepted_turn=None, db_manager=None,
+        thinking_steps: Optional[List[Dict[str, Any]]] = None,
+    ) -> Optional[int]:
         """Add a message to a session."""
         session = self.get_or_create(session_id)
-        return session.add_message(role, content, accepted_turn=accepted_turn, db_manager=db_manager)
+        return session.add_message(
+            role, content, accepted_turn=accepted_turn, db_manager=db_manager,
+            thinking_steps=thinking_steps,
+        )
+
+    def set_running(self, session_id: str, is_running: bool, progress_steps: Optional[List[Dict[str, Any]]] = None) -> None:
+        """Set or clear the running state for a session."""
+        db = get_db()
+        db.set_session_running(session_id, is_running, progress_steps)
+
+    def update_running_progress(self, session_id: str, progress_steps: List[Dict[str, Any]]) -> None:
+        """Update the progress steps for a running session."""
+        db = get_db()
+        db.update_session_running_progress(session_id, progress_steps)
 
     def prepare_turn(self, session_id: str):
         """Bind the database instance before history preparation/model work."""

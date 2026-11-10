@@ -734,6 +734,8 @@ class ConversationMessage(Base):
     session_id = Column(String(100), index=True, nullable=False)
     role = Column(String(20), nullable=False)  # user, assistant, system
     content = Column(Text, nullable=False)
+    # Persisted thinking/progress steps for assistant messages (JSON array)
+    thinking_steps_json = Column(Text, nullable=True)
     created_at = Column(DateTime, default=datetime.now, index=True)
 
     __table_args__ = (
@@ -761,6 +763,10 @@ class ConversationSessionState(Base):
     # Latest user turn accepted by the state contract: Web acceptance or a
     # non-invalidating current first-party compatibility turn. Not a new stock confirmation.
     last_accepted_user_message_id = Column(Integer, nullable=True)
+    # Tracks whether an analysis is currently running for this session
+    is_running = Column(Boolean, nullable=False, default=False, server_default=text("0"))
+    # Persisted progress steps for the currently running analysis (JSON array)
+    running_progress_steps_json = Column(Text, nullable=True)
 
 
 class ConversationSessionTitle(Base):
@@ -1537,6 +1543,12 @@ class DatabaseManager(metaclass=_DatabaseManagerMeta):
                 "state_version": "INTEGER NOT NULL DEFAULT 0",
                 "session_generation": "VARCHAR(36)",
                 "last_accepted_user_message_id": "INTEGER",
+                "is_running": "BOOLEAN NOT NULL DEFAULT 0",
+                "running_progress_steps_json": "TEXT",
+            }
+            # Migration for conversation_messages.thinking_steps_json
+            message_columns = {
+                "thinking_steps_json": "TEXT",
             }
             existing = {
                 column["name"] for column in inspect(self._engine).get_columns(
@@ -1551,6 +1563,29 @@ class DatabaseManager(metaclass=_DatabaseManagerMeta):
                         with self._engine.begin() as connection:
                             connection.exec_driver_sql(
                                 f"ALTER TABLE conversation_session_states ADD COLUMN {name} {sql_type}"
+                            )
+                        break
+                    except OperationalError as exc:
+                        if self._is_sqlite_duplicate_column_error(exc, name):
+                            break
+                        if self._is_sqlite_locked_error(exc) and attempt < self._sqlite_write_retry_max:
+                            time.sleep(self._sqlite_write_retry_base_delay * (2 ** attempt))
+                            continue
+                        raise
+            # Migration for conversation_messages.thinking_steps_json
+            message_existing = {
+                column["name"] for column in inspect(self._engine).get_columns(
+                    ConversationMessage.__tablename__
+                )
+            }
+            for name, sql_type in message_columns.items():
+                if name in message_existing:
+                    continue
+                for attempt in range(self._sqlite_write_retry_max + 1):
+                    try:
+                        with self._engine.begin() as connection:
+                            connection.exec_driver_sql(
+                                f"ALTER TABLE conversation_messages ADD COLUMN {name} {sql_type}"
                             )
                         break
                     except OperationalError as exc:
@@ -3913,9 +3948,12 @@ class DatabaseManager(metaclass=_DatabaseManagerMeta):
                 "active_stock_context": self._chat_stock_from_state(state),
                 "latest_user_anchor": self._chat_message_anchor(users[-1] if users else None),
                 "last_accepted_user_anchor": self._chat_message_anchor(last_accepted),
+                "is_running": state.is_running if state else False,
+                "running_progress_steps": json.loads(state.running_progress_steps_json) if state and state.running_progress_steps_json else [],
                 "messages": [
                     {"id": int(message.id), "role": message.role, "content": message.content,
-                     "created_at": message.created_at.isoformat()}
+                     "created_at": message.created_at.isoformat(),
+                     "thinking_steps": json.loads(message.thinking_steps_json) if message.thinking_steps_json else None}
                     for message in messages
                 ],
                 "summary": {
@@ -4035,6 +4073,7 @@ class DatabaseManager(metaclass=_DatabaseManagerMeta):
     def save_conversation_message(
         self, session_id: str, role: str, content: str,
         *, accepted_turn: Optional[Dict[str, Any]] = None,
+        thinking_steps: Optional[List[Dict[str, Any]]] = None,
     ) -> Optional[int]:
         """
         保存 Agent 对话消息
@@ -4048,13 +4087,50 @@ class DatabaseManager(metaclass=_DatabaseManagerMeta):
             msg = ConversationMessage(
                 session_id=session_id,
                 role=role,
-                content=content
+                content=content,
+                thinking_steps_json=json.dumps(thinking_steps, ensure_ascii=False) if thinking_steps else None,
             )
             session.add(msg)
             session.flush()
             return int(msg.id)
 
         return self._run_write_transaction("save_conversation_message", write)
+
+    def set_session_running(
+        self,
+        session_id: str,
+        is_running: bool,
+        progress_steps: Optional[List[Dict[str, Any]]] = None,
+    ) -> None:
+        """Set or clear the running state for a session."""
+        def write(session: Session) -> None:
+            state = session.get(ConversationSessionState, session_id)
+            if state is None:
+                return
+            state.is_running = is_running
+            state.running_progress_steps_json = (
+                json.dumps(progress_steps, ensure_ascii=False)
+                if progress_steps else None
+            )
+            state.updated_at = datetime.now()
+            session.flush()
+
+        self._run_write_transaction("set_session_running", write)
+
+    def update_session_running_progress(
+        self,
+        session_id: str,
+        progress_steps: List[Dict[str, Any]],
+    ) -> None:
+        """Update the progress steps for a running session."""
+        def write(session: Session) -> None:
+            state = session.get(ConversationSessionState, session_id)
+            if state is None or not state.is_running:
+                return
+            state.running_progress_steps_json = json.dumps(progress_steps, ensure_ascii=False)
+            session.flush()
+
+        self._run_write_transaction("update_session_running_progress", write)
 
     def save_conversation_user_turn(
         self,
