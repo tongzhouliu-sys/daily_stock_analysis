@@ -931,8 +931,9 @@ const HomePage: React.FC = () => {
     const code = selectedReport.meta.stockCode;
     const name = selectedReport.meta.stockName;
     const rid = selectedReport.meta.id;
-    navigate(`/chat?stock=${encodeURIComponent(code)}&name=${encodeURIComponent(name)}&recordId=${rid}`);
-  }, [navigate, selectedReport]);
+    const chatUrl = `/chat?stock=${encodeURIComponent(code)}&name=${encodeURIComponent(name)}&recordId=${rid}`;
+    window.open(chatUrl, '_blank', 'noopener,noreferrer');
+  }, [selectedReport]);
 
   const handleReanalyze = useCallback(() => {
     if (!selectedReport || selectedReport.meta.reportType === 'market_review') {
