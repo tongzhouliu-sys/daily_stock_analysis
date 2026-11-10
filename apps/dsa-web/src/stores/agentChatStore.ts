@@ -61,7 +61,7 @@ export interface StreamAcceptedEvent extends ChatStateFields {
   session_state?: { selected_skill_ids: string[] | null };
 }
 
-type StreamTerminalStatus = 'timeout' | null;
+type StreamTerminalStatus = 'timeout' | 'stopped' | null;
 
 type StreamFailureEvent = {
   type: string;
@@ -313,7 +313,11 @@ export const useAgentChatStore = create<AgentChatState & AgentChatActions>((set,
   },
 
   stopStream: async () => {
-    get().abortController?.abort();
+    const controller = get().abortController;
+    if (controller) {
+      set({ terminalStatus: 'stopped' });
+      controller.abort();
+    }
   },
 
   startStream: async (payload, meta) => {

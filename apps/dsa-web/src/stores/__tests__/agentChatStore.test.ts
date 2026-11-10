@@ -420,6 +420,7 @@ describe('agentChatStore.startStream', () => {
     void useAgentChatStore.getState().stopStream();
 
     expect(ac.signal.aborted).toBe(true);
+    expect(useAgentChatStore.getState().terminalStatus).toBe('stopped');
   });
 
   it('does not create a session or user message when stopped before accepted', async () => {
@@ -445,6 +446,7 @@ describe('agentChatStore.startStream', () => {
 
     expect(useAgentChatStore.getState().messages).toEqual([]);
     expect(useAgentChatStore.getState().chatError).toBeNull();
+    expect(useAgentChatStore.getState().terminalStatus).toBe('stopped');
   });
 
   it('ignores late events from an old stream after switching sessions', async () => {

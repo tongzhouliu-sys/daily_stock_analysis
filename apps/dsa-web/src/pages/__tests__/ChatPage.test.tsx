@@ -29,6 +29,7 @@ const {
   mockGetSkills,
   mockGetStatus,
   mockDeleteChatSession,
+  mockRenameChatSession,
   mockSendChat,
   mockGetSystemConfig,
   mockUpdateSystemConfig,
@@ -56,6 +57,7 @@ const {
     mockGetSkills: vi.fn(),
     mockGetStatus: vi.fn(),
     mockDeleteChatSession: vi.fn(),
+    mockRenameChatSession: vi.fn(),
     mockSendChat: vi.fn(),
     mockGetSystemConfig: vi.fn(),
     mockUpdateSystemConfig: vi.fn(),
@@ -119,6 +121,7 @@ vi.mock('../../api/agent', () => ({
     getSkills: mockGetSkills,
     getStatus: mockGetStatus,
     deleteChatSession: mockDeleteChatSession,
+    renameChatSession: mockRenameChatSession,
     sendChat: mockSendChat,
   },
 }));
@@ -214,6 +217,8 @@ beforeAll(() => {
 
 beforeEach(() => {
   vi.clearAllMocks();
+  localStorage.removeItem('dsa.chat.sidebarCollapsed');
+  mockRenameChatSession.mockResolvedValue(undefined);
   window.localStorage.removeItem(UI_LANGUAGE_STORAGE_KEY);
   mockGetStatus.mockReset();
   mockStoreState.messages = [];
@@ -291,7 +296,7 @@ beforeEach(() => {
 
 describe('ChatPage', () => {
 
-  it('keeps the existing waiting state for LiteLLM without offering a false stop', async () => {
+  it('allows the user to stop receiving a running response', async () => {
     mockStoreState.loading = true;
 
     render(
@@ -300,9 +305,20 @@ describe('ChatPage', () => {
       </MemoryRouter>,
     );
 
-    expect(await screen.findByRole('button', { name: '处理中...' })).toBeDisabled();
-    expect(screen.queryByRole('button', { name: '停止分析' })).not.toBeInTheDocument();
-    expect(mockStopStream).not.toHaveBeenCalled();
+    fireEvent.click(await screen.findByRole('button', { name: '停止' }));
+    expect(mockStopStream).toHaveBeenCalledOnce();
+  });
+
+  it('renames a session and preserves the sidebar toggle', async () => {
+    render(<MemoryRouter initialEntries={['/chat']}><ChatPage /></MemoryRouter>);
+    fireEvent.click(screen.getByRole('button', { name: '编辑标题 请简要分析 600519' }));
+    fireEvent.change(screen.getByRole('textbox', { name: '编辑标题' }), { target: { value: '  我的分析  ' } });
+    fireEvent.click(screen.getByRole('button', { name: '保存标题' }));
+    await waitFor(() => expect(mockRenameChatSession).toHaveBeenCalledWith('session-1', '我的分析'));
+    await waitFor(() => expect(mockLoadSessions).toHaveBeenCalled());
+    fireEvent.click(screen.getByRole('button', { name: '折叠历史对话' }));
+    expect(localStorage.getItem('dsa.chat.sidebarCollapsed')).toBe('true');
+    expect(screen.getByRole('button', { name: '展开历史对话' })).toBeInTheDocument();
   });
 
   it('finishes the compatibility check when React Strict Mode remounts effects', async () => {
@@ -799,7 +815,7 @@ describe('ChatPage', () => {
       </MemoryRouter>
     );
 
-    expect(await screen.findAllByText('risk failed')).toHaveLength(1);
+    expect(await screen.findAllByText('风险 Agent failed')).toHaveLength(2);
 
     const thinkingToggle = container.querySelector('button[class*="mb-2"][class*="w-full"]') as HTMLButtonElement;
     fireEvent.click(thinkingToggle);

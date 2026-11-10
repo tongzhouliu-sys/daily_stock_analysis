@@ -182,6 +182,9 @@ class AgentChatSessionService:
             session_generation=snapshot["session_generation"],
         )
 
+    def rename_session(self, session_id: str, title: str) -> bool:
+        return self.db.rename_conversation_session(session_id, title)
+
     def prepare_session_turn(
         self, config: Any, session_id: str, message: str,
         requested_skill_ids: Optional[List[str]] = None,

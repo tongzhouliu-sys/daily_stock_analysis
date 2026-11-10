@@ -2,7 +2,7 @@ import React, { useState, useRef, useEffect, useCallback } from 'react';
 import { useNavigate, useSearchParams } from 'react-router-dom';
 import Markdown from 'react-markdown';
 import remarkGfm from 'remark-gfm';
-import { ChevronDown, SlidersHorizontal } from 'lucide-react';
+import { Check, ChevronDown, PanelLeftClose, PanelLeftOpen, Pencil, SlidersHorizontal, Square, X } from 'lucide-react';
 import { cn } from '../utils/cn';
 import { agentApi } from '../api/agent';
 import { systemConfigApi } from '../api/systemConfig';
@@ -82,7 +82,7 @@ const getPipelineBudgetSkippedLabel = (step: ProgressStep): string => {
 };
 
 const ChatPage: React.FC = () => {
-  const { t } = useUiLanguage();
+  const { t, language } = useUiLanguage();
   const navigate = useNavigate();
   const [searchParams, setSearchParams] = useSearchParams();
   const [input, setInput] = useState('');
@@ -93,6 +93,11 @@ const ChatPage: React.FC = () => {
   const [expandedThinking, setExpandedThinking] = useState<Set<string>>(new Set());
   const [deleteConfirmId, setDeleteConfirmId] = useState<string | null>(null);
   const [sidebarOpen, setSidebarOpen] = useState(false);
+  const [sidebarCollapsed, setSidebarCollapsed] = useState(() => localStorage.getItem('dsa.chat.sidebarCollapsed') === 'true');
+  const [editingSessionId, setEditingSessionId] = useState<string | null>(null);
+  const [sessionTitle, setSessionTitle] = useState('');
+  const [titleError, setTitleError] = useState('');
+  const [titleSaving, setTitleSaving] = useState(false);
   const [sending, setSending] = useState(false);
   const [isFollowUpContextLoading, setIsFollowUpContextLoading] = useState(false);
   const [followUpEvidenceError, setFollowUpEvidenceError] = useState<string | null>(null);
@@ -238,9 +243,27 @@ const ChatPage: React.FC = () => {
     switchSession,
     refreshSession,
     startStream,
+    stopStream,
     clearCompletionBadge,
   } = useAgentChatStore();
   const selectedSkillIds = sessionSelectedSkillIds ?? defaultSkillIds;
+
+  const saveSessionTitle = async () => {
+    const title = sessionTitle.trim();
+    if (!editingSessionId || titleSaving) return;
+    if (!title) { setTitleError(t('chat.titleRequired')); return; }
+    setTitleSaving(true);
+    setTitleError('');
+    try {
+      await agentApi.renameChatSession(editingSessionId, title);
+      setEditingSessionId(null);
+      await loadSessions();
+    } catch {
+      setTitleError(t('chat.titleSaveFailed'));
+    } finally {
+      setTitleSaving(false);
+    }
+  };
 
   const activeStockCode = activeStockContext?.stock_code ?? null;
 
@@ -689,10 +712,17 @@ const ChatPage: React.FC = () => {
       return `${last.display_name || last.tool}...`;
     if (last.type === 'tool_done')
       return `${last.display_name || last.tool} 完成`;
-    if (last.type === 'stage_start')
-      return last.message || `Starting ${last.stage || 'stage'}...`;
-    if (last.type === 'stage_done')
-      return getStageDoneLabel(last);
+    if (last.type === 'stage_start' || last.type === 'stage_done') {
+      const names: Record<string, [string, string]> = {
+        technical: ['技术分析 Agent', 'Technical agent'], intel: ['情报 Agent', 'Intelligence agent'],
+        risk: ['风险 Agent', 'Risk agent'], decision: ['决策 Agent', 'Decision agent'],
+        portfolio: ['组合 Agent', 'Portfolio agent'], agent_loop: ['分析 Agent', 'Analysis agent'],
+      };
+      const agent = names[last.stage || '']?.[language === 'en' ? 1 : 0] || last.stage || 'Agent';
+      if (last.type === 'stage_start') return language === 'en' ? `${agent} is working` : `${agent} 正在分析`;
+      const success = isStageDoneSuccessful(last.status);
+      return language === 'en' ? `${agent} ${success ? 'completed' : (last.status || 'finished')}` : `${agent} ${success ? '已完成' : (last.status || '已结束')}`;
+    }
     if (last.type === 'pipeline_timeout')
       return last.message || `${last.stage || 'pipeline'} timed out`;
     if (last.type === 'pipeline_budget_skipped')
@@ -842,6 +872,18 @@ const ChatPage: React.FC = () => {
           <div className="space-y-2">
             {sessions.map((s) => (
               <div key={s.session_id} className="session-item-row">
+                {editingSessionId === s.session_id ? (
+                  <div className="chat-title-editor">
+                    <form onSubmit={(event) => { event.preventDefault(); void saveSessionTitle(); }}>
+                      <input aria-label={t('chat.editTitle')} value={sessionTitle} maxLength={60} autoFocus
+                        onChange={(event) => setSessionTitle(event.target.value)}
+                        onKeyDown={(event) => { if (event.key === 'Escape') setEditingSessionId(null); }} />
+                      <button type="submit" disabled={titleSaving} aria-label={t('chat.saveTitle')}><Check size={15} /></button>
+                      <button type="button" disabled={titleSaving} onClick={() => setEditingSessionId(null)} aria-label={t('common.cancel')}><X size={15} /></button>
+                    </form>
+                    {titleError && <p role="alert">{titleError}</p>}
+                  </div>
+                ) : <>
                 <button
                   type="button"
                   onClick={() => handleSwitchSession(s.session_id)}
@@ -867,6 +909,10 @@ const ChatPage: React.FC = () => {
                     </div>
                   </div>
                 </button>
+                <button type="button" className="rename-btn" aria-label={`${t('chat.editTitle')} ${s.title}`}
+                  onClick={() => { setSessionTitle(s.title); setTitleError(''); setEditingSessionId(s.session_id); }}>
+                  <Pencil size={14} />
+                </button>
                 <button
                   type="button"
                   className="delete-btn"
@@ -889,6 +935,7 @@ const ChatPage: React.FC = () => {
                     />
                   </svg>
                 </button>
+                </>}
               </div>
             ))}
           </div>
@@ -907,9 +954,9 @@ const ChatPage: React.FC = () => {
       className="research-chat flex min-w-0 gap-4 overflow-hidden"
     >
       {/* Desktop sidebar */}
-      <div className="research-chat-sessions hidden h-full w-64 shrink-0 flex-col overflow-hidden border border-border bg-card md:flex">
+      {!sidebarCollapsed && <div className="research-chat-sessions hidden h-full w-64 shrink-0 flex-col overflow-hidden border border-border bg-card md:flex">
         {sidebarContent}
-      </div>
+      </div>}
 
       {/* Mobile sidebar overlay */}
       {sidebarOpen && (
@@ -945,6 +992,12 @@ const ChatPage: React.FC = () => {
           <div className="flex items-start justify-between gap-4">
             <div className="flex min-w-0 flex-wrap items-center gap-3">
               <h1 className="research-display flex flex-wrap items-center gap-2 text-foreground">
+                <button type="button" className="hidden rounded-lg p-1.5 text-secondary-text hover:bg-hover hover:text-foreground md:inline-flex"
+                  aria-label={t(sidebarCollapsed ? 'chat.showHistory' : 'chat.hideHistory')}
+                  aria-expanded={!sidebarCollapsed}
+                  onClick={() => setSidebarCollapsed((value) => { localStorage.setItem('dsa.chat.sidebarCollapsed', String(!value)); return !value; })}>
+                  {sidebarCollapsed ? <PanelLeftOpen size={19} /> : <PanelLeftClose size={19} />}
+                </button>
                 <button
                   onClick={() => setSidebarOpen(true)}
                   className="md:hidden p-1.5 -ml-1 rounded-lg hover:bg-hover transition-colors text-secondary-text hover:text-foreground"
@@ -1253,7 +1306,7 @@ const ChatPage: React.FC = () => {
                 <div className="w-8 h-8 rounded-full bg-elevated text-foreground flex items-center justify-center flex-shrink-0 text-xs font-bold">
                   AI
                 </div>
-                <div className="min-w-[200px] max-w-[min(100%,48rem)] overflow-hidden rounded-2xl rounded-tl-sm border border-white/6 bg-card/72 px-5 py-4">
+                <div role="status" aria-live="polite" className="chat-live-progress min-w-[200px] max-w-[min(100%,48rem)] overflow-hidden rounded-2xl rounded-tl-sm border border-border bg-card px-5 py-4">
                   <div className="flex items-center gap-2.5 text-sm text-secondary-text">
                     <div className="relative w-4 h-4 flex-shrink-0">
                       <div className="absolute inset-0 rounded-full border-2 border-cyan/20" />
@@ -1263,6 +1316,15 @@ const ChatPage: React.FC = () => {
                       {getCurrentStage(progressSteps)}
                     </span>
                   </div>
+                  {progressSteps.length > 0 && <div className="chat-live-details">
+                    {progressSteps.filter((step) => ['stage_start', 'stage_done', 'tool_start', 'tool_done', 'generating'].includes(step.type)).slice(-6).map((step, index) => (
+                      <div className="chat-live-step" key={`${index}-${step.type}-${step.stage || step.tool || ''}`}>
+                        <span className={cn('chat-live-step-dot', step.type.endsWith('_done') && 'is-done',
+                          ((step.type === 'stage_done' && !isStageDoneSuccessful(step.status)) || (step.type === 'tool_done' && step.success === false)) && 'is-error')} />
+                        <span>{getCurrentStage([step])}</span>
+                      </div>
+                    ))}
+                  </div>}
                 </div>
               </div>
             )}
@@ -1320,6 +1382,7 @@ const ChatPage: React.FC = () => {
                   {t('chat.analysisTimedOut')}
                 </div>
               ) : null}
+              {terminalStatus === 'stopped' && <div role="status" className="rounded-xl border border-border px-4 py-3 text-sm text-secondary-text">{t('chat.stoppedNotice')}</div>}
               {agentUnavailableError ? (
                 <div className="space-y-2">
                   <ApiErrorAlert
@@ -1528,7 +1591,9 @@ const ChatPage: React.FC = () => {
                     t.style.height = `${Math.min(t.scrollHeight, 200)}px`;
                   }}
                 />
-                  <Button
+                  {loading ? <Button variant="secondary" onClick={() => void stopStream()} className="flex-shrink-0" aria-label={t('chat.stop')}>
+                    <Square size={14} fill="currentColor" aria-hidden="true" /> {t('chat.stop')}
+                  </Button> : <Button
                     variant="primary"
                     onClick={() => handleSend()}
                     disabled={!input.trim() || loading || !agentAvailable}
@@ -1536,7 +1601,7 @@ const ChatPage: React.FC = () => {
                     className="btn-primary flex-shrink-0"
                   >
                     发送
-                  </Button>
+                  </Button>}
 
               </div>
             </div>
