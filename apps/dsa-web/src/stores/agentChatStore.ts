@@ -45,6 +45,9 @@ export interface Message {
   skillName?: string;
   thinkingSteps?: ProgressStep[];
   backend?: string;
+  // When true, the assistant message is a stock-object clarification prompt
+  // and the UI should render an inline "switch / keep current" action bar.
+  pendingStockClarification?: boolean;
 }
 
 export interface StreamMeta {
