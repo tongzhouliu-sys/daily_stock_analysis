@@ -34,7 +34,7 @@ import {
   type Message,
   type ProgressStep,
 } from '../stores/agentChatStore';
-import { downloadSession, formatSessionAsMarkdown } from '../utils/chatExport';
+import { downloadSessionInFormat, formatSessionAsMarkdown, type ExportFormat } from '../utils/chatExport';
 import { buildScannerFollowUpPrompt } from '../utils/scannerFollowUp';
 import type { ChatFollowUpContext } from '../utils/chatFollowUp';
 import {
@@ -187,6 +187,10 @@ const ChatPage: React.FC = () => {
   const [contextCompressionError, setContextCompressionError] = useState<string | null>(null);
   const [copiedMessages, setCopiedMessages] = useState<Set<string>>(new Set());
   const [showJumpToBottom, setShowJumpToBottom] = useState(false);
+  const [exportMenuOpen, setExportMenuOpen] = useState(false);
+  const [exporting, setExporting] = useState(false);
+  const exportMenuRef = useRef<HTMLDivElement>(null);
+  const exportButtonRef = useRef<HTMLButtonElement>(null);
   const [watchlistCodes, setWatchlistCodes] = useState<string[]>([]);
   const [isWatchlistActioning, setIsWatchlistActioning] = useState(false);
   const [watchlistMessage, setWatchlistMessage] = useState<string | null>(null);
@@ -374,6 +378,31 @@ const ChatPage: React.FC = () => {
       window.removeEventListener('keydown', handleKeyDown);
     };
   }, [sessionMenu]);
+
+  // Close export menu when clicking outside
+  useEffect(() => {
+    if (!exportMenuOpen) return;
+    const handleClickOutside = (event: MouseEvent) => {
+      if (exportMenuRef.current && !exportMenuRef.current.contains(event.target as Node)) {
+        setExportMenuOpen(false);
+      }
+    };
+    document.addEventListener('mousedown', handleClickOutside);
+    return () => document.removeEventListener('mousedown', handleClickOutside);
+  }, [exportMenuOpen]);
+
+  const handleExportSession = useCallback(async (format: ExportFormat) => {
+    if (exporting) return;
+    setExporting(true);
+    setExportMenuOpen(false);
+    try {
+      await downloadSessionInFormat(messages, format);
+    } catch (error) {
+      console.error('Export failed:', error);
+    } finally {
+      setExporting(false);
+    }
+  }, [messages, exporting]);
 
   const toggleSidebar = useCallback(() => {
     setSidebarCollapsed((value) => {
@@ -1215,14 +1244,49 @@ const ChatPage: React.FC = () => {
             ) : null}
             {messages.length > 0 && (
               <>
-                <button
-                  type="button"
-                  className="chat-icon-btn"
-                  onClick={() => downloadSession(messages)}
-                  aria-label="导出会话为 Markdown 文件"
-                >
-                  <Download size={16} aria-hidden="true" />
-                </button>
+                <div className="chat-export-dropdown" ref={exportMenuRef}>
+                  <button
+                    type="button"
+                    className="chat-icon-btn"
+                    ref={exportButtonRef}
+                    onClick={() => setExportMenuOpen(!exportMenuOpen)}
+                    disabled={exporting}
+                    aria-label={t('chat.exportSession')}
+                    aria-haspopup="menu"
+                    aria-expanded={exportMenuOpen}
+                  >
+                    {exporting ? (
+                      <span className="chat-send-spinner" aria-hidden="true" />
+                    ) : (
+                      <Download size={16} aria-hidden="true" />
+                    )}
+                  </button>
+                  {exportMenuOpen && (
+                    <div className="chat-export-menu" role="menu">
+                      <button
+                        type="button"
+                        role="menuitem"
+                        onClick={() => handleExportSession('md')}
+                      >
+                        {t('chat.exportAsMarkdown')}
+                      </button>
+                      <button
+                        type="button"
+                        role="menuitem"
+                        onClick={() => handleExportSession('pdf')}
+                      >
+                        {t('chat.exportAsPdf')}
+                      </button>
+                      <button
+                        type="button"
+                        role="menuitem"
+                        onClick={() => handleExportSession('word')}
+                      >
+                        {t('chat.exportAsWord')}
+                      </button>
+                    </div>
+                  )}
+                </div>
                 <button
                   type="button"
                   className="chat-icon-btn"

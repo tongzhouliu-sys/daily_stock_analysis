@@ -20,6 +20,8 @@
     "axios": "^1.18.0",
     "camelcase-keys": "^10.0.2",
     "clsx": "^2.1.1",
+    "docx": "^9.15.3",
+    "html2canvas": "^1.4.1",
     "jspdf": "^3.0.4",
     "lucide-react": "^0.555.0",
     "motion": "^12.36.0",
