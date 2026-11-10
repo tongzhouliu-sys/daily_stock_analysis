@@ -25,6 +25,24 @@
   isolation: isolate;
   overflow: hidden;
 }
+.screen-shell:fullscreen {
+  width: 100%;
+  height: 100%;
+  overflow: auto;
+  background: #07080c;
+}
+.screen-shell:fullscreen .app-shell,
+.screen-shell:fullscreen .main-area,
+.screen-shell:fullscreen #content {
+  border: none;
+  box-shadow: none;
+}
+.screen-shell:-webkit-full-screen {
+  width: 100%;
+  height: 100%;
+  overflow: auto;
+  background: #07080c;
+}
 .screen-shell * {
   box-sizing: border-box;
 }
