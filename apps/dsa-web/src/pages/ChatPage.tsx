@@ -14,6 +14,7 @@ import {
   PanelLeftOpen,
   Pencil,
   Plus,
+  RefreshCw,
   Send,
   SlidersHorizontal,
   Sparkles,
@@ -146,6 +147,125 @@ const getStageDoneLabel = (step: ProgressStep): string => {
 const getPipelineBudgetSkippedLabel = (step: ProgressStep): string => {
   if (step.message) return step.message;
   return `${step.stage || 'pipeline'} skipped: insufficient budget`;
+};
+
+// --- Stock clarification inline action card -------------------------------
+// When the assistant replies with the stock-object clarification prompt
+// ("请明确提供本次讨论的股票或指数代码，或确认是否切换。"), we render an
+// inline action card below the message that lets the user confirm the switch
+// (default, auto-confirmed after 5s) or keep the current object.
+
+const STOCK_CLARIFY_TEXT = '请明确提供本次讨论的股票或指数代码，或确认是否切换。';
+
+const StockClarifyCard: React.FC<{
+  messageId: string;
+  onConfirmSwitch: () => void;
+  onKeepCurrent: () => void;
+}> = ({ messageId, onConfirmSwitch, onKeepCurrent }) => {
+  const AUTO_CONFIRM_SECONDS = 5;
+  const [remaining, setRemaining] = useState(AUTO_CONFIRM_SECONDS);
+  const [resolved, setResolved] = useState<'switch' | 'keep' | null>(null);
+
+  useEffect(() => {
+    if (resolved !== null) return;
+    if (remaining <= 0) {
+      onConfirmSwitch();
+      setResolved('switch');
+      return;
+    }
+    const timer = window.setTimeout(() => setRemaining((r) => r - 1), 1000);
+    return () => window.clearTimeout(timer);
+  }, [remaining, resolved, onConfirmSwitch]);
+
+  const handleSwitch = () => {
+    if (resolved !== null) return;
+    setResolved('switch');
+    onConfirmSwitch();
+  };
+
+  const handleKeep = () => {
+    if (resolved !== null) return;
+    setResolved('keep');
+    onKeepCurrent();
+  };
+
+  const progress = resolved === null
+    ? (AUTO_CONFIRM_SECONDS - remaining) / AUTO_CONFIRM_SECONDS
+    : 1;
+  const circumference = 2 * Math.PI * 14;
+  const dashOffset = circumference * (1 - progress);
+
+  return (
+    <div
+      className="chat-stock-clarify-card"
+      data-message-id={messageId}
+      role="group"
+      aria-label="股票对象确认"
+    >
+      <div className="chat-stock-clarify-icon" aria-hidden="true">
+        <svg viewBox="0 0 32 32" width="32" height="32">
+          <circle
+            className="chat-stock-clarify-ring-bg"
+            cx="16"
+            cy="16"
+            r="14"
+            fill="none"
+            strokeWidth="2"
+          />
+          <circle
+            className="chat-stock-clarify-ring"
+            cx="16"
+            cy="16"
+            r="14"
+            fill="none"
+            strokeWidth="2"
+            strokeLinecap="round"
+            strokeDasharray={circumference}
+            strokeDashoffset={dashOffset}
+            style={{ transition: 'stroke-dashoffset 1s linear' }}
+          />
+        </svg>
+        <span className="chat-stock-clarify-ring-label">
+          {resolved === 'switch' ? '✓' : resolved === 'keep' ? '•' : remaining}
+        </span>
+      </div>
+      <div className="chat-stock-clarify-body">
+        <p className="chat-stock-clarify-title">
+          {resolved === 'switch'
+            ? '已确认切换讨论对象'
+            : resolved === 'keep'
+              ? '将保持当前讨论对象'
+              : remaining <= 1
+                ? '即将切换讨论对象…'
+                : `${remaining} 秒后自动切换讨论对象`}
+        </p>
+        <p className="chat-stock-clarify-hint">
+          {resolved === null
+            ? '如需继续分析当前标的，可选择保持；否则将按新提问切换。'
+            : '你可以继续输入新的问题进行提问。'}
+        </p>
+        {resolved === null && (
+          <div className="chat-stock-clarify-actions">
+            <button
+              type="button"
+              className="chat-stock-clarify-btn is-primary"
+              onClick={handleSwitch}
+            >
+              <RefreshCw size={13} aria-hidden="true" />
+              <span>切换</span>
+            </button>
+            <button
+              type="button"
+              className="chat-stock-clarify-btn"
+              onClick={handleKeep}
+            >
+              <span>保持当前</span>
+            </button>
+          </div>
+        )}
+      </div>
+    </div>
+  );
 };
 
 const ChatPage: React.FC = () => {
@@ -1391,6 +1511,27 @@ const ChatPage: React.FC = () => {
                               {msg.content}
                             </Markdown>
                           </div>
+                          {msg.content === STOCK_CLARIFY_TEXT && !msg.pendingStockClarification && (
+                            <StockClarifyCard
+                              messageId={msg.id}
+                              onConfirmSwitch={() => {
+                                // Mark message as resolved
+                                useAgentChatStore.setState((state) => ({
+                                  messages: state.messages.map((m) =>
+                                    m.id === msg.id ? { ...m, pendingStockClarification: true } : m
+                                  ),
+                                }));
+                              }}
+                              onKeepCurrent={() => {
+                                // Mark message as resolved
+                                useAgentChatStore.setState((state) => ({
+                                  messages: state.messages.map((m) =>
+                                    m.id === msg.id ? { ...m, pendingStockClarification: true } : m
+                                  ),
+                                }));
+                              }}
+                            />
+                          )}
                           <div className="chat-message-actions">
                             <button
                               type="button"
