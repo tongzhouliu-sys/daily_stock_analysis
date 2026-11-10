@@ -64,6 +64,15 @@ _FRONTEND_INDEX_NO_CACHE_HEADERS = {
     "Pragma": "no-cache",
     "Expires": "0",
 }
+# Vite emits content-hashed names under /assets. Keeping them cacheable after
+# a deploy lets tabs still running the previous index load their old chunks
+# instead of hitting a 404 that React can only surface as a failed page.
+_FRONTEND_ASSET_CACHE_HEADERS = {
+    "Cache-Control": "public, max-age=31536000, immutable",
+}
+_FRONTEND_ASSET_NO_STORE_HEADERS = {
+    "Cache-Control": "no-store, max-age=0",
+}
 
 
 def _frontend_index_response(static_dir: Path) -> FileResponse:
@@ -549,14 +558,19 @@ def create_app(static_dir: Optional[Path] = None) -> FastAPI:
                     content="not found",
                     status_code=404,
                     media_type="text/plain",
+                    headers=_FRONTEND_ASSET_NO_STORE_HEADERS,
                 )
             if file_path.is_file():
                 relative_path = file_path.relative_to(assets_root).as_posix()
-                return await assets_static_files.get_response(relative_path, request.scope)
+                response = await assets_static_files.get_response(relative_path, request.scope)
+                for name, value in _FRONTEND_ASSET_CACHE_HEADERS.items():
+                    response.headers[name] = value
+                return response
             return Response(
                 content="asset not found",
                 status_code=404,
                 media_type=_missing_asset_media_type(asset_path),
+                headers=_FRONTEND_ASSET_NO_STORE_HEADERS,
             )
 
         # SPA 路由回退
