@@ -461,11 +461,15 @@ export default function Screen() {
             </button>
             <button
               aria-label="进入全屏"
-              onClick={async () => {
+              onClick={async (e) => {
                 try {
+                  const shell = (e.currentTarget as HTMLElement).closest(
+                    ".screen-shell",
+                  ) as HTMLElement | null;
+                  if (!shell) return;
                   if (document.fullscreenElement)
                     await document.exitFullscreen();
-                  else await document.documentElement.requestFullscreen();
+                  else await shell.requestFullscreen();
                 } catch {
                   setFullError("浏览器未允许全屏，可最大化窗口查看。");
                 }
