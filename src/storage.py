@@ -762,6 +762,14 @@ class ConversationSessionState(Base):
     last_accepted_user_message_id = Column(Integer, nullable=True)
 
 
+class ConversationSessionTitle(Base):
+    """User-defined session titles, independent of conversation state."""
+
+    __tablename__ = 'conversation_session_titles'
+    session_id = Column(String(100), primary_key=True)
+    title = Column(String(60), nullable=False)
+
+
 class ChatSessionStateConflict(Exception):
     """A prepared Chat turn no longer belongs to the current session snapshot."""
 
@@ -4491,11 +4499,15 @@ class DatabaseManager(metaclass=_DatabaseManagerMeta):
             
             title_rows = session.execute(title_query).all()
             title_map = {row.session_id: row.content for row in title_rows}
+            custom_titles = dict(session.execute(
+                select(ConversationSessionTitle.session_id, ConversationSessionTitle.title)
+                .where(ConversationSessionTitle.session_id.in_(session_ids))
+            ).all())
 
             results = []
             for row in rows:
                 sid = row.session_id
-                title = (title_map.get(sid) or "新对话")[:60]
+                title = (custom_titles.get(sid) or title_map.get(sid) or "新对话")[:60]
 
                 results.append({
                     "session_id": sid,
@@ -4505,6 +4517,21 @@ class DatabaseManager(metaclass=_DatabaseManagerMeta):
                     "last_active": row.last_active.isoformat() if row.last_active else None,
                 })
             return results
+
+    def rename_conversation_session(self, session_id: str, title: str) -> bool:
+        def write(session: Session) -> bool:
+            exists = session.execute(select(ConversationMessage.id).where(
+                ConversationMessage.session_id == session_id
+            ).limit(1)).scalar() is not None
+            if not exists:
+                return False
+            entry = session.get(ConversationSessionTitle, session_id)
+            if entry is None:
+                session.add(ConversationSessionTitle(session_id=session_id, title=title))
+            else:
+                entry.title = title
+            return True
+        return self._run_write_transaction("rename_conversation_session", write)
 
     def get_conversation_messages(self, session_id: str, limit: int = 100) -> List[Dict[str, Any]]:
         """
@@ -4536,6 +4563,9 @@ class DatabaseManager(metaclass=_DatabaseManagerMeta):
             删除的消息数
         """
         def write(session: Session) -> int:
+            session.execute(delete(ConversationSessionTitle).where(
+                ConversationSessionTitle.session_id == session_id
+            ))
             session.execute(
                 delete(ConversationSessionState).where(
                     ConversationSessionState.session_id == session_id

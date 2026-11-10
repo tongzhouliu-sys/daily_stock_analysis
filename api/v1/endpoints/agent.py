@@ -356,6 +356,24 @@ async def get_chat_session_messages(
     )
 
 
+class RenameSessionRequest(BaseModel):
+    title: str = Field(min_length=1, max_length=60)
+
+
+@router.patch("/chat/sessions/{session_id}")
+async def rename_chat_session(
+    session_id: str,
+    request: RenameSessionRequest,
+    session_service: AgentChatSessionService = Depends(get_agent_chat_session_service),
+):
+    title = request.title.strip()
+    if not title:
+        raise HTTPException(status_code=422, detail="Title must not be blank")
+    if not session_service.rename_session(session_id, title):
+        raise HTTPException(status_code=404, detail="Session not found")
+    return {"title": title}
+
+
 @router.delete("/chat/sessions/{session_id}")
 async def delete_chat_session(
     session_id: str,

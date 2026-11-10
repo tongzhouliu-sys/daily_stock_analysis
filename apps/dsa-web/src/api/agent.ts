@@ -168,6 +168,9 @@ export const agentApi = {
   async deleteChatSession(sessionId: string): Promise<void> {
     await apiClient.delete(`/api/v1/agent/chat/sessions/${sessionId}`);
   },
+  async renameChatSession(sessionId: string, title: string): Promise<void> {
+    await apiClient.patch(`/api/v1/agent/chat/sessions/${encodeURIComponent(sessionId)}`, { title });
+  },
   async sendChat(content: string): Promise<{ success: boolean }> {
     const response = await apiClient.post<{
       success: boolean;

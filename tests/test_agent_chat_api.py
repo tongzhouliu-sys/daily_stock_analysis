@@ -103,6 +103,22 @@ async def _immediate_to_thread(func, /, *args, **kwargs):
     return func(*args, **kwargs)
 
 
+def test_rename_chat_session_persists_and_is_deleted(tmp_path: Path) -> None:
+    db = DatabaseManager()
+    db.save_conversation_message("rename-session", "user", "original question")
+    with patch("api.middlewares.auth.is_auth_enabled", return_value=False):
+        client = TestClient(create_app(static_dir=tmp_path / "static"))
+        url = "/api/v1/agent/chat/sessions/rename-session"
+        assert client.patch(url, json={"title": "  新标题  "}).json() == {"title": "新标题"}
+        assert client.get("/api/v1/agent/chat/sessions").json()["sessions"][0]["title"] == "新标题"
+        assert client.patch(url, json={"title": "   "}).status_code == 422
+        assert client.patch(url, json={"title": "x" * 61}).status_code == 422
+        assert client.delete(url).status_code == 200
+        assert client.patch(url, json={"title": "再试"}).status_code == 404
+        db.save_conversation_message("rename-session", "user", "new question")
+        assert client.get("/api/v1/agent/chat/sessions").json()["sessions"][0]["title"] == "new question"
+
+
 def test_chat_session_messages_api_does_not_expose_provider_trace(tmp_path: Path) -> None:
     db = DatabaseManager(db_url=f"sqlite:///{tmp_path / 'trace.db'}")
     session_id = "api-trace-hidden"
