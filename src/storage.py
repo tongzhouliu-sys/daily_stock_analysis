@@ -60,6 +60,7 @@ from sqlalchemy.exc import IntegrityError, OperationalError
 from src.agent.provider_trace import PROVIDER_TRACE_RETENTION_LIMIT
 from src.config import get_config
 from src.schemas.decision_profile import extract_legacy_decision_profile
+from src.utils.chat_title import summarize_chat_title
 from src.utils.sniper_points import extract_sniper_points, parse_sniper_value
 
 logger = logging.getLogger(__name__)
@@ -4507,7 +4508,7 @@ class DatabaseManager(metaclass=_DatabaseManagerMeta):
             results = []
             for row in rows:
                 sid = row.session_id
-                title = (custom_titles.get(sid) or title_map.get(sid) or "新对话")[:60]
+                title = (custom_titles.get(sid) or summarize_chat_title(title_map.get(sid)) or "新对话")[:60]
 
                 results.append({
                     "session_id": sid,

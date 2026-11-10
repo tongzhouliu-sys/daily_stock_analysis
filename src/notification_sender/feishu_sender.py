@@ -29,6 +29,7 @@ from src.formatters import (
     format_feishu_markdown,
     strip_hidden_markdown_metadata,
 )
+from src.notification_sender.feishu_card import build_feishu_card
 
 logger = logging.getLogger(__name__)
 
@@ -134,20 +135,15 @@ class FeishuSender:
     # ------------------------------------------------------------------
 
     @staticmethod
-    def _build_card_body(content: str) -> dict:
-        """Build a Feishu interactive-card body (without the ``msg_type`` wrapper)."""
-        return {
-            "config": {"wide_screen_mode": True},
-            "header": {
-                "title": {"tag": "plain_text", "content": "股票智能分析报告"},
-            },
-            "elements": [
-                {
-                    "tag": "div",
-                    "text": {"tag": "lark_md", "content": content},
-                }
-            ],
-        }
+    def _build_card_body(content: str, *, max_bytes: Optional[int] = None) -> dict:
+        """Build a Feishu interactive-card body (without the ``msg_type`` wrapper).
+
+        Long reports are rendered as structured cards; short messages and cards
+        exceeding ``max_bytes`` fall back to a compact single-div card.  The
+        original content is never dropped, so the existing text fallback still
+        works unchanged.
+        """
+        return build_feishu_card(content, max_bytes=max_bytes)
 
     # ------------------------------------------------------------------
     # Webhook helpers (unchanged legacy path)
@@ -270,7 +266,10 @@ class FeishuSender:
         which converts all Markdown constructs to ``lark_md``-compatible format.
         The interactive card uses ``tag: lark_md`` for rendering.
         """
-        card_payload = json.dumps(self._build_card_body(content), ensure_ascii=False)
+        card_payload = json.dumps(
+            self._build_card_body(content, max_bytes=self._feishu_max_bytes),
+            ensure_ascii=False,
+        )
 
         if self._app_send_raw(client, "interactive", card_payload):
             return True
@@ -632,7 +631,12 @@ class FeishuSender:
             logger.error("飞书 Webhook 请求失败: HTTP %d", response.status_code)
             return False
 
-        card_payload = {"msg_type": "interactive", "card": self._build_card_body(prepared_content)}
+        card_payload = {
+            "msg_type": "interactive",
+            "card": self._build_card_body(
+                prepared_content, max_bytes=self._feishu_max_bytes
+            ),
+        }
 
         if _post_payload(card_payload):
             return True

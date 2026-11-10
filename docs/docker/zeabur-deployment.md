@@ -65,6 +65,11 @@ FastAPI 会自动托管 `static/` 目录下的前端资源。前端打包输出�
 Dockerfile 已采用多阶段构建，前端会在镜像构建时自动打包。
 如需覆盖默认静态资源，可在宿主机手动构建并挂载到容器内 `/app/static`。
 
+缓存策略：`index.html` 始终返回 `no-store`，每次导航都会取最新版本；`static/assets/`
+下带哈希的 JS/CSS 返回 `Cache-Control: public, max-age=31536000, immutable`，请求不到的
+资源返回 `no-store`。这样部署新版本后，已经打开的旧标签页仍能从缓存或 CDN 取到旧 chunk，
+不会因哈希文件被删除而出现「页面加载失败」；前端另有一次性的分块加载失败自动刷新兜底。
+
 ### 2.5 资源配置建议
 
 Zeabur 服务建议从 `1G` 内存起步；`512M` 仅适合轻量 Web/API、单股、低并发场景，并建议设置 `MAX_WORKERS=1`。

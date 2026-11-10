@@ -179,6 +179,11 @@ def test_missing_asset_returns_safe_404_content_types(tmp_path: Path) -> None:
     assert html_response.text == "asset not found"
     assert html_response.headers["content-type"].startswith("text/plain")
 
+    # A missing chunk must never be cached: after a redeploy the same URL may
+    # become valid again, and a cached 404 would keep an old tab broken.
+    for response in (js_response, css_response, html_response):
+        assert response.headers["cache-control"] == "no-store, max-age=0"
+
 
 def test_existing_asset_is_served_from_explicit_assets_route(tmp_path: Path) -> None:
     from api.app import create_app
@@ -204,6 +209,11 @@ def test_existing_asset_is_served_from_explicit_assets_route(tmp_path: Path) -> 
     assert css_response.status_code == 200
     assert css_response.text == "body{color:#fff}"
     assert css_response.headers["content-type"].startswith("text/css")
+
+    # Content-hashed assets stay valid across deploys, so tabs opened before a
+    # redeploy can still load their old chunks from cache/CDN.
+    for response in (js_response, css_response):
+        assert response.headers["cache-control"] == "public, max-age=31536000, immutable"
 
 
 def test_existing_js_asset_overrides_bad_system_mime_mapping(tmp_path: Path, monkeypatch: pytest.MonkeyPatch) -> None:
