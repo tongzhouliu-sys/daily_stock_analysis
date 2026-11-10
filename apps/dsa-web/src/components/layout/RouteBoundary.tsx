@@ -3,6 +3,7 @@ import { Component, Suspense } from 'react';
 import type { ErrorInfo } from 'react';
 import { Outlet, useLocation } from 'react-router-dom';
 import { useUiLanguage } from '../../contexts/UiLanguageContext';
+import { isChunkLoadError, recoverFromChunkLoadError } from '../../utils/chunkLoadRecovery';
 
 type PageLoadingFallbackProps = {
   fullPage?: boolean;
@@ -34,6 +35,7 @@ type RouteErrorBoundaryProps = {
 
 type RouteErrorBoundaryState = {
   hasError: boolean;
+  detail?: string;
 };
 
 class RouteErrorBoundary extends Component<RouteErrorBoundaryProps, RouteErrorBoundaryState> {
@@ -41,17 +43,24 @@ class RouteErrorBoundary extends Component<RouteErrorBoundaryProps, RouteErrorBo
     hasError: false,
   };
 
-  static getDerivedStateFromError(): RouteErrorBoundaryState {
-    return { hasError: true };
+  static getDerivedStateFromError(error: Error): RouteErrorBoundaryState {
+    // Keep the underlying reason visible on the fallback page: a stale chunk
+    // and an ordinary render bug look identical to the user, but need very
+    // different fixes.
+    const message = typeof error?.message === 'string' ? error.message.trim() : '';
+    return { hasError: true, detail: message ? message.slice(0, 300) : undefined };
   }
 
   override componentDidCatch(error: Error, errorInfo: ErrorInfo) {
     console.error('Route page failed to render or load', error, errorInfo);
+    if (isChunkLoadError(error)) {
+      recoverFromChunkLoadError();
+    }
   }
 
   override componentDidUpdate(prevProps: RouteErrorBoundaryProps) {
     if (this.state.hasError && prevProps.resetKey !== this.props.resetKey) {
-      this.setState({ hasError: false });
+      this.setState({ hasError: false, detail: undefined });
     }
   }
 
@@ -73,11 +82,20 @@ class RouteErrorBoundary extends Component<RouteErrorBoundaryProps, RouteErrorBo
           <p className="mt-3 text-sm leading-6 text-secondary-text">
             {this.props.text.description}
           </p>
+          {this.state.detail ? (
+            <p className="mt-2 break-words text-xs leading-5 text-muted-text" data-testid="route-error-detail">
+              {this.state.detail}
+            </p>
+          ) : null}
           <div className="mt-5 flex flex-col gap-3 sm:flex-row sm:justify-center">
             <button
               type="button"
               className="btn-primary"
-              onClick={() => window.location.reload()}
+              onClick={() => {
+                // The guarded automatic reload may already have been spent in
+                // this session. An explicit click must always reload.
+                recoverFromChunkLoadError({ force: true });
+              }}
             >
               {this.props.text.reload}
             </button>

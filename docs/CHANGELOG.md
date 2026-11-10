@@ -28,6 +28,7 @@ and this project adheres to [Semantic Versioning](https://semver.org/).
 <!-- 每条独立一行追加到本段末尾，无需分类标题，合并时冲突最小 -->
 - [新功能] 新增可选的 fastapi-guard 安全中间件（`GUARD_ENABLED=true`，默认关闭）：按 IP 限流、IP 白/黑名单、请求特征拦截与扫描器自动封禁，与登录失败限流叠加；客户端 IP 取值与 `TRUST_X_FORWARDED_FOR` 保持一致，启用后内置启动入口的 Uvicorn 代理头处理只信任同一组代理，默认不扫描请求体，详见 `docs/full-guide.md`。
 - [修复] Telegram 推送按 UTF-16 长度判断与分段，修复含大量 emoji 的报告超出 4096 限制导致发送失败的问题。
+- [修复] Web 页面版本更新后旧标签页打开路由可能因静态资源哈希失效而显示“页面加载失败”，现在会识别分块加载失败并自动刷新一次以加载新版本，同时用时间窗避免刷新循环。
 
 - [新功能] 定时模式启动立即执行的当日去重（`SCHEDULE_STARTUP_DEDUP`，默认开启）：`python main.py --schedule` 在 `SCHEDULE_RUN_IMMEDIATELY=true` 触发启动补跑前检查标记文件（位于 `DATABASE_PATH` 所在目录，默认 `data/analysis_run_state.json`），当天已有成功且覆盖当前应分析清单的全量分析（日期 + scope=full + 覆盖面子集判定）则跳过，否则照常补跑；每日定时任务与手动/API/GitHub Actions 触发永不去重；标记缺失、损坏、schema 未知或覆盖不全一律 fail-open 执行（绝不漏跑）；大盘复盘完成度仅记录、不参与判定（复盘补齐由每日定时任务覆盖）；设 `SCHEDULE_STARTUP_DEDUP=false` 可回到此前"每次容器重启都全量重跑"的行为；`--force-run` 可绕过启动去重检查（明确要求立即全量分析）。
 - [修复] Web 设置-数据源 中 Futu OpenD 地址/端口、妙想（MX_API）API Key 与妙想数据源优先级四项缺失中文文案，回退显示英文标题与说明的问题。
@@ -48,6 +49,8 @@ and this project adheres to [Semantic Versioning](https://semver.org/).
 - [改进] 问股新建会话界面收紧：标题栏介绍在宽屏与「问股」同行、窄屏独立一行且不撑破标题；空会话欢迎区改为紧凑引导卡，图标与「开始问股」在桌面和移动端均同行，说明并排、示例问题按网格排列并贴近标题区，提升信息密度。
 - [修复] Tushare 交易日历改用本地 `trading_calendar` 模块（基于 `exchange-calendars`），失败时降级到 Baostock，不再直接调用 `trade_cal` API，避免低积分账号触发"1 次/小时"限频影响市场统计、筹码分布、行业板块排名等功能。
 - [改进] 飞书推送卡片深度美化：长报告按章节分节，新增主题色标题栏、语义色章节标签、双列关键指标与页脚备注；短通知和超字节预算的卡片自动退化为紧凑样式。`format_feishu_markdown` 补充标题层级前缀、灰色引用与空行压缩，分片同步识别二级/三级标题边界；关键词、加签、分片预算、文件发送与纯文本兜底逻辑保持不变，回归测试见 `tests/test_feishu_card.py`。
+- [修复] 页面加载失败页补充底层错误详情，「重新加载页面」改为强制重载且不受自动刷新时间窗抑制；分块加载失败识别扩展到模块脚本 MIME 不匹配等场景，避免版本更新后的旧标签页卡在错误页。
+- [改进] 带哈希的 `/assets` 资源返回 `immutable` 长缓存、缺失资源返回 `no-store`：部署后仍打开的旧标签页可继续加载旧 chunk，且 404 不会被浏览器或 CDN 缓存。
 
 ## [3.33.0] - 2026-10-15
 
