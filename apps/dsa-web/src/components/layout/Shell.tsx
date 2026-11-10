@@ -6,12 +6,24 @@ import { SidebarNav } from './SidebarNav';
 import { ShellHeader } from './ShellHeader';
 import { useUiLanguage } from '../../contexts/UiLanguageContext';
 
+const NAV_COLLAPSE_STORAGE_KEY = 'dsa_shell_nav_collapsed';
+
+const readNavCollapsed = (): boolean => {
+  if (typeof localStorage === 'undefined') return false;
+  try {
+    return localStorage.getItem(NAV_COLLAPSE_STORAGE_KEY) === 'true';
+  } catch {
+    return false;
+  }
+};
+
 type ShellProps = {
   children?: React.ReactNode;
 };
 
 export const Shell: React.FC<ShellProps> = ({ children }) => {
   const [mobileOpen, setMobileOpen] = useState(false);
+  const [navCollapsed, setNavCollapsed] = useState(readNavCollapsed);
   const { t } = useUiLanguage();
 
   useEffect(() => {
@@ -25,12 +37,28 @@ export const Shell: React.FC<ShellProps> = ({ children }) => {
     return () => desktop.removeEventListener('change', closeOnDesktop);
   }, [mobileOpen]);
 
+  const toggleNav = () => {
+    setNavCollapsed((current) => {
+      const next = !current;
+      try {
+        localStorage.setItem(NAV_COLLAPSE_STORAGE_KEY, String(next));
+      } catch {
+        // Storage may be unavailable; the in-memory state still applies.
+      }
+      return next;
+    });
+  };
+
   return (
-    <div className="research-shell">
-      <ShellHeader onOpenMobileNav={() => setMobileOpen(true)} />
+    <div className="research-shell" data-nav-collapsed={navCollapsed ? 'true' : 'false'}>
+      <ShellHeader
+        onOpenMobileNav={() => setMobileOpen(true)}
+        navCollapsed={navCollapsed}
+        onToggleNav={toggleNav}
+      />
       <div className="research-shell-body">
         <aside className="research-sidebar" aria-label={t('layout.desktopSidebar')}>
-          <SidebarNav variant="rail" />
+          <SidebarNav variant="rail" collapsed={navCollapsed} />
         </aside>
         <main id="workspace" tabIndex={-1} className="min-w-0">
           {children ?? <Outlet />}

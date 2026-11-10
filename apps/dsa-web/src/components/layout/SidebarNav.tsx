@@ -91,12 +91,14 @@ export const SidebarNav: React.FC<SidebarNavProps> = ({ collapsed = false, onNav
                 triggerClassName={itemClass}
                 triggerActiveClassName={activeClass}
                 iconClassName={iconClass}
+                labelClassName={collapsed ? 'hidden' : undefined}
               />
               <UiLanguageToggle
                 variant={isRail ? 'rail' : 'nav'}
                 collapsed={collapsed}
                 triggerClassName={itemClass}
                 iconClassName={iconClass}
+                labelClassName={collapsed ? 'hidden' : undefined}
               />
             </>
           ) : null}
