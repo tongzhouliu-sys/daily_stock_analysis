@@ -309,9 +309,10 @@ describe('ChatPage', () => {
     expect(mockStopStream).toHaveBeenCalledOnce();
   });
 
-  it('renames a session and preserves the sidebar toggle', async () => {
+  it('renames a session from the row menu and preserves the sidebar toggle', async () => {
     render(<MemoryRouter initialEntries={['/chat']}><ChatPage /></MemoryRouter>);
-    fireEvent.click(screen.getByRole('button', { name: '编辑标题 请简要分析 600519' }));
+    fireEvent.click(screen.getByRole('button', { name: '更多操作 请简要分析 600519' }));
+    fireEvent.click(screen.getByRole('menuitem', { name: '重命名' }));
     fireEvent.change(screen.getByRole('textbox', { name: '编辑标题' }), { target: { value: '  我的分析  ' } });
     fireEvent.click(screen.getByRole('button', { name: '保存标题' }));
     await waitFor(() => expect(mockRenameChatSession).toHaveBeenCalledWith('session-1', '我的分析'));
@@ -707,18 +708,21 @@ describe('ChatPage', () => {
     expect(sessionCard).toHaveAttribute('aria-current', 'page');
   });
 
-  it('renders a separate delete button for each session and opens confirmation without switching', async () => {
+  it('opens delete confirmation from the session row menu without switching', async () => {
     render(
       <MemoryRouter initialEntries={['/chat']}>
         <ChatPage />
       </MemoryRouter>
     );
 
-    const deleteButton = await screen.findByRole('button', {
-      name: /删除对话 请简要分析 600519/,
+    const moreButton = await screen.findByRole('button', {
+      name: /更多操作 请简要分析 600519/,
     });
 
-    fireEvent.click(deleteButton);
+    fireEvent.click(moreButton);
+    fireEvent.click(await screen.findByRole('menuitem', {
+      name: /删除对话 请简要分析 600519/,
+    }));
 
     expect(mockSwitchSession).not.toHaveBeenCalled();
     expect(await screen.findByText('删除后，该对话将不可恢复，确认删除吗？')).toBeInTheDocument();

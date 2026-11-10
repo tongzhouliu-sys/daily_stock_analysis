@@ -1,4 +1,4 @@
-import { Menu } from 'lucide-react';
+import { Menu, PanelLeftClose, PanelLeftOpen } from 'lucide-react';
 import { Link, useLocation } from 'react-router-dom';
 import { useUiLanguage } from '../../contexts/UiLanguageContext';
 import type { UiTextKey } from '../../i18n/uiText';
@@ -21,7 +21,13 @@ const ROUTE_LABELS: Record<string, UiTextKey> = {
   '/settings': 'layout.route.settings.title',
 };
 
-export function ShellHeader({ onOpenMobileNav }: { onOpenMobileNav: () => void }) {
+type ShellHeaderProps = {
+  onOpenMobileNav: () => void;
+  navCollapsed?: boolean;
+  onToggleNav?: () => void;
+};
+
+export function ShellHeader({ onOpenMobileNav, navCollapsed = false, onToggleNav }: ShellHeaderProps) {
   const { pathname } = useLocation();
   const { t } = useUiLanguage();
   const routeLabel = pathname.startsWith('/scanner/')
@@ -45,6 +51,19 @@ export function ShellHeader({ onOpenMobileNav }: { onOpenMobileNav: () => void }
           <span className="research-brand-name">Daily Stock Analysis</span>
         </span>
       </Link>
+      {onToggleNav ? (
+        <button
+          type="button"
+          className="research-nav-toggle"
+          onClick={onToggleNav}
+          aria-label={t(navCollapsed ? 'layout.expandSidebar' : 'layout.collapseSidebar')}
+          aria-expanded={!navCollapsed}
+        >
+          {navCollapsed
+            ? <PanelLeftOpen size={18} aria-hidden="true" />
+            : <PanelLeftClose size={18} aria-hidden="true" />}
+        </button>
+      ) : null}
       <div className="research-location">
         <span>{t('layout.workspace')}</span>
         <span className="text-muted-text" aria-hidden="true">/</span>

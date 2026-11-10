@@ -857,6 +857,22 @@ class TestStorage(unittest.TestCase):
         self.assertIn(DatabaseManager._parse_sniper_value("1.55-1.56(MA5/M20支撑)"), [1.55, 1.56])
         self.assertIn(DatabaseManager._parse_sniper_value("1.49-1.50(MA60附近企稳)"), [1.49, 1.50])
 
+    def test_get_chat_sessions_summarizes_first_question_as_title(self):
+        DatabaseManager.reset_instance()
+        db = DatabaseManager(db_url="sqlite:///:memory:")
+
+        db.save_conversation_message("chat-summary", "user", "请帮我用缠论分析一下贵州茅台最近走势，现在适合买入吗？")
+        db.save_conversation_message("chat-summary", "assistant", "分析结果")
+        db.save_conversation_message("chat-renamed", "user", "宁德时代现在适合建仓吗？")
+
+        sessions = db.get_chat_sessions()
+        titles = {item["session_id"]: item["title"] for item in sessions}
+
+        self.assertEqual(titles["chat-summary"], "贵州茅台 · 缠论")
+        self.assertEqual(titles["chat-renamed"], "宁德时代现在适合建仓")
+
+        DatabaseManager.reset_instance()
+
     def test_get_chat_sessions_prefix_is_scoped_by_colon_boundary(self):
         DatabaseManager.reset_instance()
         db = DatabaseManager(db_url="sqlite:///:memory:")

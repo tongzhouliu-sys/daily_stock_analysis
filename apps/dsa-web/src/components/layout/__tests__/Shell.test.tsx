@@ -37,6 +37,29 @@ beforeAll(() => {
 describe('Shell', () => {
   afterEach(() => {
     delete (window as { dsaDesktop?: unknown }).dsaDesktop;
+    localStorage.clear();
+  });
+
+  it('collapses the desktop navigation and persists the preference', () => {
+    render(
+      <MemoryRouter initialEntries={['/chat']}>
+        <ThemeProvider>
+          <Shell>
+            <div>page content</div>
+          </Shell>
+        </ThemeProvider>
+      </MemoryRouter>
+    );
+
+    const shell = document.querySelector('.research-shell');
+    expect(shell).toHaveAttribute('data-nav-collapsed', 'false');
+
+    fireEvent.click(screen.getByRole('button', { name: '折叠侧边栏' }));
+
+    expect(shell).toHaveAttribute('data-nav-collapsed', 'true');
+    expect(localStorage.getItem('dsa_shell_nav_collapsed')).toBe('true');
+    expect(screen.getByRole('button', { name: '展开侧边栏' })).toBeInTheDocument();
+    expect(screen.getByRole('button', { name: '展开侧边栏' })).toHaveAttribute('aria-expanded', 'false');
   });
   it.skip('renders navigation, theme toggle and completion badge', () => {
     render(

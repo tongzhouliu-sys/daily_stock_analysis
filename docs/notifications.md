@@ -41,16 +41,26 @@ Discord 长报告发送复用现有分片链路：单条 `content` 运行时不�
 
 ## 报告渲染与分片
 
-当前默认推送报告的入口、内容来源和整体版式保持不变。本阶段只收敛通知渲染的技术路线：沉淀渠道能力画像、发送前消息结构和结构感知分片能力，避免后续按渠道扩展时继续在各 sender 中堆叠平行逻辑。
+该阶段的收敛工作只涉及通知渲染的技术路线：沉淀渠道能力画像、发送前消息结构和结构感知分片能力，避免后续按渠道扩展时继续在各 sender 中堆叠平行逻辑；当时推送报告的入口、内容来源和整体版式保持不变。飞书推送卡片后续已单独改版，详见下方「飞书消息卡片排版」。
 
-默认发送路径沿用既有 sender 行为，不接入新增 renderer：飞书和 Telegram 继续使用原有兼容转换，企业微信、Slack 继续使用原有分片逻辑，避免改变线上可见报告版式。新增的渠道能力画像、PreparedMessage、renderer preset 和结构感知分片仅作为后续扩展基础；如需启用企业微信、飞书、Telegram、Slack 等渠道专用 renderer，应通过显式配置、真实发送验证和回归测试逐步接入。
+默认发送路径沿用既有 sender 行为，不接入新增 renderer：飞书和 Telegram 继续使用原有兼容转换，企业微信、Slack 继续使用原有分片逻辑。新增的渠道能力画像、PreparedMessage、renderer preset 和结构感知分片仅作为后续扩展基础；如需启用企业微信、飞书、Telegram、Slack 等渠道专用 renderer，应通过显式配置、真实发送验证和回归测试逐步接入。飞书现在的结构化卡片在既有 sender 内部渲染，不依赖、也不启用上述 renderer preset。
 
-兼容性排除说明：
-- 本轮未改动 `src/notification_sender/wechat_sender.py`、`src/notification_sender/slack_sender.py`、`src/notification_sender/telegram_sender.py` 的发送路径；`src/notification_sender/feishu_sender.py` 新增 `send_feishu_file()` 文件发送路径，Webhook 模式回退为发送文件内容文本，App Bot 文字发送路径（`send_to_feishu` → `_send_via_app_bot`）保持不变。
+兼容性排除说明（描述该阶段改动；当前飞书卡片行为见下节）：
+- 该阶段未改动 `src/notification_sender/wechat_sender.py`、`src/notification_sender/slack_sender.py`、`src/notification_sender/telegram_sender.py` 的发送路径；`src/notification_sender/feishu_sender.py` 新增 `send_feishu_file()` 文件发送路径，Webhook 模式回退为发送文件内容文本，App Bot 文字发送路径（`send_to_feishu` → `_send_via_app_bot`）当时保持不变。
 - `model_used` 只在报告渲染末尾展示，不参与 provider/model/base_url 的 runtime 选择、保存、清理或迁移。若某次 CI 扫描到“provider/API 兼容迁移”类关键词，命中范围应优先回归到测试夹具中的 `model_used` 示例与报告快照 fixture（`tests/fixtures/notification_reports/*.md`），以及 `src/notification.py` 对 `report_show_llm_model` 的仅展示开关逻辑。
 - `REPORT_SHOW_LLM_MODEL` 与 `report_renderer_enabled` 均为展示/降级策略开关：关闭仅影响报告可见结构，不会触发配置迁移或运行时参数回退；回退方式为恢复 `true`（或移除该项）或恢复默认配置。
 
 关联板块渲染保持报告正文生成阶段处理：没有行业/概念涨跌榜信号时，推送报告沿用原有单行样式，例如 `通信线缆及配套 / 通信设备 / 通信 / 江苏板块 / 科技风格`，不额外展示“类型”列。只有命中 `fundamental_context.boards.data` / `sector_rankings` 或 `fundamental_context.concept_boards.data` / `concept_rankings` 的领涨/领跌信号时，才使用表格展示“板块 / 类型 / 板块表现 / 板块涨跌幅”，其中“类型”列用于标明“行业板块”或“概念板块”。该逻辑仅影响报告展示，不改变 provider/model/Base URL、LiteLLM 路由、模型保存、迁移或清理逻辑。
+
+## 飞书消息卡片排版
+
+适用范围：`send_to_feishu()` 的主动推送（`FEISHU_WEBHOOK_URL` 自定义机器人与 `FEISHU_APP_ID` App Bot 两条链路共用）。Stream Bot 交互式命令回复仍由 `bot/platforms/feishu_stream.py` 处理，本次不改；`FEISHU_*` 配置项、关键词/加签、分片预算、`send_feishu_file()` 文件发送和卡片失败后的纯文本兜底均保持不变。
+
+- 卡片仍使用 Card JSON 1.0（`config` / `header` / `elements`），不引入 Card 2.0 组件。标题栏增加主题色（日报 / 决策仪表盘 `blue`、大盘复盘 `indigo`、风险预警 `orange`）与免责声明副标题。
+- 正文渲染位于 `src/notification_sender/feishu_card.py`：长度达到 400 字符且能识别章节标题的报告，按标题与 `────────` 分隔线分节，节间使用 `hr`，章节标题按语义着色为 `<text_tag>` 标签；`• 键：值 | 键：值` 形式的紧凑表格行转为双列 `fields`；斜体元信息（数据来源、生成时间、分析模型）与 `📄 n/m` 分页标记移入 `note` 页脚。
+- 短通知、无章节标题的内容、元素过多或卡片 JSON 超过 `FEISHU_MAX_BYTES` 预算时，自动退化为「单个 `div` + 完整正文」的紧凑卡片；任何降级路径都不丢正文信息，飞书拒绝卡片时仍按原逻辑回退纯文本。
+- `format_feishu_markdown()` 现在用 `▎ **标题**` / `· **标题**` 保留 `##` / `###` 层级，引用块改为灰色 `<font>` 小字，并压缩连续空行；`_chunk_by_separators()` 同步识别这两种标题前缀作为分片边界。Stream Bot 复用同一转换函数，因此纯文本回复也获得层级前缀。
+- 回归测试：`tests/test_feishu_card.py`（卡片结构、主题色、字段转换、页脚、字节降级、标题层级、分片边界、Webhook / App Bot 两条链路）。
 
 ## GitHub Actions 映射
 
