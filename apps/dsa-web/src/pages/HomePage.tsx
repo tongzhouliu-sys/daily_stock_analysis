@@ -27,6 +27,7 @@ import { isWatchlistRowPendingAnalysis } from '../components/watchlist/watchlist
 import { useDashboardLifecycle, useHomeDashboardState } from '../hooks';
 import { useWatchlist } from '../hooks/useWatchlist';
 import { useUiLanguage } from '../contexts/UiLanguageContext';
+import { useAgentChatStore } from '../stores/agentChatStore';
 import type { SetupStatusResponse } from '../types/systemConfig';
 import { normalizeReportLanguage } from '../utils/reportLanguage';
 import { parseReportRecordId } from '../utils/reportShare';
@@ -931,9 +932,10 @@ const HomePage: React.FC = () => {
     const code = selectedReport.meta.stockCode;
     const name = selectedReport.meta.stockName;
     const rid = selectedReport.meta.id;
-    const chatUrl = `/chat?stock=${encodeURIComponent(code)}&name=${encodeURIComponent(name)}&recordId=${rid}`;
-    window.open(chatUrl, '_blank', 'noopener,noreferrer');
-  }, [selectedReport]);
+    // Start a new chat session so the follow-up doesn't append to the existing conversation
+    useAgentChatStore.getState().startNewChat();
+    navigate(`/chat?stock=${encodeURIComponent(code)}&name=${encodeURIComponent(name)}&recordId=${rid}`);
+  }, [navigate, selectedReport]);
 
   const handleReanalyze = useCallback(() => {
     if (!selectedReport || selectedReport.meta.reportType === 'market_review') {
