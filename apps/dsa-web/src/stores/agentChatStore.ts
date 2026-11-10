@@ -219,8 +219,27 @@ export const useAgentChatStore = create<AgentChatState & AgentChatActions>((set,
       const replacedInstance = current.sessionGeneration !== null
         && current.sessionGeneration !== decoded.sessionGeneration;
       if (replacedInstance) current.abortController?.abort();
-      set({ ...patch, ...(replacedInstance ? emptyStreamState : {}),
-        messages: detail.messages.map((m) => ({ id: m.id, role: m.role, content: m.content })), chatError: null });
+      
+      // Restore thinking steps from persisted messages
+      const messagesWithThinking = detail.messages.map((m) => ({
+        id: m.id,
+        role: m.role,
+        content: m.content,
+        thinkingSteps: m.thinking_steps,
+      }));
+      
+      // Restore running state if session is still running
+      const isRunning = detail.is_running || false;
+      const runningProgress = detail.running_progress_steps || [];
+      
+      set({ 
+        ...patch, 
+        ...(replacedInstance ? emptyStreamState : {}),
+        messages: messagesWithThinking,
+        chatError: null,
+        loading: isRunning,
+        progressSteps: isRunning ? runningProgress : [],
+      });
     } catch (error) {
       if (ownsRead()) set({ chatError: getParsedApiError(error) });
     }

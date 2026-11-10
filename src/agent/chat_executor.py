@@ -143,18 +143,60 @@ class AgentChatExecutor:
         progress_callback: Optional[Callable[[Dict[str, Any]], None]] = None,
     ) -> AgentResult:
         """Execute a previously accepted turn and persist its terminal result."""
-        backend_result = self.backend.run(
-            AgentRunRequest(
-                system_prompt=turn.prepared.system_prompt,
-                history_messages=turn.prepared.history_messages,
-                user_message=turn.message,
-                session_id=turn.session_id,
-                stock_scope=turn.prepared.stock_scope,
-                max_steps=self.max_steps,
-                max_wall_clock_seconds=self.timeout_seconds,
-                progress_callback=progress_callback,
+        # Collect progress steps for persistence
+        collected_progress_steps: List[Dict[str, Any]] = []
+        progress_lock = threading.Lock()
+
+        def _persisting_progress_callback(event: Dict[str, Any]) -> None:
+            """Wrap the original callback to also collect and persist progress steps."""
+            # Collect the step for persistence
+            with progress_lock:
+                collected_progress_steps.append(dict(event))
+                current_steps = list(collected_progress_steps)
+
+            # Persist running progress to DB (so refresh can restore it)
+            try:
+                conversation_manager.update_running_progress(turn.session_id, current_steps)
+            except Exception:
+                pass  # Non-critical; don't break the analysis
+
+            # Forward to original callback
+            if progress_callback:
+                progress_callback(event)
+
+        # Mark session as running
+        try:
+            conversation_manager.set_running(turn.session_id, True, [])
+        except Exception:
+            pass  # Non-critical
+
+        try:
+            backend_result = self.backend.run(
+                AgentRunRequest(
+                    system_prompt=turn.prepared.system_prompt,
+                    history_messages=turn.prepared.history_messages,
+                    user_message=turn.message,
+                    session_id=turn.session_id,
+                    stock_scope=turn.prepared.stock_scope,
+                    max_steps=self.max_steps,
+                    max_wall_clock_seconds=self.timeout_seconds,
+                    progress_callback=_persisting_progress_callback,
+                )
             )
-        )
+        except Exception:
+            # Clear running state on exception
+            try:
+                conversation_manager.set_running(turn.session_id, False)
+            except Exception:
+                pass
+            raise
+
+        # Clear running state
+        try:
+            conversation_manager.set_running(turn.session_id, False)
+        except Exception:
+            pass
+
         total_tokens = 0
         if isinstance(backend_result.usage, dict):
             total_tokens = int(backend_result.usage.get("total_tokens") or 0)
@@ -174,14 +216,29 @@ class AgentChatExecutor:
             usage=backend_result.usage,
         )
 
+        # Build thinking_steps from collected progress (filter to displayable steps)
+        thinking_steps = [
+            step for step in collected_progress_steps
+            if step.get("type") in (
+                "thinking", "tool_start", "tool_done",
+                "stage_start", "stage_done",
+                "generating", "pipeline_timeout", "pipeline_budget_skipped",
+            )
+        ]
+
         if result.success:
             if turn.accepted_snapshot is not None:
                 assistant_message_id = conversation_manager.add_message(
-                    turn.session_id, "assistant", result.content, accepted_turn=turn.accepted_snapshot,
+                    turn.session_id, "assistant", result.content,
+                    accepted_turn=turn.accepted_snapshot,
                     db_manager=turn.db_manager,
+                    thinking_steps=thinking_steps,
                 )
             else:
-                assistant_message_id = conversation_manager.add_message(turn.session_id, "assistant", result.content)
+                assistant_message_id = conversation_manager.add_message(
+                    turn.session_id, "assistant", result.content,
+                    thinking_steps=thinking_steps,
+                )
             if assistant_message_id is not None:
                 persist_provider_trace_turns(
                     session_id=turn.session_id,
@@ -197,9 +254,14 @@ class AgentChatExecutor:
             failure_note = f"[分析失败] {result.error or '未知错误'}"
             if turn.accepted_snapshot is not None:
                 conversation_manager.add_message(
-                    turn.session_id, "assistant", failure_note, accepted_turn=turn.accepted_snapshot,
+                    turn.session_id, "assistant", failure_note,
+                    accepted_turn=turn.accepted_snapshot,
                     db_manager=turn.db_manager,
+                    thinking_steps=thinking_steps,
                 )
             else:
-                conversation_manager.add_message(turn.session_id, "assistant", failure_note)
+                conversation_manager.add_message(
+                    turn.session_id, "assistant", failure_note,
+                    thinking_steps=thinking_steps,
+                )
         return result

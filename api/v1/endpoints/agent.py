@@ -311,6 +311,8 @@ class SessionMessagesResponse(BaseModel):
     active_stock_context: Optional[ActiveStockContextResponse]
     session_state_version: int
     session_generation: Optional[str]
+    is_running: bool = False
+    running_progress_steps: List[Dict[str, Any]] = []
 
 
 @router.get("/chat/sessions", response_model=SessionsResponse)
@@ -347,6 +349,8 @@ async def get_chat_session_messages(
     return SessionMessagesResponse(
         session_id=session_id,
         messages=detail.messages,
+        is_running=detail.is_running,
+        running_progress_steps=detail.running_progress_steps or [],
         **_public_chat_state(
             active_stock_context=detail.active_stock_context,
             session_state_version=detail.session_state_version,

@@ -97,6 +97,8 @@ class ChatSessionDetail:
     active_stock_context: Optional[Dict[str, Any]] = None
     session_state_version: int = 0
     session_generation: Optional[str] = None
+    is_running: bool = False
+    running_progress_steps: Optional[List[Dict[str, Any]]] = None
 
 
 @dataclass(frozen=True)
@@ -180,6 +182,8 @@ class AgentChatSessionService:
             active_stock_context=_active_from_snapshot(snapshot, registry, lookup),
             session_state_version=snapshot["session_state_version"],
             session_generation=snapshot["session_generation"],
+            is_running=snapshot.get("is_running", False),
+            running_progress_steps=snapshot.get("running_progress_steps", []),
         )
 
     def rename_session(self, session_id: str, title: str) -> bool:
