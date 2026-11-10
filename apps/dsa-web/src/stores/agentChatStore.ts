@@ -194,8 +194,81 @@ function mergeChatState(current: AgentChatState, incoming: DecodedChatState,
   };
 }
 
+// Polling interval for checking running task progress (ms)
+const POLL_INTERVAL_MS = 2000;
+
 export const useAgentChatStore = create<AgentChatState & AgentChatActions>((set, get) => {
+  let pollingTimer: ReturnType<typeof setInterval> | null = null;
+  
+  const stopPolling = () => {
+    if (pollingTimer !== null) {
+      clearInterval(pollingTimer);
+      pollingTimer = null;
+    }
+  };
+  
+  const startPolling = (sessionId: string) => {
+    stopPolling(); // Clear any existing timer
+    
+    const poll = async () => {
+      const current = get();
+      // Stop if session changed or no longer loading
+      if (current.sessionId !== sessionId || !current.loading) {
+        stopPolling();
+        return;
+      }
+      
+      try {
+        const detail = await agentApi.getChatSessionMessages(sessionId);
+        const state = get();
+        
+        // Check if session is still the same
+        if (state.sessionId !== sessionId) {
+          stopPolling();
+          return;
+        }
+        
+        const isRunning = detail.is_running || false;
+        const runningProgress = detail.running_progress_steps || [];
+        
+        // Update progress steps
+        set({
+          progressSteps: isRunning ? runningProgress : [],
+          loading: isRunning,
+        });
+        
+        // Check for new messages (assistant response completed)
+        const existingMessageIds = new Set(state.messages.map(m => m.id));
+        const newMessages = detail.messages
+          .filter(m => !existingMessageIds.has(m.id))
+          .map(m => ({
+            id: m.id,
+            role: m.role,
+            content: m.content,
+            thinkingSteps: m.thinking_steps,
+          }));
+        
+        if (newMessages.length > 0) {
+          set({
+            messages: [...state.messages, ...newMessages],
+          });
+        }
+        
+        // Stop polling if task completed
+        if (!isRunning) {
+          stopPolling();
+        }
+      } catch (error) {
+        // Silently ignore polling errors, will retry next interval
+        console.debug('Polling error:', error);
+      }
+    };
+    
+    pollingTimer = setInterval(poll, POLL_INTERVAL_MS);
+  };
+  
   const resetSession = (sessionId: string) => {
+    stopPolling();
     const previous = get();
     previous.abortController?.abort();
     set({ ...emptySessionState, ...emptyStreamState, sessionId, messages: [], chatError: null,
@@ -240,6 +313,11 @@ export const useAgentChatStore = create<AgentChatState & AgentChatActions>((set,
         loading: isRunning,
         progressSteps: isRunning ? runningProgress : [],
       });
+      
+      // Start polling if task is still running (for page refresh recovery)
+      if (isRunning) {
+        startPolling(owner.sessionId);
+      }
     } catch (error) {
       if (ownsRead()) set({ chatError: getParsedApiError(error) });
     }
@@ -332,10 +410,15 @@ export const useAgentChatStore = create<AgentChatState & AgentChatActions>((set,
   },
 
   stopStream: async () => {
+    stopPolling();
     const controller = get().abortController;
     if (controller) {
       set({ terminalStatus: 'stopped' });
       controller.abort();
+    } else {
+      // If we're in polling mode (no SSE controller), update loading state directly
+      // The backend task will continue but we stop showing it as running
+      set({ loading: false, progressSteps: [], terminalStatus: 'stopped' });
     }
   },
 
