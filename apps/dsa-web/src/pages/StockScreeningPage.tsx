@@ -1291,7 +1291,7 @@ const StockScreeningPage: React.FC = () => {
     const taskContext = activeTaskContextRef.current?.taskId === pollingTaskId
       ? activeTaskContextRef.current : null;
     let active = true;
-    let timer: ReturnType<typeof window.setTimeout> | undefined;
+    let timer: number | undefined;
 
     function finishTask() {
       setActiveTaskId(null);
