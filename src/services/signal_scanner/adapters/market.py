@@ -184,13 +184,16 @@ def ingest(cx, bundle, cal, artifacts):
         if "session" in b:
             semantic["session"] = b["session"]
         h = digest(semantic)
-        base = (b["instrument_id"], b["market_date"], bundle["provider"], bundle["feed"])
-        old = one(
+        bar_session = b.get("session", "RTH")
+        revisions = one(
             cx,
-            "SELECT * FROM bar_revisions WHERE instrument_id=? AND market_date=? AND provider=? AND feed=? ORDER BY revision DESC LIMIT 1",
-            base,
+            """SELECT MAX(revision) AS latest_revision, MAX(content_hash=?) AS already_ingested
+               FROM bar_revisions
+               WHERE instrument_id=? AND timeframe='1D' AND session=?
+                 AND market_date=? AND provider=? AND feed=?""",
+            (h, b["instrument_id"], bar_session, b["market_date"], bundle["provider"], bundle["feed"]),
         )
-        if old and old["content_hash"] == h:
+        if revisions["already_ingested"]:
             counts["duplicates"] += 1
             continue
         available = b.get("available_at")
@@ -209,14 +212,14 @@ def ingest(cx, bundle, cal, artifacts):
                 id=uid("bar"),
                 instrument_id=b["instrument_id"],
                 market_date=b["market_date"],
-                session=b.get("session", "RTH"),
+                session=bar_session,
                 bar_start_at=session["open_at"],
                 bar_end_at=session["close_at"],
                 **{k: str(b[k]) for k in ("open", "high", "low", "close", "volume")},
                 provider=bundle["provider"],
                 feed=bundle["feed"],
                 coverage=bundle["coverage"],
-                revision=(old["revision"] + 1) if old else 1,
+                revision=(revisions["latest_revision"] or 0) + 1,
                 available_at=stamp(instant(available)) if available else None,
                 available_at_kind="PROVIDER" if available else "UNKNOWN",
                 ingested_at=stamp(),

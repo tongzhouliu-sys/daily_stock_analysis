@@ -4,6 +4,7 @@ import httpx
 import pytest
 
 from src.services.signal_scanner.adapters.alphavantage_adapter import AlphaVantageAdapter
+from src.services.signal_scanner.adapters.market import ingest
 from src.services.signal_scanner.adapters.tiingo_adapter import TiingoAdapter
 from src.services.signal_scanner.core import DomainError, Settings, digest, now, stamp
 from src.services.signal_scanner.services.daily_market import DailyMarket, TiingoPoolBudget, read_json, scan_token, write_json
@@ -80,6 +81,26 @@ def test_budget_survives_restart_and_counts_transport_attempts(tmp_path):
         "https://example.invalid"
     )
     assert len(calls) == 1 and len(read_json(path)["keys"]["0"]["requests"]) == 1
+
+
+def test_daily_publish_accepts_replayed_bar_with_a_newer_revision(daily):
+    settings, collector = daily
+    target = collector.cal.last_completed(now())
+    assert collector.step(force=True)["status"] == "RUNNING"
+    state = read_json(settings.runtime / "daily-market" / target / "state.json")
+    part = collector.files.read(next(iter(state["parts"].values())))
+    bundle = read_json(settings.runtime / "imports" / state["cache_file"])
+    bar = part["bars"][-1]
+    corrected = {**bar, "close": "100.5"}
+    with collector.db.transaction() as cx:
+        assert ingest(cx, {**bundle, "bars": [bar]}, collector.cal, collector.files)["inserted"] == 1
+        assert ingest(cx, {**bundle, "bars": [corrected]}, collector.cal, collector.files)["inserted"] == 1
+
+    assert collector.step(force=True)["status"] == "SUCCEEDED"
+    assert scan_token(settings, target)
+    with collector.db.read() as cx:
+        revisions = many(cx, "SELECT close FROM bar_revisions WHERE market_date=? ORDER BY revision", (target,))
+    assert [row["close"] for row in revisions][-2:] == [str(bar["close"]), corrected["close"]]
 
 
 def test_share_class_uses_provider_symbol_but_preserves_internal_identity(cal):
