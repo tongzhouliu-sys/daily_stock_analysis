@@ -814,6 +814,51 @@ def test_service_name_ambiguity_conflicting_hint_and_explicit_code_priority(db, 
     assert explicit.active_stock_context["canonical_id"] == "sh688981"
 
 
+def test_service_clarification_payload_recommends_same_name_a_share_listing(db, chat_stock_index):
+    from src.services.agent_chat_session_service import AgentChatSessionService
+
+    service = AgentChatSessionService(db)
+    resolved = _resolve(service, "clarify-payload", "分析中芯国际")
+    assert resolved.clarification
+    payload = resolved.clarification_payload
+    assert payload["reason"] == "ambiguous_name"
+    assert payload["action"] == "switch"
+    assert payload["current"] is None
+    assert {item["stock_code"] for item in payload["candidates"]} == {"688981", "HK00981"}
+    assert payload["recommended"]["stock_code"] == "688981"
+
+
+def test_service_clarification_payload_keeps_current_for_conditional_change(db, chat_stock_index):
+    from src.services.agent_chat_session_service import AgentChatSessionService
+
+    service = AgentChatSessionService(db)
+    service.commit_user_turn(_resolve(service, "clarify-conditional", "分析600519"))
+    resolved = _resolve(service, "clarify-conditional", "如果改看300750会怎么样")
+    assert resolved.clarification
+    payload = resolved.clarification_payload
+    assert payload["reason"] == "missing_object"
+    assert payload["action"] == "keep"
+    assert payload["current"]["stock_code"] == "600519"
+    assert payload["candidates"] == []
+    assert payload["recommended"] is None
+
+
+def test_service_clarification_payload_explains_hint_conflict_with_user_target(db, chat_stock_index):
+    from src.services.agent_chat_session_service import AgentChatSessionService
+
+    service = AgentChatSessionService(db)
+    service.commit_user_turn(_resolve(service, "clarify-hint", "分析600519"))
+    resolved = _resolve(
+        service, "clarify-hint", "分析宁德时代", context={"stock_code": "600519"},
+    )
+    assert resolved.clarification
+    payload = resolved.clarification_payload
+    assert payload["reason"] == "hint_conflict"
+    assert payload["action"] == "switch"
+    assert payload["current"]["stock_code"] == "600519"
+    assert payload["recommended"]["stock_code"] == "300750"
+
+
 def test_service_compare_does_not_select_or_switch_main_object(db, chat_stock_index):
     from src.services.agent_chat_session_service import AgentChatSessionService
 
@@ -1100,6 +1145,16 @@ def test_actual_chat_api_clarification_accepts_without_analysis_or_compression(a
         events = [json.loads(line[6:]) for line in response.text.splitlines() if line.startswith("data: ")]
         assert [event["type"] for event in events] == ["accepted", "done"]
         assert events[-1]["total_steps"] == 0
+        clarification = events[-1]["clarification"]
+    else:
+        clarification = response.json()["clarification"]
+    assert clarification == {
+        "reason": "missing_object",
+        "action": "ask",
+        "current": None,
+        "candidates": [],
+        "recommended": None,
+    }
     assert requests == []
     snapshot = db.read_chat_session_snapshot("api-clarify")
     assert snapshot["session_state_version"] == 1 and snapshot["active_stock_context"] is None

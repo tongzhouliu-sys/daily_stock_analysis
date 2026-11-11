@@ -18,6 +18,7 @@ from api.v1.schemas.system_config import AgentBackendStatusResponse
 from src.config import get_config
 from src.services.agent_chat_session_service import AgentChatSessionService
 from src.services.agent_model_service import list_agent_model_deployments
+from src.services.agent_report_context_service import AgentReportContextError
 from src.storage import ChatSessionStateConflict
 
 # Tool name -> Chinese display name mapping
@@ -70,6 +71,8 @@ def _build_agent_chat_context(request: ChatRequest, config, skills: Optional[Lis
     context = dict(request.context or {})
     context.pop("skills", None)
     context.pop("strategies", None)
+    # Only the server projection may enter the prompt; never trust client text.
+    context.pop("report_context", None)
     if skills is not None:
         context["skills"] = skills
     report_language = context.get("report_language")
@@ -85,6 +88,14 @@ class ActiveStockContextResponse(BaseModel):
     asset_type: str
 
 
+class ActiveReportContextResponse(BaseModel):
+    record_id: int
+    status: str
+    stock_code: Optional[str] = None
+    stock_name: Optional[str] = None
+    created_at: Optional[str] = None
+
+
 class SessionStateResponse(BaseModel):
     selected_skill_ids: Optional[List[str]]
 
@@ -95,18 +106,26 @@ class ChatResponse(BaseModel):
     session_id: str
     error: Optional[str] = None
     active_stock_context: Optional[ActiveStockContextResponse]
+    active_report_context: Optional[ActiveReportContextResponse] = None
     session_state_version: int
     session_generation: str
     session_state: SessionStateResponse
+    clarification: Optional[Dict[str, Any]] = None
 
 
-def _public_chat_state(*, active_stock_context, session_state_version, session_generation, selected_skill_ids):
+def _public_chat_state(*, active_stock_context, session_state_version, session_generation, selected_skill_ids,
+                       active_report_context=None):
     """One whitelist for detail, accepted and non-stream committed state."""
     stock = None if active_stock_context is None else {
         key: active_stock_context[key] for key in ("stock_code", "stock_name", "canonical_id", "asset_type")
     }
+    report = None if active_report_context is None else {
+        key: active_report_context.get(key) for key in
+        ("record_id", "status", "stock_code", "stock_name", "created_at")
+    }
     return {
         "active_stock_context": stock,
+        "active_report_context": report,
         "session_state_version": session_state_version,
         "session_generation": session_generation,
         "session_state": {"selected_skill_ids": selected_skill_ids},
@@ -122,14 +141,14 @@ def _prepare_chat_request(request, config, session_id, session_service):
     )
     if resolved.clarification is not None:
         accepted = session_service.commit_user_turn(resolved)
-        return None, None, accepted, resolved.clarification
+        return None, None, accepted, resolved.clarification, resolved.clarification_payload
     executor = _build_executor(config, resolved.skill_selection.effective_skill_ids)
     turn = executor.prepare_turn(
         message=request.message, session_id=session_id, context=resolved.effective_context,
         selected_skill_ids=resolved.skill_selection.selected_skill_ids_update,
         resolved_turn=resolved, session_service=session_service,
     )
-    return executor, turn, turn.accepted_snapshot, None
+    return executor, turn, turn.accepted_snapshot, None, None
 
 
 def _clarification_result(session_service, accepted, content, backend_id):
@@ -147,6 +166,7 @@ def _accepted_state_payload(accepted):
         session_state_version=accepted["session_state_version"],
         session_generation=accepted["session_generation"],
         selected_skill_ids=accepted["selected_skill_ids"],
+        active_report_context=accepted.get("active_report_context"),
     )
 
 
@@ -269,7 +289,7 @@ async def agent_chat(
     session_id = request.session_id or str(uuid.uuid4())
     
     try:
-        executor, turn, accepted, clarification = await asyncio.to_thread(
+        executor, turn, accepted, clarification, clarification_payload = await asyncio.to_thread(
             _prepare_chat_request, request, config, session_id, session_service,
         )
         if clarification is not None:
@@ -282,10 +302,16 @@ async def agent_chat(
             content=result.content,
             session_id=session_id,
             error=result.error,
+            clarification=clarification_payload,
             **_accepted_state_payload(accepted),
         )
     except ChatSessionStateConflict as exc:
         raise HTTPException(status_code=409, detail={"error": exc.code, "message": str(exc)}) from exc
+    except AgentReportContextError as exc:
+        raise HTTPException(
+            status_code=exc.status_code,
+            detail={"error": exc.code, "message": str(exc)},
+        ) from exc
     except HTTPException:
         raise
     except Exception as e:
@@ -309,6 +335,7 @@ class SessionMessagesResponse(BaseModel):
     messages: List[Dict[str, Any]]
     session_state: SessionStateResponse
     active_stock_context: Optional[ActiveStockContextResponse]
+    active_report_context: Optional[ActiveReportContextResponse] = None
     session_state_version: int
     session_generation: Optional[str]
     is_running: bool = False
@@ -356,6 +383,7 @@ async def get_chat_session_messages(
             session_state_version=detail.session_state_version,
             session_generation=detail.session_generation,
             selected_skill_ids=detail.selected_skill_ids,
+            active_report_context=detail.active_report_context,
         ),
     )
 
@@ -608,17 +636,20 @@ async def agent_chat_stream(
         fut = None
         try:
             try:
-                executor, turn, accepted, clarification = await asyncio.to_thread(
+                executor, turn, accepted, clarification, clarification_payload = await asyncio.to_thread(
                     _prepare_chat_request, request, config, session_id, session_service,
                 )
             except asyncio.CancelledError:
                 raise
             except Exception as exc:
                 logger.error("Agent request preparation failed: %s", exc, exc_info=True)
+                recoverable = isinstance(exc, AgentReportContextError)
                 event = {
                     "type": "error",
-                    "message": str(exc) if isinstance(exc, ChatSessionStateConflict) else "Agent request was not accepted",
-                    "error_code": exc.code if isinstance(exc, ChatSessionStateConflict) else "request_not_accepted",
+                    "message": str(exc) if recoverable or isinstance(exc, ChatSessionStateConflict)
+                    else "Agent request was not accepted",
+                    "error_code": exc.code if recoverable or isinstance(exc, ChatSessionStateConflict)
+                    else "request_not_accepted",
                     "backend": backend_id,
                     "request_id": request_id,
                     "session_id": session_id,
@@ -641,7 +672,8 @@ async def agent_chat_stream(
                 result = await asyncio.to_thread(_clarification_result, session_service, accepted, clarification, backend_id)
                 event = {"type": "done", "success": result.success, "content": result.content,
                          "error": None, "total_steps": 0, "session_id": session_id,
-                         "backend": backend_id, "request_id": request_id, "error_code": None}
+                         "backend": backend_id, "request_id": request_id, "error_code": None,
+                         "clarification": clarification_payload}
                 yield "data: " + json.dumps(event, ensure_ascii=False) + "\n\n"
                 return
             fut = loop.run_in_executor(None, run_sync, executor, turn)

@@ -3,7 +3,7 @@ import { API_BASE_URL } from '../utils/constants';
 import { createApiError, createParsedApiError, isApiRequestError, parseApiError } from './error';
 import { toCamelCase } from './utils';
 import type { AgentBackendStatusResponse } from '../types/systemConfig';
-import type { ProgressStep } from '../stores/agentChatStore';
+import type { ProgressStep, StockClarification } from '../stores/agentChatStore';
 
 export interface ChatStreamOptions {
   signal?: AbortSignal;
@@ -103,6 +103,7 @@ export interface ChatResponse extends ChatStateFields {
   session_id: string;
   error?: string;
   session_state?: { selected_skill_ids: string[] | null };
+  clarification?: StockClarification | null;
 }
 
 export type AgentStatusResponse = AgentBackendStatusResponse;

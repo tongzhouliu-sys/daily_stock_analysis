@@ -66,7 +66,7 @@ from src.utils.sniper_points import extract_sniper_points, parse_sniper_value
 logger = logging.getLogger(__name__)
 T = TypeVar("T")
 CURRENT_SCHEMA_VERSION = "2026-06-05-create-all-baseline"
-CHAT_STATE_SCHEMA_VERSION = "2026-10-06-chat-active-stock"
+CHAT_STATE_SCHEMA_VERSION = "2026-11-11-chat-active-stock-report"
 INTELLIGENCE_ITEM_NULL_SCOPE_VALUE = "__dsa_null_scope__"
 
 # SQLAlchemy ORM 基类
@@ -758,6 +758,9 @@ class ConversationSessionState(Base):
     active_stock_name = Column(String(255), nullable=True)
     active_stock_source_message_id = Column(Integer, nullable=True)
     active_stock_updated_at = Column(DateTime, nullable=True)
+    # Only the history record primary key is persisted. The report content is
+    # re-validated and re-projected on every read/send.
+    active_report_record_id = Column(Integer, nullable=True)
     state_version = Column(Integer, nullable=False, default=0, server_default=text("0"))
     session_generation = Column(String(36), nullable=True)
     # Latest user turn accepted by the state contract: Web acceptance or a
@@ -784,6 +787,9 @@ class ChatSessionStateConflict(Exception):
 
     def __init__(self):
         super().__init__("Conversation changed; refresh the session before retrying.")
+
+
+_KEEP_REPORT_REFERENCE = object()
 
 
 class ConversationSummary(Base):
@@ -1540,6 +1546,7 @@ class DatabaseManager(metaclass=_DatabaseManagerMeta):
                 "active_stock_name": "VARCHAR(255)",
                 "active_stock_source_message_id": "INTEGER",
                 "active_stock_updated_at": "DATETIME",
+                "active_report_record_id": "INTEGER",
                 "state_version": "INTEGER NOT NULL DEFAULT 0",
                 "session_generation": "VARCHAR(36)",
                 "last_accepted_user_message_id": "INTEGER",
@@ -1645,7 +1652,7 @@ class DatabaseManager(metaclass=_DatabaseManagerMeta):
                 session.close()
         self._ensure_schema_migration_record(
             CHAT_STATE_SCHEMA_VERSION,
-            "Additive Chat identity, acceptance version and active-stock state",
+            "Additive Chat identity, acceptance version, active-stock and report-reference state",
         )
 
     def _ensure_decision_signal_profile_schema(self) -> None:
@@ -3946,6 +3953,7 @@ class DatabaseManager(metaclass=_DatabaseManagerMeta):
                 "session_state_version": state.state_version if state else 0,
                 "selected_skill_ids": json.loads(state.selected_skill_ids_json) if state else None,
                 "active_stock_context": self._chat_stock_from_state(state),
+                "active_report_record_id": state.active_report_record_id if state else None,
                 "latest_user_anchor": self._chat_message_anchor(users[-1] if users else None),
                 "last_accepted_user_anchor": self._chat_message_anchor(last_accepted),
                 "is_running": state.is_running if state else False,
@@ -3974,11 +3982,17 @@ class DatabaseManager(metaclass=_DatabaseManagerMeta):
         selected_skill_ids: Optional[List[str]] = None,
         active_stock_context: Optional[Dict[str, Any]] = None,
         confirm_stock: bool = False,
+        active_stock_source_new: bool = False,
+        report_reference_update: Any = _KEEP_REPORT_REFERENCE,
     ) -> Dict[str, Any]:
         """Accept message + explicit Skill + stock exactly once with snapshot CAS.
 
         Caller resolution happens outside this transaction. No conflict retries
         or silent re-resolution: only the existing SQLite busy-lock retry applies.
+
+        ``report_reference_update`` is tri-state: the sentinel keeps the existing
+        pointer, ``None`` clears it, and a positive int replaces it.  A report
+        pointer can only exist together with an active stock identity.
         """
         session_id = snapshot["session_id"]
 
@@ -3994,6 +4008,9 @@ class DatabaseManager(metaclass=_DatabaseManagerMeta):
                 raise ChatSessionStateConflict()
 
             now = datetime.now()
+            previous_stock_identity = (
+                state.active_stock_code, state.active_stock_canonical_id, state.active_stock_asset_type,
+            )
             message = ConversationMessage(session_id=session_id, role="user", content=content, created_at=now)
             session.add(message)
             session.flush()
@@ -4007,13 +4024,14 @@ class DatabaseManager(metaclass=_DatabaseManagerMeta):
                 state.active_stock_name = None
                 state.active_stock_source_message_id = None
                 state.active_stock_updated_at = None
+                state.active_report_record_id = None
             else:
                 for key in ("stock_code", "canonical_id", "asset_type"):
                     if not isinstance(active_stock_context.get(key), str) or not active_stock_context[key]:
                         raise ValueError(f"Chat stock identity is missing {key}")
                 if active_stock_context["asset_type"] not in ("stock", "index"):
                     raise ValueError("Unsupported Chat stock identity type")
-                if confirm_stock:
+                if confirm_stock or active_stock_source_new:
                     source_id, source_time = int(message.id), now
                 else:
                     source_id = active_stock_context.get("source_message_id")
@@ -4035,6 +4053,28 @@ class DatabaseManager(metaclass=_DatabaseManagerMeta):
                 state.active_stock_name = active_stock_context.get("stock_name")
                 state.active_stock_source_message_id = source_id
                 state.active_stock_updated_at = source_time
+            if (report_reference_update is _KEEP_REPORT_REFERENCE
+                    and active_stock_context is not None
+                    and previous_stock_identity != (
+                        state.active_stock_code,
+                        state.active_stock_canonical_id,
+                        state.active_stock_asset_type,
+                    )):
+                # A caller that did not mention the report still cannot carry a
+                # previous report into a different discussion object.
+                state.active_report_record_id = None
+            if report_reference_update is not _KEEP_REPORT_REFERENCE:
+                if report_reference_update is None:
+                    state.active_report_record_id = None
+                else:
+                    if (active_stock_context is None
+                            or isinstance(report_reference_update, bool)
+                            or not isinstance(report_reference_update, int)
+                            or report_reference_update <= 0):
+                        raise ValueError("Chat report reference requires a positive record id and active stock")
+                    state.active_report_record_id = int(report_reference_update)
+            if state.active_report_record_id is not None and active_stock_context is None:
+                raise ValueError("Chat report reference cannot exist without an active stock")
             state.state_version += 1
             state.last_accepted_user_message_id = int(message.id)
             state.updated_at = now
@@ -4044,6 +4084,7 @@ class DatabaseManager(metaclass=_DatabaseManagerMeta):
                 "session_state_version": state.state_version,
                 "selected_skill_ids": json.loads(state.selected_skill_ids_json),
                 "active_stock_context": self._chat_stock_from_state(state),
+                "active_report_record_id": state.active_report_record_id,
                 "user_message_id": int(message.id),
                 "user_message_anchor": self._chat_message_anchor(message),
             }
