@@ -37,6 +37,7 @@ import {
 } from '../stores/agentChatStore';
 import StockClarificationCard from '../components/chat/StockClarificationCard';
 import ChatIntakeCard from '../components/chat/ChatIntakeCard';
+import ChatAnswer from '../components/chat/ChatAnswer';
 import { downloadSessionInFormat, formatSessionAsMarkdown, type ExportFormat } from '../utils/chatExport';
 import { buildScannerFollowUpPrompt } from '../utils/scannerFollowUp';
 import type { ChatFollowUpContext } from '../utils/chatFollowUp';
@@ -1550,9 +1551,7 @@ const ChatPage: React.FC = () => {
                       {msg.role === 'assistant' ? (
                         <>
                           <div className="chat-prose">
-                            <Markdown remarkPlugins={[remarkGfm]}>
-                              {msg.content}
-                            </Markdown>
+                            <ChatAnswer content={msg.content} />
                           </div>
                           {msg.stockClarification && activeClarificationMessageId === msg.id && (
                             <StockClarificationCard
