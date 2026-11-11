@@ -9,6 +9,7 @@ and this project adheres to [Semantic Versioning](https://semver.org/).
 
 ## [Unreleased]
 
+- [新功能] 问股「分析过程」可视化：每条答复上方展示按类别分组的标签（分析步骤、K线获取、基本面分析、行情获取、行情分析、Agent 协作等），点击标签展开该类别的调用明细（标的、状态、耗时、数据来源、缓存命中），支持刷新/切换会话后恢复。单 Agent 与多 Agent 编排器统一收集并持久化 thinking_steps，事件系统新增 call_id、stage_id、outcome、detail 字段，支持并行同名调用配对与超时/失败/部分可用状态区分。
 - [改进] 问股澄清卡片改为先解析标的再进入 10 秒自动确认，历史会话不再重复倒计时。
 - [改进] 为 Instabox 部署提供应用和隧道自愈检查，以及基于原生健康端口的访问唤醒程序。
 - [修复] 修正问股 Word 导出与浏览器定时器的类型声明，恢复 Web 生产构建。

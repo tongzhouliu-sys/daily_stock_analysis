@@ -34,6 +34,13 @@ New clients may additionally read:
 - `minimum`
 - `reason`
 - `meta`
+- `call_id` (unique per tool call within a turn; matches `tool_start` and `tool_done`)
+- `stage_id` (unique per stage; matches `stage_start` and `stage_done`)
+- `parent_stage_id` (parent stage for nested tool calls in multi-agent)
+- `outcome` (`success` / `partial` / `failed` / `timeout` / `skipped`)
+- `detail` (public-facing detail fields: `stock_code`, `data_source`, `date_range`, `record_count`, `cached`, etc.)
+- `display_label` (user-friendly label for the tool)
+- `cached` (whether the result was served from cache)
 
 Unknown event types should be ignored or displayed with a generic fallback.
 `done` and `error` keep their existing completion semantics.

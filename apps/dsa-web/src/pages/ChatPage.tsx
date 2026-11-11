@@ -160,6 +160,7 @@ const ChatPage: React.FC = () => {
   const [showSkillDesc, setShowSkillDesc] = useState<string | null>(null);
   const [advancedOptionsOpen, setAdvancedOptionsOpen] = useState(false);
   const [expandedThinking, setExpandedThinking] = useState<Set<string>>(new Set());
+  const [expandedCategories, setExpandedCategories] = useState<Set<string>>(new Set());
   const [deleteConfirmId, setDeleteConfirmId] = useState<string | null>(null);
   const [sidebarOpen, setSidebarOpen] = useState(false);
   const [sidebarCollapsed, setSidebarCollapsed] = useState(() => localStorage.getItem('dsa.chat.sidebarCollapsed') === 'true');
@@ -883,11 +884,18 @@ const ChatPage: React.FC = () => {
     }, durationMs);
   }, []);
 
-  const toggleThinking = (msgId: string) => {
+  const toggleCategory = (msgId: string, category: string) => {
+    const key = `${msgId}:${category}`;
+    setExpandedCategories((prev) => {
+      const next = new Set(prev);
+      if (next.has(key)) next.delete(key);
+      else next.add(key);
+      return next;
+    });
+    // Also expand the thinking block if not already expanded
     setExpandedThinking((prev) => {
       const next = new Set(prev);
-      if (next.has(msgId)) next.delete(msgId);
-      else next.add(msgId);
+      if (!next.has(msgId)) next.add(msgId);
       return next;
     });
   };
@@ -962,95 +970,193 @@ const ChatPage: React.FC = () => {
 
   const renderThinkingBlock = (msg: Message) => {
     if (!msg.thinkingSteps || msg.thinkingSteps.length === 0) return null;
+    
+    // Group steps by category
+    const categoryMap = new Map<string, ProgressStep[]>();
+    const categoryOrder: string[] = [];
+    
+    msg.thinkingSteps.forEach((step) => {
+      // Determine category from step
+      let category = 'analysis_steps';
+      if (step.type === 'tool_done' || step.type === 'tool_start') {
+        const toolName = step.tool || '';
+        // Map tool names to categories
+        if (toolName.includes('daily_history') || toolName.includes('intraday')) {
+          category = 'kline';
+        } else if (toolName.includes('stock_info') || toolName.includes('financial')) {
+          category = 'fundamental';
+        } else if (toolName.includes('realtime_quote')) {
+          category = 'quote';
+        } else if (toolName.includes('market_indices') || toolName.includes('sector')) {
+          category = 'market';
+        } else if (toolName.includes('trend') || toolName.includes('ma') || toolName.includes('volume') || toolName.includes('pattern')) {
+          category = 'technical';
+        } else if (toolName.includes('news')) {
+          category = 'news';
+        } else if (toolName.includes('intel')) {
+          category = 'intel';
+        } else {
+          category = 'other';
+        }
+      } else if (step.type === 'stage_start' || step.type === 'stage_done') {
+        category = 'agent_collaboration';
+      }
+      
+      if (!categoryMap.has(category)) {
+        categoryMap.set(category, []);
+        categoryOrder.push(category);
+      }
+      categoryMap.get(category)!.push(step);
+    });
+    
+    // Category labels
+    const categoryLabels: Record<string, [string, string]> = {
+      analysis_steps: ['分析步骤', 'Analysis Steps'],
+      kline: ['K线获取', 'K-line Data'],
+      fundamental: ['基本面分析', 'Fundamental Analysis'],
+      quote: ['行情获取', 'Quote Fetch'],
+      market: ['行情分析', 'Market Analysis'],
+      technical: ['技术分析', 'Technical Analysis'],
+      news: ['新闻搜索', 'News Search'],
+      intel: ['情报搜索', 'Intel Search'],
+      agent_collaboration: ['Agent 协作', 'Agent Collaboration'],
+      other: ['工具调用', 'Tool Calls'],
+    };
+    
     const isExpanded = expandedThinking.has(msg.id);
-    const toolSteps = msg.thinkingSteps.filter((s) => s.type === 'tool_done');
-    const totalDuration = toolSteps.reduce(
-      (sum, s) => sum + (s.duration || 0),
-      0,
-    );
-    const summary = `${toolSteps.length} 个工具调用 · ${totalDuration.toFixed(1)}s`;
-
+    
     return (
-      <button
-        onClick={() => toggleThinking(msg.id)}
-        className="flex items-center gap-2 text-xs text-muted-text hover:text-secondary-text transition-colors mb-2 w-full text-left"
-      >
-        <svg
-          className={`w-3 h-3 transition-transform flex-shrink-0 ${isExpanded ? 'rotate-90' : ''}`}
-          fill="none"
-          stroke="currentColor"
-          viewBox="0 0 24 24"
-        >
-          <path
-            strokeLinecap="round"
-            strokeLinejoin="round"
-            strokeWidth={2}
-            d="M9 5l7 7-7 7"
-          />
-        </svg>
-        <span className="flex items-center gap-1.5">
-          <span className="opacity-60">思考过程</span>
-          <span className="text-muted-text/50">·</span>
-          <span className="opacity-50">{summary}</span>
-        </span>
-      </button>
+      <div className="mb-3">
+        <div className="flex items-center gap-2 mb-2">
+          <span className="text-xs text-muted-text opacity-60">分析过程</span>
+        </div>
+        
+        {/* Category tags */}
+        <div className="flex flex-wrap gap-1.5 mb-2">
+          {categoryOrder.map((category) => {
+            const steps = categoryMap.get(category) || [];
+            const [zhLabel, enLabel] = categoryLabels[category] || ['其他', 'Other'];
+            const label = language === 'en' ? enLabel : zhLabel;
+            const count = steps.length;
+            const isCategoryExpanded = isExpanded && expandedCategories.has(`${msg.id}:${category}`);
+            
+            return (
+              <button
+                key={category}
+                onClick={() => toggleCategory(msg.id, category)}
+                className={cn(
+                  'px-2.5 py-1 rounded text-xs transition-all',
+                  'border min-w-[48px] min-h-[32px]',
+                  isCategoryExpanded
+                    ? 'bg-primary/10 border-primary text-primary'
+                    : 'bg-muted/50 border-border hover:border-primary/50 text-secondary-text'
+                )}
+                aria-expanded={isCategoryExpanded}
+              >
+                <span>{label}</span>
+                {count > 0 && (
+                  <span className="ml-1 opacity-60">({count})</span>
+                )}
+              </button>
+            );
+          })}
+        </div>
+        
+        {/* Expanded category details */}
+        {isExpanded && (
+          <div className="space-y-3 animate-fade-in">
+            {categoryOrder.map((category) => {
+              if (!expandedCategories.has(`${msg.id}:${category}`)) return null;
+              const steps = categoryMap.get(category) || [];
+              
+              return (
+                <div key={category} className="pl-4 border-l-2 border-primary/30 space-y-1.5">
+                  {steps.map((step, idx) => {
+                    let statusClass = 'chat-progress-item-muted';
+                    let iconClass = 'chat-progress-dot-muted';
+                    let text = '';
+                    
+                    if (step.type === 'tool_done') {
+                      const outcome = step.outcome || (step.success ? 'success' : 'failed');
+                      const duration = step.duration ? ` · ${step.duration}s` : '';
+                      const stockCode = step.detail?.stock_code || '';
+                      const prefix = stockCode ? `${stockCode} · ` : '';
+                      
+                      text = `${prefix}${step.display_label || step.display_name || step.tool}${duration}`;
+                      
+                      if (outcome === 'success') {
+                        statusClass = 'chat-progress-item-success';
+                        iconClass = 'chat-progress-dot-success';
+                      } else if (outcome === 'timeout') {
+                        statusClass = 'chat-progress-item-danger';
+                        iconClass = 'chat-progress-dot-danger';
+                        text += ' · 超时';
+                      } else if (outcome === 'failed') {
+                        statusClass = 'chat-progress-item-danger';
+                        iconClass = 'chat-progress-dot-danger';
+                      } else if (outcome === 'partial') {
+                        statusClass = 'chat-progress-item-muted';
+                        iconClass = 'chat-progress-dot-muted';
+                        text += ' · 部分可用';
+                      }
+                      
+                      // Add detail info if available
+                      if (step.detail) {
+                        const detailParts: string[] = [];
+                        if (step.detail.record_count) {
+                          detailParts.push(`${step.detail.record_count} 条记录`);
+                        }
+                        if (step.detail.date_range) {
+                          detailParts.push(String(step.detail.date_range));
+                        }
+                        if (step.detail.data_source === 'cache') {
+                          detailParts.push('历史缓存');
+                        }
+                        if (detailParts.length > 0) {
+                          text += ` · ${detailParts.join(' · ')}`;
+                        }
+                      }
+                    } else if (step.type === 'tool_start') {
+                      text = `${step.display_label || step.display_name || step.tool}...`;
+                      statusClass = 'chat-progress-item-tool';
+                      iconClass = 'chat-progress-dot-tool';
+                    } else if (step.type === 'stage_start') {
+                      text = step.message || `Starting ${step.stage || 'stage'}...`;
+                      statusClass = 'chat-progress-item-thinking';
+                      iconClass = 'chat-progress-dot-thinking';
+                    } else if (step.type === 'stage_done') {
+                      const isSuccess = isStageDoneSuccessful(step.status);
+                      text = getStageDoneLabel(step);
+                      statusClass = isSuccess ? 'chat-progress-item-success' : 'chat-progress-item-danger';
+                      iconClass = isSuccess ? 'chat-progress-dot-success' : 'chat-progress-dot-danger';
+                    } else if (step.type === 'thinking') {
+                      text = step.message || `第 ${step.step} 步：思考`;
+                      statusClass = 'chat-progress-item-thinking';
+                      iconClass = 'chat-progress-dot-thinking';
+                    } else if (step.type === 'generating') {
+                      text = step.message || '生成分析';
+                      statusClass = 'chat-progress-item-generating';
+                      iconClass = 'chat-progress-dot-generating';
+                    } else {
+                      text = step.message || step.type;
+                    }
+                    
+                    return (
+                      <div key={idx} className={cn('chat-progress-item', statusClass)}>
+                        <span className={cn('chat-progress-dot', iconClass)} />
+                        <span className="leading-relaxed">{text}</span>
+                      </div>
+                    );
+                  })}
+                </div>
+              );
+            })}
+          </div>
+        )}
+      </div>
     );
   };
 
-  const renderThinkingDetails = (steps: ProgressStep[]) => (
-    <div className="mb-3 pl-5 border-l border-border/40 space-y-1.5 animate-fade-in">
-      {steps.map((step, idx) => {
-        let statusClass = 'chat-progress-item-muted';
-        let iconClass = 'chat-progress-dot-muted';
-        let text = '';
-        if (step.type === 'thinking') {
-          text = step.message || `第 ${step.step} 步：思考`;
-          statusClass = 'chat-progress-item-thinking';
-          iconClass = 'chat-progress-dot-thinking';
-        } else if (step.type === 'tool_start') {
-          text = `${step.display_name || step.tool}...`;
-          statusClass = 'chat-progress-item-tool';
-          iconClass = 'chat-progress-dot-tool';
-        } else if (step.type === 'tool_done') {
-          text = `${step.display_name || step.tool} (${step.duration}s)`;
-          statusClass = step.success ? 'chat-progress-item-success' : 'chat-progress-item-danger';
-          iconClass = step.success ? 'chat-progress-dot-success' : 'chat-progress-dot-danger';
-        } else if (step.type === 'stage_start') {
-          text = step.message || `Starting ${step.stage || 'stage'}...`;
-          statusClass = 'chat-progress-item-thinking';
-          iconClass = 'chat-progress-dot-thinking';
-        } else if (step.type === 'stage_done') {
-          const isSuccess = isStageDoneSuccessful(step.status);
-          text = getStageDoneLabel(step);
-          statusClass = isSuccess ? 'chat-progress-item-success' : 'chat-progress-item-danger';
-          iconClass = isSuccess ? 'chat-progress-dot-success' : 'chat-progress-dot-danger';
-        } else if (step.type === 'pipeline_timeout') {
-          text = step.message || `${step.stage || 'pipeline'} timed out`;
-          statusClass = 'chat-progress-item-danger';
-          iconClass = 'chat-progress-dot-danger';
-        } else if (step.type === 'pipeline_budget_skipped') {
-          text = getPipelineBudgetSkippedLabel(step);
-          statusClass = 'chat-progress-item-muted';
-          iconClass = 'chat-progress-dot-muted';
-        } else if (step.type === 'generating') {
-          text = step.message || '生成分析';
-          statusClass = 'chat-progress-item-generating';
-          iconClass = 'chat-progress-dot-generating';
-        } else {
-          text = step.message || step.type;
-        }
-        return (
-          <div
-            key={idx}
-            className={cn('chat-progress-item', statusClass)}
-          >
-            <span className={cn('chat-progress-dot', iconClass)} />
-            <span className="leading-relaxed">{text}</span>
-          </div>
-        );
-      })}
-    </div>
-  );
   const selectedSkillSummary = selectedSkillIds.length > 0
     ? getSkillNames(selectedSkillIds).join('、')
     : '通用分析';
@@ -1435,10 +1541,6 @@ const ChatPage: React.FC = () => {
                         </div>
                       )}
                       {msg.role === 'assistant' && renderThinkingBlock(msg)}
-                      {msg.role === 'assistant' &&
-                        expandedThinking.has(msg.id) &&
-                        msg.thinkingSteps &&
-                        renderThinkingDetails(msg.thinkingSteps)}
                       {msg.role === 'assistant' ? (
                         <>
                           <div className="chat-prose">
