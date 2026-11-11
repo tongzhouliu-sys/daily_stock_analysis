@@ -1,7 +1,5 @@
-import React, { useState, useRef, useEffect, useCallback, useMemo } from 'react';
+import { useState, useRef, useEffect, useCallback, useMemo } from 'react';
 import { useNavigate, useSearchParams } from 'react-router-dom';
-import Markdown from 'react-markdown';
-import remarkGfm from 'remark-gfm';
 import {
   ArrowUp,
   ArrowUpRight,
@@ -323,6 +321,10 @@ const ChatPage: React.FC = () => {
     hasInitialLoad,
     chatError,
     terminalStatus,
+    intakeDraft,
+    intakeStatus,
+    updateIntakeAnswers,
+    clearIntake,
     setSelectedSkillIds,
     loadSessions,
     loadInitialSession,
@@ -1522,8 +1524,14 @@ const ChatPage: React.FC = () => {
               ) : (
                 <>
                   {/* T3: Intake guided questioning card */}
-                  {useAgentChatStore(state => state.intakeStatus) === 'pending' && (
-                    <ChatIntakeCard />
+                  {intakeStatus === 'pending' && intakeDraft && (
+                    <ChatIntakeCard
+                      questions={intakeDraft.questions}
+                      initialAnswers={intakeDraft.answers}
+                      onConfirm={(a) => updateIntakeAnswers(a, 'confirm')}
+                      onSkip={() => updateIntakeAnswers(intakeDraft.answers, 'skip')}
+                      onCancel={clearIntake}
+                    />
                   )}
                   {messages.map((msg) => {
                   const skillLabel = getMessageSkillLabel(msg);
