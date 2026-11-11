@@ -7,6 +7,7 @@ import type { RegisteredIndexIdentity } from './stockCode';
 export interface ChatFollowUpContext {
   stock_code: string;
   stock_name: string | null;
+  report_record_id?: number;
   previous_analysis_summary?: unknown;
   previous_strategy?: unknown;
   previous_price?: number;
@@ -148,11 +149,16 @@ export function buildChatFollowUpContext(
   report?: AnalysisReport | null,
   index: ReadonlyArray<RegisteredIndexIdentity> = [],
   assetType?: 'stock' | 'index',
+  recordId?: number,
 ): ChatFollowUpContext {
   const context: ChatFollowUpContext = {
     stock_code: stockCode,
     stock_name: stockName,
   };
+
+  if (recordId !== undefined) {
+    context.report_record_id = recordId;
+  }
 
   const requestKey = reportIdentityKey(stockCode, index, assetType);
   const reportKey = report?.meta?.stockCode
@@ -189,13 +195,13 @@ export async function resolveChatFollowUpContext({
   index = [],
 }: ResolveChatFollowUpContextParams): Promise<ChatFollowUpContext> {
   if (!recordId) {
-    return buildChatFollowUpContext(stockCode, stockName);
+    return buildChatFollowUpContext(stockCode, stockName, undefined, index, undefined, undefined);
   }
 
   try {
     const report = await historyApi.getDetail(recordId);
-    return buildChatFollowUpContext(stockCode, stockName, report, index);
+    return buildChatFollowUpContext(stockCode, stockName, report, index, undefined, recordId);
   } catch {
-    return buildChatFollowUpContext(stockCode, stockName);
+    return buildChatFollowUpContext(stockCode, stockName, undefined, index, undefined, recordId);
   }
 }

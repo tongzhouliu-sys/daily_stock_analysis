@@ -618,6 +618,9 @@ async def agent_chat_stream(
                 "backend": getattr(result, "backend", "") or backend_id,
                 "error_code": getattr(result, "error_code", None),
                 "request_id": request_id,
+                # T2: Include persisted message ID and thinking steps for UI recovery
+                "assistant_message_id": getattr(result, "assistant_message_id", None),
+                "thinking_steps": getattr(result, "thinking_steps", []),
             })
             asyncio.run_coroutine_threadsafe(queue.put(event), loop)
         except Exception as exc:

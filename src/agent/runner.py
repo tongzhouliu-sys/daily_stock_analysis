@@ -29,7 +29,13 @@ from typing import Any, Callable, Dict, List, Optional
 from src.agent.llm_adapter import LLMToolAdapter
 from src.agent.dashboard_payload import sanitize_agent_dashboard_payload
 from src.agent.protocols import StageFailureReason
-from src.agent.stream_events import stream_event
+from src.agent.stream_events import (
+    stream_event,
+    tool_start_event,
+    tool_done_event,
+    TOOL_DISPLAY_LABELS,
+    TOOL_CATEGORIES,
+)
 from src.agent.tools.registry import ToolRegistry
 from src.agent.tools.execution import (
     TOOL_CANCEL_EVENT,
@@ -751,6 +757,95 @@ def _execute_tools(
             deadline_holder[0] = time.monotonic() + per_tool_timeout
         return _exec_single(tc_item)
 
+    # Track call IDs for matching start/done events
+    call_ids: Dict[str, str] = {}
+
+    def _build_tool_detail(tool_name: str, arguments: Dict[str, Any], result_str: str, guard_result: Optional[Dict[str, Any]], cached: bool) -> Dict[str, Any]:
+        """Build public-facing detail fields for a tool call.
+        
+        Extracts tool-specific information from arguments and results to provide
+        meaningful context for the UI display.
+        """
+        detail: Dict[str, Any] = {}
+        
+        # Extract stock code from arguments if present
+        stock_code = arguments.get("stock_code") or arguments.get("code")
+        if stock_code:
+            detail["stock_code"] = stock_code
+        
+        # Add data source info
+        detail["data_source"] = "cache" if cached else "realtime"
+        
+        # Add guard result info if present
+        if guard_result:
+            detail["guarded"] = True
+            if guard_result.get("expected_stock_code"):
+                detail["expected_stock_code"] = guard_result["expected_stock_code"]
+        
+        # Tool-specific detail extraction
+        try:
+            # Try to parse result as JSON for structured data
+            result_data = json.loads(result_str) if result_str else None
+            
+            if result_data and isinstance(result_data, dict):
+                # Extract date range for historical data tools
+                if tool_name in ["get_daily_history", "get_intraday_data"]:
+                    if "data" in result_data and isinstance(result_data["data"], list):
+                        detail["record_count"] = len(result_data["data"])
+                        if result_data["data"]:
+                            first_date = result_data["data"][0].get("date") or result_data["data"][0].get("timestamp")
+                            last_date = result_data["data"][-1].get("date") or result_data["data"][-1].get("timestamp")
+                            if first_date and last_date:
+                                detail["date_range"] = f"{first_date} ~ {last_date}"
+                
+                # Extract market indices info
+                elif tool_name == "get_market_indices":
+                    if "indices" in result_data:
+                        detail["index_count"] = len(result_data["indices"])
+                
+                # Extract sector rankings info
+                elif tool_name == "get_sector_rankings":
+                    if "sectors" in result_data:
+                        detail["sector_count"] = len(result_data["sectors"])
+                
+                # Extract stock info fields
+                elif tool_name == "get_stock_info":
+                    if "info" in result_data:
+                        info_keys = list(result_data["info"].keys())
+                        detail["info_fields"] = info_keys[:10]  # Limit to first 10 fields
+                
+                # Extract news count
+                elif tool_name in ["search_stock_news", "search_comprehensive_intel"]:
+                    if "news" in result_data:
+                        detail["news_count"] = len(result_data["news"])
+                    elif "results" in result_data:
+                        detail["result_count"] = len(result_data["results"])
+                
+                # Extract technical analysis info
+                elif tool_name in ["analyze_trend", "analyze_pattern"]:
+                    if "indicators" in result_data:
+                        detail["indicator_count"] = len(result_data["indicators"])
+                
+                # Generic: add top-level keys for other tools
+                else:
+                    top_keys = list(result_data.keys())[:5]
+                    if top_keys:
+                        detail["result_keys"] = top_keys
+            
+            # Fallback: add result preview for non-JSON or empty results
+            if not detail.get("record_count") and not detail.get("result_keys"):
+                result_preview = result_str[:200] if result_str and len(result_str) > 200 else result_str
+                if result_preview:
+                    detail["result_preview"] = result_preview
+                    
+        except (json.JSONDecodeError, TypeError, AttributeError):
+            # If parsing fails, just add a preview
+            result_preview = result_str[:200] if result_str and len(result_str) > 200 else result_str
+            if result_preview:
+                detail["result_preview"] = result_preview
+        
+        return detail
+
     def _record(tc_item, *, timed_out, timeout_s=None, out=None, guard_result=None):
         """Emit ``tool_done``, build the log entry, and append to ``results``."""
         if out is not None:
@@ -762,14 +857,29 @@ def _execute_tools(
             success = False
             dur = round(timeout_s, 2)
             cached = False
+
+        # Get or generate call_id for this tool call
+        tc_key = f"{tc_item.name}:{id(tc_item)}"
+        call_id = call_ids.get(tc_key, f"call_{len(call_ids)}")
+
+        # Build detail fields for display
+        detail = _build_tool_detail(tc_item.name, tc_item.arguments, result_str, guard_result, cached)
+
         if progress_callback:
-            progress_callback(stream_event(
-                "tool_done", step=step, tool=tc_item.name, success=success, duration=dur,
+            progress_callback(tool_done_event(
+                step=step,
+                tool=tc_item.name,
+                success=success,
+                duration=dur,
+                call_id=call_id,
+                timeout=timed_out,
+                detail=detail if detail else None,
+                cached=cached,
             ))
         log_entry = {
             "step": step, "tool": tc_item.name, "arguments": tc_item.arguments,
             "success": success, "duration": dur, "result_length": len(result_str),
-            "cached": cached,
+            "cached": cached, "call_id": call_id,
         }
         if timed_out:
             log_entry["timeout"] = True
@@ -780,6 +890,8 @@ def _execute_tools(
                 "requested_stock_code": guard_result.get("requested_stock_code"),
                 "allowed_stock_codes": guard_result.get("allowed_stock_codes", []),
             })
+        if detail:
+            log_entry["detail"] = detail
         tool_calls_log.append(log_entry)
         results.append({"tc": tc_item, "result_str": result_str})
 
@@ -793,8 +905,18 @@ def _execute_tools(
             tc, tool_registry, tool_call_timeout_seconds, tool_wait_timeout_seconds,
         )
         plan.append((tc, per_tool_timeout))
+        
+        # Generate call_id and store it for matching with tool_done
+        tc_key = f"{tc.name}:{id(tc)}"
+        call_id = f"call_{len(call_ids)}"
+        call_ids[tc_key] = call_id
+        
         if progress_callback:
-            progress_callback(stream_event("tool_start", step=step, tool=tc.name))
+            progress_callback(tool_start_event(
+                step=step,
+                tool=tc.name,
+                call_id=call_id,
+            ))
 
     # Fast path: a single tool with no resolved timeout runs inline (no thread).
     if len(plan) == 1 and not (plan[0][1] and plan[0][1] > 0):
