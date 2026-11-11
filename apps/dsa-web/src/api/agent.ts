@@ -132,6 +132,15 @@ export function decodeChatState(payload: unknown, source: 'detail' | 'accepted' 
   };
 }
 
+// T4: Domain guard metadata for non-investment question reminders
+export interface DomainGuardMeta {
+  action: 'allow' | 'redirect' | 'clarify' | 'direct_reply';
+  reason_code: 'investment' | 'mixed' | 'system_help' | 'social' | 'off_topic' | 'ambiguous' | 'check_unavailable';
+  policy_version: string;
+  elapsed_ms?: number;
+  source: 'rule' | 'model' | 'fallback';
+}
+
 export interface ChatResponse extends ChatStateFields {
   success: boolean;
   content: string;
@@ -139,6 +148,7 @@ export interface ChatResponse extends ChatStateFields {
   error?: string;
   session_state?: { selected_skill_ids: string[] | null };
   clarification?: StockClarification | null;
+  domain_guard?: DomainGuardMeta;
 }
 
 export type AgentStatusResponse = AgentBackendStatusResponse;

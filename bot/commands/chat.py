@@ -92,6 +92,17 @@ class ChatCommand(BotCommand):
         session_id = _resolve_chat_session_id(message)
         
         try:
+            # T3: Domain guard check before chat
+            from src.services.agent_domain_guard_service import AgentDomainGuardService
+            from src.schemas.agent_domain_guard import DomainAction
+            
+            guard_service = AgentDomainGuardService(config)
+            decision, meta = guard_service.classify(user_message)
+            
+            if decision.action != DomainAction.ALLOW:
+                # Return domain guard reminder
+                return BotResponse.text_response(decision.message or "Domain guard reminder")
+            
             from src.agent.factory import build_agent_executor
             executor = build_agent_executor(config)
             result = executor.chat(message=user_message, session_id=session_id)

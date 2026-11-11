@@ -934,6 +934,28 @@ async def create_chat_intake(
     session_id = request.session_id or str(uuid.uuid4())
     session_generation = request.session_generation or str(uuid.uuid4())
 
+    # T2: Domain guard check before intake questionnaire
+    config = get_config()
+    guard_service = AgentDomainGuardService(config)
+    decision, meta = guard_service.classify(request.message)
+    
+    if decision.action != DomainAction.ALLOW:
+        # Return 422 with domain_scope_required error
+        raise HTTPException(
+            status_code=422,
+            detail={
+                "error": "domain_scope_required",
+                "message": decision.message or "",
+                "domain_guard": {
+                    "action": meta.action.value,
+                    "reason_code": meta.reason_code.value,
+                    "policy_version": meta.policy_version,
+                    "elapsed_ms": meta.elapsed_ms,
+                    "source": meta.source,
+                }
+            }
+        )
+
     try:
         draft = await asyncio.to_thread(
             intake_service.create_intake,

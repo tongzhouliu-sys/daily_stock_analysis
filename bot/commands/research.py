@@ -83,6 +83,17 @@ class ResearchCommand(BotCommand):
         else:
             question = " ".join(args)
 
+        # T3: Domain guard check before research
+        from src.services.agent_domain_guard_service import AgentDomainGuardService
+        from src.schemas.agent_domain_guard import DomainAction
+        
+        guard_service = AgentDomainGuardService(config)
+        decision, meta = guard_service.classify(question)
+        
+        if decision.action != DomainAction.ALLOW:
+            # Return domain guard reminder without research header
+            return BotResponse.text_response(decision.message or "Domain guard reminder")
+
         if stock_code:
             question = f"[Stock: {stock_code}] {question}"
 
