@@ -576,10 +576,28 @@ class AgentOrchestrator:
             )
         ]
 
+        # T4: Apply answer editor if analysis brief is available
+        edited_content = orch_result.content
+        if orch_result.success and turn.context.meta.get("analysis_brief"):
+            from src.agent.answer_editor import StockAnswerEditorService
+            editor = StockAnswerEditorService()
+            try:
+                from src.schemas.agent_intake import AnalysisBrief
+                brief_data = turn.context.meta.get("analysis_brief")
+                brief = AnalysisBrief(**brief_data) if isinstance(brief_data, dict) else brief_data
+                edited_content, editor_meta = editor.format_response_sync(
+                    orch_result.content,
+                    brief,
+                    source_refs=[tc.get("tool_name") for tc in orch_result.tool_calls_log if tc.get("tool_name")]
+                )
+            except Exception as e:
+                # Editor failure should not break the response
+                logger.warning(f"Answer editor failed: {e}")
+
         # Persist assistant response with thinking_steps (T2)
         assistant_message_id = None
         if turn.accepted_snapshot is not None:
-            content = orch_result.content if orch_result.success else f"[分析失败] {orch_result.error or '未知错误'}"
+            content = edited_content if orch_result.success else f"[分析失败] {orch_result.error or '未知错误'}"
             assistant_message_id = conversation_manager.add_message(
                 turn.session_id, "assistant", content, accepted_turn=turn.accepted_snapshot,
                 db_manager=turn.db_manager,
@@ -587,7 +605,7 @@ class AgentOrchestrator:
             )
         elif orch_result.success:
             assistant_message_id = conversation_manager.add_message(
-                turn.session_id, "assistant", orch_result.content,
+                turn.session_id, "assistant", edited_content,
                 thinking_steps=thinking_steps,
             )
         else:
@@ -599,7 +617,7 @@ class AgentOrchestrator:
 
         result = AgentResult(
             success=orch_result.success,
-            content=orch_result.content,
+            content=edited_content,
             dashboard=orch_result.dashboard,
             tool_calls_log=orch_result.tool_calls_log,
             total_steps=orch_result.total_steps,

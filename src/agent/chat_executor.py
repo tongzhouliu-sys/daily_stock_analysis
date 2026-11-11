@@ -8,6 +8,7 @@ import uuid
 from dataclasses import dataclass
 from typing import Any, Callable, Dict, List, Optional, TYPE_CHECKING
 
+from data_provider.base import interactive_mode
 from src.agent.agent_backend import AgentBackend, AgentRunRequest
 from src.agent.conversation import conversation_manager
 from src.agent.executor import AgentResult, PreparedAgentChat, prepare_agent_chat
@@ -178,18 +179,20 @@ class AgentChatExecutor:
             pass  # Non-critical
 
         try:
-            backend_result = self.backend.run(
-                AgentRunRequest(
-                    system_prompt=turn.prepared.system_prompt,
-                    history_messages=turn.prepared.history_messages,
-                    user_message=turn.message,
-                    session_id=turn.session_id,
-                    stock_scope=turn.prepared.stock_scope,
-                    max_steps=self.max_steps,
-                    max_wall_clock_seconds=self.timeout_seconds,
-                    progress_callback=_persisting_progress_callback,
+            # T3: 启用交互模式上下文，减少数据源固定休眠
+            with interactive_mode():
+                backend_result = self.backend.run(
+                    AgentRunRequest(
+                        system_prompt=turn.prepared.system_prompt,
+                        history_messages=turn.prepared.history_messages,
+                        user_message=turn.message,
+                        session_id=turn.session_id,
+                        stock_scope=turn.prepared.stock_scope,
+                        max_steps=self.max_steps,
+                        max_wall_clock_seconds=self.timeout_seconds,
+                        progress_callback=_persisting_progress_callback,
+                    )
                 )
-            )
 
             total_tokens = 0
             if isinstance(backend_result.usage, dict):
@@ -222,6 +225,23 @@ class AgentChatExecutor:
             
             # Set thinking_steps in result for T2
             result.thinking_steps = thinking_steps
+
+            # T4: Apply answer editor if analysis brief is available
+            if result.success and turn.prepared.analysis_brief:
+                from src.agent.answer_editor import StockAnswerEditorService
+                editor = StockAnswerEditorService()
+                try:
+                    edited_content, editor_meta = await editor.format_response(
+                        result.content,
+                        turn.prepared.analysis_brief,
+                        source_refs=[tc.get("tool_name") for tc in backend_result.tool_calls_log if tc.get("tool_name")]
+                    )
+                    result.content = edited_content
+                    result.editor_meta = editor_meta
+                except Exception as e:
+                    # Editor failure should not break the response
+                    import logging
+                    logging.getLogger(__name__).warning(f"Answer editor failed: {e}")
 
             if result.success:
                 if turn.accepted_snapshot is not None:
