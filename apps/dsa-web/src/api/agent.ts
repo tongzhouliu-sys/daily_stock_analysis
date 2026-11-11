@@ -3,6 +3,7 @@ import { API_BASE_URL } from '../utils/constants';
 import { createApiError, createParsedApiError, isApiRequestError, parseApiError } from './error';
 import { toCamelCase } from './utils';
 import type { AgentBackendStatusResponse } from '../types/systemConfig';
+import type { ProgressStep } from '../stores/agentChatStore';
 
 export interface ChatStreamOptions {
   signal?: AbortSignal;
