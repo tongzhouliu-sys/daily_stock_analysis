@@ -9,6 +9,8 @@ and this project adheres to [Semantic Versioning](https://semver.org/).
 
 ## [Unreleased]
 
+- [文档] 新增问股响应耗时分析、加速方案与开发任务书，优化待实施。
+- [文档] 新增问股首次选择题引导、精读回答界面与回答精编 skill 的开发任务及验收规格，功能待实施。
 - [新功能] 问股「分析过程」可视化：每条答复上方展示按类别分组的标签（分析步骤、K线获取、基本面分析、行情获取、行情分析、Agent 协作等），点击标签展开该类别的调用明细（标的、状态、耗时、数据来源、缓存命中），支持刷新/切换会话后恢复。单 Agent 与多 Agent 编排器统一收集并持久化 thinking_steps，事件系统新增 call_id、stage_id、outcome、detail 字段，支持并行同名调用配对与超时/失败/部分可用状态区分。
 - [改进] 问股澄清卡片改为先解析标的再进入 10 秒自动确认，历史会话不再重复倒计时。
 - [改进] 为 Instabox 部署提供应用和隧道自愈检查，以及基于原生健康端口的访问唤醒程序。
@@ -29,6 +31,10 @@ and this project adheres to [Semantic Versioning](https://semver.org/).
 - [改进] 移除实验性 Codex App Server 问股后端及专属探针、取消与启动链；旧配置明确提示退役并可主动修正，保留默认 LiteLLM、会话接受事务及独立 Codex CLI 报告。
 - [修复] Agent 状态面板在缺少可用主模型时显示中英文配置指引，保留技术错误码；配置指南明确区分已移除后端与历史 Gate 记录。
 - [chore] Default new MiniMax channels to MiniMax-M3.1-Flash and MiniMax-M3, filter older text recommendations while retaining saved/custom models, and refresh fallback pricing.
+
+- [新功能] 问股引导式提问与回答精编：新会话首次提问时展示 1-5 道选择题（分析对象、目标、时间框架、持仓状态、风险关注等），用户确认后生成 AnalysisBrief 注入分析上下文；分析完成后由 stock-answer-editor skill 自动精编回答为结论先行、证据支撑、风险可见的结构化格式（结论摘要、核心论据、风险提示、数据来源、后续建议），严格保留股票代码、价格、日期等硬事实，8 秒超时或事实校验失败时降级返回原始回答；前端 ChatAnswer 组件支持折叠展开各段落，导出和历史记录保持 Markdown 源格式。
+- [改进] 问股 API 扩展 intake 端点（POST/PATCH/GET /agent/chat/intake），支持草稿创建、答案更新、状态查询；请求体新增 interaction_version、intake_id、intake_revision 字段，确认后的 analysis_brief 自动注入 executor 上下文。
+- [改进] 前端 Zustand store 集成 intake 状态管理（intakeDraft、intakeStatus、analysisBrief），ChatIntakeCard 组件支持单/多选、进度条、上一步/下一步、跳过、确认等交互。
 
 <!-- 新条目格式：- [类型] 描述（类型取值：新功能/改进/修复/文档/测试/chore）-->
 <!-- 每条独立一行追加到本段末尾，无需分类标题，合并时冲突最小 -->
