@@ -692,6 +692,45 @@ describe('agentChatStore.startStream', () => {
     });
   });
 
+  it('attaches clarification evidence only to the live assistant message', async () => {
+    const clarification = {
+      reason: 'ambiguous_name',
+      action: 'switch',
+      current: null,
+      candidates: [
+        { stock_code: '688981', stock_name: '中芯国际', canonical_id: 'sh688981', asset_type: 'stock' },
+        { stock_code: 'HK00981', stock_name: '中芯国际', canonical_id: 'hk00981', asset_type: 'stock' },
+      ],
+      recommended: {
+        stock_code: '688981', stock_name: '中芯国际', canonical_id: 'sh688981', asset_type: 'stock',
+      },
+    };
+    vi.mocked(agentApi.chatStream).mockResolvedValue(
+      createStreamResponse([
+        accepted('request-clarify'),
+        `data: ${JSON.stringify({
+          type: 'done', success: true, content: '请明确提供本次讨论的股票或指数代码，或确认是否切换。',
+          clarification,
+        })}`,
+      ]),
+    );
+
+    await useAgentChatStore.getState().startStream({
+      message: '分析中芯国际',
+      session_id: 'session-test',
+      request_id: 'request-clarify',
+    });
+
+    const state = useAgentChatStore.getState();
+    expect(state.messages).toHaveLength(2);
+    expect(state.messages[0]).not.toHaveProperty('stockClarification');
+    expect(state.messages[1]).toMatchObject({
+      role: 'assistant',
+      content: '请明确提供本次讨论的股票或指数代码，或确认是否切换。',
+      stockClarification: clarification,
+    });
+  });
+
   it('reports an interrupted accepted stream without appending an empty assistant message', async () => {
     vi.mocked(agentApi.chatStream).mockResolvedValue(
       createStreamResponse([
@@ -831,6 +870,135 @@ describe('agentChatStore.switchSession', () => {
       { id: 'msg-b', role: 'assistant', content: 'B 回复' },
     ]);
     expect(state.selectedSkillIds).toEqual(['risk']);
+  });
+});
+
+describe('agentChatStore running task recovery', () => {
+  it('restores the running state and progress after a page refresh', async () => {
+    localStorage.setItem('dsa_chat_session_id', 'running-session');
+    useAgentChatStore.setState({ hasInitialLoad: false, sessionId: 'running-session' });
+    vi.mocked(agentApi.getChatSessions).mockResolvedValue([{
+      session_id: 'running-session', title: '分析茅台', message_count: 1,
+      created_at: null, last_active: null,
+    }]);
+    vi.mocked(agentApi.getChatSessionMessages).mockResolvedValue({
+      session_id: 'running-session',
+      messages: [{ id: 'u1', role: 'user', content: '分析茅台', created_at: null }],
+      session_generation: 'g', session_state_version: 1,
+      active_stock_context: null,
+      session_state: { selected_skill_ids: ['technical'] },
+      is_running: true,
+      running_progress_steps: [
+        { type: 'thinking', message: '正在制定分析路径...' },
+        { type: 'tool_start', tool: 'get_stock_info', display_name: '获取股票基本面' },
+      ],
+    });
+
+    await useAgentChatStore.getState().loadInitialSession();
+
+    expect(useAgentChatStore.getState()).toMatchObject({
+      sessionId: 'running-session',
+      loading: true,
+      messages: [{ id: 'u1', role: 'user', content: '分析茅台' }],
+    });
+    expect(useAgentChatStore.getState().progressSteps).toEqual([
+      { type: 'thinking', message: '正在制定分析路径...' },
+      { type: 'tool_start', tool: 'get_stock_info', display_name: '获取股票基本面' },
+    ]);
+    await useAgentChatStore.getState().stopStream();
+  });
+
+  it('keeps a refreshed session visible as running while its last turn is unfinished', async () => {
+    localStorage.setItem('dsa_chat_session_id', 'pending-session');
+    useAgentChatStore.setState({ hasInitialLoad: false, sessionId: 'pending-session' });
+    vi.mocked(agentApi.getChatSessions).mockResolvedValue([{
+      session_id: 'pending-session', title: '分析茅台', message_count: 1,
+      created_at: null, last_active: null,
+    }]);
+    vi.mocked(agentApi.getChatSessionMessages).mockResolvedValue({
+      session_id: 'pending-session',
+      messages: [{ id: 'u1', role: 'user', content: '分析茅台', created_at: null }],
+      session_generation: 'g', session_state_version: 1,
+      active_stock_context: null,
+      session_state: { selected_skill_ids: null },
+      // A just-accepted turn can be visible before the executor writes its
+      // first running heartbeat.
+      is_running: false,
+      running_progress_steps: [],
+    });
+
+    await useAgentChatStore.getState().loadInitialSession();
+
+    expect(useAgentChatStore.getState()).toMatchObject({
+      sessionId: 'pending-session',
+      loading: true,
+    });
+    expect(useAgentChatStore.getState().progressSteps).toEqual([{ type: 'recovering' }]);
+    await useAgentChatStore.getState().stopStream();
+  });
+
+  it('polls a recovered session until the assistant result is persisted', async () => {
+    vi.useFakeTimers();
+    try {
+      localStorage.setItem('dsa_chat_session_id', 'poll-session');
+      useAgentChatStore.setState({ hasInitialLoad: false, sessionId: 'poll-session' });
+      vi.mocked(agentApi.getChatSessions).mockResolvedValue([{
+        session_id: 'poll-session', title: '分析茅台', message_count: 1,
+        created_at: null, last_active: null,
+      }]);
+      const userMessage = { id: 'u1', role: 'user' as const, content: '分析茅台', created_at: null };
+      vi.mocked(agentApi.getChatSessionMessages).mockResolvedValueOnce({
+        session_id: 'poll-session',
+        messages: [userMessage],
+        session_generation: 'g', session_state_version: 1,
+        active_stock_context: null,
+        session_state: { selected_skill_ids: null },
+        is_running: true,
+        running_progress_steps: [{ type: 'thinking', message: '正在制定分析路径...' }],
+      });
+
+      await useAgentChatStore.getState().loadInitialSession();
+      expect(useAgentChatStore.getState()).toMatchObject({ loading: true });
+
+      vi.mocked(agentApi.getChatSessionMessages).mockResolvedValueOnce({
+        session_id: 'poll-session',
+        messages: [userMessage],
+        session_generation: 'g', session_state_version: 1,
+        active_stock_context: null,
+        session_state: { selected_skill_ids: null },
+        is_running: true,
+        running_progress_steps: [
+          { type: 'thinking', message: '正在制定分析路径...' },
+          { type: 'tool_start', tool: 'get_stock_info', display_name: '获取股票基本面' },
+        ],
+      });
+      await vi.advanceTimersByTimeAsync(2000);
+      expect(useAgentChatStore.getState().progressSteps).toEqual([
+        { type: 'thinking', message: '正在制定分析路径...' },
+        { type: 'tool_start', tool: 'get_stock_info', display_name: '获取股票基本面' },
+      ]);
+
+      vi.mocked(agentApi.getChatSessionMessages).mockResolvedValueOnce({
+        session_id: 'poll-session',
+        messages: [
+          userMessage,
+          { id: 'a1', role: 'assistant' as const, content: '分析完成', created_at: null },
+        ],
+        session_generation: 'g', session_state_version: 1,
+        active_stock_context: null,
+        session_state: { selected_skill_ids: null },
+        is_running: false,
+        running_progress_steps: [],
+      });
+      await vi.advanceTimersByTimeAsync(2000);
+
+      expect(useAgentChatStore.getState()).toMatchObject({ loading: false, progressSteps: [] });
+      expect(useAgentChatStore.getState().messages.map((message) => message.content))
+        .toEqual(['分析茅台', '分析完成']);
+    } finally {
+      useAgentChatStore.getState().stopStream();
+      vi.useRealTimers();
+    }
   });
 });
 

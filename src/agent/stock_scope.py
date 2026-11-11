@@ -14,6 +14,8 @@ SWITCH_CLEANUP_KEYS = {
     "previous_strategy",
     "previous_price",
     "previous_change_pct",
+    "report_context",
+    "report_record_id",
     "realtime_quote",
     "daily_history",
     "chip_distribution",

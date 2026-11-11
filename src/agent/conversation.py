@@ -94,14 +94,27 @@ class ConversationManager:
             thinking_steps=thinking_steps,
         )
 
-    def set_running(self, session_id: str, is_running: bool, progress_steps: Optional[List[Dict[str, Any]]] = None) -> None:
+    def set_running(
+        self,
+        session_id: str,
+        is_running: bool,
+        progress_steps: Optional[List[Dict[str, Any]]] = None,
+        *,
+        db_manager: Optional[Any] = None,
+    ) -> None:
         """Set or clear the running state for a session."""
-        db = get_db()
+        db = db_manager if db_manager is not None else get_db()
         db.set_session_running(session_id, is_running, progress_steps)
 
-    def update_running_progress(self, session_id: str, progress_steps: List[Dict[str, Any]]) -> None:
+    def update_running_progress(
+        self,
+        session_id: str,
+        progress_steps: List[Dict[str, Any]],
+        *,
+        db_manager: Optional[Any] = None,
+    ) -> None:
         """Update the progress steps for a running session."""
-        db = get_db()
+        db = db_manager if db_manager is not None else get_db()
         db.update_session_running_progress(session_id, progress_steps)
 
     def prepare_turn(self, session_id: str):

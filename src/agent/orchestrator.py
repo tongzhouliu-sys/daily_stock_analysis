@@ -1275,6 +1275,9 @@ class AgentOrchestrator:
             analysis_context_pack_summary = context.get("analysis_context_pack_summary")
             if isinstance(analysis_context_pack_summary, str) and analysis_context_pack_summary:
                 ctx.meta["analysis_context_pack_summary"] = analysis_context_pack_summary
+            report_context = context.get("report_context")
+            if isinstance(report_context, dict) and report_context:
+                ctx.meta["report_context"] = dict(report_context)
 
             # Pre-populate data fields that the caller already has
             for data_key in ("realtime_quote", "daily_history", "chip_distribution",

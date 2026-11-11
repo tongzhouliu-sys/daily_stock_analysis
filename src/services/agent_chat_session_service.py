@@ -12,6 +12,14 @@ from src.agent.stock_scope import (
 )
 from src.agent.chat_object_decision import decide_chat_object, validate_chat_identity as _code_identity
 from src.data.stock_index_loader import get_chat_stock_lookup
+from src.services.agent_report_context_service import (
+    AgentReportContextError,
+    LoadedReportContext,
+    load_agent_report_context,
+    parse_report_record_id,
+    try_load_agent_report_context,
+    unavailable_report_context,
+)
 from src.services.stock_list_parser import IndexRegistry, _index_entry_from_row
 from src.storage import ChatSessionStateConflict, DatabaseManager
 
@@ -45,6 +53,140 @@ def _hint_identity(context: Dict[str, Any], registry: IndexRegistry, lookup: dic
 
 def _identity(stock: Dict[str, Any]) -> StockIdentity:
     return StockIdentity(stock["stock_code"], stock["canonical_id"], stock["asset_type"], stock.get("stock_name"))
+
+
+def _same_report_identity(left: StockIdentity, right: StockIdentity) -> bool:
+    """Report and session identities compare by canonical object, not spelling."""
+    return (left.canonical_id, left.asset_type) == (right.canonical_id, right.asset_type)
+
+
+def _report_pointer_from_snapshot(snapshot: Dict[str, Any]) -> Optional[int]:
+    """Return the persisted pointer only when its accepted-turn anchor still holds."""
+    record_id = snapshot.get("active_report_record_id")
+    if isinstance(record_id, bool) or not isinstance(record_id, int) or record_id <= 0:
+        return None
+    if snapshot["session_state_version"] <= 0 or snapshot["last_accepted_user_anchor"] is None:
+        return None
+    if snapshot["latest_user_anchor"] != snapshot["last_accepted_user_anchor"]:
+        return None
+    return record_id
+
+
+def _load_report(
+    record_id: int,
+    context: Dict[str, Any],
+    registry: IndexRegistry,
+    lookup: dict,
+) -> LoadedReportContext:
+    return load_agent_report_context(
+        record_id,
+        registry=registry,
+        lookup=lookup,
+        hint_code=context.get("stock_code"),
+    )
+
+
+def _context_report_reference(context: Dict[str, Any]) -> tuple[bool, Optional[int]]:
+    """Return ``(explicit, record_id)`` for the tri-state request field."""
+    if "report_record_id" not in context:
+        return False, None
+    value = context.get("report_record_id")
+    if value is None:
+        return True, None
+    return True, parse_report_record_id(value).record_id
+
+
+def _public_stock(stock: Optional[Dict[str, Any]]) -> Optional[Dict[str, Any]]:
+    if stock is None:
+        return None
+    return {key: stock.get(key) for key in ("stock_code", "stock_name", "canonical_id", "asset_type")}
+
+
+def _market_key(stock: Dict[str, Any]) -> str:
+    canonical = str(stock.get("canonical_id") or "").lower()
+    if canonical.startswith("hk"):
+        return "HK"
+    if canonical.startswith(("sh", "sz", "bj", "csi")):
+        return "CN"
+    if stock.get("asset_type") == "index":
+        return "CN"
+    return "US"
+
+
+def _same_stock(left: Dict[str, Any], right: Dict[str, Any]) -> bool:
+    return (left["canonical_id"], left["asset_type"]) == (right["canonical_id"], right["asset_type"])
+
+
+def _pick_recommended(
+    candidates: List[Dict[str, Any]], current: Optional[Dict[str, Any]],
+) -> Optional[Dict[str, Any]]:
+    """Prefer an unambiguous listing only when every candidate names the same object."""
+    if not candidates:
+        return None
+    names = {str(item.get("stock_name") or "").strip().casefold() for item in candidates}
+    if len(names) != 1:
+        return None
+    if len(candidates) == 1:
+        return candidates[0]
+    if current is not None:
+        same_market = [item for item in candidates if _market_key(item) == _market_key(current)]
+        if len(same_market) == 1:
+            return same_market[0]
+        same_asset = [item for item in same_market if item["asset_type"] == current["asset_type"]]
+        if len(same_asset) == 1:
+            return same_asset[0]
+    cn_stocks = [
+        item for item in candidates
+        if item["asset_type"] == "stock" and _market_key(item) == "CN"
+    ]
+    if len(cn_stocks) == 1:
+        return cn_stocks[0]
+    stocks = [item for item in candidates if item["asset_type"] == "stock"]
+    if len(stocks) == 1:
+        return stocks[0]
+    return None
+
+
+def _clarification_payload(
+    decision, baseline: Optional[Dict[str, Any]], registry: IndexRegistry, lookup: dict,
+    *, preferred: Optional[StockIdentity] = None,
+) -> Dict[str, Any]:
+    candidates: List[Dict[str, Any]] = []
+    seen = set()
+    for identity in decision.candidates:
+        record = _public_stock(_stock_record(identity, lookup, registry))
+        key = (record["canonical_id"], record["asset_type"])
+        if key in seen:
+            continue
+        seen.add(key)
+        candidates.append(record)
+    current = _public_stock(baseline)
+    recommended = (_public_stock(_stock_record(preferred, lookup, registry))
+                   if preferred is not None else _pick_recommended(candidates, current))
+    if recommended is not None:
+        action = "keep" if current is not None and _same_stock(recommended, current) else "switch"
+    elif candidates:
+        action = "ask"
+    elif current is not None:
+        action = "keep"
+    else:
+        action = "ask"
+    if preferred is not None:
+        reason = "hint_conflict"
+    elif not candidates:
+        reason = "missing_object"
+    elif len(candidates) == 1:
+        reason = "unique_candidate"
+    else:
+        names = {str(item.get("stock_name") or "").strip().casefold() for item in candidates}
+        reason = "ambiguous_name" if len(names) == 1 else "multiple_objects"
+    return {
+        "reason": reason,
+        "action": action,
+        "current": current,
+        "candidates": candidates,
+        "recommended": recommended,
+    }
 
 
 def _active_from_snapshot(snapshot: Dict[str, Any], registry: IndexRegistry, lookup: dict) -> Optional[Dict[str, Any]]:
@@ -95,6 +237,7 @@ class ChatSessionDetail:
     messages: List[Dict[str, Any]]
     selected_skill_ids: Optional[List[str]]
     active_stock_context: Optional[Dict[str, Any]] = None
+    active_report_context: Optional[Dict[str, Any]] = None
     session_state_version: int = 0
     session_generation: Optional[str] = None
     is_running: bool = False
@@ -111,7 +254,12 @@ class ResolvedChatTurn:
     skill_selection: ChatSkillSelection
     confirm_stock: bool = False
     clarification: Optional[str] = None
+    clarification_payload: Optional[Dict[str, Any]] = None
     compatibility_disposition: str = "invalidate"
+    report_context: Optional[LoadedReportContext] = None
+    active_report_context: Optional[Dict[str, Any]] = None
+    active_report_record_id: Optional[int] = None
+    stock_source_new: bool = False
 
 
 class AgentChatSessionService:
@@ -174,17 +322,40 @@ class AgentChatSessionService:
     ) -> ChatSessionDetail:
         snapshot = self.db.read_chat_session_snapshot(session_id)
         registry, lookup = _stock_lookup()
+        active_stock = _active_from_snapshot(snapshot, registry, lookup)
+        report_context = self._session_report_context(snapshot, active_stock, registry, lookup)
 
         return ChatSessionDetail(
             messages=[dict(message, id=str(message["id"])) for message in
                       (snapshot["messages"][:limit] if limit >= 0 else snapshot["messages"])],
             selected_skill_ids=snapshot["selected_skill_ids"],
-            active_stock_context=_active_from_snapshot(snapshot, registry, lookup),
+            active_stock_context=active_stock,
+            active_report_context=report_context,
             session_state_version=snapshot["session_state_version"],
             session_generation=snapshot["session_generation"],
             is_running=snapshot.get("is_running", False),
             running_progress_steps=snapshot.get("running_progress_steps", []),
         )
+
+    def _session_report_context(
+        self,
+        snapshot: Dict[str, Any],
+        active_stock: Optional[Dict[str, Any]],
+        registry: IndexRegistry,
+        lookup: dict,
+    ) -> Optional[Dict[str, Any]]:
+        """Re-validate the persisted pointer without ever reading its content as state."""
+        record_id = _report_pointer_from_snapshot(snapshot)
+        if record_id is None:
+            return None
+        loaded = try_load_agent_report_context(record_id, registry=registry, lookup=lookup)
+        if loaded is None:
+            return unavailable_report_context(record_id)
+        if active_stock is not None and not _same_report_identity(
+            loaded.identity, _identity(active_stock),
+        ):
+            return unavailable_report_context(record_id)
+        return loaded.public
 
     def rename_session(self, session_id: str, title: str) -> bool:
         return self.db.rename_conversation_session(session_id, title)
@@ -203,33 +374,78 @@ class AgentChatSessionService:
     def _resolve_session_turn(
         self, config: Any, snapshot: Dict[str, Any], message: str,
         requested_skill_ids: Optional[List[str]], *, context: Optional[Dict[str, Any]],
+        allow_report_context: bool = True,
     ) -> ResolvedChatTurn:
         skills = self.resolve_skill_selection(config, snapshot["session_id"], requested_skill_ids, snapshot=snapshot)
         registry, lookup = _stock_lookup()
+        raw_context = dict(context or {})
+        if not allow_report_context:
+            raw_context.pop("report_context", None)
+            raw_context.pop("report_record_id", None)
         active = _active_from_snapshot(snapshot, registry, lookup)
         baseline = dict(active) if active else None
         decision = decide_chat_object(message, _identity(active) if active else None, registry, lookup)
         compare = decision.kind == "compare"
         confirm = False
         clarification = None
+        preferred: Optional[StockIdentity] = None
         if decision.kind == "clarify":
             clarification = "请明确提供本次讨论的股票或指数代码，或确认是否切换。"
         elif decision.kind == "confirm":
             selected = decision.target.identity
-            if decision.target.kind != "code" and (context or {}).get("stock_code"):
-                hint = _hint_identity(context, registry, lookup)
+            if decision.target.kind != "code" and raw_context.get("stock_code"):
+                hint = _hint_identity(raw_context, registry, lookup)
                 if hint != selected:
                     clarification = "名称与报告对象不一致，请明确提供完整股票或指数代码。"
+                    preferred = selected
             if clarification is None:
                 active = _stock_record(selected, lookup, registry)
                 confirm = True
 
+        loaded_report: Optional[LoadedReportContext] = None
+        stock_source_new = False
+        if allow_report_context:
+            explicit_report, explicit_record_id = _context_report_reference(raw_context)
+            report_record_id = explicit_record_id if explicit_report else _report_pointer_from_snapshot(snapshot)
+            if (not explicit_report and report_record_id is not None
+                    and clarification is None and baseline is not None and active is not None
+                    and not _same_report_identity(_identity(baseline), _identity(active))):
+                # An explicit switch drops the previous report before any read.
+                report_record_id = None
+            if report_record_id is not None and (clarification is None or explicit_report):
+                loaded_report = _load_report(report_record_id, raw_context, registry, lookup)
+                if clarification is not None:
+                    # Validate the client's explicit record, but a clarification
+                    # turn must not establish or carry report material.
+                    loaded_report = None
+                elif active is not None and not _same_report_identity(
+                    loaded_report.identity, _identity(active),
+                ):
+                    if explicit_report:
+                        raise AgentReportContextError(
+                            "报告与本次讨论对象不一致，请从原报告重新发起追问。",
+                        )
+                    loaded_report = None
+                elif active is None and decision.kind in ("maintain", "compare"):
+                    if (decision.kind == "compare"
+                            and loaded_report.identity not in decision.participants):
+                        loaded_report = None
+                    else:
+                        active = _stock_record(loaded_report.identity, lookup, registry)
+                        stock_source_new = True
+
+        clarification_payload = None
         if clarification is not None:
             active = baseline
             confirm = False
+            loaded_report = None
+            stock_source_new = False
+            clarification_payload = _clarification_payload(
+                decision, baseline, registry, lookup, preferred=preferred,
+            )
             from src.report_language import normalize_report_language
 
-            if normalize_report_language((context or {}).get("report_language") or getattr(config, "report_language", "zh")) == "en":
+            if normalize_report_language(raw_context.get("report_language") or getattr(config, "report_language", "zh")) == "en":
                 clarification = "The discussion target is not confirmed. Please provide the complete stock or index code."
         allowed = []
         if active is not None:
@@ -240,26 +456,37 @@ class AgentChatSessionService:
                            allowed_stock_codes={item.stock_code for item in allowed},
                            mode="compare" if compare else "switch" if confirm else "maintain",
                            strict=True, identities=tuple(allowed))
-        effective_context = dict(context or {})
+        effective_context = dict(raw_context)
         effective_context.pop("allowed_stock_codes", None)
         effective_context.pop("skills", None)
         effective_context.pop("strategies", None)
+        effective_context.pop("report_record_id", None)
         hint_matches = False
         if active and effective_context.get("stock_code"):
             hint_matches = _hint_identity(effective_context, registry, lookup) == _identity(active)
-        if not hint_matches:
+        if not hint_matches or loaded_report is not None:
             for key in SWITCH_CLEANUP_KEYS:
                 effective_context.pop(key, None)
         for key in ["stock_code", "stock_name", "canonical_id", "asset_type"]:
             effective_context.pop(key, None)
         if active:
             effective_context.update({key: active[key] for key in ["stock_code", "stock_name", "canonical_id", "asset_type"]})
+        if loaded_report is not None:
+            # One validated projection replaces every legacy client hint so a
+            # report follow-up cannot mix sources for the same facts.
+            effective_context["report_context"] = loaded_report.payload
         if skills.effective_skill_ids is not None:
             effective_context["skills"] = list(skills.effective_skill_ids)
         preserves = (clarification is None and baseline is not None and active is not None
                      and _identity(active) == _identity(baseline))
-        return ResolvedChatTurn(message, snapshot, active, scope, effective_context, skills, confirm, clarification,
-                                "preserve" if preserves else "invalidate")
+        return ResolvedChatTurn(
+            message, snapshot, active, scope, effective_context, skills, confirm, clarification,
+            clarification_payload, "preserve" if preserves else "invalidate",
+            report_context=loaded_report,
+            active_report_context=loaded_report.public if loaded_report is not None else None,
+            active_report_record_id=loaded_report.record_id if loaded_report is not None else None,
+            stock_source_new=stock_source_new,
+        )
 
     def prepare_compatibility_turn(
         self, config: Any, snapshot: Dict[str, Any], message: str,
@@ -273,7 +500,9 @@ class AgentChatSessionService:
         """
         if snapshot["session_state_version"] == 0:
             return resolve_stock_scope(message, context), "invalidate"
-        turn = self._resolve_session_turn(config, snapshot, message, None, context=context)
+        turn = self._resolve_session_turn(
+            config, snapshot, message, None, context=context, allow_report_context=False,
+        )
         if turn.clarification is not None:
             # Bot can still answer, but an unconfirmed target cannot grant tools
             # access to the previous object or carry its cached analysis facts.
@@ -284,10 +513,14 @@ class AgentChatSessionService:
         return StockScopeResolution(turn.effective_context, turn.stock_scope), turn.compatibility_disposition
 
     def commit_user_turn(self, turn: ResolvedChatTurn) -> Dict[str, Any]:
-        return self.db.commit_chat_user_turn(
+        accepted = self.db.commit_chat_user_turn(
             turn.snapshot, turn.message, selected_skill_ids=turn.skill_selection.selected_skill_ids_update,
             active_stock_context=turn.active_stock_context, confirm_stock=turn.confirm_stock,
+            active_stock_source_new=turn.stock_source_new,
+            report_reference_update=turn.active_report_record_id,
         )
+        accepted["active_report_context"] = turn.active_report_context
+        return accepted
 
     def delete_session(self, session_id: str) -> int:
         return self.db.delete_conversation_session(session_id)

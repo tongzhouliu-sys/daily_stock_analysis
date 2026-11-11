@@ -1,6 +1,13 @@
 import { create } from 'zustand';
 import { agentApi, decodeChatState, isAbortError } from '../api/agent';
-import type { ActiveStockContext, ChatSessionItem, ChatStateFields, ChatStreamRequest, DecodedChatState } from '../api/agent';
+import type {
+  ActiveStockContext,
+  ChatSessionDetail,
+  ChatSessionItem,
+  ChatStateFields,
+  ChatStreamRequest,
+  DecodedChatState,
+} from '../api/agent';
 import {
   createParsedApiError,
   getParsedApiError,
@@ -11,6 +18,35 @@ import {
 import { generateUUID } from '../utils/uuid';
 
 const STORAGE_KEY_SESSION = 'dsa_chat_session_id';
+
+export interface StockClarificationIdentity {
+  stock_code: string;
+  stock_name: string | null;
+  canonical_id: string;
+  asset_type: 'stock' | 'index';
+}
+
+export type StockClarificationAction = 'switch' | 'keep' | 'ask';
+
+export type StockClarificationReason =
+  | 'unique_candidate'
+  | 'ambiguous_name'
+  | 'multiple_objects'
+  | 'hint_conflict'
+  | 'missing_object';
+
+/**
+ * Structured evidence for a stock-object clarification. It is attached only to
+ * the live assistant turn that produced the clarification, so reopening a
+ * historical session never restarts a countdown or silently switches objects.
+ */
+export interface StockClarification {
+  reason: StockClarificationReason;
+  action: StockClarificationAction;
+  current: StockClarificationIdentity | null;
+  candidates: StockClarificationIdentity[];
+  recommended: StockClarificationIdentity | null;
+}
 
 export interface ProgressStep {
   type: string;
@@ -33,6 +69,7 @@ export interface ProgressStep {
   error_code?: string;
   request_id?: string;
   session_id?: string;
+  clarification?: StockClarification | null;
 }
 
 export interface Message {
@@ -45,9 +82,9 @@ export interface Message {
   skillName?: string;
   thinkingSteps?: ProgressStep[];
   backend?: string;
-  // When true, the assistant message is a stock-object clarification prompt
-  // and the UI should render an inline "switch / keep current" action bar.
-  pendingStockClarification?: boolean;
+  // Present only on a live clarification turn. Historical messages rehydrated
+  // from the session detail intentionally have no such evidence.
+  stockClarification?: StockClarification;
 }
 
 export interface StreamMeta {
@@ -74,6 +111,7 @@ type StreamFailureEvent = {
   message?: unknown;
   backend?: string;
   error_code?: string;
+  clarification?: StockClarification | null;
 };
 
 function getFirstMeaningfulStreamError(...candidates: Array<unknown>): unknown {
@@ -199,9 +237,25 @@ function mergeChatState(current: AgentChatState, incoming: DecodedChatState,
 
 // Polling interval for checking running task progress (ms)
 const POLL_INTERVAL_MS = 2000;
+// After a refresh, a just-accepted turn can be persisted before the executor
+// writes its first running heartbeat. Keep showing it as running briefly so a
+// fast reload does not make an in-flight analysis look stopped.
+const RUNNING_RECOVERY_GRACE_MS = 30_000;
+// Synthetic step rendered while the server has an unfinished turn but has not
+// reported live progress yet.
+const RECOVERING_PROGRESS_STEP: ProgressStep = { type: 'recovering' };
+
+function hasUnfinishedTurn(messages: ChatSessionDetail['messages']): boolean {
+  const last = messages[messages.length - 1];
+  // The server persists the user turn before execution. An accepted turn whose
+  // assistant result is not stored yet is either still running or was
+  // interrupted; both should keep the UI in a running/recovering state.
+  return last?.role === 'user';
+}
 
 export const useAgentChatStore = create<AgentChatState & AgentChatActions>((set, get) => {
   let pollingTimer: ReturnType<typeof setInterval> | null = null;
+  let recoveryDeadline: number | null = null;
   
   const stopPolling = () => {
     if (pollingTimer !== null) {
@@ -209,9 +263,10 @@ export const useAgentChatStore = create<AgentChatState & AgentChatActions>((set,
       pollingTimer = null;
     }
   };
-  
-  const startPolling = (sessionId: string) => {
+
+  const startPolling = (sessionId: string, graceMs = 0) => {
     stopPolling(); // Clear any existing timer
+    recoveryDeadline = graceMs > 0 ? Date.now() + graceMs : null;
     
     const poll = async () => {
       const current = get();
@@ -233,11 +288,19 @@ export const useAgentChatStore = create<AgentChatState & AgentChatActions>((set,
         
         const isRunning = detail.is_running || false;
         const runningProgress = detail.running_progress_steps || [];
+        const recovering = !isRunning
+          && recoveryDeadline !== null
+          && Date.now() < recoveryDeadline
+          && hasUnfinishedTurn(detail.messages);
+        if (isRunning) recoveryDeadline = null;
         
-        // Update progress steps
+        // Update progress steps. Server progress wins; otherwise keep the
+        // recovering placeholder so the user still sees an active task.
         set({
-          progressSteps: isRunning ? runningProgress : [],
-          loading: isRunning,
+          progressSteps: isRunning
+            ? runningProgress
+            : recovering ? [RECOVERING_PROGRESS_STEP] : [],
+          loading: isRunning || recovering,
         });
         
         // Check for new messages (assistant response completed)
@@ -257,9 +320,10 @@ export const useAgentChatStore = create<AgentChatState & AgentChatActions>((set,
           });
         }
         
-        // Stop polling if task completed
-        if (!isRunning) {
+        // Stop polling if task completed (or the recovery grace expired)
+        if (!isRunning && !recovering) {
           stopPolling();
+          void get().loadSessions();
         }
       } catch (error) {
         // Silently ignore polling errors, will retry next interval
@@ -272,6 +336,7 @@ export const useAgentChatStore = create<AgentChatState & AgentChatActions>((set,
   
   const resetSession = (sessionId: string) => {
     stopPolling();
+    recoveryDeadline = null;
     const previous = get();
     previous.abortController?.abort();
     set({ ...emptySessionState, ...emptyStreamState, sessionId, messages: [], chatError: null,
@@ -303,39 +368,62 @@ export const useAgentChatStore = create<AgentChatState & AgentChatActions>((set,
       // Restore running state if session is still running
       const isRunning = detail.is_running || false;
       const runningProgress = detail.running_progress_steps || [];
-      
-      // If mergeChatState returns null, it means state contract mismatch
-      // But we should still restore messages and running state for UX
-      if (!patch) {
-        // Force restore messages and running state even if state contract doesn't match
-        set({
-          messages: messagesWithThinking,
-          loading: isRunning,
-          progressSteps: isRunning ? runningProgress : [],
-          chatError: null,
-        });
-        if (isRunning) {
-          startPolling(owner.sessionId);
-        }
-        return;
-      }
-      
+      const recovering = !isRunning && hasUnfinishedTurn(detail.messages);
+
       const replacedInstance = current.sessionGeneration !== null
         && current.sessionGeneration !== decoded.sessionGeneration;
       if (replacedInstance) current.abortController?.abort();
+      // A live SSE stream owns transient running state. A detail read that was
+      // issued before the stream can still update authoritative stock/Skill
+      // state, but it must not flip loading off while the stream is active.
+      const streamOwnsTransientState = current.abortController !== null && !replacedInstance;
+      
+      // 即使 mergeChatState 返回 null（例如页面刷新时状态不匹配），
+      // 也要恢复消息和运行状态，否则用户会看到空白界面
+      if (!patch) {
+        // 状态合并失败，但仍然恢复消息和运行状态
+        set({
+          messages: messagesWithThinking,
+          chatError: null,
+          ...(streamOwnsTransientState ? {} : {
+            loading: isRunning || recovering,
+            progressSteps: isRunning
+              ? runningProgress
+              : recovering ? [RECOVERING_PROGRESS_STEP] : [],
+          }),
+        });
+        
+        // 启动轮询以持续更新运行状态
+        if (!streamOwnsTransientState && (isRunning || recovering) && get().abortController === null) {
+          startPolling(
+            owner.sessionId,
+            recovering && !isRunning ? RUNNING_RECOVERY_GRACE_MS : 0,
+          );
+        }
+        return;
+      }
       
       set({ 
         ...patch, 
         ...(replacedInstance ? emptyStreamState : {}),
         messages: messagesWithThinking,
         chatError: null,
-        loading: isRunning,
-        progressSteps: isRunning ? runningProgress : [],
+        ...(streamOwnsTransientState ? {} : {
+          loading: isRunning || recovering,
+          progressSteps: isRunning
+            ? runningProgress
+            : recovering ? [RECOVERING_PROGRESS_STEP] : [],
+        }),
       });
       
-      // Start polling if task is still running (for page refresh recovery)
-      if (isRunning) {
-        startPolling(owner.sessionId);
+      // Start polling when the server still owns a running/recovering turn.
+      // Do not poll while a live SSE stream owns this session: both would
+      // append the same assistant message.
+      if (!streamOwnsTransientState && (isRunning || recovering) && get().abortController === null) {
+        startPolling(
+          owner.sessionId,
+          recovering && !isRunning ? RUNNING_RECOVERY_GRACE_MS : 0,
+        );
       }
     } catch (error) {
       if (ownsRead()) set({ chatError: getParsedApiError(error) });
@@ -398,13 +486,11 @@ export const useAgentChatStore = create<AgentChatState & AgentChatActions>((set,
       if (current.instanceBindingEpoch !== instanceBindingEpoch
         || current.sessionId !== sessionId || current.activeRequestId !== activeRequestId) return;
       if (savedId) {
-        const sessionExists = sessionList.some((s) => s.session_id === savedId);
-        if (sessionExists) {
-          if (get().sessionId !== savedId) resetSession(savedId);
-          await readDetail();
-        } else {
-          resetSession(generateUUID());
-        }
+        // 关键修复：无论 savedId 是否在 sessionList 中，都应该尝试加载它
+        // 因为 sessionList 有 limit 限制，可能不包含所有会话
+        // 而且用户可能正在运行中的会话需要恢复
+        if (get().sessionId !== savedId) resetSession(savedId);
+        await readDetail();
       } else {
         localStorage.setItem(STORAGE_KEY_SESSION, get().sessionId);
       }
@@ -430,6 +516,7 @@ export const useAgentChatStore = create<AgentChatState & AgentChatActions>((set,
 
   stopStream: async () => {
     stopPolling();
+    recoveryDeadline = null;
     const controller = get().abortController;
     if (controller) {
       set({ terminalStatus: 'stopped' });
@@ -443,6 +530,8 @@ export const useAgentChatStore = create<AgentChatState & AgentChatActions>((set,
 
   startStream: async (payload, meta) => {
     if (get().loading) return;
+    stopPolling();
+    recoveryDeadline = null;
     const { abortController: prevAc, sessionId: storeSessionId, sessionEpoch,
       sessionGeneration, instanceBindingEpoch, skillDraftRevision } = get();
     prevAc?.abort();
@@ -494,6 +583,7 @@ export const useAgentChatStore = create<AgentChatState & AgentChatActions>((set,
       let buf = '';
       let finalContent: string | null = null;
       let finalBackend: string | undefined;
+      let finalClarification: StockClarification | null = null;
       let receivedDoneEvent = false;
       let acceptedEvent: StreamAcceptedEvent | null = null;
       const currentProgressSteps: ProgressStep[] = [];
@@ -574,6 +664,7 @@ export const useAgentChatStore = create<AgentChatState & AgentChatActions>((set,
             );
           }
           finalContent = doneEvent.content ?? '';
+          finalClarification = doneEvent.clarification ?? null;
           return;
         }
 
@@ -639,6 +730,7 @@ export const useAgentChatStore = create<AgentChatState & AgentChatActions>((set,
               skillName,
               thinkingSteps: [...currentProgressSteps],
               backend: finalBackend,
+              ...(finalClarification ? { stockClarification: finalClarification } : {}),
             },
           ],
         }));
@@ -659,6 +751,7 @@ export const useAgentChatStore = create<AgentChatState & AgentChatActions>((set,
       }
     } finally {
       if (ownsStream()) {
+        recoveryDeadline = null;
         set({
           loading: false,
           progressSteps: [],

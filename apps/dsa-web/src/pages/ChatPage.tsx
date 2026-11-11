@@ -14,7 +14,6 @@ import {
   PanelLeftOpen,
   Pencil,
   Plus,
-  RefreshCw,
   Send,
   SlidersHorizontal,
   Sparkles,
@@ -34,7 +33,9 @@ import {
   useAgentChatStore,
   type Message,
   type ProgressStep,
+  type StockClarificationIdentity,
 } from '../stores/agentChatStore';
+import StockClarificationCard from '../components/chat/StockClarificationCard';
 import { downloadSessionInFormat, formatSessionAsMarkdown, type ExportFormat } from '../utils/chatExport';
 import { buildScannerFollowUpPrompt } from '../utils/scannerFollowUp';
 import type { ChatFollowUpContext } from '../utils/chatFollowUp';
@@ -149,135 +150,6 @@ const getPipelineBudgetSkippedLabel = (step: ProgressStep): string => {
   return `${step.stage || 'pipeline'} skipped: insufficient budget`;
 };
 
-// --- Stock clarification inline action card -------------------------------
-// When the assistant replies with the stock-object clarification prompt
-// ("请明确提供本次讨论的股票或指数代码，或确认是否切换。"), we render an
-// inline action card below the message that lets the user confirm the switch
-// (default, auto-confirmed after 10s) or keep the current object.
-
-const STOCK_CLARIFY_TEXT = '请明确提供本次讨论的股票或指数代码，或确认是否切换。';
-
-const StockClarifyCard: React.FC<{
-  messageId: string;
-  onConfirm: () => void;
-  onKeepCurrent: () => void;
-}> = ({ messageId, onConfirm, onKeepCurrent }) => {
-  const AUTO_CONFIRM_SECONDS = 10;
-  const [phase, setPhase] = useState<'analyzing' | 'confirming' | 'resolved'>('analyzing');
-  const [remaining, setRemaining] = useState(AUTO_CONFIRM_SECONDS);
-  const [resolved, setResolved] = useState<'confirm' | 'keep' | null>(null);
-
-  // Phase 1: Show analyzing state for 2 seconds
-  useEffect(() => {
-    if (phase !== 'analyzing') return;
-    const timer = window.setTimeout(() => setPhase('confirming'), 2000);
-    return () => window.clearTimeout(timer);
-  }, [phase]);
-
-  // Phase 2: Countdown for confirmation
-  useEffect(() => {
-    if (phase !== 'confirming' || resolved !== null) return;
-    if (remaining <= 0) {
-      onConfirm();
-      setResolved('confirm');
-      setPhase('resolved');
-      return;
-    }
-    const timer = window.setTimeout(() => setRemaining((r) => r - 1), 1000);
-    return () => window.clearTimeout(timer);
-  }, [remaining, resolved, phase, onConfirm]);
-
-  const handleConfirm = () => {
-    if (resolved !== null) return;
-    setResolved('confirm');
-    onConfirm();
-  };
-
-  const handleKeep = () => {
-    if (resolved !== null) return;
-    setResolved('keep');
-    onKeepCurrent();
-  };
-
-  const progress = resolved === null
-    ? (AUTO_CONFIRM_SECONDS - remaining) / AUTO_CONFIRM_SECONDS
-    : 1;
-  const circumference = 2 * Math.PI * 14;
-  const dashOffset = circumference * (1 - progress);
-
-  return (
-    <div
-      className="chat-stock-clarify-card"
-      data-message-id={messageId}
-      role="group"
-      aria-label="股票对象确认"
-    >
-      <div className="chat-stock-clarify-icon" aria-hidden="true">
-        <svg viewBox="0 0 32 32" width="32" height="32">
-          <circle
-            className="chat-stock-clarify-ring-bg"
-            cx="16"
-            cy="16"
-            r="14"
-            fill="none"
-            strokeWidth="2"
-          />
-          <circle
-            className="chat-stock-clarify-ring"
-            cx="16"
-            cy="16"
-            r="14"
-            fill="none"
-            strokeWidth="2"
-            strokeLinecap="round"
-            strokeDasharray={circumference}
-            strokeDashoffset={dashOffset}
-            style={{ transition: 'stroke-dashoffset 1s linear' }}
-          />
-        </svg>
-        <span className="chat-stock-clarify-ring-label">
-          {resolved === 'confirm' ? '✓' : resolved === 'keep' ? '•' : remaining}
-        </span>
-      </div>
-      <div className="chat-stock-clarify-body">
-        <p className="chat-stock-clarify-title">
-          {resolved === 'confirm'
-            ? '已确认，继续分析'
-            : resolved === 'keep'
-              ? '将保持当前讨论对象'
-              : remaining <= 1
-                ? '即将确认…'
-                : `${remaining} 秒后自动确认`}
-        </p>
-        <p className="chat-stock-clarify-hint">
-          {resolved === null
-            ? '如需继续分析当前标的，可选择保持；否则将按新提问继续。'
-            : '你可以继续输入新的问题进行提问。'}
-        </p>
-        {resolved === null && (
-          <div className="chat-stock-clarify-actions">
-            <button
-              type="button"
-              className="chat-stock-clarify-btn is-primary"
-              onClick={handleConfirm}
-            >
-              <Check size={13} aria-hidden="true" />
-              <span>确认</span>
-            </button>
-            <button
-              type="button"
-              className="chat-stock-clarify-btn"
-              onClick={handleKeep}
-            >
-              <span>保持当前</span>
-            </button>
-          </div>
-        )}
-      </div>
-    </div>
-  );
-};
-
 const ChatPage: React.FC = () => {
   const { t, language } = useUiLanguage();
   const navigate = useNavigate();
@@ -316,6 +188,7 @@ const ChatPage: React.FC = () => {
   const [contextCompressionMaskToken, setContextCompressionMaskToken] = useState('******');
   const [contextCompressionError, setContextCompressionError] = useState<string | null>(null);
   const [copiedMessages, setCopiedMessages] = useState<Set<string>>(new Set());
+  const [resolvedClarifications, setResolvedClarifications] = useState<Set<string>>(() => new Set());
   const [showJumpToBottom, setShowJumpToBottom] = useState(false);
   const [exportMenuOpen, setExportMenuOpen] = useState(false);
   const [exporting, setExporting] = useState(false);
@@ -332,6 +205,7 @@ const ChatPage: React.FC = () => {
 
   const watchlistMessageTimerRef = useRef<number | null>(null);
   const copyResetTimerRef = useRef<Partial<Record<string, number>>>({});
+  const composerRef = useRef<HTMLTextAreaElement>(null);
   const messagesViewportRef = useRef<HTMLDivElement>(null);
   const messagesEndRef = useRef<HTMLDivElement>(null);
   const isMountedRef = useRef(true);
@@ -939,6 +813,52 @@ const ChatPage: React.FC = () => {
     [agentAvailable, agentStatus, getSkillNames, input, loading, normalizeSelectedSkillIds, requestScrollToBottom, selectedSkillIds, sessionId, sessionSelectedSkillIds, startStream],
   );
 
+  const handleStockClarificationDecision = useCallback((
+    message: Message,
+    decision: 'switch' | 'keep',
+    target: StockClarificationIdentity | null,
+  ) => {
+    setResolvedClarifications((previous) => {
+      const next = new Set(previous);
+      next.add(message.id);
+      return next;
+    });
+    if (loading || !agentAvailable) {
+      composerRef.current?.focus();
+      return;
+    }
+    const switchTarget = target ?? message.stockClarification?.recommended ?? null;
+    if (decision === 'switch' && switchTarget) {
+      const label = switchTarget.stock_name
+        ? `${switchTarget.stock_name}（${switchTarget.stock_code}）`
+        : switchTarget.stock_code;
+      void handleSend(`确认，分析 ${label}`, undefined, {
+        stock_code: switchTarget.stock_code,
+        stock_name: switchTarget.stock_name,
+      });
+      return;
+    }
+    if (activeStockContext) {
+      void handleSend('确认，继续分析当前标的', undefined, {
+        stock_code: activeStockContext.stock_code,
+        stock_name: activeStockContext.stock_name,
+      });
+      return;
+    }
+    composerRef.current?.focus();
+  }, [activeStockContext, agentAvailable, handleSend, loading]);
+
+  const lastMessage = messages[messages.length - 1];
+  const activeClarificationMessageId = lastMessage?.role === 'assistant'
+    && lastMessage.stockClarification
+    && !resolvedClarifications.has(lastMessage.id)
+    ? lastMessage.id
+    : null;
+  const clarificationAutoConfirmEnabled = Boolean(activeClarificationMessageId)
+    && !loading
+    && agentAvailable
+    && !input.trim();
+
   const handleKeyDown = (e: React.KeyboardEvent<HTMLTextAreaElement>) => {
     if (e.key === 'Enter' && !e.shiftKey) {
       e.preventDefault();
@@ -1030,6 +950,10 @@ const ChatPage: React.FC = () => {
       return last.message || `${last.stage || 'pipeline'} timed out`;
     if (last.type === 'pipeline_budget_skipped')
       return getPipelineBudgetSkippedLabel(last);
+    if (last.type === 'recovering')
+      return language === 'en'
+        ? 'Analysis is still running in the background...'
+        : '后台任务仍在运行，正在等待最新进度...';
     if (last.type === 'generating')
       return last.message || '正在生成最终分析...';
     return '处理中...';
@@ -1521,25 +1445,16 @@ const ChatPage: React.FC = () => {
                               {msg.content}
                             </Markdown>
                           </div>
-                          {msg.content === STOCK_CLARIFY_TEXT && !msg.pendingStockClarification && (
-                            <StockClarifyCard
+                          {msg.stockClarification && activeClarificationMessageId === msg.id && (
+                            <StockClarificationCard
                               messageId={msg.id}
-                              onConfirmSwitch={() => {
-                                // Mark message as resolved
-                                useAgentChatStore.setState((state) => ({
-                                  messages: state.messages.map((m) =>
-                                    m.id === msg.id ? { ...m, pendingStockClarification: true } : m
-                                  ),
-                                }));
+                              clarification={msg.stockClarification}
+                              autoConfirmEnabled={clarificationAutoConfirmEnabled}
+                              language={language}
+                              onConfirm={(decision, target) => {
+                                handleStockClarificationDecision(msg, decision, target);
                               }}
-                              onKeepCurrent={() => {
-                                // Mark message as resolved
-                                useAgentChatStore.setState((state) => ({
-                                  messages: state.messages.map((m) =>
-                                    m.id === msg.id ? { ...m, pendingStockClarification: true } : m
-                                  ),
-                                }));
-                              }}
+                              onRequestInput={() => composerRef.current?.focus()}
                             />
                           )}
                           <div className="chat-message-actions">
@@ -1790,6 +1705,7 @@ const ChatPage: React.FC = () => {
 
               <div className="chat-composer">
                 <textarea
+                  ref={composerRef}
                   value={input}
                   onChange={(event) => setInput(event.target.value)}
                   onKeyDown={handleKeyDown}

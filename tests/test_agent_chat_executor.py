@@ -18,7 +18,7 @@ def isolated_chat_database(tmp_path):
     DatabaseManager.reset_instance()
 
 from src.agent.agent_backend import AgentRunResult
-from src.agent.chat_executor import AgentChatExecutor
+from src.agent.chat_executor import AgentChatExecutor, PreparedAgentChatTurn
 from src.agent.executor import PreparedAgentChat
 
 
@@ -180,3 +180,60 @@ def test_user_message_persistence_failure_does_not_start_backend() -> None:
             raise AssertionError("database failure must propagate")
 
     assert backend.request is None
+
+
+def test_running_state_is_visible_during_execution_and_cleared_after_result(
+    isolated_chat_database,
+) -> None:
+    """Refresh recovery relies on the real persisted running snapshot."""
+    db = isolated_chat_database
+    session_id = "running-session"
+    db.ensure_chat_session_generation(session_id)
+    accepted = db.commit_chat_user_turn(
+        db.read_chat_session_snapshot(session_id), "question",
+    )
+    observed: dict = {}
+
+    class ProgressBackend(_Backend):
+        def run(self, request):
+            observed["during"] = db.read_chat_session_snapshot(session_id)
+            request.progress_callback({"type": "tool_start", "tool": "get_stock_info"})
+            observed["progress"] = db.read_chat_session_snapshot(session_id)[
+                "running_progress_steps"
+            ]
+            return AgentRunResult(
+                success=True,
+                final_answer="answer",
+                backend="litellm",
+                model="model",
+                messages=[{"role": "assistant", "content": "answer"}],
+                total_steps=1,
+            )
+
+    turn = PreparedAgentChatTurn(
+        message="question",
+        session_id=session_id,
+        prepared=PreparedAgentChat(
+            system_prompt="system", history_messages=[], stock_scope=None,
+        ),
+        baseline_len=0,
+        run_id="run",
+        user_message_id=accepted["user_message_id"],
+        accepted_snapshot=accepted,
+        db_manager=db,
+    )
+
+    def enrich(event):
+        event["display_name"] = "获取股票基本面"
+
+    result = _executor(ProgressBackend(runtime_owns_loop=False)).execute_turn(
+        turn, progress_callback=enrich,
+    )
+
+    assert result.success is True
+    assert observed["during"]["is_running"] is True
+    assert observed["progress"][-1]["display_name"] == "获取股票基本面"
+    after = db.read_chat_session_snapshot(session_id)
+    assert after["is_running"] is False
+    assert after["running_progress_steps"] == []
+    assert [message["content"] for message in after["messages"]] == ["question", "answer"]

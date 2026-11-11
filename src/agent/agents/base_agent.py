@@ -30,6 +30,7 @@ from src.agent.skills.defaults import extract_skill_id
 from src.agent.tools.registry import ToolRegistry
 from src.market_phase_prompt import format_market_phase_prompt_section
 from src.market_structure_prompt import format_market_structure_prompt_section
+from src.agent.report_context_prompt import format_report_context_prompt_section
 from src.report_language import normalize_report_language
 from src.services.daily_market_context import format_daily_market_context_prompt_section
 
@@ -205,6 +206,13 @@ class BaseAgent(ABC):
                     messages.append({"role": role, "content": content})
 
         report_language = normalize_report_language(ctx.meta.get("report_language", "zh"))
+        report_section = format_report_context_prompt_section(
+            ctx.meta.get("report_context"),
+            report_language=report_language,
+        )
+        if report_section:
+            messages.append({"role": "user", "content": report_section})
+
         market_phase_section = format_market_phase_prompt_section(
             ctx.meta.get("market_phase_context"),
             report_language=report_language,

@@ -37,6 +37,9 @@ class ObjectDecision:
     target: Optional[ObjectMention] = None
     participants: tuple[StockIdentity, ...] = ()
     changes_target: bool = False  # affirmative but unconfirmed change, for legacy recovery
+    # Evidence collected from the ambiguous position only. Callers may use it
+    # to explain a clarification, but must never treat it as confirmation.
+    candidates: tuple[StockIdentity, ...] = ()
 
 
 def validate_chat_identity(token: str, registry: IndexRegistry, lookup: dict) -> StockIdentity:
@@ -145,21 +148,25 @@ def _qualification(text: str, operation) -> tuple[str, str]:
     return "affirmative", prefix
 
 
-def _target(text: str, operation, mentions) -> tuple[Optional[ObjectMention], bool]:
+def _target(
+    text: str, operation, mentions,
+) -> tuple[Optional[ObjectMention], bool, tuple[StockIdentity, ...]]:
     start = operation.end()
     boundary = _ASIDE.search(text, start)
     end = boundary.start() if boundary else len(text)
     targets = [item for item in mentions if start <= item.start and item.end <= end]
     if not targets:
-        return None, False
+        return None, False, ()
     first = targets[0].start
     if not re.fullmatch(r"\s*(?:一下子|一下|下)?\s*[:：（）]*(?:(?:股票|指数|标的)\s*)?", text[start:first]):
-        return None, False
+        return None, False, ()
     identities = {item.identity for item in targets}
     if None in identities or len(identities) != 1 or re.search(r"或者|或|还是", text[start:end]):
-        return None, True
+        return None, True, tuple(dict.fromkeys(
+            identity for item in targets for identity in item.identities
+        ))
     # Prefer code evidence only at the target, never a source-side equal code.
-    return next((item for item in targets if item.kind == "code"), targets[0]), True
+    return next((item for item in targets if item.kind == "code"), targets[0]), True, ()
 
 
 def decide_chat_object(message: str, current: Optional[StockIdentity], registry: IndexRegistry,
@@ -178,14 +185,16 @@ def decide_chat_object(message: str, current: Optional[StockIdentity], registry:
             continue
         if qualification == "comparison":
             continue
-        target, has_evidence = _target(text, operation, mentions)
+        target, has_evidence, evidence = _target(text, operation, mentions)
         switch = operation.group() in _SWITCHES
         if switch or has_evidence:
-            affirmative.append((target, switch, "继续" in prefix))
+            affirmative.append((target, switch, "继续" in prefix, evidence))
     switches = [item for item in affirmative if item[1]]
     if switches:
         if len(switches) != 1 or switches[0][0] is None:
-            return ObjectDecision("clarify", changes_target=True)
+            return ObjectDecision("clarify", changes_target=True, candidates=tuple(
+                dict.fromkeys(identity for item in switches for identity in item[3])
+            ))
         return ObjectDecision("confirm", target=switches[0][0], changes_target=True)
     # Comparison participants come only from comparison clauses, not from a
     # denied/quoted target in another clause.
@@ -212,7 +221,9 @@ def decide_chat_object(message: str, current: Optional[StockIdentity], registry:
         codes = [item.identity.stock_code for item in local if item.identity]
         if _is_compare_message(clause, codes, current.stock_code if current else "", registry):
             if any(item.identity is None for item in local):
-                return ObjectDecision("clarify")
+                return ObjectDecision("clarify", candidates=tuple(dict.fromkeys(
+                    identity for item in local for identity in item.identities
+                )))
             participants.extend(item.identity for item in local)
     if participants:
         return ObjectDecision("compare", participants=tuple(dict.fromkeys(participants)))
@@ -221,8 +232,10 @@ def decide_chat_object(message: str, current: Optional[StockIdentity], registry:
     if affirmative:
         identities = {item[0].identity if item[0] else None for item in affirmative}
         if len(identities) != 1 or None in identities:
-            return ObjectDecision("clarify", changes_target=True)
-        target, _switch, continuing = affirmative[0]
+            return ObjectDecision("clarify", changes_target=True, candidates=tuple(
+                dict.fromkeys(identity for item in affirmative for identity in item[3])
+            ))
+        target, _switch, continuing, _evidence = affirmative[0]
         if continuing and target.identity == current:
             return ObjectDecision("maintain")
         return ObjectDecision("confirm", target=target, changes_target=True)
@@ -232,7 +245,9 @@ def decide_chat_object(message: str, current: Optional[StockIdentity], registry:
                   and not text[item.end:].strip(" \t\r\n。！？!?，,")]
     if standalone and not denied:
         if standalone[0].identity is None:
-            return ObjectDecision("clarify", changes_target=True)
+            return ObjectDecision("clarify", changes_target=True, candidates=tuple(
+                dict.fromkeys(standalone[0].identities)
+            ))
         return ObjectDecision("confirm", target=standalone[0], changes_target=True)
     # Existing Web asks name/code-subject questions as well as verb-first
     # requests. Bind the explicit subject to its question predicate, not to a
@@ -244,8 +259,12 @@ def decide_chat_object(message: str, current: Optional[StockIdentity], registry:
             question = _OBJECT_QUESTION.match(text, subject.end)
             if question is not None:
                 qualification, _prefix = _qualification(text, question)
-                if qualification != "affirmative" or subject.identity is None:
+                if qualification != "affirmative":
                     return ObjectDecision("clarify")
+                if subject.identity is None:
+                    return ObjectDecision("clarify", candidates=tuple(
+                        dict.fromkeys(subject.identities)
+                    ))
                 return ObjectDecision("confirm", target=subject, changes_target=True)
     # Multiple objects requested without an established operation are not an
     # implicit comparison. Explicit background asides cannot affect this turn.
@@ -258,7 +277,7 @@ def decide_chat_object(message: str, current: Optional[StockIdentity], registry:
                             if clause_match.start() <= item.start and item.end <= clause_match.end()
                             and item.identity is not None)
         if len(set(relevant)) > 1:
-            return ObjectDecision("clarify")
+            return ObjectDecision("clarify", candidates=tuple(dict.fromkeys(relevant)))
     if current is None and re.fullmatch(
         r"\s*(?:(?:分析|看看|研究|诊断)(?:一下子|一下|下)?\s*)?"
         r"(?:近期|最近|当前)?(?:风险|走势|估值|基本面|技术面|财务状况|盈利能力|它|还能买吗|怎么样)"

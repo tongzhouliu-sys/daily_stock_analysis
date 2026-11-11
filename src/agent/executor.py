@@ -33,6 +33,7 @@ from src.report_language import normalize_report_language
 from src.market_context import get_market_role, get_market_guidelines
 from src.market_phase_prompt import format_market_phase_prompt_section
 from src.market_structure_prompt import format_market_structure_prompt_section
+from src.agent.report_context_prompt import format_report_context_prompt_section
 from src.services.daily_market_context import format_daily_market_context_prompt_section
 
 logger = logging.getLogger(__name__)
@@ -572,6 +573,23 @@ def prepare_agent_chat(
                    if source_snapshot is not None else {}),
             )
         )
+
+    report_section = format_report_context_prompt_section(
+        (effective_context or {}).get("report_context"),
+        report_language=report_language,
+    )
+    if report_section:
+        history_messages.extend([
+            {"role": "user", "content": report_section},
+            {"role": "assistant", "content": (
+                "The historical report above has been loaded. "
+                "I will keep its date and source separate from current market data."
+                if report_language == "en" else
+                "已经读取以上历史分析报告，并会区分报告日期、来源与当前行情。"
+                if report_language == "zh" else
+                "위 과거 분석 보고서를 확인했습니다. 보고서 날짜와 출처를 현재 시장 데이터와 구분하겠습니다."
+            )},
+        ])
 
     if effective_context:
         context_parts = []

@@ -37,6 +37,7 @@ const {
   mockAddToWatchlist,
   mockRemoveFromWatchlist,
   mockDownloadSession,
+  mockDownloadSessionInFormat,
   mockFormatSessionAsMarkdown,
   mockStockIndex,
   mockStockIndexState,
@@ -65,6 +66,7 @@ const {
     mockAddToWatchlist: vi.fn(),
     mockRemoveFromWatchlist: vi.fn(),
     mockDownloadSession: vi.fn(),
+    mockDownloadSessionInFormat: vi.fn(),
     mockFormatSessionAsMarkdown: vi.fn(),
     mockStockIndex,
     // Mutable registry-load state for the async window shared by every backend.
@@ -138,6 +140,7 @@ vi.mock('../../api/systemConfig', () => ({
 
 vi.mock('../../utils/chatExport', () => ({
   downloadSession: mockDownloadSession,
+  downloadSessionInFormat: mockDownloadSessionInFormat,
   formatSessionAsMarkdown: mockFormatSessionAsMarkdown,
 }));
 
@@ -286,6 +289,7 @@ beforeEach(() => {
     warnings: [],
   });
   mockDownloadSession.mockImplementation(() => {});
+  mockDownloadSessionInFormat.mockResolvedValue(undefined);
   mockFormatSessionAsMarkdown.mockReturnValue('# exported session');
   mockStockIndexState.index = mockStockIndex;
   mockStockIndexState.loading = false;
@@ -753,9 +757,12 @@ describe('ChatPage', () => {
       </MemoryRouter>
     );
 
-    fireEvent.click(await screen.findByRole('button', { name: '导出会话为 Markdown 文件' }));
+    fireEvent.click(await screen.findByRole('button', { name: '导出会话' }));
+    fireEvent.click(await screen.findByRole('menuitem', { name: '导出为 Markdown' }));
 
-    expect(mockDownloadSession).toHaveBeenCalledWith(mockStoreState.messages);
+    await waitFor(() => {
+      expect(mockDownloadSessionInFormat).toHaveBeenCalledWith(mockStoreState.messages, 'md');
+    });
     expect(mockFormatSessionAsMarkdown).not.toHaveBeenCalled();
   });
 
@@ -2162,5 +2169,73 @@ describe('watchlist button with code variants', () => {
       expect(mockRemoveFromWatchlist).toHaveBeenCalledWith('00700');
     });
     expect(mockAddToWatchlist).not.toHaveBeenCalled();
+  });
+
+  it('confirms a live stock clarification with an explicit switch target', async () => {
+    mockStoreState.messages = [
+      { id: 'user-1', role: 'user', content: '分析中芯国际' },
+      {
+        id: 'assistant-1',
+        role: 'assistant',
+        content: '请明确提供本次讨论的股票或指数代码，或确认是否切换。',
+        stockClarification: {
+          reason: 'ambiguous_name',
+          action: 'switch',
+          current: null,
+          candidates: [
+            { stock_code: '688981', stock_name: '中芯国际', canonical_id: 'sh688981', asset_type: 'stock' },
+            { stock_code: 'HK00981', stock_name: '中芯国际', canonical_id: 'hk00981', asset_type: 'stock' },
+          ],
+          recommended: {
+            stock_code: '688981',
+            stock_name: '中芯国际',
+            canonical_id: 'sh688981',
+            asset_type: 'stock',
+          },
+        },
+      },
+    ];
+
+    render(
+      <MemoryRouter initialEntries={['/chat']}>
+        <ChatPage />
+      </MemoryRouter>,
+    );
+
+    fireEvent.click(await screen.findByRole('button', { name: '切换并分析' }, { timeout: 4000 }));
+
+    await waitFor(() => {
+      expect(mockStartStream).toHaveBeenCalledWith(
+        expect.objectContaining({
+          message: '确认，分析 中芯国际（688981）',
+          context: { stock_code: '688981', stock_name: '中芯国际' },
+        }),
+        expect.anything(),
+      );
+    });
+  });
+
+  it('does not render an interactive card for a historical clarification message', async () => {
+    mockStoreState.messages = [
+      { id: 'user-1', role: 'user', content: '风险呢' },
+      {
+        id: 'assistant-1',
+        role: 'assistant',
+        content: '请明确提供本次讨论的股票或指数代码，或确认是否切换。',
+      },
+    ];
+
+    render(
+      <MemoryRouter initialEntries={['/chat']}>
+        <ChatPage />
+      </MemoryRouter>,
+    );
+
+    expect(await screen.findByText('请明确提供本次讨论的股票或指数代码，或确认是否切换。'))
+      .toBeInTheDocument();
+    expect(screen.queryByRole('button', { name: '切换并分析' })).not.toBeInTheDocument();
+    expect(screen.queryByRole('button', { name: '保持当前' })).not.toBeInTheDocument();
+    expect(screen.queryByText('先确认要分析的对象')).not.toBeInTheDocument();
+    expect(mockStartStream).not.toHaveBeenCalled();
   });
 });
