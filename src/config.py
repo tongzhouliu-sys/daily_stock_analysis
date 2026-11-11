@@ -1154,6 +1154,8 @@ class Config:
     agent_llm_call_timeout_s: float = 0.0  # Per-LLM-call timeout; 0 = no per-call limit
     agent_opt_in_thinking: bool = True  # Allow opt-in thinking models (e.g. deepseek-chat) to enable thinking
     agent_chat_stream_content: bool = False  # Server-side switch for streaming content deltas to clients
+    # Domain guard: model-based classification timeout (seconds); 0 disables model fallback
+    agent_domain_guard_model_timeout: int = 5
 
     # === 通知配置（可同时配置多个，全部推送）===
     
@@ -2170,6 +2172,12 @@ class Config:
                 minimum=1,
             ),
             agent_event_alert_rules_json=os.getenv('AGENT_EVENT_ALERT_RULES_JSON', ''),
+            agent_domain_guard_model_timeout=parse_env_int(
+                os.getenv('AGENT_DOMAIN_GUARD_MODEL_TIMEOUT'),
+                5,
+                field_name='AGENT_DOMAIN_GUARD_MODEL_TIMEOUT',
+                minimum=0,
+            ),
             wechat_webhook_url=os.getenv('WECHAT_WEBHOOK_URL'),
             feishu_webhook_url=os.getenv('FEISHU_WEBHOOK_URL'),
             feishu_webhook_secret=os.getenv('FEISHU_WEBHOOK_SECRET'),
