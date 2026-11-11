@@ -64,7 +64,11 @@ from src.agent.runtime_facts import (
 )
 from src.agent.runner import parse_dashboard_json
 from src.agent.stock_scope import StockScopeResolution
-from src.agent.stream_events import stream_event
+from src.agent.stream_events import (
+    stream_event,
+    stage_start_event,
+    stage_done_event,
+)
 from src.agent.tools.registry import ToolRegistry
 from src.config import AGENT_MAX_STEPS_DEFAULT, get_config
 from src.report_language import normalize_report_language
@@ -731,8 +735,7 @@ class AgentOrchestrator:
                 self._prepare_decision_context(ctx)
 
             if progress_callback:
-                progress_callback(stream_event(
-                    "stage_start",
+                progress_callback(stage_start_event(
                     stage=agent.agent_name,
                     message=f"Starting {agent.agent_name} analysis...",
                 ))
@@ -757,8 +760,7 @@ class AgentOrchestrator:
 
             elapsed_s = time.time() - t0
             if progress_callback:
-                progress_callback(stream_event(
-                    "stage_done",
+                progress_callback(stage_done_event(
                     stage=agent.agent_name,
                     status=result.status.value,
                     duration=result.duration_s,
@@ -975,8 +977,7 @@ class AgentOrchestrator:
         )
         if progress_callback:
             for agent in agents:
-                progress_callback(stream_event(
-                    "stage_start",
+                progress_callback(stage_start_event(
                     stage=agent.agent_name,
                     message=f"Starting {agent.agent_name} analysis...",
                 ))
@@ -989,8 +990,7 @@ class AgentOrchestrator:
         )
         if progress_callback:
             for result in batch.stage_results:
-                progress_callback(stream_event(
-                    "stage_done",
+                progress_callback(stage_done_event(
                     stage=result.stage_name,
                     status=result.status.value,
                     duration=result.duration_s,

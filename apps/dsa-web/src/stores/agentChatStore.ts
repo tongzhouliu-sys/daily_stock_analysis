@@ -2,6 +2,7 @@ import { create } from 'zustand';
 import { agentApi, decodeChatState, isAbortError } from '../api/agent';
 import type {
   ActiveStockContext,
+  ActiveReportContext,
   ChatSessionDetail,
   ChatSessionItem,
   ChatStateFields,
@@ -154,6 +155,7 @@ interface AgentChatState {
   selectedSkillIds: string[] | null;
   savedSkillIds: string[] | null;
   activeStockContext: ActiveStockContext | null;
+  activeReportContext: ActiveReportContext | null;
   stateContract: 'unbound' | DecodedChatState['contract'];
   sessionGeneration: string | null;
   sessionStateVersion: number | null;
@@ -196,7 +198,7 @@ const getInitialSessionId = (): string =>
     : generateUUID();
 
 const emptySessionState = {
-  activeStockContext: null, savedSkillIds: null, selectedSkillIds: null,
+  activeStockContext: null, activeReportContext: null, savedSkillIds: null, selectedSkillIds: null,
   stateContract: 'unbound' as const, sessionGeneration: null, sessionStateVersion: null,
   stateSource: null, skillDraftRevision: 0, skillDraftDirty: false,
 };
@@ -225,6 +227,7 @@ function mergeChatState(current: AgentChatState, incoming: DecodedChatState,
   return {
     stateContract: incoming.contract,
     activeStockContext: incoming.activeStockContext,
+    activeReportContext: incoming.activeReportContext,
     sessionGeneration: incoming.sessionGeneration,
     sessionStateVersion: incoming.sessionStateVersion,
     savedSkillIds: incoming.selectedSkillIds,

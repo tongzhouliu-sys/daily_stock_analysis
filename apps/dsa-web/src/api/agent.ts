@@ -37,8 +37,17 @@ export interface ActiveStockContext {
   asset_type: 'stock' | 'index';
 }
 
+export interface ActiveReportContext {
+  record_id: number;
+  status: 'available' | 'unavailable';
+  stock_code: string | null;
+  stock_name: string | null;
+  created_at: string | null;
+}
+
 export interface ChatStateFields {
   active_stock_context?: ActiveStockContext | null;
+  active_report_context?: ActiveReportContext | null;
   session_state_version?: number;
   session_generation?: string | null;
 }
@@ -46,6 +55,7 @@ export interface ChatStateFields {
 export interface DecodedChatState {
   contract: 'authoritative' | 'legacy';
   activeStockContext: ActiveStockContext | null;
+  activeReportContext: ActiveReportContext | null;
   sessionStateVersion: number | null;
   sessionGeneration: string | null;
   selectedSkillIds: string[] | null;
@@ -73,13 +83,14 @@ export function decodeChatState(payload: unknown, source: 'detail' | 'accepted' 
     throw invalid();
   }
   if (!authoritative) return {
-    contract: 'legacy', activeStockContext: null, sessionStateVersion: null,
+    contract: 'legacy', activeStockContext: null, activeReportContext: null, sessionStateVersion: null,
     sessionGeneration: null, selectedSkillIds: selected,
   };
 
   const version = payload.session_state_version;
   const generation = payload.session_generation;
   const active = payload.active_stock_context;
+  const activeReport = payload.active_report_context;
   if (typeof version !== 'number' || !Number.isSafeInteger(version) || version < (source === 'detail' ? 0 : 1)) throw invalid();
   if (generation !== null && (typeof generation !== 'string' || !generation.trim())) throw invalid();
   if (generation === null && (source !== 'detail' || version !== 0 || active !== null)) throw invalid();
@@ -88,11 +99,29 @@ export function decodeChatState(payload: unknown, source: 'detail' | 'accepted' 
     || typeof active.canonical_id !== 'string' || !active.canonical_id.trim()
     || (active.asset_type !== 'stock' && active.asset_type !== 'index')
     || (active.stock_name !== null && typeof active.stock_name !== 'string'))) throw invalid();
+  
+  let reportContext: ActiveReportContext | null = null;
+  if (activeReport !== null && activeReport !== undefined) {
+    if (!record(activeReport)
+      || typeof activeReport.record_id !== 'number'
+      || (activeReport.status !== 'available' && activeReport.status !== 'unavailable')) {
+      throw invalid();
+    }
+    reportContext = {
+      record_id: activeReport.record_id as number,
+      status: activeReport.status as 'available' | 'unavailable',
+      stock_code: typeof activeReport.stock_code === 'string' ? activeReport.stock_code : null,
+      stock_name: typeof activeReport.stock_name === 'string' ? activeReport.stock_name : null,
+      created_at: typeof activeReport.created_at === 'string' ? activeReport.created_at : null,
+    };
+  }
+  
   return {
     contract: 'authoritative', activeStockContext: active === null ? null : {
       stock_code: active.stock_code as string, stock_name: active.stock_name as string | null,
       canonical_id: active.canonical_id as string, asset_type: active.asset_type as 'stock' | 'index',
     },
+    activeReportContext: reportContext,
     sessionStateVersion: version, sessionGeneration: generation as string | null, selectedSkillIds: selected,
   };
 }

@@ -7,7 +7,73 @@ return dicts and keep existing field names stable for older clients.
 
 from __future__ import annotations
 
-from typing import Any, Dict
+from typing import Any, Dict, Optional
+
+# Tool name → display label mapping for UI tags
+# Maps internal tool names to user-friendly Chinese labels
+TOOL_DISPLAY_LABELS: Dict[str, str] = {
+    # K线数据获取
+    "get_daily_history": "K线获取",
+    "get_intraday_data": "分时数据",
+    # 基本面分析
+    "get_stock_info": "基本面分析",
+    "get_financial_data": "财务数据",
+    # 行情获取/分析
+    "get_realtime_quote": "行情获取",
+    "get_market_indices": "行情分析",
+    "get_sector_rankings": "行情分析",
+    # 技术分析
+    "analyze_trend": "技术分析",
+    "analyze_pattern": "技术分析",
+    "calculate_ma": "技术分析",
+    "get_volume_analysis": "技术分析",
+    # 情报搜索
+    "search_stock_news": "新闻搜索",
+    "search_comprehensive_intel": "情报搜索",
+    # 其他工具
+    "get_chip_distribution": "筹码分布",
+    "get_analysis_context": "分析上下文",
+    "get_skill_backtest_summary": "技能回测",
+    "get_strategy_backtest_summary": "策略回测",
+    "get_stock_backtest_summary": "个股回测",
+}
+
+# Category mapping for grouping tools into UI tags
+# Maps tool names to their display category
+TOOL_CATEGORIES: Dict[str, str] = {
+    # K线获取
+    "get_daily_history": "kline",
+    "get_intraday_data": "kline",
+    # 基本面分析
+    "get_stock_info": "fundamental",
+    "get_financial_data": "fundamental",
+    # 行情获取
+    "get_realtime_quote": "quote",
+    # 行情分析
+    "get_market_indices": "market",
+    "get_sector_rankings": "market",
+    # 技术分析
+    "analyze_trend": "technical",
+    "analyze_pattern": "technical",
+    "calculate_ma": "technical",
+    "get_volume_analysis": "technical",
+    # 情报搜索
+    "search_stock_news": "news",
+    "search_comprehensive_intel": "intel",
+    # 其他
+    "get_chip_distribution": "other",
+    "get_analysis_context": "other",
+    "get_skill_backtest_summary": "other",
+    "get_strategy_backtest_summary": "other",
+    "get_stock_backtest_summary": "other",
+}
+
+# Outcome values for tool/stage results
+OUTCOME_SUCCESS = "success"
+OUTCOME_PARTIAL = "partial"
+OUTCOME_FAILED = "failed"
+OUTCOME_TIMEOUT = "timeout"
+OUTCOME_SKIPPED = "skipped"
 
 
 def stream_event(event_type: str, **fields: Any) -> Dict[str, Any]:
@@ -16,7 +82,188 @@ def stream_event(event_type: str, **fields: Any) -> Dict[str, Any]:
     Existing clients depend on top-level fields such as ``type``, ``step``,
     ``tool``, ``success`` and ``duration``.  Newer events can add fields like
     ``stage`` or ``meta`` without changing the callback/SSE contract.
+    
+    New fields for displayable events (T1):
+    - call_id: Unique identifier for this tool call within the turn
+    - stage_id: Unique identifier for a stage (multi-agent)
+    - parent_stage_id: Parent stage ID for nested calls
+    - outcome: Result outcome (success/partial/failed/timeout/skipped)
+    - detail: Public-facing detail fields (data_source, date_range, etc.)
+    - display_label: User-friendly label for UI display
     """
     event: Dict[str, Any] = {"type": event_type}
     event.update({key: value for key, value in fields.items() if value is not None})
     return event
+
+
+def tool_start_event(
+    step: int,
+    tool: str,
+    *,
+    call_id: Optional[str] = None,
+    stage_id: Optional[str] = None,
+    parent_stage_id: Optional[str] = None,
+) -> Dict[str, Any]:
+    """Build a tool_start event with displayable metadata.
+    
+    Args:
+        step: Current step number
+        tool: Tool name
+        call_id: Unique call identifier (auto-generated if not provided)
+        stage_id: Stage identifier for multi-agent
+        parent_stage_id: Parent stage for nested calls
+    
+    Returns:
+        Event dict with display_label and call_id
+    """
+    import uuid
+    
+    if call_id is None:
+        call_id = str(uuid.uuid4())[:8]
+    
+    display_label = TOOL_DISPLAY_LABELS.get(tool, tool)
+    
+    return stream_event(
+        "tool_start",
+        step=step,
+        tool=tool,
+        call_id=call_id,
+        stage_id=stage_id,
+        parent_stage_id=parent_stage_id,
+        display_label=display_label,
+    )
+
+
+def tool_done_event(
+    step: int,
+    tool: str,
+    *,
+    success: bool,
+    duration: float,
+    call_id: Optional[str] = None,
+    stage_id: Optional[str] = None,
+    parent_stage_id: Optional[str] = None,
+    timeout: bool = False,
+    detail: Optional[Dict[str, Any]] = None,
+    cached: bool = False,
+) -> Dict[str, Any]:
+    """Build a tool_done event with displayable metadata.
+    
+    Args:
+        step: Current step number
+        tool: Tool name
+        success: Whether the tool succeeded
+        duration: Execution duration in seconds
+        call_id: Unique call identifier (should match tool_start)
+        stage_id: Stage identifier for multi-agent
+        parent_stage_id: Parent stage for nested calls
+        timeout: Whether the tool timed out
+        detail: Public-facing detail fields
+        cached: Whether result was from cache
+    
+    Returns:
+        Event dict with outcome, display_label, and detail
+    """
+    # Determine outcome
+    if timeout:
+        outcome = OUTCOME_TIMEOUT
+    elif success:
+        outcome = OUTCOME_SUCCESS
+    else:
+        outcome = OUTCOME_FAILED
+    
+    display_label = TOOL_DISPLAY_LABELS.get(tool, tool)
+    
+    event = stream_event(
+        "tool_done",
+        step=step,
+        tool=tool,
+        success=success,
+        duration=duration,
+        call_id=call_id,
+        stage_id=stage_id,
+        parent_stage_id=parent_stage_id,
+        outcome=outcome,
+        display_label=display_label,
+    )
+    
+    # Add detail fields if provided
+    if detail:
+        event["detail"] = detail
+    
+    if cached:
+        event["cached"] = True
+    
+    return event
+
+
+def stage_start_event(
+    stage: str,
+    *,
+    stage_id: Optional[str] = None,
+    message: Optional[str] = None,
+) -> Dict[str, Any]:
+    """Build a stage_start event for multi-agent orchestration.
+    
+    Args:
+        stage: Stage/agent name
+        stage_id: Unique stage identifier
+        message: Optional status message
+    
+    Returns:
+        Event dict with stage_id
+    """
+    import uuid
+    
+    if stage_id is None:
+        stage_id = str(uuid.uuid4())[:8]
+    
+    return stream_event(
+        "stage_start",
+        stage=stage,
+        stage_id=stage_id,
+        message=message,
+    )
+
+
+def stage_done_event(
+    stage: str,
+    *,
+    status: str,
+    duration: Optional[float] = None,
+    stage_id: Optional[str] = None,
+    message: Optional[str] = None,
+    outcome: Optional[str] = None,
+) -> Dict[str, Any]:
+    """Build a stage_done event for multi-agent orchestration.
+    
+    Args:
+        stage: Stage/agent name
+        status: Status string (completed/failed/timeout/skipped)
+        duration: Stage duration in seconds
+        stage_id: Unique stage identifier
+        message: Optional status message
+        outcome: Explicit outcome (defaults to status mapping)
+    
+    Returns:
+        Event dict with outcome
+    """
+    # Map status to outcome if not provided
+    if outcome is None:
+        outcome_map = {
+            "completed": OUTCOME_SUCCESS,
+            "failed": OUTCOME_FAILED,
+            "timeout": OUTCOME_TIMEOUT,
+            "skipped": OUTCOME_SKIPPED,
+        }
+        outcome = outcome_map.get(status, OUTCOME_FAILED)
+    
+    return stream_event(
+        "stage_done",
+        stage=stage,
+        status=status,
+        duration=duration,
+        stage_id=stage_id,
+        message=message,
+        outcome=outcome,
+    )

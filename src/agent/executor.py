@@ -63,6 +63,9 @@ class AgentResult:
     # Optional whitelisted snapshots for multi-agent trajectory evaluation.
     # Single-agent callers continue to receive the historical empty list.
     stage_trajectories: List[Dict[str, Any]] = field(default_factory=list)
+    # T2: Persisted assistant message ID and thinking steps for UI recovery
+    assistant_message_id: Optional[int] = None
+    thinking_steps: List[Dict[str, Any]] = field(default_factory=list)
 
 
 # ============================================================

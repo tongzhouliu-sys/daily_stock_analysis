@@ -219,6 +219,9 @@ class AgentChatExecutor:
                     "generating", "pipeline_timeout", "pipeline_budget_skipped",
                 )
             ]
+            
+            # Set thinking_steps in result for T2
+            result.thinking_steps = thinking_steps
 
             if result.success:
                 if turn.accepted_snapshot is not None:
@@ -233,6 +236,9 @@ class AgentChatExecutor:
                         turn.session_id, "assistant", result.content,
                         thinking_steps=thinking_steps,
                     )
+                # Set assistant_message_id in result for T2
+                result.assistant_message_id = assistant_message_id
+                
                 if assistant_message_id is not None:
                     persist_provider_trace_turns(
                         session_id=turn.session_id,
