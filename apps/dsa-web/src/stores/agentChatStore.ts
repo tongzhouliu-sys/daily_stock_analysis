@@ -71,6 +71,15 @@ export interface ProgressStep {
   request_id?: string;
   session_id?: string;
   clarification?: StockClarification | null;
+  // T1: Enhanced fields for analysis process display
+  call_id?: string;
+  stage_id?: string;
+  parent_stage_id?: string;
+  outcome?: 'success' | 'partial' | 'failed' | 'timeout' | 'skipped';
+  detail?: Record<string, string | number | boolean>;
+  category?: string;
+  display_label?: string;
+  cached?: boolean;
 }
 
 export interface Message {

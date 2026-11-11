@@ -528,29 +528,76 @@ class AgentOrchestrator:
         """Execute an accepted multi-agent Chat turn and persist its result."""
         from src.agent.executor import AgentResult
         from src.agent.conversation import conversation_manager
+        import threading
+
+        # Collect progress steps for persistence (T2)
+        collected_progress_steps: List[Dict[str, Any]] = []
+        progress_lock = threading.Lock()
+
+        def _persisting_progress_callback(event: Dict[str, Any]) -> None:
+            """Wrap the original callback to also collect and persist progress steps."""
+            try:
+                if progress_callback:
+                    progress_callback(event)
+            finally:
+                with progress_lock:
+                    collected_progress_steps.append(dict(event))
+                    current_steps = list(collected_progress_steps)
+
+                # Persist running progress to DB (so refresh can restore it)
+                try:
+                    conversation_manager.update_running_progress(
+                        turn.session_id, current_steps, db_manager=turn.db_manager,
+                    )
+                except Exception:
+                    pass  # Non-critical; don't break the analysis
+
+        # Mark session as running
+        try:
+            conversation_manager.set_running(
+                turn.session_id, True, [], db_manager=turn.db_manager,
+            )
+        except Exception:
+            pass  # Non-critical
 
         orch_result = self._execute_pipeline(
             turn.context,
             parse_dashboard=False,
-            progress_callback=progress_callback,
+            progress_callback=_persisting_progress_callback,
         )
 
-        # Persist assistant response
+        # Build thinking_steps from collected progress (filter to displayable steps)
+        thinking_steps = [
+            step for step in collected_progress_steps
+            if step.get("type") in (
+                "thinking", "tool_start", "tool_done",
+                "stage_start", "stage_done",
+                "generating", "pipeline_timeout", "pipeline_budget_skipped",
+            )
+        ]
+
+        # Persist assistant response with thinking_steps (T2)
+        assistant_message_id = None
         if turn.accepted_snapshot is not None:
             content = orch_result.content if orch_result.success else f"[分析失败] {orch_result.error or '未知错误'}"
-            conversation_manager.add_message(
+            assistant_message_id = conversation_manager.add_message(
                 turn.session_id, "assistant", content, accepted_turn=turn.accepted_snapshot,
                 db_manager=turn.db_manager,
+                thinking_steps=thinking_steps,
             )
         elif orch_result.success:
-            conversation_manager.add_message(turn.session_id, "assistant", orch_result.content)
+            assistant_message_id = conversation_manager.add_message(
+                turn.session_id, "assistant", orch_result.content,
+                thinking_steps=thinking_steps,
+            )
         else:
             conversation_manager.add_message(
                 turn.session_id, "assistant",
                 f"[分析失败] {orch_result.error or '未知错误'}",
+                thinking_steps=thinking_steps,
             )
 
-        return AgentResult(
+        result = AgentResult(
             success=orch_result.success,
             content=orch_result.content,
             dashboard=orch_result.dashboard,
@@ -563,6 +610,12 @@ class AgentOrchestrator:
             stage_trajectories=orch_result.stage_trajectories,
             runtime_facts=orch_result.runtime_facts,
         )
+        
+        # Set thinking_steps and assistant_message_id in result for T2
+        result.thinking_steps = thinking_steps
+        result.assistant_message_id = assistant_message_id
+        
+        return result
 
     # -----------------------------------------------------------------
     # Pipeline execution

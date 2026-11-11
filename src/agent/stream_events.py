@@ -75,6 +75,30 @@ OUTCOME_FAILED = "failed"
 OUTCOME_TIMEOUT = "timeout"
 OUTCOME_SKIPPED = "skipped"
 
+# Category display labels for UI tags
+CATEGORY_DISPLAY_LABELS: Dict[str, Dict[str, str]] = {
+    "kline": {"zh": "K线获取", "en": "K-line Data"},
+    "fundamental": {"zh": "基本面分析", "en": "Fundamental Analysis"},
+    "quote": {"zh": "行情获取", "en": "Quote Fetch"},
+    "market": {"zh": "行情分析", "en": "Market Analysis"},
+    "technical": {"zh": "技术分析", "en": "Technical Analysis"},
+    "news": {"zh": "新闻搜索", "en": "News Search"},
+    "intel": {"zh": "情报搜索", "en": "Intel Search"},
+    "analysis_steps": {"zh": "分析步骤", "en": "Analysis Steps"},
+    "agent_collaboration": {"zh": "Agent 协作", "en": "Agent Collaboration"},
+    "other": {"zh": "工具调用", "en": "Tool Calls"},
+}
+
+# Outcome display labels
+OUTCOME_DISPLAY_LABELS: Dict[str, Dict[str, str]] = {
+    "success": {"zh": "成功", "en": "Success"},
+    "partial": {"zh": "部分可用", "en": "Partial"},
+    "failed": {"zh": "失败", "en": "Failed"},
+    "timeout": {"zh": "超时", "en": "Timeout"},
+    "skipped": {"zh": "已跳过", "en": "Skipped"},
+    "incomplete": {"zh": "未完成", "en": "Incomplete"},
+}
+
 
 def stream_event(event_type: str, **fields: Any) -> Dict[str, Any]:
     """Build a progress event while dropping unset fields.
@@ -90,10 +114,28 @@ def stream_event(event_type: str, **fields: Any) -> Dict[str, Any]:
     - outcome: Result outcome (success/partial/failed/timeout/skipped)
     - detail: Public-facing detail fields (data_source, date_range, etc.)
     - display_label: User-friendly label for UI display
+    - sequence: Monotonic sequence number for ordering and deduplication
     """
     event: Dict[str, Any] = {"type": event_type}
     event.update({key: value for key, value in fields.items() if value is not None})
     return event
+
+
+def get_category_for_tool(tool_name: str) -> str:
+    """Get the display category for a tool name."""
+    return TOOL_CATEGORIES.get(tool_name, "other")
+
+
+def get_category_display_label(category: str, language: str = "zh") -> str:
+    """Get the display label for a category in the specified language."""
+    labels = CATEGORY_DISPLAY_LABELS.get(category, CATEGORY_DISPLAY_LABELS["other"])
+    return labels.get(language, labels["zh"])
+
+
+def get_outcome_display_label(outcome: str, language: str = "zh") -> str:
+    """Get the display label for an outcome in the specified language."""
+    labels = OUTCOME_DISPLAY_LABELS.get(outcome, OUTCOME_DISPLAY_LABELS["failed"])
+    return labels.get(language, labels["zh"])
 
 
 def tool_start_event(
