@@ -11,7 +11,7 @@ vi.mock('../../api/agent', async (importOriginal) => {
       getChatSessionMessages: vi.fn(async (sessionId: string) => ({
         session_id: sessionId,
         messages: [],
-        session_state: { selected_skill_ids: [] },
+        session_state: { selected_skill_ids: [] }, is_running: false, running_progress_steps: [],
       })),
       chatStream: vi.fn(),
     },
@@ -91,7 +91,7 @@ beforeEach(() => {
   vi.clearAllMocks();
   vi.mocked(agentApi.getChatSessions).mockResolvedValue([]);
   vi.mocked(agentApi.getChatSessionMessages).mockImplementation(async (sessionId) => ({
-    session_id: sessionId, messages: [], session_state: { selected_skill_ids: [] },
+    session_id: sessionId, messages: [], session_state: { selected_skill_ids: [] }, is_running: false, running_progress_steps: [],
   }));
 });
 
@@ -105,7 +105,7 @@ function detailState(generation: string | null, version: number, active: ActiveS
   skills: string[] | null = [], sessionId = 'session-test'): ChatSessionDetail {
   return { session_id: sessionId, messages: [], session_generation: generation,
     session_state_version: version, active_stock_context: active,
-    session_state: { selected_skill_ids: skills } };
+    session_state: { selected_skill_ids: skills }, is_running: false, running_progress_steps: [] };
 }
 function acceptedState(requestId: string, generation: string, version: number,
   active: ActiveStockContext | null, skills: string[] | null = []) {
@@ -251,7 +251,7 @@ describe('agentChatStore authoritative session owner', () => {
     await ready.promise;
     const ac = useAgentChatStore.getState().abortController!;
     detail.resolve(generation === 'legacy'
-      ? { session_id: 'session-test', messages: [], session_state: { selected_skill_ids: ['old'] } }
+      ? { session_id: 'session-test', messages: [], session_state: { selected_skill_ids: ['old'] }, is_running: false, running_progress_steps: [] }
       : detailState(generation, 0, generation ? stockA : null, ['old']));
     await read;
     expect(useAgentChatStore.getState()).toMatchObject({ sessionGeneration: 'g2',
@@ -334,7 +334,7 @@ describe('agentChatStore authoritative session owner', () => {
     await useAgentChatStore.getState().refreshSession();
     expect(useAgentChatStore.getState().activeStockContext).toEqual(stockB);
     vi.mocked(agentApi.getChatSessionMessages).mockResolvedValue({ session_id: 'session-test',
-      messages: [], session_state: { selected_skill_ids: [] } });
+      messages: [], session_state: { selected_skill_ids: [] }, is_running: false, running_progress_steps: [] });
     await useAgentChatStore.getState().refreshSession();
     expect(useAgentChatStore.getState()).toMatchObject({ stateContract: 'legacy',
       activeStockContext: null, sessionStateVersion: null, sessionGeneration: null });
@@ -364,7 +364,7 @@ describe('agentChatStore authoritative session owner', () => {
 
   it('reports invalid partial detail without accepting its messages or state', async () => {
     vi.mocked(agentApi.getChatSessionMessages).mockResolvedValue({ session_id: 'session-test', messages: [],
-      active_stock_context: stockA, session_state: { selected_skill_ids: [] } });
+      active_stock_context: stockA, session_state: { selected_skill_ids: [] }, is_running: false, running_progress_steps: [] });
     await useAgentChatStore.getState().refreshSession();
     expect(useAgentChatStore.getState()).toMatchObject({ stateContract: 'unbound',
       activeStockContext: null, chatError: { code: 'chat_state_protocol_error' } });
@@ -766,7 +766,7 @@ describe('agentChatStore.switchSession', () => {
       messages: [
         { id: 'msg-2', role: 'assistant', content: '历史回复', created_at: null },
       ],
-      session_state: { selected_skill_ids: ['risk'] },
+      session_state: { selected_skill_ids: ['risk'] }, is_running: false, running_progress_steps: [],
     });
     useAgentChatStore.setState({
       loading: true,
@@ -804,7 +804,7 @@ describe('agentChatStore.switchSession', () => {
       return Promise.resolve({
         session_id: targetSessionId,
         messages: [],
-        session_state: { selected_skill_ids: [] },
+        session_state: { selected_skill_ids: [] }, is_running: false, running_progress_steps: [],
       });
     });
 
@@ -814,14 +814,14 @@ describe('agentChatStore.switchSession', () => {
     sessionB.resolve({
       session_id: 'session-b',
       messages: [{ id: 'msg-b', role: 'assistant', content: 'B 回复', created_at: null }],
-      session_state: { selected_skill_ids: ['risk'] },
+      session_state: { selected_skill_ids: ['risk'] }, is_running: false, running_progress_steps: [],
     });
     await switchToB;
 
     sessionA.resolve({
       session_id: 'session-a',
       messages: [{ id: 'msg-a', role: 'assistant', content: 'A 回复', created_at: null }],
-      session_state: { selected_skill_ids: ['technical'] },
+      session_state: { selected_skill_ids: ['technical'] }, is_running: false, running_progress_steps: [],
     });
     await switchToA;
 
@@ -852,7 +852,7 @@ describe('agentChatStore session Skill state', () => {
       messages: [
         { id: 'msg-1', role: 'user', content: '分析 AAPL', created_at: null },
       ],
-      session_state: { selected_skill_ids: ['technical', 'risk'] },
+      session_state: { selected_skill_ids: ['technical', 'risk'] }, is_running: false, running_progress_steps: [],
     });
 
     await useAgentChatStore.getState().loadInitialSession();
@@ -880,7 +880,7 @@ describe('agentChatStore session Skill state', () => {
       messages: [
         { id: 'msg-1', role: 'user', content: '分析 AAPL', created_at: null },
       ],
-      session_state: { selected_skill_ids: null },
+      session_state: { selected_skill_ids: null }, is_running: false, running_progress_steps: [],
     });
 
     await useAgentChatStore.getState().loadInitialSession();
