@@ -481,6 +481,7 @@ export const useAgentChatStore = create<AgentChatState & AgentChatActions>((set,
   abortController: null,
   activeRequestId: null,
   terminalStatus: null,
+  streamingContent: null,
   intakeDraft: null,
   intakeStatus: null,
   analysisBrief: null,
@@ -554,13 +555,19 @@ export const useAgentChatStore = create<AgentChatState & AgentChatActions>((set,
     stopPolling();
     recoveryDeadline = null;
     const controller = get().abortController;
+    // Immediately clear transient state so the UI is responsive even if the
+    // stream reader does not react to abort() right away. Setting
+    // abortController to null first ensures startStream's finally block
+    // (ownsStream() check) will not overwrite the cleared state.
+    set({
+      abortController: null,
+      activeRequestId: null,
+      loading: false,
+      progressSteps: [],
+      terminalStatus: 'stopped',
+    });
     if (controller) {
-      set({ terminalStatus: 'stopped' });
       controller.abort();
-    } else {
-      // If we're in polling mode (no SSE controller), update loading state directly
-      // The backend task will continue but we stop showing it as running
-      set({ loading: false, progressSteps: [], terminalStatus: 'stopped' });
     }
   },
 
@@ -772,6 +779,7 @@ export const useAgentChatStore = create<AgentChatState & AgentChatActions>((set,
               thinkingSteps: [...currentProgressSteps],
               backend: finalBackend,
               ...(finalClarification ? { stockClarification: finalClarification } : {}),
+              ...(finalDomainGuard ? { domainGuard: finalDomainGuard } : {}),
             },
           ],
         }));

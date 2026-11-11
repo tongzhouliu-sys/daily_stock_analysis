@@ -3,6 +3,7 @@
 
 from __future__ import annotations
 
+import asyncio
 import threading
 import uuid
 from dataclasses import dataclass
@@ -279,11 +280,14 @@ class AgentChatExecutor:
                 from src.agent.answer_editor import StockAnswerEditorService
                 editor = StockAnswerEditorService()
                 try:
-                    edited_content, editor_meta = await editor.format_response(
+                    # execute_turn runs in a thread-pool worker (via loop.run_in_executor)
+                    # without an active event loop, so asyncio.run() is safe here and
+                    # creates a short-lived loop for the async format_response call.
+                    edited_content, editor_meta = asyncio.run(editor.format_response(
                         result.content,
                         turn.prepared.analysis_brief,
                         source_refs=[tc.get("tool_name") for tc in backend_result.tool_calls_log if tc.get("tool_name")]
-                    )
+                    ))
                     result.content = edited_content
                     result.editor_meta = editor_meta
                 except Exception as e:
