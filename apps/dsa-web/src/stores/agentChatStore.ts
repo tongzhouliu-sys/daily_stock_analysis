@@ -291,10 +291,6 @@ export const useAgentChatStore = create<AgentChatState & AgentChatActions>((set,
       const decoded = decodeChatState(detail, 'detail');
       const current = get();
       const patch = mergeChatState(current, decoded, 'detail', owner.instanceBindingEpoch, owner.skillDraftRevision);
-      if (!patch) return;
-      const replacedInstance = current.sessionGeneration !== null
-        && current.sessionGeneration !== decoded.sessionGeneration;
-      if (replacedInstance) current.abortController?.abort();
       
       // Restore thinking steps from persisted messages
       const messagesWithThinking = detail.messages.map((m) => ({
@@ -307,6 +303,26 @@ export const useAgentChatStore = create<AgentChatState & AgentChatActions>((set,
       // Restore running state if session is still running
       const isRunning = detail.is_running || false;
       const runningProgress = detail.running_progress_steps || [];
+      
+      // If mergeChatState returns null, it means state contract mismatch
+      // But we should still restore messages and running state for UX
+      if (!patch) {
+        // Force restore messages and running state even if state contract doesn't match
+        set({
+          messages: messagesWithThinking,
+          loading: isRunning,
+          progressSteps: isRunning ? runningProgress : [],
+          chatError: null,
+        });
+        if (isRunning) {
+          startPolling(owner.sessionId);
+        }
+        return;
+      }
+      
+      const replacedInstance = current.sessionGeneration !== null
+        && current.sessionGeneration !== decoded.sessionGeneration;
+      if (replacedInstance) current.abortController?.abort();
       
       set({ 
         ...patch, 
