@@ -152,6 +152,8 @@ def build_agent_chat_context_bundle(
     factual context and the current user after these messages, preserving the
     existing request assembly order.
     """
+    from datetime import datetime, timezone
+
     db = db_manager if db_manager is not None else get_db()
     snapshot = _history_snapshot(db, session_id, source_snapshot)
     state = _build_visible_history_state(
@@ -169,6 +171,12 @@ def build_agent_chat_context_bundle(
     traces_by_anchor: Dict[int, List[Dict[str, Any]]] = {}
     pending_trace_tokens = 0
     pending_trace_count = 0
+
+    # Tool result reuse window (seconds). 0 disables filtering.
+    reuse_seconds = _coerce_int(
+        getattr(config, "agent_chat_tool_reuse_seconds", 600), default=600,
+    )
+    now_utc = datetime.now(timezone.utc)
 
     for turn in turns:
         if not any(
@@ -190,6 +198,26 @@ def build_agent_chat_context_bundle(
             diagnostics.dropped_trace_count += 1
             diagnostics.trace_dropped_reason = diagnostics.trace_dropped_reason or "anchor_summarized"
             continue
+        # Tool result reuse window: drop provider turns older than the configured
+        # threshold so the model re-fetches fresh data instead of relying on stale
+        # tool results.  Only applies when reuse_seconds > 0.
+        if reuse_seconds > 0:
+            created_at = turn.get("created_at")
+            if created_at is not None:
+                if isinstance(created_at, str):
+                    try:
+                        created_at = datetime.fromisoformat(created_at)
+                    except (ValueError, TypeError):
+                        created_at = None
+                if created_at is not None:
+                    if created_at.tzinfo is None:
+                        created_at = created_at.replace(tzinfo=timezone.utc)
+                    age_seconds = (now_utc - created_at).total_seconds()
+                    if age_seconds > reuse_seconds:
+                        diagnostics.tool_reuse_expired += 1
+                        diagnostics.dropped_trace_count += 1
+                        diagnostics.trace_dropped_reason = diagnostics.trace_dropped_reason or "tool_reuse_expired"
+                        continue
         trace_messages = _restore_trace_metadata(
             turn.get("messages") or [],
             provider=turn.get("provider"),

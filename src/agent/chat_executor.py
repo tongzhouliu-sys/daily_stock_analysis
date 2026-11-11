@@ -143,11 +143,15 @@ class AgentChatExecutor:
         turn: PreparedAgentChatTurn,
         *,
         progress_callback: Optional[Callable[[Dict[str, Any]], None]] = None,
+        stream_content: bool = False,
     ) -> AgentResult:
         """Execute a previously accepted turn and persist its terminal result."""
         # Collect progress steps for persistence
         collected_progress_steps: List[Dict[str, Any]] = []
         progress_lock = threading.Lock()
+
+        # T5: Content delta events are transient and must not be persisted
+        _TRANSIENT_EVENT_TYPES = {"content_delta", "content_reset"}
 
         def _persisting_progress_callback(event: Dict[str, Any]) -> None:
             """Wrap the original callback to also collect and persist progress steps."""
@@ -158,6 +162,9 @@ class AgentChatExecutor:
                 if progress_callback:
                     progress_callback(event)
             finally:
+                # T5: Skip persistence for streaming content events
+                if event.get("type") in _TRANSIENT_EVENT_TYPES:
+                    return
                 with progress_lock:
                     collected_progress_steps.append(dict(event))
                     current_steps = list(collected_progress_steps)
@@ -180,6 +187,39 @@ class AgentChatExecutor:
 
         try:
             # T3: 启用交互模式上下文，减少数据源固定休眠
+            # T5: 流式内容回调（当 stream_content=True 时启用）
+            _content_callback = None
+            if stream_content and progress_callback:
+                import time as _time
+                from src.agent.stream_events import content_delta_event, content_reset_event
+                _delta_buffer: list = []
+                _last_emit_time = [0.0]
+                
+                def _emit_delta(text: str) -> None:
+                    """Emit content_delta event with throttling (50ms or 24 chars)."""
+                    now = _time.monotonic()
+                    _delta_buffer.append(text)
+                    buffer_text = ''.join(_delta_buffer)
+                    # Emit if enough time passed or enough chars accumulated
+                    if (now - _last_emit_time[0] >= 0.05) or len(buffer_text) >= 24:
+                        progress_callback(content_delta_event(0, buffer_text))
+                        _delta_buffer.clear()
+                        _last_emit_time[0] = now
+                
+                def _content_callback(chunk: str) -> None:
+                    """Buffer and throttle content_delta events."""
+                    try:
+                        _emit_delta(chunk)
+                    except Exception:
+                        pass  # Non-critical
+                
+                # Flush remaining buffer on completion
+                def _flush_content_callback() -> None:
+                    if _delta_buffer:
+                        buffer_text = ''.join(_delta_buffer)
+                        progress_callback(content_delta_event(0, buffer_text))
+                        _delta_buffer.clear()
+            
             with interactive_mode():
                 backend_result = self.backend.run(
                     AgentRunRequest(
@@ -191,8 +231,16 @@ class AgentChatExecutor:
                         max_steps=self.max_steps,
                         max_wall_clock_seconds=self.timeout_seconds,
                         progress_callback=_persisting_progress_callback,
+                        content_callback=_content_callback,
                     )
                 )
+            
+            # Flush any remaining content delta
+            if stream_content and '_flush_content_callback' in dir():
+                try:
+                    _flush_content_callback()
+                except Exception:
+                    pass
 
             total_tokens = 0
             if isinstance(backend_result.usage, dict):

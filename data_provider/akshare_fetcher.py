@@ -46,7 +46,7 @@ from tenacity import (
 from src.patches.eastmoney_patch import eastmoney_patch
 from src.config import get_config
 from src.services.stock_list_parser import ParseStatus, parse_analysis_target
-from .base import BaseFetcher, DataFetchError, RateLimitError, STANDARD_COLUMNS, is_bse_code, is_st_stock, is_kc_cy_stock, normalize_stock_code
+from .base import BaseFetcher, DataFetchError, RateLimitError, STANDARD_COLUMNS, is_bse_code, is_st_stock, is_kc_cy_stock, normalize_stock_code, INTERACTIVE_MODE
 from .realtime_types import (
     UnifiedRealtimeQuote, ChipDistribution, RealtimeSource,
     get_realtime_circuit_breaker, get_chip_circuit_breaker,
@@ -457,7 +457,9 @@ class AkshareFetcher(BaseFetcher):
         策略：
         1. 检查距离上次请求的时间间隔
         2. 如果间隔不足，补充休眠时间
-        3. 然后再执行随机 jitter 休眠
+        3. 然后再执行随机 jitter 休眠（交互模式下跳过）
+        
+        T3: 交互模式下只保留最小间隔休眠，跳过随机休眠以减少延迟
         """
         if self._last_request_time is not None:
             elapsed = time.time() - self._last_request_time
@@ -467,8 +469,10 @@ class AkshareFetcher(BaseFetcher):
                 logger.debug(f"补充休眠 {additional_sleep:.2f} 秒")
                 time.sleep(additional_sleep)
         
-        # 执行随机 jitter 休眠
-        self.random_sleep(self.sleep_min, self.sleep_max)
+        # 交互模式下跳过随机休眠，减少延迟
+        if not INTERACTIVE_MODE.get():
+            # 执行随机 jitter 休眠
+            self.random_sleep(self.sleep_min, self.sleep_max)
         self._last_request_time = time.time()
     
     @retry(

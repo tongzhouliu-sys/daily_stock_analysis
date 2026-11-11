@@ -65,6 +65,7 @@ from .base import (
     normalize_stock_code,
     _is_hk_market,
     _is_etf_code as _is_a_share_etf_code,
+    INTERACTIVE_MODE,
 )
 from .realtime_types import (
     UnifiedRealtimeQuote, RealtimeSource,
@@ -335,7 +336,9 @@ class EfinanceFetcher(BaseFetcher):
         策略：
         1. 检查距离上次请求的时间间隔
         2. 如果间隔不足，补充休眠时间
-        3. 然后再执行随机 jitter 休眠
+        3. 然后再执行随机 jitter 休眠（交互模式下跳过）
+        
+        T3: 交互模式下只保留最小间隔休眠，跳过随机休眠以减少延迟
         """
         if self._last_request_time is not None:
             elapsed = time.time() - self._last_request_time
@@ -345,8 +348,10 @@ class EfinanceFetcher(BaseFetcher):
                 logger.debug(f"补充休眠 {additional_sleep:.2f} 秒")
                 time.sleep(additional_sleep)
         
-        # 执行随机 jitter 休眠
-        self.random_sleep(self.sleep_min, self.sleep_max)
+        # 交互模式下跳过随机休眠，减少延迟
+        if not INTERACTIVE_MODE.get():
+            # 执行随机 jitter 休眠
+            self.random_sleep(self.sleep_min, self.sleep_max)
         self._last_request_time = time.time()
     
     @retry(

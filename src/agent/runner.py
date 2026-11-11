@@ -33,6 +33,8 @@ from src.agent.stream_events import (
     stream_event,
     tool_start_event,
     tool_done_event,
+    content_delta_event,
+    content_reset_event,
     TOOL_DISPLAY_LABELS,
     TOOL_CATEGORIES,
 )
@@ -341,6 +343,7 @@ def run_agent_loop(
     tool_call_timeout_seconds: Optional[float] = None,
     stock_scope: Optional[StockScope] = None,
     emit_stage_events: bool = True,
+    content_callback: Optional[Callable[[str], None]] = None,
 ) -> RunLoopResult:
     """Execute the ReAct LLM ↔ tool loop.
 
@@ -364,6 +367,8 @@ def run_agent_loop(
         emit_stage_events: Whether to emit the synthetic ``agent_loop``
             stage lifecycle. Orchestrated business stages disable this so
             ``stage_start`` / ``stage_done`` only describe real stages.
+        content_callback: Optional callback for streaming content deltas (T5).
+                  When provided, the final LLM call will stream content incrementally.
 
     Returns:
         A :class:`RunLoopResult` with the final content, stats, and the
@@ -378,6 +383,8 @@ def run_agent_loop(
     total_tokens = 0
     provider_used = ""
     models_used: List[str] = []
+    _cumulative_llm_seconds = 0.0
+    _cumulative_tool_seconds = 0.0
 
     # Minimum seconds needed for a meaningful LLM round-trip.  If the
     # remaining budget is positive but below this threshold, the step will
@@ -462,17 +469,56 @@ def run_agent_loop(
             progress_callback(stream_event("thinking", step=step + 1, message=thinking_msg))
 
         # --- LLM call ---
+        # T5: 流式输出支持
+        # 当 content_callback 存在时，启用流式调用。
+        # 通过包装 stream_callback 来发射 content_delta 事件，并在收到首个分块时发射 generating 事件。
+        _stream_cb = None
+        _streamed_any = False
+        _generating_emitted = False
+
+        if content_callback is not None:
+            def _stream_cb(chunk_text: str) -> None:
+                nonlocal _streamed_any, _generating_emitted
+                # 直接回调调用方（用于 SSE 转发）
+                try:
+                    content_callback(chunk_text)
+                except Exception:
+                    pass
+                # 通过 progress_callback 发射 content_delta 事件
+                if progress_callback:
+                    if not _generating_emitted:
+                        _generating_emitted = True
+                        progress_callback(stream_event("generating", step=step + 1, message="正在生成最终分析..."))
+                    progress_callback(content_delta_event(step + 1, chunk_text))
+                _streamed_any = True
+
+        _llm_t0 = time.monotonic()
         response = llm_adapter.call_with_tools(
             messages,
             tool_decls,
             timeout=remaining_timeout,
+            stream_callback=_stream_cb,
         )
+        _llm_elapsed = time.monotonic() - _llm_t0
+        _cumulative_llm_seconds += _llm_elapsed
         provider_used = response.provider
+        _prompt_tokens = (response.usage or {}).get("prompt_tokens", 0) or 0
+        _completion_tokens = (response.usage or {}).get("completion_tokens", 0) or 0
         total_tokens += (response.usage or {}).get("total_tokens", 0)
         m = getattr(response, "model", "") or response.provider
         if m and m != "error":
             models_used.append(m)
         model_for_usage = m or response.provider
+        _n_tool_calls = len(response.tool_calls) if response.tool_calls else 0
+        logger.info(
+            "Agent LLM step %d: model=%s elapsed=%.2fs prompt_tokens=%d completion_tokens=%d tool_calls=%d",
+            step + 1,
+            model_for_usage or "unknown",
+            _llm_elapsed,
+            _prompt_tokens,
+            _completion_tokens,
+            _n_tool_calls,
+        )
         if model_for_usage and model_for_usage != "error" and should_persist_usage_telemetry(response.usage):
             _persist_usage(response.usage, model_for_usage, call_type="agent")
 
@@ -525,6 +571,7 @@ def run_agent_loop(
             # the caller's explicit per-run override — highest priority in the
             # first-wins chain (Issue #1890 contract) — while ``remaining_timeout``
             # is the unbreakable outer wall-clock cap for this batch.
+            _tool_t0 = time.monotonic()
             tool_results = _execute_tools(
                 response.tool_calls,
                 tool_registry,
@@ -536,6 +583,7 @@ def run_agent_loop(
                 tool_wait_timeout_seconds=remaining_timeout,
                 stock_scope=stock_scope,
             )
+            _cumulative_tool_seconds += time.monotonic() - _tool_t0
 
             # Append tool results preserving original call order
             tc_order = {tc.id: i for i, tc in enumerate(response.tool_calls)}
@@ -567,10 +615,12 @@ def run_agent_loop(
         else:
             # ---- final answer branch ----
             logger.info(
-                "Agent completed in %d steps (%.1fs, %d tokens)",
+                "Agent completed in %d steps (%.1fs, %d tokens) [llm=%.1fs tools=%.1fs]",
                 step + 1,
                 time.time() - start_time,
                 total_tokens,
+                _cumulative_llm_seconds,
+                _cumulative_tool_seconds,
             )
             if progress_callback:
                 progress_callback(stream_event("generating", step=step + 1, message="正在生成最终分析..."))

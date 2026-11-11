@@ -284,6 +284,62 @@ def get_effective_trading_date(
         return fallback_date
 
 
+def get_required_daily_bar_date(
+    stock_code: str, current_time: Optional[datetime] = None
+) -> date:
+    """Return the latest daily bar date that cache must contain to be fresh.
+
+    Rules (per market local time):
+    - Non-trading day / holiday: previous trading session
+    - Trading day before market open: previous trading session
+    - Trading day after market open (incl. lunch break, after close): current trading session
+    - Calendar unavailable or market unknown: server natural date (today)
+
+    This differs from ``get_effective_trading_date`` which returns the latest
+    *completed* session. Here we want the current session once trading has
+    started, because intraday technical indicators must reflect current price.
+    """
+    market = get_market_for_stock(stock_code)
+    market_now = get_market_now(market, current_time=current_time)
+    fallback_date = market_now.date()
+
+    if not _XCALS_AVAILABLE:
+        return fallback_date
+
+    ex = MARKET_EXCHANGE.get(market or "")
+    tz_name = MARKET_TIMEZONE.get(market or "")
+    if not ex or not tz_name:
+        return fallback_date
+
+    try:
+        cal = xcals.get_calendar(ex)
+        local_date = market_now.date()
+
+        # Non-trading day: return previous session
+        if not cal.is_session(local_date):
+            return cal.date_to_session(local_date, direction="previous").date()
+
+        # Trading day: check if market has opened
+        session = cal.date_to_session(local_date, direction="previous")
+        session_open = cal.session_open(session)
+        if hasattr(session_open, "tz_convert"):
+            open_local = session_open.tz_convert(tz_name).to_pydatetime()
+        elif session_open.tzinfo is not None:
+            open_local = session_open.astimezone(ZoneInfo(tz_name))
+        else:
+            open_local = session_open.replace(tzinfo=ZoneInfo(tz_name))
+
+        # If market has opened (or at open time), cache must contain today's bar
+        if market_now >= open_local:
+            return session.date()
+
+        # Before market open: cache must contain previous session's bar
+        return cal.previous_session(session).date()
+    except Exception as e:
+        logger.warning("trading_calendar.get_required_daily_bar_date fail-open: %s", e)
+        return fallback_date
+
+
 def resolve_historical_daily_bar_date(
     market: Optional[str],
     target_date: date,

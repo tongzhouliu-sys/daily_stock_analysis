@@ -30,6 +30,8 @@ export interface ChatStreamRequest extends ChatRequest {
   interaction_version?: number;
   intake_id?: string;
   intake_revision?: number;
+  // T6: 流式内容输出（客户端显式开启）
+  stream_content?: boolean;
 }
 
 

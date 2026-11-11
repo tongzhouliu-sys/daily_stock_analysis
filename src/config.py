@@ -1149,6 +1149,11 @@ class Config:
     agent_event_monitor_enabled: bool = False  # Enable periodic event-driven alert checks in schedule mode
     agent_event_monitor_interval_minutes: int = 5  # Polling interval for event monitor background checks
     agent_event_alert_rules_json: str = ""  # JSON array of serialized EventMonitor rules
+    # Latency optimization (stock-chat-latency-optimization-plan)
+    agent_chat_tool_reuse_seconds: int = 600  # Provider-turn reuse window; 0 disables filtering
+    agent_llm_call_timeout_s: float = 0.0  # Per-LLM-call timeout; 0 = no per-call limit
+    agent_opt_in_thinking: bool = True  # Allow opt-in thinking models (e.g. deepseek-chat) to enable thinking
+    agent_chat_stream_content: bool = False  # Server-side switch for streaming content deltas to clients
 
     # === 通知配置（可同时配置多个，全部推送）===
     

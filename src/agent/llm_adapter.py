@@ -605,8 +605,13 @@ class LLMToolAdapter:
         temperature: Optional[float] = None,
         max_tokens: Optional[int] = None,
         timeout: Optional[float] = None,
+        stream_callback: Optional[Callable[[str], None]] = None,
     ) -> LLMResponse:
-        """Shared completion path for both tool and text-only calls."""
+        """Shared completion path for both tool and text-only calls.
+        
+        T4: 支持单次 LLM 调用超时 (agent_llm_call_timeout_s)
+        T5: 支持流式输出回调 (stream_callback)
+        """
         config = self._config
         if self._backend_error is not None:
             error_msg = (
@@ -627,6 +632,9 @@ class LLMToolAdapter:
         started_at = time.time()
         providers = [self._get_model_provider(model) for model in models_to_try]
 
+        # T4: 单次 LLM 调用超时配置
+        per_call_timeout_s = float(getattr(config, "agent_llm_call_timeout_s", 0.0) or 0.0)
+
         last_error = None
         hit_rate_limit = False
         for idx, model in enumerate(models_to_try):
@@ -638,6 +646,15 @@ class LLMToolAdapter:
                         f"LLM completion timed out before trying fallback model {model}"
                     )
                     break
+            
+            # T4: 计算单次调用的有效超时 = min(单次上限, 整体剩余预算)
+            effective_timeout = remaining_timeout
+            if per_call_timeout_s > 0:
+                if effective_timeout is None or effective_timeout <= 0:
+                    effective_timeout = per_call_timeout_s
+                else:
+                    effective_timeout = min(effective_timeout, per_call_timeout_s)
+            
             try:
                 return self._call_litellm_model(
                     messages,
@@ -645,9 +662,16 @@ class LLMToolAdapter:
                     model,
                     temperature=temperature,
                     max_tokens=max_tokens,
-                    timeout=remaining_timeout,
+                    timeout=effective_timeout,
+                    stream_callback=stream_callback,
                 )
             except Exception as e:
+                # T4: 超时异常时尝试下一个备用模型
+                is_timeout = isinstance(e, (TimeoutError,)) or isinstance(e, _resolve_litellm_exception("Timeout"))
+                if is_timeout:
+                    logger.warning("Agent LLM call timed out on %s (%.1fs): %s", model, per_call_timeout_s, e)
+                    last_error = e
+                    continue
                 if isinstance(e, _resolve_litellm_exception("RateLimitError")):
                     logger.warning("Agent LLM rate-limited on %s: %s", model, e)
                     last_error = e
@@ -697,13 +721,20 @@ class LLMToolAdapter:
         temperature: Optional[float] = None,
         max_tokens: Optional[int] = None,
         timeout: Optional[float] = None,
+        stream_callback: Optional[Callable[[str], None]] = None,
     ) -> LLMResponse:
-        """Call a specific litellm model with OpenAI-format messages and tools."""
+        """Call a specific litellm model with OpenAI-format messages and tools.
+        
+        T5: 支持流式输出回调 (stream_callback)
+        """
         openai_messages = self._convert_messages(messages, target_model=model)
 
         # Use short model name (without provider prefix) for thinking model lookup
         model_short = model.split("/")[-1] if "/" in model else model
-        extra = get_thinking_extra_body(model_short)
+        # T4: 强制思考开关
+        config = self._config
+        opt_in_thinking = bool(getattr(config, "agent_opt_in_thinking", True))
+        extra = get_thinking_extra_body(model_short) if opt_in_thinking else None
 
         call_kwargs: Dict[str, Any] = {
             "model": model,
@@ -719,6 +750,11 @@ class LLMToolAdapter:
 
         if tools:
             call_kwargs["tools"] = tools
+
+        # T5: 流式输出支持
+        use_streaming = stream_callback is not None and not tools
+        if use_streaming:
+            call_kwargs["stream"] = True
 
         # Use Router for primary model (multi-key), direct litellm for others
         use_channel_router = self._has_channel_config()
@@ -764,6 +800,20 @@ class LLMToolAdapter:
         register_fallback_model_pricing(
             resolve_fallback_litellm_wire_models(model, recovery_model_list)
         )
+        
+        # T5: 流式输出处理
+        if use_streaming:
+            return self._call_litellm_streaming(
+                model=model,
+                call_kwargs=call_kwargs,
+                uses_router=uses_router,
+                use_channel_router=use_channel_router,
+                recovery_model_list=recovery_model_list,
+                openai_messages=openai_messages,
+                stream_callback=stream_callback,
+            )
+
+        # 非流式路径
         if use_channel_router and self._router and model in _router_model_names:
             # Channel / YAML path: Router manages all models in its model_list
             response = call_litellm_with_param_recovery(
@@ -800,6 +850,95 @@ class LLMToolAdapter:
             openai_messages,
             model_list=recovery_model_list,
         )
+    
+    def _call_litellm_streaming(
+        self,
+        *,
+        model: str,
+        call_kwargs: Dict[str, Any],
+        uses_router: bool,
+        use_channel_router: bool,
+        recovery_model_list: List[str],
+        openai_messages: List[Dict[str, Any]],
+        stream_callback: Callable[[str], None],
+    ) -> LLMResponse:
+        """T5: 流式调用 LiteLLM 并收集增量内容。
+        
+        使用 stream_chunk_builder 将分块还原成完整响应，再交给 _parse_litellm_response。
+        """
+        chunks = []
+        
+        def _get_stream():
+            if use_channel_router and self._router and model in set(get_configured_llm_models(recovery_model_list)):
+                return self._router.completion(**call_kwargs)
+            elif self._router and uses_router:
+                return self._router.completion(**call_kwargs)
+            else:
+                return litellm.completion(**call_kwargs)
+        
+        try:
+            response = _get_stream()
+            for chunk in response:
+                chunks.append(chunk)
+                # 提取增量内容并回调
+                if hasattr(chunk, 'choices') and chunk.choices:
+                    delta = chunk.choices[0].delta
+                    if hasattr(delta, 'content') and delta.content:
+                        stream_callback(delta.content)
+        except Exception as e:
+            logger.warning("Streaming call failed on %s: %s", model, e)
+            raise
+        
+        # 使用 stream_chunk_builder 还原完整响应
+        try:
+            from litellm import stream_chunk_builder
+            built_response = stream_chunk_builder(chunks)
+        except Exception as e:
+            logger.warning("stream_chunk_builder failed: %s, falling back to manual assembly", e)
+            # 手动组装一个简化的响应对象
+            built_response = self._manual_build_stream_response(chunks, model)
+        
+        return self._parse_litellm_response(
+            built_response,
+            model,
+            openai_messages,
+            model_list=recovery_model_list,
+        )
+    
+    def _manual_build_stream_response(
+        self,
+        chunks: List[Any],
+        model: str,
+    ) -> Any:
+        """手动从流式分块构建响应对象（当 stream_chunk_builder 失败时的后备方案）。"""
+        from types import SimpleNamespace
+        
+        content_parts = []
+        usage_data = {"prompt_tokens": 0, "completion_tokens": 0, "total_tokens": 0}
+        
+        for chunk in chunks:
+            if hasattr(chunk, 'choices') and chunk.choices:
+                delta = chunk.choices[0].delta
+                if hasattr(delta, 'content') and delta.content:
+                    content_parts.append(delta.content)
+            if hasattr(chunk, 'usage') and chunk.usage:
+                usage_data["prompt_tokens"] = getattr(chunk.usage, 'prompt_tokens', 0) or 0
+                usage_data["completion_tokens"] = getattr(chunk.usage, 'completion_tokens', 0) or 0
+                usage_data["total_tokens"] = getattr(chunk.usage, 'total_tokens', 0) or 0
+        
+        # 构建一个与 litellm 响应兼容的对象
+        mock_response = SimpleNamespace(
+            choices=[SimpleNamespace(
+                message=SimpleNamespace(
+                    content="".join(content_parts),
+                    tool_calls=None,
+                ),
+                finish_reason="stop",
+            )],
+            model=model,
+            usage=SimpleNamespace(**usage_data),
+        )
+        return mock_response
 
     def _get_temperature(self) -> float:
         """Return the raw configured temperature before per-model normalization."""
