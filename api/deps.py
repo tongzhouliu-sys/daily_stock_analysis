@@ -20,6 +20,7 @@ from src.config import get_config, Config
 from src.services.system_config_service import SystemConfigService
 from src.services.runtime_scheduler import RuntimeSchedulerService
 from src.services.agent_chat_session_service import AgentChatSessionService
+from src.services.agent_chat_intake_service import AgentChatIntakeService
 
 
 def get_db() -> Generator[Session, None, None]:
@@ -67,6 +68,11 @@ def get_database_manager() -> DatabaseManager:
 def get_agent_chat_session_service() -> AgentChatSessionService:
     """Build an Agent Chat session service for the current database manager."""
     return AgentChatSessionService(DatabaseManager.get_instance())
+
+
+def get_agent_chat_intake_service() -> AgentChatIntakeService:
+    """Build an Agent Chat intake service for the current database manager."""
+    return AgentChatIntakeService(DatabaseManager.get_instance())
 
 
 def get_system_config_service(request: Request) -> SystemConfigService:
