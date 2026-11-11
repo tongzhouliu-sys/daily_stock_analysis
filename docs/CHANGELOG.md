@@ -9,6 +9,8 @@ and this project adheres to [Semantic Versioning](https://semver.org/).
 
 ## [Unreleased]
 
+- [修复] 问股界面回答完成后无法追问、停止按钮无法关闭的问题：修复 `chat_executor.py` 中在同步函数内误用 `await` 调用异步 `answer_editor.format_response()` 导致的 `SyntaxError`，改为 `asyncio.run()` 在线程池中创建临时事件循环；修复前端 `stopStream` 仅调用 `abort()` 但未立即清理 `loading` 状态导致 UI 卡死的问题，改为先置空 `abortController` 再立即重置所有瞬态状态。
+- [文档] 新增问股流式响应卡死问题的分析与修复任务书（`docs/tasks/chat-stream-stuck-fix.md`），记录根因、修复方案与验收标准。
 - [新功能] 非投资问题识别与提醒（domain guard）：在用户问题进入研究前统一判断投资相关性，对明确无关问题返回定位提醒并建议其他平台，对模糊问题请求补充投资背景，对混合问题保留可分离的投资子请求。覆盖 Web 聊天 API（同步/流式）、首次问卷预检、Bot 聊天及深度研究入口，返回受控的中英文提醒模板，不触发研究工具调用。
 - [文档] 新增非投资问题识别与提醒需求及开发任务书，明确领域边界、提醒文案、各问答入口和验收标准，功能待实施。
 - [文档] 新增问股响应耗时分析、加速方案与开发任务书，优化待实施。
