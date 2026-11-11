@@ -153,34 +153,44 @@ const getPipelineBudgetSkippedLabel = (step: ProgressStep): string => {
 // When the assistant replies with the stock-object clarification prompt
 // ("请明确提供本次讨论的股票或指数代码，或确认是否切换。"), we render an
 // inline action card below the message that lets the user confirm the switch
-// (default, auto-confirmed after 5s) or keep the current object.
+// (default, auto-confirmed after 10s) or keep the current object.
 
 const STOCK_CLARIFY_TEXT = '请明确提供本次讨论的股票或指数代码，或确认是否切换。';
 
 const StockClarifyCard: React.FC<{
   messageId: string;
-  onConfirmSwitch: () => void;
+  onConfirm: () => void;
   onKeepCurrent: () => void;
-}> = ({ messageId, onConfirmSwitch, onKeepCurrent }) => {
-  const AUTO_CONFIRM_SECONDS = 5;
+}> = ({ messageId, onConfirm, onKeepCurrent }) => {
+  const AUTO_CONFIRM_SECONDS = 10;
+  const [phase, setPhase] = useState<'analyzing' | 'confirming' | 'resolved'>('analyzing');
   const [remaining, setRemaining] = useState(AUTO_CONFIRM_SECONDS);
-  const [resolved, setResolved] = useState<'switch' | 'keep' | null>(null);
+  const [resolved, setResolved] = useState<'confirm' | 'keep' | null>(null);
 
+  // Phase 1: Show analyzing state for 2 seconds
   useEffect(() => {
-    if (resolved !== null) return;
+    if (phase !== 'analyzing') return;
+    const timer = window.setTimeout(() => setPhase('confirming'), 2000);
+    return () => window.clearTimeout(timer);
+  }, [phase]);
+
+  // Phase 2: Countdown for confirmation
+  useEffect(() => {
+    if (phase !== 'confirming' || resolved !== null) return;
     if (remaining <= 0) {
-      onConfirmSwitch();
-      setResolved('switch');
+      onConfirm();
+      setResolved('confirm');
+      setPhase('resolved');
       return;
     }
     const timer = window.setTimeout(() => setRemaining((r) => r - 1), 1000);
     return () => window.clearTimeout(timer);
-  }, [remaining, resolved, onConfirmSwitch]);
+  }, [remaining, resolved, phase, onConfirm]);
 
-  const handleSwitch = () => {
+  const handleConfirm = () => {
     if (resolved !== null) return;
-    setResolved('switch');
-    onConfirmSwitch();
+    setResolved('confirm');
+    onConfirm();
   };
 
   const handleKeep = () => {
@@ -226,22 +236,22 @@ const StockClarifyCard: React.FC<{
           />
         </svg>
         <span className="chat-stock-clarify-ring-label">
-          {resolved === 'switch' ? '✓' : resolved === 'keep' ? '•' : remaining}
+          {resolved === 'confirm' ? '✓' : resolved === 'keep' ? '•' : remaining}
         </span>
       </div>
       <div className="chat-stock-clarify-body">
         <p className="chat-stock-clarify-title">
-          {resolved === 'switch'
-            ? '已确认切换讨论对象'
+          {resolved === 'confirm'
+            ? '已确认，继续分析'
             : resolved === 'keep'
               ? '将保持当前讨论对象'
               : remaining <= 1
-                ? '即将切换讨论对象…'
-                : `${remaining} 秒后自动切换讨论对象`}
+                ? '即将确认…'
+                : `${remaining} 秒后自动确认`}
         </p>
         <p className="chat-stock-clarify-hint">
           {resolved === null
-            ? '如需继续分析当前标的，可选择保持；否则将按新提问切换。'
+            ? '如需继续分析当前标的，可选择保持；否则将按新提问继续。'
             : '你可以继续输入新的问题进行提问。'}
         </p>
         {resolved === null && (
@@ -249,10 +259,10 @@ const StockClarifyCard: React.FC<{
             <button
               type="button"
               className="chat-stock-clarify-btn is-primary"
-              onClick={handleSwitch}
+              onClick={handleConfirm}
             >
-              <RefreshCw size={13} aria-hidden="true" />
-              <span>切换</span>
+              <Check size={13} aria-hidden="true" />
+              <span>确认</span>
             </button>
             <button
               type="button"
