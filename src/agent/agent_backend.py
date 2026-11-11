@@ -66,6 +66,7 @@ class AgentRunRequest:
     max_steps: int
     max_wall_clock_seconds: Optional[float]
     progress_callback: Optional[Callable[[Dict[str, Any]], None]] = None
+    content_callback: Optional[Callable[[str], None]] = None  # T5: 流式内容回调
 
 
 @dataclass
@@ -118,6 +119,7 @@ class LiteLLMAgentBackend(AgentBackend):
             progress_callback=request.progress_callback,
             max_wall_clock_seconds=request.max_wall_clock_seconds,
             stock_scope=request.stock_scope,
+            content_callback=request.content_callback,  # T5: 传递流式内容回调
         )
         usage = {"total_tokens": loop_result.total_tokens} if loop_result.total_tokens > 0 else None
         error_code = None

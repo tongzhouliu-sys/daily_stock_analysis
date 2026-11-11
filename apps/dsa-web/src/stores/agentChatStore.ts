@@ -196,6 +196,8 @@ interface AgentChatState {
   intakeDraft: IntakeDraft | null;
   intakeStatus: IntakeStatus | null;
   analysisBrief: AnalysisBrief | null;
+  // T6: 流式内容输出（临时文本，完成后由 done.content 替换）
+  streamingContent: string | null;
 }
 
 interface AgentChatActions {
@@ -227,7 +229,7 @@ const emptySessionState = {
 };
 const emptyStreamState = {
   loading: false, progressSteps: [], abortController: null, activeRequestId: null,
-  terminalStatus: null,
+  terminalStatus: null, streamingContent: null,
 };
 
 // null rejects the response. {} keeps the newer state but can still acknowledge

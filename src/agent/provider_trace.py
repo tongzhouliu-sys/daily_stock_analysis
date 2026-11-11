@@ -63,6 +63,7 @@ class TraceDiagnostics:
     model_mismatch: int = 0
     anchor_summarized: int = 0
     budget_exceeded: bool = False
+    tool_reuse_expired: int = 0
 
     def to_dict(self) -> Dict[str, Any]:
         return {
@@ -76,6 +77,7 @@ class TraceDiagnostics:
             "model_mismatch": self.model_mismatch,
             "anchor_summarized": self.anchor_summarized,
             "budget_exceeded": self.budget_exceeded,
+            "tool_reuse_expired": self.tool_reuse_expired,
         }
 
 

@@ -17,6 +17,8 @@
 import logging
 import random
 import time
+from contextlib import contextmanager
+from contextvars import ContextVar
 from threading import BoundedSemaphore, RLock, Thread
 from abc import ABC, abstractmethod
 from datetime import datetime, timezone
@@ -35,6 +37,25 @@ from .realtime_types import CircuitBreaker
 
 # 配置日志
 logger = logging.getLogger(__name__)
+
+
+# === 交互模式上下文 (T3: 交互路径取消固定休眠) ===
+# 当设置为 True 时，数据源的 _enforce_rate_limit 只保留最小间隔休眠，跳过随机休眠
+INTERACTIVE_MODE: ContextVar[bool] = ContextVar("INTERACTIVE_MODE", default=False)
+
+
+@contextmanager
+def interactive_mode():
+    """上下文管理器：启用交互模式，减少数据源固定休眠。
+
+    交互模式下，_enforce_rate_limit 只在距上次请求不足 sleep_min 时补足差额，
+    不再执行每次请求前的随机休眠。非交互上下文的行为不变。
+    """
+    token = INTERACTIVE_MODE.set(True)
+    try:
+        yield
+    finally:
+        INTERACTIVE_MODE.reset(token)
 
 
 # === 标准化列名定义 ===

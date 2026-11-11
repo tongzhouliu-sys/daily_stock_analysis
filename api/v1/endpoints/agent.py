@@ -16,7 +16,9 @@ from pydantic import AliasChoices, BaseModel, ConfigDict, Field
 from api.deps import get_agent_chat_session_service
 from api.v1.schemas.system_config import AgentBackendStatusResponse
 from src.config import get_config
+from src.schemas.agent_domain_guard import DomainAction, DomainGuardMeta
 from src.services.agent_chat_session_service import AgentChatSessionService
+from src.services.agent_domain_guard_service import AgentDomainGuardService
 from src.services.agent_model_service import list_agent_model_deployments
 from src.services.agent_report_context_service import AgentReportContextError
 from src.storage import ChatSessionStateConflict
@@ -71,6 +73,11 @@ class ChatRequest(BaseModel):
     intake_revision: Optional[int] = Field(
         default=None,
         description="Confirmed intake revision",
+    )
+    # T5: Streaming content output
+    stream_content: Optional[bool] = Field(
+        default=False,
+        description="Enable streaming content deltas (requires server-side AGENT_CHAT_STREAM_CONTENT=true)",
     )
 
     @property
@@ -152,6 +159,8 @@ class ChatResponse(BaseModel):
     session_generation: str
     session_state: SessionStateResponse
     clarification: Optional[Dict[str, Any]] = None
+    # Domain guard metadata (optional, for non-investment question reminders)
+    domain_guard: Optional[Dict[str, Any]] = None
 
 
 def _public_chat_state(*, active_stock_context, session_state_version, session_generation, selected_skill_ids,
@@ -173,8 +182,48 @@ def _public_chat_state(*, active_stock_context, session_state_version, session_g
     }
 
 
+def _check_domain_guard(request, config, session_service, session_id):
+    """Check if the message passes domain guard classification.
+    
+    Returns:
+        None if allowed, otherwise (decision, meta) tuple
+    """
+    try:
+        # Get session context for classification
+        session_detail = session_service.get_session_detail(session_id, limit=5)
+        context = {
+            "stock_code": session_detail.active_stock_context.get("stock_code") if session_detail.active_stock_context else None,
+            "stock_name": session_detail.active_stock_context.get("stock_name") if session_detail.active_stock_context else None,
+            "active_report_context": session_detail.active_report_context,
+        }
+        
+        # Get recent history
+        history_messages = [
+            {"role": msg["role"], "content": msg["content"]}
+            for msg in session_detail.messages[-6:]  # Last 3 turns
+        ]
+        
+        guard_service = AgentDomainGuardService(config)
+        decision, meta = guard_service.classify(
+            message=request.message,
+            context=context,
+            history_messages=history_messages,
+        )
+        
+        if decision.action != DomainAction.ALLOW:
+            return decision, meta
+        
+        return None
+    except Exception as e:
+        logger.warning("Domain guard check failed: %s", e)
+        return None  # Fail open on error
+
+
 def _prepare_chat_request(request, config, session_id, session_service, intake_service=None):
     """Prepare once against the session snapshot, then commit exactly one turn."""
+    # T2: Domain guard check before any research/tools
+    domain_guard_result = _check_domain_guard(request, config, session_service, session_id)
+    
     resolved = session_service.prepare_session_turn(
         config, session_id, request.message, request.effective_skills,
         context=_build_agent_chat_context(request, config, None, intake_service),
@@ -182,14 +231,14 @@ def _prepare_chat_request(request, config, session_id, session_service, intake_s
     )
     if resolved.clarification is not None:
         accepted = session_service.commit_user_turn(resolved)
-        return None, None, accepted, resolved.clarification, resolved.clarification_payload
+        return None, None, accepted, resolved.clarification, resolved.clarification_payload, domain_guard_result
     executor = _build_executor(config, resolved.skill_selection.effective_skill_ids)
     turn = executor.prepare_turn(
         message=request.message, session_id=session_id, context=resolved.effective_context,
         selected_skill_ids=resolved.skill_selection.selected_skill_ids_update,
         resolved_turn=resolved, session_service=session_service,
     )
-    return executor, turn, turn.accepted_snapshot, None, None
+    return executor, turn, turn.accepted_snapshot, None, None, domain_guard_result
 
 
 def _clarification_result(session_service, accepted, content, backend_id):
@@ -331,9 +380,42 @@ async def agent_chat(
     session_id = request.session_id or str(uuid.uuid4())
     
     try:
-        executor, turn, accepted, clarification, clarification_payload = await asyncio.to_thread(
+        executor, turn, accepted, clarification, clarification_payload, domain_guard_result = await asyncio.to_thread(
             _prepare_chat_request, request, config, session_id, session_service, intake_service,
         )
+        
+        # T2: Handle domain guard rejection
+        if domain_guard_result is not None:
+            decision, meta = domain_guard_result
+            # Save the reminder as a normal assistant message
+            accepted_for_save = session_service.prepare_session_turn(
+                config, session_id, request.message, request.effective_skills,
+                context=_build_agent_chat_context(request, config, None, intake_service),
+                expected_generation=request.session_generation,
+            )
+            if accepted_for_save.clarification is None:
+                accepted_snapshot = session_service.commit_user_turn(accepted_for_save)
+                await asyncio.to_thread(
+                    _clarification_result, session_service, accepted_snapshot, 
+                    decision.message or "Domain guard reminder", backend_id
+                )
+            
+            return ChatResponse(
+                success=True,
+                content=decision.message or "",
+                session_id=session_id,
+                error=None,
+                clarification=None,
+                domain_guard={
+                    "action": meta.action.value,
+                    "reason_code": meta.reason_code.value,
+                    "policy_version": meta.policy_version,
+                    "elapsed_ms": meta.elapsed_ms,
+                    "source": meta.source,
+                },
+                **_accepted_state_payload(accepted_snapshot if 'accepted_snapshot' in locals() else accepted),
+            )
+        
         if clarification is not None:
             result = await asyncio.to_thread(_clarification_result, session_service, accepted, clarification, backend_id)
         else:
@@ -558,6 +640,18 @@ async def agent_research(request: ResearchRequest):
     if not config.is_agent_available():
         raise HTTPException(status_code=400, detail="Agent mode is not enabled")
 
+    # T2: Domain guard check before research
+    guard_service = AgentDomainGuardService(config)
+    decision, meta = guard_service.classify(request.question)
+    if decision.action != DomainAction.ALLOW:
+        return ResearchResponse(
+            success=True,
+            content=decision.message or "",
+            sources=[],
+            token_usage=0,
+            error=None,
+        )
+
     question = request.question
     context: Optional[Dict[str, Any]] = None
     if request.stock_code:
@@ -647,7 +741,16 @@ async def agent_chat_stream(
 
     def run_sync(executor, turn):
         try:
-            result = executor.execute_turn(turn, progress_callback=progress_callback)
+            # T5: 启用流式内容输出（当请求和服务端配置都开启时）
+            stream_content = (
+                getattr(request, 'stream_content', False) and 
+                getattr(config, 'agent_chat_stream_content', False)
+            )
+            result = executor.execute_turn(
+                turn, 
+                progress_callback=progress_callback,
+                stream_content=stream_content,
+            )
             event = {
                 "type": "done",
                 "success": result.success,
@@ -681,7 +784,7 @@ async def agent_chat_stream(
         fut = None
         try:
             try:
-                executor, turn, accepted, clarification, clarification_payload = await asyncio.to_thread(
+                executor, turn, accepted, clarification, clarification_payload, domain_guard_result = await asyncio.to_thread(
                     _prepare_chat_request, request, config, session_id, session_service,
                 )
             except asyncio.CancelledError:
@@ -713,6 +816,47 @@ async def agent_chat_stream(
 
             # Backend execution starts only after the accepted event has been
             # yielded, so Web state and server persistence share one commit point.
+            
+            # T2: Handle domain guard rejection in SSE stream
+            if domain_guard_result is not None:
+                decision, meta = domain_guard_result
+                # Save the reminder as a normal assistant message
+                try:
+                    accepted_for_save = session_service.prepare_session_turn(
+                        config, session_id, request.message, request.effective_skills,
+                        context=_build_agent_chat_context(request, config, None, None),
+                        expected_generation=request.session_generation,
+                    )
+                    if accepted_for_save.clarification is None:
+                        accepted_snapshot = session_service.commit_user_turn(accepted_for_save)
+                        await asyncio.to_thread(
+                            _clarification_result, session_service, accepted_snapshot,
+                            decision.message or "Domain guard reminder", backend_id
+                        )
+                except Exception as save_err:
+                    logger.warning("Failed to save domain guard reminder: %s", save_err)
+                
+                event = {
+                    "type": "done",
+                    "success": True,
+                    "content": decision.message or "",
+                    "error": None,
+                    "total_steps": 0,
+                    "session_id": session_id,
+                    "backend": backend_id,
+                    "request_id": request_id,
+                    "error_code": None,
+                    "domain_guard": {
+                        "action": meta.action.value,
+                        "reason_code": meta.reason_code.value,
+                        "policy_version": meta.policy_version,
+                        "elapsed_ms": meta.elapsed_ms,
+                        "source": meta.source,
+                    },
+                }
+                yield "data: " + json.dumps(event, ensure_ascii=False) + "\n\n"
+                return
+            
             if clarification is not None:
                 result = await asyncio.to_thread(_clarification_result, session_service, accepted, clarification, backend_id)
                 event = {"type": "done", "success": result.success, "content": result.content,

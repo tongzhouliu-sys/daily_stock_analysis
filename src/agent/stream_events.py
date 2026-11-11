@@ -309,3 +309,33 @@ def stage_done_event(
         message=message,
         outcome=outcome,
     )
+
+
+def content_delta_event(step: int, text: str) -> Dict[str, Any]:
+    """Build a content_delta event for streaming content.
+    
+    T5: 流式输出内容增量事件
+    
+    Args:
+        step: Current step number
+        text: Incremental text content
+    
+    Returns:
+        Event dict with step and text
+    """
+    return stream_event("content_delta", step=step, text=text)
+
+
+def content_reset_event(step: int, reason: str = "") -> Dict[str, Any]:
+    """Build a content_reset event to clear streaming content.
+    
+    T5: 流式输出内容重置事件
+    
+    Args:
+        step: Current step number
+        reason: Optional reason for reset (e.g., "tool_call", "error")
+    
+    Returns:
+        Event dict with step and optional reason
+    """
+    return stream_event("content_reset", step=step, reason=reason if reason else None)

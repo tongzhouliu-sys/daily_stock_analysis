@@ -55,6 +55,7 @@ env/
 
 # 数据和日志
 /data/
+/data10/
 /.llm_usage_hmac_secret
 **/.llm_usage_hmac_secret
 logs/
@@ -62,6 +63,10 @@ reports/
 *.db
 *.sqlite
 *.sqlite3
+
+# 本地回测产物（CSV、JSON、Markdown 等，仅本地使用，不上传 GitHub）
+/backtest_results/
+/backtest_results/**
 
 # 系统文件
 .DS_Store
