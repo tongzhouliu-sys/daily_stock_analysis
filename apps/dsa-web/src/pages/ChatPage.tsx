@@ -36,6 +36,7 @@ import {
   type StockClarificationIdentity,
 } from '../stores/agentChatStore';
 import StockClarificationCard from '../components/chat/StockClarificationCard';
+import ChatIntakeCard from '../components/chat/ChatIntakeCard';
 import { downloadSessionInFormat, formatSessionAsMarkdown, type ExportFormat } from '../utils/chatExport';
 import { buildScannerFollowUpPrompt } from '../utils/scannerFollowUp';
 import type { ChatFollowUpContext } from '../utils/chatFollowUp';
@@ -1518,7 +1519,12 @@ const ChatPage: React.FC = () => {
                   </div>
                 </section>
               ) : (
-                messages.map((msg) => {
+                <>
+                  {/* T3: Intake guided questioning card */}
+                  {useAgentChatStore(state => state.intakeStatus) === 'pending' && (
+                    <ChatIntakeCard />
+                  )}
+                  {messages.map((msg) => {
                   const skillLabel = getMessageSkillLabel(msg);
                   return (
                     <div
@@ -1586,7 +1592,8 @@ const ChatPage: React.FC = () => {
                       )}
                     </div>
                   );
-                })
+                })}
+                </>
               )}
 
               {loading && (

@@ -26,6 +26,10 @@ export interface ChatStreamRequest extends ChatRequest {
   session_generation?: string;
   request_id?: string;
   context?: unknown;
+  // T3: Intake flow integration
+  interaction_version?: number;
+  intake_id?: string;
+  intake_revision?: number;
 }
 
 
@@ -271,4 +275,62 @@ export const agentApi = {
     }
   },
 
+};
+
+// ────────────────────────────────────────────────────────────────────────────
+// Intake API (T3)
+// ────────────────────────────────────────────────────────────────────────────
+
+import type {
+  IntakeCreateRequest,
+  IntakeCreateResponse,
+  IntakeUpdateRequest,
+  IntakeUpdateResponse,
+  IntakeDraft,
+} from './agentIntake';
+
+export const intakeApi = {
+  /**
+   * Create a new intake draft for guided questioning.
+   */
+  async create(request: IntakeCreateRequest): Promise<IntakeCreateResponse> {
+    const response = await fetch(`${API_BASE_URL}/agent/chat/intake`, {
+      method: 'POST',
+      headers: { 'Content-Type': 'application/json' },
+      body: JSON.stringify(request),
+    });
+    if (!response.ok) {
+      const error = await response.json().catch(() => ({}));
+      throw createApiError(parseApiError(error), { cause: error });
+    }
+    return response.json();
+  },
+
+  /**
+   * Update intake answers and optionally confirm or skip.
+   */
+  async update(intakeId: string, request: IntakeUpdateRequest): Promise<IntakeUpdateResponse> {
+    const response = await fetch(`${API_BASE_URL}/agent/chat/intake/${intakeId}`, {
+      method: 'PATCH',
+      headers: { 'Content-Type': 'application/json' },
+      body: JSON.stringify(request),
+    });
+    if (!response.ok) {
+      const error = await response.json().catch(() => ({}));
+      throw createApiError(parseApiError(error), { cause: error });
+    }
+    return response.json();
+  },
+
+  /**
+   * Get the current state of an intake draft.
+   */
+  async get(intakeId: string): Promise<IntakeDraft> {
+    const response = await fetch(`${API_BASE_URL}/agent/chat/intake/${intakeId}`);
+    if (!response.ok) {
+      const error = await response.json().catch(() => ({}));
+      throw createApiError(parseApiError(error), { cause: error });
+    }
+    return response.json();
+  },
 };

@@ -1,5 +1,5 @@
 import { create } from 'zustand';
-import { agentApi, decodeChatState, isAbortError } from '../api/agent';
+import { agentApi, decodeChatState, isAbortError, intakeApi } from '../api/agent';
 import type {
   ActiveStockContext,
   ActiveReportContext,
@@ -9,6 +9,12 @@ import type {
   ChatStreamRequest,
   DecodedChatState,
 } from '../api/agent';
+import type {
+  IntakeDraft,
+  Answer,
+  AnalysisBrief,
+  IntakeStatus,
+} from '../api/agentIntake';
 import {
   createParsedApiError,
   getParsedApiError,
@@ -186,6 +192,10 @@ interface AgentChatState {
   abortController: AbortController | null;
   activeRequestId: string | null;
   terminalStatus: StreamTerminalStatus;
+  // T3: Intake state
+  intakeDraft: IntakeDraft | null;
+  intakeStatus: IntakeStatus | null;
+  analysisBrief: AnalysisBrief | null;
 }
 
 interface AgentChatActions {
@@ -199,6 +209,10 @@ interface AgentChatActions {
   startNewChat: () => void;
   stopStream: () => Promise<void>;
   startStream: (payload: ChatStreamRequest, meta?: StreamMeta) => Promise<void>;
+  // T3: Intake actions
+  createIntake: (message: string) => Promise<void>;
+  updateIntakeAnswers: (answers: Answer[], action: 'save' | 'confirm' | 'skip') => Promise<void>;
+  clearIntake: () => void;
 }
 
 const getInitialSessionId = (): string =>
@@ -460,6 +474,9 @@ export const useAgentChatStore = create<AgentChatState & AgentChatActions>((set,
   abortController: null,
   activeRequestId: null,
   terminalStatus: null,
+  intakeDraft: null,
+  intakeStatus: null,
+  analysisBrief: null,
 
   setSelectedSkillIds: (skillIds) => set((s) => ({ selectedSkillIds: [...skillIds],
     skillDraftRevision: s.skillDraftRevision + 1, skillDraftDirty: true })),
@@ -773,6 +790,68 @@ export const useAgentChatStore = create<AgentChatState & AgentChatActions>((set,
         await get().loadSessions();
       }
     }
+  },
+
+  // T3: Intake actions
+  createIntake: async (message: string) => {
+    const { sessionId, sessionGeneration } = get();
+    try {
+      const response = await intakeApi.create({
+        message,
+        session_id: sessionId,
+        session_generation: sessionGeneration,
+        request_id: generateUUID(),
+      });
+      set({
+        intakeDraft: {
+          intake_id: response.intake_id,
+          schema_version: response.schema_version,
+          session_id: sessionId,
+          session_generation: response.session_generation,
+          base_state_version: response.base_state_version,
+          revision: response.revision,
+          original_message: message,
+          questions: response.questions,
+          answers: response.answers,
+          status: response.status,
+        },
+        intakeStatus: response.status,
+      });
+    } catch (error) {
+      set({ chatError: getParsedApiError(error) });
+    }
+  },
+
+  updateIntakeAnswers: async (answers: Answer[], action: 'save' | 'confirm' | 'skip') => {
+    const { intakeDraft } = get();
+    if (!intakeDraft) return;
+    try {
+      const response = await intakeApi.update(intakeDraft.intake_id, {
+        expected_revision: intakeDraft.revision,
+        answers,
+        action,
+      });
+      set({
+        intakeDraft: {
+          ...intakeDraft,
+          revision: response.revision,
+          answers,
+          status: response.status,
+        },
+        intakeStatus: response.status,
+        analysisBrief: response.brief_preview || null,
+      });
+    } catch (error) {
+      set({ chatError: getParsedApiError(error) });
+    }
+  },
+
+  clearIntake: () => {
+    set({
+      intakeDraft: null,
+      intakeStatus: null,
+      analysisBrief: null,
+    });
   },
   };
 });
