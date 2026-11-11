@@ -88,6 +88,9 @@ export interface ProgressStep {
   cached?: boolean;
 }
 
+// T4: Domain guard metadata on messages
+import type { DomainGuardMeta } from '../api/agent';
+
 export interface Message {
   id: string;
   role: 'user' | 'assistant';
@@ -101,6 +104,8 @@ export interface Message {
   // Present only on a live clarification turn. Historical messages rehydrated
   // from the session detail intentionally have no such evidence.
   stockClarification?: StockClarification;
+  // T4: Domain guard metadata for non-investment question reminders
+  domainGuard?: DomainGuardMeta;
 }
 
 export interface StreamMeta {
@@ -615,6 +620,7 @@ export const useAgentChatStore = create<AgentChatState & AgentChatActions>((set,
       let finalContent: string | null = null;
       let finalBackend: string | undefined;
       let finalClarification: StockClarification | null = null;
+      let finalDomainGuard: DomainGuardMeta | undefined;
       let receivedDoneEvent = false;
       let acceptedEvent: StreamAcceptedEvent | null = null;
       const currentProgressSteps: ProgressStep[] = [];
@@ -696,6 +702,10 @@ export const useAgentChatStore = create<AgentChatState & AgentChatActions>((set,
           }
           finalContent = doneEvent.content ?? '';
           finalClarification = doneEvent.clarification ?? null;
+          // T4: Capture domain guard metadata from done event
+          if ('domain_guard' in doneEvent && doneEvent.domain_guard) {
+            finalDomainGuard = doneEvent.domain_guard as DomainGuardMeta;
+          }
           return;
         }
 
