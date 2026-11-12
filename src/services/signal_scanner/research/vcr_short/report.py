@@ -255,7 +255,9 @@ class ReportGenerator:
         open_positions: List[Dict[str, Any]],
         equity_curve: List[Dict[str, Any]],
         sensitivity_results: Dict[str, Any] = None,
-        critical_parameters: List[Dict[str, Any]] = None
+        critical_parameters: List[Dict[str, Any]] = None,
+        exit_breakdown: Dict[str, Any] = None,
+        benchmark_data: Dict[str, Any] = None,
     ):
         """Save all report files.
 
@@ -268,6 +270,8 @@ class ReportGenerator:
             equity_curve: Daily equity curve
             sensitivity_results: Sensitivity analysis results (optional)
             critical_parameters: Critical parameters (optional)
+            exit_breakdown: Exit reason breakdown (optional)
+            benchmark_data: SPY benchmark comparison data (optional)
         """
         # Generate and save summary report
         summary = self.generate_summary_report(performance_metrics, config, data_info)
@@ -281,6 +285,24 @@ class ReportGenerator:
         # Save equity curve
         self.save_equity_curve_csv(equity_curve, "equity_curve.csv")
 
+        # Save open positions CSV
+        if open_positions:
+            self.save_csv(open_positions, "open_positions.csv")
+
+        # Save exit breakdown CSV
+        if exit_breakdown:
+            rows = [
+                {"exit_reason": reason, **stats}
+                for reason, stats in exit_breakdown.items()
+            ]
+            self.save_csv(rows, "exit_breakdown.csv")
+
+        # Save benchmark comparison
+        if benchmark_data:
+            self.save_json(benchmark_data, "benchmark.json")
+            if "daily_comparison" in benchmark_data:
+                self.save_csv(benchmark_data["daily_comparison"], "benchmark_daily.csv")
+
         # Generate and save sensitivity report if available
         if sensitivity_results and critical_parameters:
             sensitivity_report = self.generate_sensitivity_report(
@@ -288,8 +310,31 @@ class ReportGenerator:
             )
             self.save_json(sensitivity_report, "sensitivity.json")
 
+        # Write run manifest for reproducibility
+        self._write_run_manifest(config, data_info, performance_metrics)
+
         # Generate markdown summary
         md_summary = self.generate_markdown_summary(performance_metrics, config)
         md_path = self.output_dir / "REPORT.md"
         with open(md_path, "w", encoding="utf-8") as f:
             f.write(md_summary)
+
+    def _write_run_manifest(
+        self,
+        config: Dict[str, Any],
+        data_info: Dict[str, Any],
+        performance_metrics: Dict[str, Any],
+    ):
+        """Write run_manifest.json for reproducibility."""
+        import hashlib
+        manifest = {
+            "strategy": "VCR_SHORT",
+            "config": config,
+            "data_info": data_info,
+            "performance_summary": {
+                k: v for k, v in performance_metrics.items()
+                if k in ("total_trades", "cagr", "max_drawdown", "sharpe_ratio")
+            },
+            "generated_at": datetime.now().isoformat(),
+        }
+        self.save_json(manifest, "run_manifest.json")

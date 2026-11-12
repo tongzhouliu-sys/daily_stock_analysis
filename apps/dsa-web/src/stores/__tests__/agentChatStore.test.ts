@@ -423,6 +423,30 @@ describe('agentChatStore.startStream', () => {
     expect(useAgentChatStore.getState().terminalStatus).toBe('stopped');
   });
 
+  it('immediately clears all transient state when stopStream is called', () => {
+    const ac = new AbortController();
+    useAgentChatStore.setState({
+      loading: true,
+      progressSteps: [{ type: 'thinking', message: '分析中' }],
+      abortController: ac,
+      activeRequestId: 'request-in-progress',
+      streamingContent: '部分响应内容',
+    });
+
+    void useAgentChatStore.getState().stopStream();
+
+    const state = useAgentChatStore.getState();
+    // Verify all transient state is immediately cleared
+    expect(state.loading).toBe(false);
+    expect(state.progressSteps).toEqual([]);
+    expect(state.abortController).toBeNull();
+    expect(state.activeRequestId).toBeNull();
+    expect(state.streamingContent).toBeNull();
+    expect(state.terminalStatus).toBe('stopped');
+    // Verify the controller was actually aborted
+    expect(ac.signal.aborted).toBe(true);
+  });
+
   it('does not create a session or user message when stopped before accepted', async () => {
     vi.mocked(agentApi.chatStream).mockImplementation((_payload, options) => (
       new Promise((_resolve, reject) => {

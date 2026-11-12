@@ -107,6 +107,7 @@ const mockStoreState = {
     },
   ],
   sessionsLoading: false,
+  hasInitialLoad: true,
   chatError: null as ReturnType<typeof createParsedApiError> | null,
   terminalStatus: null as 'timeout' | null,
   loadSessions: mockLoadSessions,
@@ -828,8 +829,9 @@ describe('ChatPage', () => {
 
     expect(await screen.findAllByText('风险 Agent failed')).toHaveLength(2);
 
-    const thinkingToggle = container.querySelector('button[class*="mb-2"][class*="w-full"]') as HTMLButtonElement;
-    fireEvent.click(thinkingToggle);
+    // The thinking block now uses category tags; click the "Agent 协作" tag to expand it
+    const agentTag = screen.getByRole('button', { name: /Agent 协作/ });
+    fireEvent.click(agentTag);
 
     const failedStage = screen.getAllByText('risk failed').find((node) =>
       node.closest('.chat-progress-item'),

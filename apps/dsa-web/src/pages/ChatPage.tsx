@@ -1029,10 +1029,17 @@ const ChatPage: React.FC = () => {
     
     const isExpanded = expandedThinking.has(msg.id);
     
+    // i18n labels
+    const processLabel = language === 'en' ? 'Analysis Process' : '分析过程';
+    const timeoutLabel = language === 'en' ? 'Timeout' : '超时';
+    const partialLabel = language === 'en' ? 'Partial' : '部分可用';
+    const recordsLabel = language === 'en' ? 'records' : '条记录';
+    const cacheLabel = language === 'en' ? 'Cached' : '历史缓存';
+    
     return (
       <div className="mb-3">
         <div className="flex items-center gap-2 mb-2">
-          <span className="text-xs text-muted-text opacity-60">分析过程</span>
+          <span className="text-xs text-muted-text opacity-60">{processLabel}</span>
         </div>
         
         {/* Category tags */}
@@ -1043,19 +1050,28 @@ const ChatPage: React.FC = () => {
             const label = language === 'en' ? enLabel : zhLabel;
             const count = steps.length;
             const isCategoryExpanded = isExpanded && expandedCategories.has(`${msg.id}:${category}`);
+            const sectionId = `category-${msg.id}-${category}`;
             
             return (
               <button
                 key={category}
                 onClick={() => toggleCategory(msg.id, category)}
+                onKeyDown={(e) => {
+                  if (e.key === 'Enter' || e.key === ' ') {
+                    e.preventDefault();
+                    toggleCategory(msg.id, category);
+                  }
+                }}
                 className={cn(
                   'px-2.5 py-1 rounded text-xs transition-all',
                   'border min-w-[48px] min-h-[32px]',
+                  'focus:outline-none focus:ring-2 focus:ring-primary/50 focus:ring-offset-1',
                   isCategoryExpanded
                     ? 'bg-primary/10 border-primary text-primary'
                     : 'bg-muted/50 border-border hover:border-primary/50 text-secondary-text'
                 )}
                 aria-expanded={isCategoryExpanded}
+                aria-controls={isCategoryExpanded ? sectionId : undefined}
               >
                 <span>{label}</span>
                 {count > 0 && (
@@ -1072,9 +1088,10 @@ const ChatPage: React.FC = () => {
             {categoryOrder.map((category) => {
               if (!expandedCategories.has(`${msg.id}:${category}`)) return null;
               const steps = categoryMap.get(category) || [];
+              const sectionId = `category-${msg.id}-${category}`;
               
               return (
-                <div key={category} className="pl-4 border-l-2 border-primary/30 space-y-1.5">
+                <div key={category} id={sectionId} className="pl-4 border-l-2 border-primary/30 space-y-1.5">
                   {steps.map((step, idx) => {
                     let statusClass = 'chat-progress-item-muted';
                     let iconClass = 'chat-progress-dot-muted';
@@ -1094,27 +1111,27 @@ const ChatPage: React.FC = () => {
                       } else if (outcome === 'timeout') {
                         statusClass = 'chat-progress-item-danger';
                         iconClass = 'chat-progress-dot-danger';
-                        text += ' · 超时';
+                        text += ` · ${timeoutLabel}`;
                       } else if (outcome === 'failed') {
                         statusClass = 'chat-progress-item-danger';
                         iconClass = 'chat-progress-dot-danger';
                       } else if (outcome === 'partial') {
                         statusClass = 'chat-progress-item-muted';
                         iconClass = 'chat-progress-dot-muted';
-                        text += ' · 部分可用';
+                        text += ` · ${partialLabel}`;
                       }
                       
                       // Add detail info if available
                       if (step.detail) {
                         const detailParts: string[] = [];
                         if (step.detail.record_count) {
-                          detailParts.push(`${step.detail.record_count} 条记录`);
+                          detailParts.push(`${step.detail.record_count} ${recordsLabel}`);
                         }
                         if (step.detail.date_range) {
                           detailParts.push(String(step.detail.date_range));
                         }
                         if (step.detail.data_source === 'cache') {
-                          detailParts.push('历史缓存');
+                          detailParts.push(cacheLabel);
                         }
                         if (detailParts.length > 0) {
                           text += ` · ${detailParts.join(' · ')}`;
@@ -1382,7 +1399,7 @@ const ChatPage: React.FC = () => {
               </form>
             ) : (
               <div className="chat-current-title-wrap">
-                <span className="chat-current-title" title={activeSessionTitle}>{activeSessionTitle}</span>
+                <span className="chat-current-title">{activeSessionTitle}</span>
                 {activeSession ? (
                   <button
                     type="button"

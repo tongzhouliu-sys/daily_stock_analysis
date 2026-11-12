@@ -585,6 +585,10 @@ class AgentOrchestrator:
         except Exception:
             logger.warning("Failed to mark Agent session running: %s", turn.session_id, exc_info=True)
 
+        # Reset event sequence for this turn
+        from src.agent.stream_events import reset_event_sequence
+        reset_event_sequence()
+
         try:
             orch_result = self._execute_pipeline(
                 turn.context,
@@ -845,11 +849,27 @@ class AgentOrchestrator:
             if agent.agent_name == "decision":
                 self._prepare_decision_context(ctx)
 
+            # Generate a stage_id for this stage and propagate it to child tool events
+            import uuid as _uuid
+            current_stage_id = _uuid.uuid4().hex[:8]
+
             if progress_callback:
                 progress_callback(stage_start_event(
                     stage=agent.agent_name,
+                    stage_id=current_stage_id,
                     message=f"Starting {agent.agent_name} analysis...",
                 ))
+
+            # Wrap progress_callback to inject parent_stage_id into tool events
+            _stage_progress = progress_callback
+            if _stage_progress is not None:
+                def _stage_wrapped_progress(event: Dict[str, Any]) -> None:
+                    if event.get("type") in ("tool_start", "tool_done"):
+                        if "parent_stage_id" not in event:
+                            event["parent_stage_id"] = current_stage_id
+                    _stage_progress(event)
+            else:
+                _stage_wrapped_progress = None
 
             remaining_timeout_s = (
                 max(0.0, timeout_s - elapsed_s)
@@ -859,7 +879,7 @@ class AgentOrchestrator:
             result: StageResult = self._run_stage_agent(
                 agent,
                 ctx,
-                progress_callback=progress_callback,
+                progress_callback=_stage_wrapped_progress,
                 timeout_seconds=remaining_timeout_s,
             )
             stats.record_stage(result)

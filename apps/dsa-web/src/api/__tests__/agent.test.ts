@@ -101,7 +101,7 @@ describe('agentApi', () => {
 
   it('decodes complete server identity and explicit empty Skill state', () => {
     expect(decodeChatState(state, 'accepted')).toEqual({
-      contract: 'authoritative', activeStockContext: active, sessionGeneration: 'g1',
+      contract: 'authoritative', activeStockContext: active, activeReportContext: null, sessionGeneration: 'g1',
       sessionStateVersion: 5, selectedSkillIds: [],
     });
   });
@@ -110,7 +110,7 @@ describe('agentApi', () => {
     expect(decodeChatState({ ...state, active_stock_context: null }, 'detail').sessionStateVersion).toBe(5);
     expect(decodeChatState({ ...state, session_state_version: 0 }, 'detail').activeStockContext).toEqual(active);
     expect(decodeChatState({ session_state: { selected_skill_ids: null } }, 'detail')).toEqual({
-      contract: 'legacy', activeStockContext: null, sessionGeneration: null,
+      contract: 'legacy', activeStockContext: null, activeReportContext: null, sessionGeneration: null,
       sessionStateVersion: null, selectedSkillIds: null,
     });
     expect(decodeChatState({}, 'accepted').contract).toBe('legacy');

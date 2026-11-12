@@ -604,6 +604,7 @@ export const useAgentChatStore = create<AgentChatState & AgentChatActions>((set,
       activeRequestId: null,
       loading: false,
       progressSteps: [],
+      streamingContent: null,
       terminalStatus: 'stopped',
       detailReadSequence: state.detailReadSequence + 1,
     }));
@@ -661,6 +662,7 @@ export const useAgentChatStore = create<AgentChatState & AgentChatActions>((set,
     try {
       const response = await agentApi.chatStream(
         { ...payload, session_id: streamSessionId, request_id: requestId,
+          stream_content: true,
           ...(sessionGeneration ? { session_generation: sessionGeneration } : {}) },
         { signal: ac.signal },
       );
@@ -738,6 +740,20 @@ export const useAgentChatStore = create<AgentChatState & AgentChatActions>((set,
         }
         if (!acceptedEvent) {
           throw protocolError(`Agent stream emitted ${event.type || 'an unknown event'} before accepted.`);
+        }
+        // T6: Handle streaming content events
+        if (event.type === 'content_delta') {
+          const deltaText = (event as any).text || '';
+          if (deltaText) {
+            set((s) => ({
+              streamingContent: (s.streamingContent || '') + deltaText,
+            }));
+          }
+          return false;
+        }
+        if (event.type === 'content_reset') {
+          set({ streamingContent: null });
+          return false;
         }
         if (event.type === 'done') {
           receivedDoneEvent = true;
