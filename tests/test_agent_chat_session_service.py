@@ -113,3 +113,27 @@ def test_session_detail_preserves_missing_persisted_state() -> None:
     assert [message["content"] for message in detail.messages] == ["legacy question"]
     assert detail.selected_skill_ids is None
     assert db.get_conversation_session_selected_skill_ids("legacy-session") is None
+
+
+def test_session_detail_exposes_running_turn_ownership_and_heartbeat() -> None:
+    db = DatabaseManager(db_url="sqlite:///:memory:")
+    service = AgentChatSessionService(db)
+    session_id = "running-detail-session"
+    db.ensure_chat_session_generation(session_id)
+    accepted = db.commit_chat_user_turn(db.read_chat_session_snapshot(session_id), "question")
+    assert db.set_session_running(
+        session_id,
+        True,
+        [{"type": "thinking", "message": "working"}],
+        turn_id="turn-1",
+        turn_anchor=accepted["user_message_id"],
+    ) is True
+
+    detail = service.get_session_detail(session_id, limit=100)
+
+    assert detail.is_running is True
+    assert detail.running_turn_id == "turn-1"
+    assert detail.running_turn_anchor == accepted["user_message_id"]
+    assert detail.running_started_at is not None
+    assert detail.running_heartbeat_at is not None
+    assert detail.running_progress_steps[-1]["message"] == "working"

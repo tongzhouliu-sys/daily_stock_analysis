@@ -9,7 +9,9 @@ and this project adheres to [Semantic Versioning](https://semver.org/).
 
 ## [Unreleased]
 
-- [修复] 问股界面回答完成后无法追问、停止按钮无法关闭的问题：修复 `chat_executor.py` 中在同步函数内误用 `await` 调用异步 `answer_editor.format_response()` 导致的 `SyntaxError`，改为 `asyncio.run()` 在线程池中创建临时事件循环；修复前端 `stopStream` 仅调用 `abort()` 但未立即清理 `loading` 状态导致 UI 卡死的问题，改为先置空 `abortController` 再立即重置所有瞬态状态。
+- [修复] 问股多 Agent 回复完成后仍显示运行中、无法追问、停止按钮无法退出加载态：多 Agent `execute_turn` 兼容 `stream_content` 并在 `finally` 中按轮次归属清理运行状态，助手消息落库后才允许清除；运行状态新增 `running_turn_id`/`running_turn_anchor`/`running_started_at`/`running_heartbeat_at`，旧轮次迟到清理不会覆盖新轮次；会话详情返回运行归属与 UTC 心跳时间，服务启动时清理崩溃遗留的过期运行标记。前端将 `done` 视为终态，收到后立即停止读取 SSE，不再等待连接关闭；停止、切换会话和重新发送会失效所有在途流/轮询/详情读取，避免迟到响应恢复加载态；心跳超过 90 秒未更新的运行中会话按中断处理，恢复输入并显示中断提示。同时补齐单 Agent `PreparedAgentChat.analysis_brief` 字段，避免成功回答在精编阶段抛出属性错误。
+- [文档] 复检问股“决策 Agent 完成后卡死、无法追问、停止按钮不生效”问题：新增终态与可追问性修复需求及开发任务书，补充多 Agent 运行状态未清理、`done` 依赖 EOF、停止后轮询/详情竞态等根因与验收标准。
+- [修复] 问股界面回答完成后无法追问、停止按钮无法关闭的问题：修复 `chat_executor.py` 中在同步函数内误用 `await` 调用异步 `answer_editor.format_response()` 导致的 `SyntaxError`，改为 `asyncio.run()` 在线程池中创建临时事件循环；修复前端 `stopStream` 仅调用 `abort()` 但未立即清理 `loading` 状态导致 UI 卡死的问题，改为先置空 `abortController` 再立即重置所有瞬态状态。本次仅覆盖单 Agent 导入错误与本地停止状态；多 Agent 终态、`done` 等待 EOF 和轮询竞态已由上方条目补全。
 - [文档] 新增问股流式响应卡死问题的分析与修复任务书（`docs/tasks/chat-stream-stuck-fix.md`），记录根因、修复方案与验收标准。
 - [新功能] 非投资问题识别与提醒（domain guard）：在用户问题进入研究前统一判断投资相关性，对明确无关问题返回定位提醒并建议其他平台，对模糊问题请求补充投资背景，对混合问题保留可分离的投资子请求。覆盖 Web 聊天 API（同步/流式）、首次问卷预检、Bot 聊天及深度研究入口，返回受控的中英文提醒模板，不触发研究工具调用。
 - [文档] 新增非投资问题识别与提醒需求及开发任务书，明确领域边界、提醒文案、各问答入口和验收标准，功能待实施。

@@ -29,6 +29,7 @@ import inspect
 import logging
 import re
 import time
+import uuid
 from dataclasses import dataclass, field
 from math import ceil
 from typing import TYPE_CHECKING, Any, Callable, Dict, List, Optional
@@ -156,6 +157,7 @@ class PreparedOrchestratorChatTurn:
     context: AgentContext
     accepted_snapshot: Optional[Dict[str, Any]] = None
     db_manager: Optional[DatabaseManager] = None
+    run_id: str = ""
 
 
 class AgentOrchestrator:
@@ -517,6 +519,7 @@ class AgentOrchestrator:
             context=ctx,
             accepted_snapshot=accepted,
             db_manager=session_service.db if resolved_turn is not None else db,
+            run_id=str(uuid.uuid4()),
         )
 
     def execute_turn(
@@ -524,15 +527,28 @@ class AgentOrchestrator:
         turn: PreparedOrchestratorChatTurn,
         *,
         progress_callback: Optional[Callable] = None,
+        stream_content: bool = False,
     ) -> "AgentResult":
-        """Execute an accepted multi-agent Chat turn and persist its result."""
+        """Execute an accepted multi-agent Chat turn and persist its result.
+
+        The running flag is owned by this turn and is always cleared in a
+        ``finally`` block, after the terminal assistant message has been saved.
+        """
         from src.agent.executor import AgentResult
         from src.agent.conversation import conversation_manager
         import threading
 
+        turn_id = turn.run_id or str(uuid.uuid4())
+        turn_anchor = (turn.accepted_snapshot or {}).get("user_message_id")
+        if stream_content:
+            # The multi-agent pipeline does not emit content deltas yet. Accept
+            # the option so the shared transport contract stays compatible.
+            logger.debug("stream_content requested but not supported by multi-agent pipeline")
+
         # Collect progress steps for persistence (T2)
         collected_progress_steps: List[Dict[str, Any]] = []
         progress_lock = threading.Lock()
+        transient_event_types = {"content_delta", "content_reset"}
 
         def _persisting_progress_callback(event: Dict[str, Any]) -> None:
             """Wrap the original callback to also collect and persist progress steps."""
@@ -540,100 +556,124 @@ class AgentOrchestrator:
                 if progress_callback:
                     progress_callback(event)
             finally:
-                with progress_lock:
-                    collected_progress_steps.append(dict(event))
-                    current_steps = list(collected_progress_steps)
+                if event.get("type") not in transient_event_types:
+                    with progress_lock:
+                        collected_progress_steps.append(dict(event))
+                        current_steps = list(collected_progress_steps)
 
-                # Persist running progress to DB (so refresh can restore it)
-                try:
-                    conversation_manager.update_running_progress(
-                        turn.session_id, current_steps, db_manager=turn.db_manager,
-                    )
-                except Exception:
-                    pass  # Non-critical; don't break the analysis
+                    # Persist running progress to DB (so refresh can restore it)
+                    try:
+                        conversation_manager.update_running_progress(
+                            turn.session_id,
+                            current_steps,
+                            turn_id=turn_id,
+                            db_manager=turn.db_manager,
+                        )
+                    except Exception:
+                        pass  # Non-critical; don't break the analysis
 
-        # Mark session as running
+        # Mark session as running. A newer accepted turn wins the claim.
         try:
             conversation_manager.set_running(
-                turn.session_id, True, [], db_manager=turn.db_manager,
+                turn.session_id,
+                True,
+                [],
+                turn_id=turn_id,
+                turn_anchor=turn_anchor,
+                db_manager=turn.db_manager,
             )
         except Exception:
-            pass  # Non-critical
+            logger.warning("Failed to mark Agent session running: %s", turn.session_id, exc_info=True)
 
-        orch_result = self._execute_pipeline(
-            turn.context,
-            parse_dashboard=False,
-            progress_callback=_persisting_progress_callback,
-        )
-
-        # Build thinking_steps from collected progress (filter to displayable steps)
-        thinking_steps = [
-            step for step in collected_progress_steps
-            if step.get("type") in (
-                "thinking", "tool_start", "tool_done",
-                "stage_start", "stage_done",
-                "generating", "pipeline_timeout", "pipeline_budget_skipped",
+        try:
+            orch_result = self._execute_pipeline(
+                turn.context,
+                parse_dashboard=False,
+                progress_callback=_persisting_progress_callback,
             )
-        ]
 
-        # T4: Apply answer editor if analysis brief is available
-        edited_content = orch_result.content
-        if orch_result.success and turn.context.meta.get("analysis_brief"):
-            from src.agent.answer_editor import StockAnswerEditorService
-            editor = StockAnswerEditorService()
-            try:
-                from src.schemas.agent_intake import AnalysisBrief
-                brief_data = turn.context.meta.get("analysis_brief")
-                brief = AnalysisBrief(**brief_data) if isinstance(brief_data, dict) else brief_data
-                edited_content, editor_meta = editor.format_response_sync(
-                    orch_result.content,
-                    brief,
-                    source_refs=[tc.get("tool_name") for tc in orch_result.tool_calls_log if tc.get("tool_name")]
+            # Build thinking_steps from collected progress (filter to displayable steps)
+            thinking_steps = [
+                step for step in collected_progress_steps
+                if step.get("type") in (
+                    "thinking", "tool_start", "tool_done",
+                    "stage_start", "stage_done",
+                    "generating", "pipeline_timeout", "pipeline_budget_skipped",
                 )
-            except Exception as e:
-                # Editor failure should not break the response
-                logger.warning(f"Answer editor failed: {e}")
+            ]
 
-        # Persist assistant response with thinking_steps (T2)
-        assistant_message_id = None
-        if turn.accepted_snapshot is not None:
-            content = edited_content if orch_result.success else f"[分析失败] {orch_result.error or '未知错误'}"
-            assistant_message_id = conversation_manager.add_message(
-                turn.session_id, "assistant", content, accepted_turn=turn.accepted_snapshot,
-                db_manager=turn.db_manager,
-                thinking_steps=thinking_steps,
-            )
-        elif orch_result.success:
-            assistant_message_id = conversation_manager.add_message(
-                turn.session_id, "assistant", edited_content,
-                thinking_steps=thinking_steps,
-            )
-        else:
-            conversation_manager.add_message(
-                turn.session_id, "assistant",
-                f"[分析失败] {orch_result.error or '未知错误'}",
-                thinking_steps=thinking_steps,
+            # T4: Apply answer editor if analysis brief is available
+            edited_content = orch_result.content
+            if orch_result.success and turn.context.meta.get("analysis_brief"):
+                from src.agent.answer_editor import StockAnswerEditorService
+                editor = StockAnswerEditorService()
+                try:
+                    from src.schemas.agent_intake import AnalysisBrief
+                    brief_data = turn.context.meta.get("analysis_brief")
+                    brief = AnalysisBrief(**brief_data) if isinstance(brief_data, dict) else brief_data
+                    edited_content, editor_meta = editor.format_response_sync(
+                        orch_result.content,
+                        brief,
+                        source_refs=[tc.get("tool_name") for tc in orch_result.tool_calls_log if tc.get("tool_name")]
+                    )
+                except Exception as e:
+                    # Editor failure should not break the response
+                    logger.warning(f"Answer editor failed: {e}")
+
+            # Persist assistant response with thinking_steps (T2)
+            assistant_message_id = None
+            if turn.accepted_snapshot is not None:
+                content = edited_content if orch_result.success else f"[分析失败] {orch_result.error or '未知错误'}"
+                assistant_message_id = conversation_manager.add_message(
+                    turn.session_id, "assistant", content, accepted_turn=turn.accepted_snapshot,
+                    db_manager=turn.db_manager,
+                    thinking_steps=thinking_steps,
+                )
+            elif orch_result.success:
+                assistant_message_id = conversation_manager.add_message(
+                    turn.session_id, "assistant", edited_content,
+                    thinking_steps=thinking_steps,
+                )
+            else:
+                conversation_manager.add_message(
+                    turn.session_id, "assistant",
+                    f"[分析失败] {orch_result.error or '未知错误'}",
+                    thinking_steps=thinking_steps,
+                )
+
+            result = AgentResult(
+                success=orch_result.success,
+                content=edited_content,
+                dashboard=orch_result.dashboard,
+                tool_calls_log=orch_result.tool_calls_log,
+                total_steps=orch_result.total_steps,
+                total_tokens=orch_result.total_tokens,
+                provider=orch_result.provider,
+                model=orch_result.model,
+                error=orch_result.error,
+                stage_trajectories=orch_result.stage_trajectories,
+                runtime_facts=orch_result.runtime_facts,
             )
 
-        result = AgentResult(
-            success=orch_result.success,
-            content=edited_content,
-            dashboard=orch_result.dashboard,
-            tool_calls_log=orch_result.tool_calls_log,
-            total_steps=orch_result.total_steps,
-            total_tokens=orch_result.total_tokens,
-            provider=orch_result.provider,
-            model=orch_result.model,
-            error=orch_result.error,
-            stage_trajectories=orch_result.stage_trajectories,
-            runtime_facts=orch_result.runtime_facts,
-        )
-        
-        # Set thinking_steps and assistant_message_id in result for T2
-        result.thinking_steps = thinking_steps
-        result.assistant_message_id = assistant_message_id
-        
-        return result
+            # Set thinking_steps and assistant_message_id in result for T2
+            result.thinking_steps = thinking_steps
+            result.assistant_message_id = assistant_message_id
+
+            return result
+        finally:
+            # Keep the running flag set until the terminal message is stored.
+            # A polling client that observes the cleared flag can then always
+            # load the finished turn in the same snapshot. The turn id guard
+            # prevents a late completion from clearing a newer accepted turn.
+            try:
+                conversation_manager.set_running(
+                    turn.session_id,
+                    False,
+                    turn_id=turn_id,
+                    db_manager=turn.db_manager,
+                )
+            except Exception:
+                logger.warning("Failed to clear Agent session running state: %s", turn.session_id, exc_info=True)
 
     # -----------------------------------------------------------------
     # Pipeline execution

@@ -43,7 +43,45 @@ New clients may additionally read:
 - `cached` (whether the result was served from cache)
 
 Unknown event types should be ignored or displayed with a generic fallback.
-`done` and `error` keep their existing completion semantics.
+`done` and `error` are terminal events: clients must stop reading the stream
+once either arrives instead of waiting for the SSE connection to close.
+
+## Terminal Semantics And Running Ownership
+
+The executor persists the assistant message (success or failure) and clears the
+current turn's running state before the endpoint emits `done`. Therefore a
+client that reloads immediately after `done` can always read the finished turn
+from the session detail.
+
+`GET /api/v1/agent/chat/sessions/{session_id}` keeps the existing
+`is_running` and `running_progress_steps` fields and adds:
+
+| Field | Type | Meaning |
+| --- | --- | --- |
+| `running_turn_id` | string/null | Stable id of the running turn; null when idle. |
+| `running_turn_anchor` | integer/null | Accepted user message id that owns the running state. |
+| `running_started_at` | string/null | UTC ISO-8601 start time of the current turn. |
+| `running_heartbeat_at` | string/null | UTC ISO-8601 time of the latest progress update. |
+
+Only the owning `running_turn_id` may update progress or clear the running
+state. A late completion from an older accepted turn must not clear a newer
+turn's state. The Web client treats a running turn whose heartbeat is older
+than 90 seconds as interrupted: it ends loading, keeps the composer usable,
+and shows the interrupted notice. `is_running=true` with a fresh heartbeat
+restores the loading/progress view and polling.
+
+## Stop And Disconnect Semantics
+
+Client stop means "stop receiving the current reply", not a forced server-side
+model cancellation. The client immediately ends local loading and invalidates
+in-flight stream, polling and detail-read ownership. The background execution
+may continue and eventually persist its assistant message, but it cannot
+re-enable loading or overwrite state owned by a newer turn.
+
+A disconnect does not undo accepted state. The executor still saves the
+terminal message and clears its own running state without depending on the SSE
+connection. Clients that stop or disconnect can reload the session later to see
+the persisted result.
 
 ## Event Types
 
@@ -58,7 +96,7 @@ Unknown event types should be ignored or displayed with a generic fallback.
 | `generating` | single-agent loop | The final response is being generated. | `step`, `message` |
 | `pipeline_timeout` | multi-agent orchestrator | The orchestrator stopped because the stage or pipeline budget expired. | `stage`, `elapsed`, `timeout` |
 | `pipeline_budget_skipped` | multi-agent orchestrator | The orchestrator stopped before starting the next stage because the remaining budget was too low for useful work. | `stage`, `elapsed`, `timeout`, `remaining`, `minimum`, `reason`, `message` |
-| `done` | SSE endpoint | The request completed. | `success`, `content`, `error`, `total_steps`, `session_id` |
+| `done` | SSE endpoint | The request reached its terminal state; the assistant message is already persisted and the turn's running state is cleared. | `success`, `content`, `error`, `total_steps`, `session_id`, `backend`, `request_id`, `error_code`, `assistant_message_id`, `thinking_steps`, `clarification`, `domain_guard` |
 | `error` | SSE endpoint | The request failed before normal completion, including preparation rejection before `accepted`. | `message`, `error_code`, `request_id`, `session_id` |
 
 ## Registered Names And Embedded Mentions

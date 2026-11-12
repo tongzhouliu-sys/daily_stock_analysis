@@ -2239,6 +2239,91 @@ class TestOrchestratorExecution(unittest.TestCase):
             "assistant reply",
         ))
 
+    def test_execute_turn_accepts_stream_content_and_owns_running_state(self):
+        from src.agent.orchestrator import (
+            OrchestratorResult,
+            PreparedOrchestratorChatTurn,
+        )
+
+        orch = self._make_orchestrator()
+        turn = PreparedOrchestratorChatTurn(
+            session_id="session-running",
+            context=AgentContext(query="hello"),
+            accepted_snapshot={"user_message_id": 7},
+            run_id="turn-1",
+        )
+        fake_result = OrchestratorResult(success=True, content="answer")
+
+        def run_pipeline(_ctx, *, parse_dashboard, progress_callback):
+            progress_callback({"type": "thinking", "message": "working"})
+            return fake_result
+
+        with patch.object(orch, "_execute_pipeline", side_effect=run_pipeline), \
+             patch("src.agent.conversation.conversation_manager.add_message", return_value=42), \
+             patch("src.agent.conversation.conversation_manager.set_running", return_value=True) as set_running, \
+             patch("src.agent.conversation.conversation_manager.update_running_progress", return_value=True) as update_progress:
+            result = orch.execute_turn(turn, stream_content=True)
+
+        self.assertTrue(result.success)
+        self.assertEqual(result.assistant_message_id, 42)
+        set_running.assert_any_call(
+            "session-running", True, [],
+            turn_id="turn-1", turn_anchor=7, db_manager=None,
+        )
+        set_running.assert_any_call(
+            "session-running", False,
+            turn_id="turn-1", db_manager=None,
+        )
+        self.assertEqual(update_progress.call_args.kwargs["turn_id"], "turn-1")
+
+    def test_execute_turn_clears_running_state_on_failure_result(self):
+        from src.agent.orchestrator import (
+            OrchestratorResult,
+            PreparedOrchestratorChatTurn,
+        )
+
+        orch = self._make_orchestrator()
+        turn = PreparedOrchestratorChatTurn(
+            session_id="session-failed",
+            context=AgentContext(query="hello"),
+            accepted_snapshot={"user_message_id": 8},
+            run_id="turn-failed",
+        )
+        with patch.object(
+            orch, "_execute_pipeline",
+            return_value=OrchestratorResult(success=False, error="boom"),
+        ), patch("src.agent.conversation.conversation_manager.add_message"), \
+             patch("src.agent.conversation.conversation_manager.set_running", return_value=True) as set_running:
+            result = orch.execute_turn(turn)
+
+        self.assertFalse(result.success)
+        self.assertEqual(
+            set_running.call_args_list[-1].kwargs["turn_id"],
+            "turn-failed",
+        )
+        self.assertFalse(set_running.call_args_list[-1].args[1])
+
+    def test_execute_turn_clears_running_state_when_pipeline_raises(self):
+        from src.agent.orchestrator import PreparedOrchestratorChatTurn
+
+        orch = self._make_orchestrator()
+        turn = PreparedOrchestratorChatTurn(
+            session_id="session-raised",
+            context=AgentContext(query="hello"),
+            accepted_snapshot={"user_message_id": 9},
+            run_id="turn-raised",
+        )
+        with patch.object(orch, "_execute_pipeline", side_effect=RuntimeError("boom")), \
+             patch("src.agent.conversation.conversation_manager.set_running", return_value=True) as set_running:
+            with self.assertRaises(RuntimeError):
+                orch.execute_turn(turn)
+
+        self.assertEqual(
+            set_running.call_args_list[-1].kwargs["turn_id"],
+            "turn-raised",
+        )
+        self.assertFalse(set_running.call_args_list[-1].args[1])
+
     def test_chat_persists_failure_message(self):
         from src.agent.orchestrator import OrchestratorResult
 

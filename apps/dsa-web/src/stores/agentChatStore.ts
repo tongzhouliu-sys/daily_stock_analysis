@@ -122,7 +122,7 @@ export interface StreamAcceptedEvent extends ChatStateFields {
   session_state?: { selected_skill_ids: string[] | null };
 }
 
-type StreamTerminalStatus = 'timeout' | 'stopped' | null;
+type StreamTerminalStatus = 'timeout' | 'stopped' | 'interrupted' | null;
 
 type StreamFailureEvent = {
   type: string;
@@ -133,6 +133,9 @@ type StreamFailureEvent = {
   backend?: string;
   error_code?: string;
   clarification?: StockClarification | null;
+  assistant_message_id?: string | number | null;
+  thinking_steps?: ProgressStep[];
+  domain_guard?: DomainGuardMeta;
 };
 
 function getFirstMeaningfulStreamError(...candidates: Array<unknown>): unknown {
@@ -274,6 +277,9 @@ const POLL_INTERVAL_MS = 2000;
 // writes its first running heartbeat. Keep showing it as running briefly so a
 // fast reload does not make an in-flight analysis look stopped.
 const RUNNING_RECOVERY_GRACE_MS = 30_000;
+// A running turn whose heartbeat has not advanced for this long is treated as
+// interrupted, so a crashed worker can never trap the composer in loading.
+const RUNNING_STALE_MS = 90_000;
 // Synthetic step rendered while the server has an unfinished turn but has not
 // reported live progress yet.
 const RECOVERING_PROGRESS_STEP: ProgressStep = { type: 'recovering' };
@@ -286,11 +292,25 @@ function hasUnfinishedTurn(messages: ChatSessionDetail['messages']): boolean {
   return last?.role === 'user';
 }
 
+function isRunningStale(detail: ChatSessionDetail): boolean {
+  if (!detail.is_running) return false;
+  const raw = detail.running_heartbeat_at ?? detail.running_started_at;
+  if (!raw) return false;
+  const heartbeat = Date.parse(raw);
+  if (Number.isNaN(heartbeat)) return false;
+  return Date.now() - heartbeat > RUNNING_STALE_MS;
+}
+
 export const useAgentChatStore = create<AgentChatState & AgentChatActions>((set, get) => {
   let pollingTimer: ReturnType<typeof setInterval> | null = null;
   let recoveryDeadline: number | null = null;
-  
+  // Monotonic ownership tokens for the current stream and poll loop. Closing a
+  // turn increments them so no late callback can revive a stopped turn.
+  let streamEpoch = 0;
+  let pollToken = 0;
+
   const stopPolling = () => {
+    pollToken += 1;
     if (pollingTimer !== null) {
       clearInterval(pollingTimer);
       pollingTimer = null;
@@ -299,34 +319,37 @@ export const useAgentChatStore = create<AgentChatState & AgentChatActions>((set,
 
   const startPolling = (sessionId: string, graceMs = 0) => {
     stopPolling(); // Clear any existing timer
+    const token = pollToken;
+    const epoch = get().sessionEpoch;
     recoveryDeadline = graceMs > 0 ? Date.now() + graceMs : null;
-    
+
+    const ownsPollIdentity = () => {
+      const state = get();
+      return pollToken === token
+        && state.sessionId === sessionId
+        && state.sessionEpoch === epoch;
+    };
+    const ownsPoll = () => ownsPollIdentity() && get().loading;
+
     const poll = async () => {
-      const current = get();
-      // Stop if session changed or no longer loading
-      if (current.sessionId !== sessionId || !current.loading) {
-        stopPolling();
-        return;
-      }
-      
+      if (!ownsPoll()) return;
+
       try {
         const detail = await agentApi.getChatSessionMessages(sessionId);
+        // A stop, session switch, or newer stream owns the UI now. Never write
+        // state from a poll that lost ownership while its request was pending.
+        if (!ownsPollIdentity()) return;
+
         const state = get();
-        
-        // Check if session is still the same
-        if (state.sessionId !== sessionId) {
-          stopPolling();
-          return;
-        }
-        
-        const isRunning = detail.is_running || false;
+        const staleRunning = isRunningStale(detail);
+        const isRunning = (detail.is_running || false) && !staleRunning;
         const runningProgress = detail.running_progress_steps || [];
-        const recovering = !isRunning
+        const recovering = !isRunning && !staleRunning
           && recoveryDeadline !== null
           && Date.now() < recoveryDeadline
           && hasUnfinishedTurn(detail.messages);
         if (isRunning) recoveryDeadline = null;
-        
+
         // Update progress steps. Server progress wins; otherwise keep the
         // recovering placeholder so the user still sees an active task.
         set({
@@ -334,8 +357,9 @@ export const useAgentChatStore = create<AgentChatState & AgentChatActions>((set,
             ? runningProgress
             : recovering ? [RECOVERING_PROGRESS_STEP] : [],
           loading: isRunning || recovering,
+          ...(staleRunning ? { terminalStatus: 'interrupted' as const } : {}),
         });
-        
+
         // Check for new messages (assistant response completed)
         const existingMessageIds = new Set(state.messages.map(m => m.id));
         const newMessages = detail.messages
@@ -346,16 +370,19 @@ export const useAgentChatStore = create<AgentChatState & AgentChatActions>((set,
             content: m.content,
             thinkingSteps: m.thinking_steps,
           }));
-        
-        if (newMessages.length > 0) {
-          set({
-            messages: [...state.messages, ...newMessages],
-          });
+
+        if (newMessages.length > 0 && ownsPollIdentity()) {
+          set((current) => ({
+            messages: [
+              ...current.messages,
+              ...newMessages.filter((message) => !current.messages.some((item) => item.id === message.id)),
+            ],
+          }));
         }
-        
+
         // Stop polling if task completed (or the recovery grace expired)
         if (!isRunning && !recovering) {
-          stopPolling();
+          if (pollToken === token) stopPolling();
           void get().loadSessions();
         }
       } catch (error) {
@@ -363,12 +390,13 @@ export const useAgentChatStore = create<AgentChatState & AgentChatActions>((set,
         console.debug('Polling error:', error);
       }
     };
-    
+
     pollingTimer = setInterval(poll, POLL_INTERVAL_MS);
   };
-  
+
   const resetSession = (sessionId: string) => {
     stopPolling();
+    streamEpoch += 1;
     recoveryDeadline = null;
     const previous = get();
     previous.abortController?.abort();
@@ -398,32 +426,39 @@ export const useAgentChatStore = create<AgentChatState & AgentChatActions>((set,
         thinkingSteps: m.thinking_steps,
       }));
       
-      // Restore running state if session is still running
-      const isRunning = detail.is_running || false;
-      const runningProgress = detail.running_progress_steps || [];
-      const recovering = !isRunning && hasUnfinishedTurn(detail.messages);
-
       const replacedInstance = current.sessionGeneration !== null
         && current.sessionGeneration !== decoded.sessionGeneration;
-      if (replacedInstance) current.abortController?.abort();
       // A live SSE stream owns transient running state. A detail read that was
       // issued before the stream can still update authoritative stock/Skill
       // state, but it must not flip loading off while the stream is active.
       const streamOwnsTransientState = current.abortController !== null && !replacedInstance;
+
+      // Restore running state only while its heartbeat is fresh. A crashed
+      // worker must not leave the composer disabled forever.
+      const staleRunning = isRunningStale(detail);
+      const isRunning = (detail.is_running || false) && !staleRunning;
+      const runningProgress = detail.running_progress_steps || [];
+      const recovering = !isRunning && !staleRunning && hasUnfinishedTurn(detail.messages);
+      const runningPatch = streamOwnsTransientState ? {} : {
+        loading: isRunning || recovering,
+        progressSteps: isRunning
+          ? runningProgress
+          : recovering ? [RECOVERING_PROGRESS_STEP] : [],
+        ...(staleRunning ? { terminalStatus: 'interrupted' as const } : {}),
+      };
       
       // 即使 mergeChatState 返回 null（例如页面刷新时状态不匹配），
       // 也要恢复消息和运行状态，否则用户会看到空白界面
       if (!patch) {
+        // A read issued before this instance was bound must not replace or
+        // abort the live stream that bound it.
+        if (current.instanceBindingEpoch !== owner.instanceBindingEpoch) return;
+        if (replacedInstance) current.abortController?.abort();
         // 状态合并失败，但仍然恢复消息和运行状态
         set({
           messages: messagesWithThinking,
           chatError: null,
-          ...(streamOwnsTransientState ? {} : {
-            loading: isRunning || recovering,
-            progressSteps: isRunning
-              ? runningProgress
-              : recovering ? [RECOVERING_PROGRESS_STEP] : [],
-          }),
+          ...runningPatch,
         });
         
         // 启动轮询以持续更新运行状态
@@ -436,17 +471,13 @@ export const useAgentChatStore = create<AgentChatState & AgentChatActions>((set,
         return;
       }
       
-      set({ 
-        ...patch, 
+      if (replacedInstance) current.abortController?.abort();
+      set({
+        ...patch,
         ...(replacedInstance ? emptyStreamState : {}),
         messages: messagesWithThinking,
         chatError: null,
-        ...(streamOwnsTransientState ? {} : {
-          loading: isRunning || recovering,
-          progressSteps: isRunning
-            ? runningProgress
-            : recovering ? [RECOVERING_PROGRESS_STEP] : [],
-        }),
+        ...runningPatch,
       });
       
       // Start polling when the server still owns a running/recovering turn.
@@ -528,6 +559,14 @@ export const useAgentChatStore = create<AgentChatState & AgentChatActions>((set,
         // 而且用户可能正在运行中的会话需要恢复
         if (get().sessionId !== savedId) resetSession(savedId);
         await readDetail();
+        // Only a legacy empty view proves the saved id no longer exists. An
+        // authoritative detail may simply be absent from the paginated list.
+        const loaded = get();
+        if (!sessionList.some((session) => session.session_id === savedId)
+          && loaded.stateContract !== 'authoritative'
+          && loaded.messages.length === 0) {
+          resetSession(generateUUID());
+        }
       } else {
         localStorage.setItem(STORAGE_KEY_SESSION, get().sessionId);
       }
@@ -553,19 +592,21 @@ export const useAgentChatStore = create<AgentChatState & AgentChatActions>((set,
 
   stopStream: async () => {
     stopPolling();
+    streamEpoch += 1;
     recoveryDeadline = null;
     const controller = get().abortController;
     // Immediately clear transient state so the UI is responsive even if the
-    // stream reader does not react to abort() right away. Setting
-    // abortController to null first ensures startStream's finally block
-    // (ownsStream() check) will not overwrite the cleared state.
-    set({
+    // stream reader does not react to abort() right away. Bumping the stream
+    // and detail-read tokens makes every in-flight callback stale, so none of
+    // them can restore loading after the user pressed stop.
+    set((state) => ({
       abortController: null,
       activeRequestId: null,
       loading: false,
       progressSteps: [],
       terminalStatus: 'stopped',
-    });
+      detailReadSequence: state.detailReadSequence + 1,
+    }));
     if (controller) {
       controller.abort();
     }
@@ -575,6 +616,7 @@ export const useAgentChatStore = create<AgentChatState & AgentChatActions>((set,
     if (get().loading) return;
     stopPolling();
     recoveryDeadline = null;
+    const streamEpochSnapshot = ++streamEpoch;
     const { abortController: prevAc, sessionId: storeSessionId, sessionEpoch,
       sessionGeneration, instanceBindingEpoch, skillDraftRevision } = get();
     prevAc?.abort();
@@ -590,7 +632,8 @@ export const useAgentChatStore = create<AgentChatState & AgentChatActions>((set,
     const streamSessionId = payload.session_id || storeSessionId;
     const ownsStream = () => {
       const state = get();
-      return state.abortController === ac
+      return streamEpoch === streamEpochSnapshot
+        && state.abortController === ac
         && state.activeRequestId === requestId
         && state.sessionId === streamSessionId && state.sessionEpoch === sessionEpoch;
     };
@@ -628,6 +671,8 @@ export const useAgentChatStore = create<AgentChatState & AgentChatActions>((set,
       let finalBackend: string | undefined;
       let finalClarification: StockClarification | null = null;
       let finalDomainGuard: DomainGuardMeta | undefined;
+      let finalAssistantMessageId: string | null = null;
+      let finalThinkingSteps: ProgressStep[] | null = null;
       let receivedDoneEvent = false;
       let acceptedEvent: StreamAcceptedEvent | null = null;
       const currentProgressSteps: ProgressStep[] = [];
@@ -637,14 +682,14 @@ export const useAgentChatStore = create<AgentChatState & AgentChatActions>((set,
         rawMessage: message,
         category: 'upstream_network',
       });
-      const processLine = (line: string) => {
-        if (!line.startsWith('data: ') || !ownsStream() || ac.signal.aborted) return;
+      const processLine = (line: string): boolean => {
+        if (!line.startsWith('data: ') || !ownsStream() || ac.signal.aborted) return false;
 
         const event = JSON.parse(line.slice(6)) as ProgressStep;
         if (event.type !== 'accepted' && (
           (event.request_id !== undefined && event.request_id !== requestId)
           || (event.session_id !== undefined && event.session_id !== streamSessionId)
-        )) return;
+        )) return false;
         if (event.type === 'accepted') {
           if (acceptedEvent) {
             throw protocolError('Agent stream emitted accepted more than once.');
@@ -661,7 +706,7 @@ export const useAgentChatStore = create<AgentChatState & AgentChatActions>((set,
           if (!statePatch) {
             // This request belonged to an instance superseded by a valid detail.
             ac.abort();
-            return;
+            return false;
           }
           acceptedEvent = event as StreamAcceptedEvent;
           finalBackend = acceptedEvent.backend;
@@ -682,7 +727,7 @@ export const useAgentChatStore = create<AgentChatState & AgentChatActions>((set,
                 ],
           }));
           meta?.onAccepted?.(acceptedEvent);
-          return;
+          return false;
         }
         if (event.type === 'error') {
           const failureEvent = event as unknown as StreamFailureEvent;
@@ -697,9 +742,15 @@ export const useAgentChatStore = create<AgentChatState & AgentChatActions>((set,
         if (event.type === 'done') {
           receivedDoneEvent = true;
           const doneEvent = event as unknown as StreamFailureEvent;
+          finalAssistantMessageId = doneEvent.assistant_message_id != null
+            ? String(doneEvent.assistant_message_id)
+            : null;
+          finalThinkingSteps = Array.isArray(doneEvent.thinking_steps)
+            ? doneEvent.thinking_steps
+            : null;
           if (doneEvent.error_code === 'timeout') {
             set({ terminalStatus: 'timeout' });
-            return;
+            return true;
           }
           if (doneEvent.success === false) {
             throw getStreamFailureError(
@@ -710,17 +761,21 @@ export const useAgentChatStore = create<AgentChatState & AgentChatActions>((set,
           finalContent = doneEvent.content ?? '';
           finalClarification = doneEvent.clarification ?? null;
           // T4: Capture domain guard metadata from done event
-          if ('domain_guard' in doneEvent && doneEvent.domain_guard) {
-            finalDomainGuard = doneEvent.domain_guard as DomainGuardMeta;
+          if (doneEvent.domain_guard) {
+            finalDomainGuard = doneEvent.domain_guard;
           }
-          return;
+          // `done` is terminal: stop reading immediately instead of waiting
+          // for the server to close the SSE connection.
+          return true;
         }
 
         currentProgressSteps.push(event);
         set((s) => ({ progressSteps: [...s.progressSteps, event] }));
+        return false;
       };
 
-      while (true) {
+      let terminalReceived = false;
+      while (!terminalReceived) {
         const { done, value } = await reader.read();
         if (done) break;
         buf += decoder.decode(value, { stream: true });
@@ -729,7 +784,10 @@ export const useAgentChatStore = create<AgentChatState & AgentChatActions>((set,
 
         for (const line of lines) {
           try {
-            processLine(line);
+            if (processLine(line)) {
+              terminalReceived = true;
+              break;
+            }
           } catch (parseErr: unknown) {
             if (isParsedApiError(parseErr) || isApiRequestError(parseErr)) {
               throw parseErr;
@@ -738,13 +796,21 @@ export const useAgentChatStore = create<AgentChatState & AgentChatActions>((set,
         }
       }
 
-      if (buf.trim().startsWith('data: ')) {
+      if (!terminalReceived && buf.trim().startsWith('data: ')) {
         try {
-          processLine(buf.trim());
+          terminalReceived = processLine(buf.trim());
         } catch (parseErr: unknown) {
           if (isParsedApiError(parseErr) || isApiRequestError(parseErr)) {
             throw parseErr;
           }
+        }
+      }
+
+      if (terminalReceived) {
+        try {
+          await reader.cancel();
+        } catch {
+          // The terminal event already arrived; a failed cancel is harmless.
         }
       }
 
@@ -762,21 +828,23 @@ export const useAgentChatStore = create<AgentChatState & AgentChatActions>((set,
       }
 
       const { currentRoute } = get();
-      const shouldAppend = ownsStream() && !ac.signal.aborted && finalContent !== null;
+      const assistantMessageId = finalAssistantMessageId ?? (Date.now() + 1).toString();
+      const shouldAppend = ownsStream() && !ac.signal.aborted && finalContent !== null
+        && !get().messages.some((message) => message.id === assistantMessageId);
 
       if (shouldAppend) {
         set((s) => ({
           messages: [
             ...s.messages,
             {
-              id: (Date.now() + 1).toString(),
+              id: assistantMessageId,
               role: 'assistant',
               content: finalContent || '（无内容）',
               skills: payload.skills,
               skill: payload.skills?.[0],
               skillNames,
               skillName,
-              thinkingSteps: [...currentProgressSteps],
+              thinkingSteps: finalThinkingSteps ?? [...currentProgressSteps],
               backend: finalBackend,
               ...(finalClarification ? { stockClarification: finalClarification } : {}),
               ...(finalDomainGuard ? { domainGuard: finalDomainGuard } : {}),

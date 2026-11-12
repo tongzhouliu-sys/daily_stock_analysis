@@ -188,6 +188,10 @@ export interface ChatSessionDetail extends ChatStateFields {
   };
   is_running: boolean;
   running_progress_steps: ProgressStep[];
+  running_turn_id?: string | null;
+  running_turn_anchor?: number | null;
+  running_started_at?: string | null;
+  running_heartbeat_at?: string | null;
 }
 
 export const agentApi = {
