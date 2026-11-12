@@ -26,6 +26,7 @@ class ConversationSession:
     def add_message(
         self, role: str, content: str, *, accepted_turn=None, db_manager=None,
         thinking_steps: Optional[List[Dict[str, Any]]] = None,
+        answer_meta: Optional[Dict[str, Any]] = None,
     ) -> Optional[int]:
         """Add a message to the session history."""
         db = db_manager if db_manager is not None else get_db()
@@ -33,6 +34,7 @@ class ConversationSession:
             self.session_id, role, content,
             accepted_turn=accepted_turn,
             thinking_steps=thinking_steps,
+            answer_meta=answer_meta,
         )
         self.last_active = datetime.now()
         return message_id
@@ -86,12 +88,13 @@ class ConversationManager:
     def add_message(
         self, session_id: str, role: str, content: str, *, accepted_turn=None, db_manager=None,
         thinking_steps: Optional[List[Dict[str, Any]]] = None,
+        answer_meta: Optional[Dict[str, Any]] = None,
     ) -> Optional[int]:
         """Add a message to a session."""
         session = self.get_or_create(session_id)
         return session.add_message(
             role, content, accepted_turn=accepted_turn, db_manager=db_manager,
-            thinking_steps=thinking_steps,
+            thinking_steps=thinking_steps, answer_meta=answer_meta,
         )
 
     def set_running(

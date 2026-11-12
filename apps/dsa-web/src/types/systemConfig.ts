@@ -170,6 +170,8 @@ export interface AgentBackendStatusResponse {
   version?: string | null;
   errorCode?: string | null;
   message?: string | null;
+  // Capability flag: only start guided intake when the API supports it.
+  guidedIntake?: boolean;
 }
 
 export interface AgentBackendStatusPreviewRequest {

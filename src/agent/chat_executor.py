@@ -3,7 +3,8 @@
 
 from __future__ import annotations
 
-import asyncio
+import logging
+import time
 import threading
 import uuid
 from dataclasses import dataclass
@@ -194,6 +195,7 @@ class AgentChatExecutor:
         except Exception:
             pass  # Non-critical
 
+        turn_started = time.monotonic()
         try:
             # T3: 启用交互模式上下文，减少数据源固定休眠
             # T5: 流式内容回调（当 stream_content=True 时启用）
@@ -283,25 +285,45 @@ class AgentChatExecutor:
             # Set thinking_steps in result for T2
             result.thinking_steps = thinking_steps
 
-            # T4: Apply answer editor if analysis brief is available
+            # T4: The shared editor runs after research, before persistence.
+            editor_meta = None
             if result.success and turn.prepared.analysis_brief:
                 from src.agent.answer_editor import StockAnswerEditorService
-                editor = StockAnswerEditorService()
+
+                editor = StockAnswerEditorService(
+                    llm_client=self.context_llm_adapter, config=self.config,
+                )
+                remaining = (self.timeout_seconds - (time.monotonic() - turn_started)
+                             if self.timeout_seconds else None)
                 try:
-                    # execute_turn runs in a thread-pool worker (via loop.run_in_executor)
-                    # without an active event loop, so asyncio.run() is safe here and
-                    # creates a short-lived loop for the async format_response call.
-                    edited_content, editor_meta = asyncio.run(editor.format_response(
+                    edited_content, editor_meta = editor.format_response_sync(
                         result.content,
                         turn.prepared.analysis_brief,
-                        source_refs=[tc.get("tool_name") for tc in backend_result.tool_calls_log if tc.get("tool_name")]
-                    ))
+                        source_refs=[
+                            tc.get("tool_name") for tc in backend_result.tool_calls_log
+                            if tc.get("tool_name")
+                        ],
+                        user_question=turn.message,
+                        language=turn.prepared.report_language,
+                        progress_callback=progress_callback,
+                        remaining_budget_seconds=remaining,
+                    )
+                    if (stream_content and progress_callback
+                            and edited_content != result.content):
+                        # Retract the raw draft and re-emit the final body so
+                        # deltas after the reset concatenate to done.content.
+                        from src.agent.stream_events import content_delta_event, content_reset_event
+                        progress_callback(content_reset_event(0, "answer_edited"))
+                        progress_callback(content_delta_event(0, edited_content))
                     result.content = edited_content
-                    result.editor_meta = editor_meta
-                except Exception as e:
-                    # Editor failure should not break the response
-                    import logging
-                    logging.getLogger(__name__).warning(f"Answer editor failed: {e}")
+                except Exception:
+                    logging.getLogger(__name__).warning("Answer editor failed", exc_info=True)
+                    editor_meta = None
+            result.answer_meta = editor_meta
+            answer_meta_payload = (
+                editor_meta.model_dump(mode="json", exclude_none=True)
+                if editor_meta is not None else None
+            )
 
             if result.success:
                 if turn.accepted_snapshot is not None:
@@ -310,11 +332,13 @@ class AgentChatExecutor:
                         accepted_turn=turn.accepted_snapshot,
                         db_manager=turn.db_manager,
                         thinking_steps=thinking_steps,
+                        answer_meta=answer_meta_payload,
                     )
                 else:
                     assistant_message_id = conversation_manager.add_message(
                         turn.session_id, "assistant", result.content,
                         thinking_steps=thinking_steps,
+                        answer_meta=answer_meta_payload,
                     )
                 # Set assistant_message_id in result for T2
                 result.assistant_message_id = assistant_message_id

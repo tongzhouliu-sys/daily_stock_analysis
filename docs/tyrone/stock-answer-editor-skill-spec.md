@@ -1,6 +1,6 @@
 # 问股回答精编 skill 设计
 
-状态：待实现的应用运行时 skill 规格。日期：2026-11-11。
+状态：已实现的应用运行时 skill 规格（`src/agent/output_skills/stock-answer-editor/SKILL.md` 带 frontmatter，由 `src/agent/answer_editor.py` 通过现有 Markdown loader 加载），事实保护、有界回退与必测反例已补回归用例；真实模型评测仍待单独记录。日期：2026-11-11。
 
 关联：[首次提问引导与精读回答任务](stock-chat-guided-answer-task.md)。本文件是设计说明，不会被当前应用自动加载。
 

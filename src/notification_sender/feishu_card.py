@@ -316,12 +316,12 @@ def _render_blocks(
         # 根据层级添加不同的标题样式
         if level == 1:
             # 一级标题：使用更大的标签
-            text_buffer.append(f"\n{text_tag}\n")
+            text_buffer.append(f"\n{heading}\n")
         elif level == 2:
-            text_buffer.append(text_tag)
+            text_buffer.append(heading)
         else:
             # 三级标题：较小，带图标
-            text_buffer.append(text_tag)
+            text_buffer.append(heading)
     
     field_buffer: List[Tuple[str, str]] = []
     used_blocks = 0

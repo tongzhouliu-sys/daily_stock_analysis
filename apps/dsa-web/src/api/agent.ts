@@ -178,6 +178,8 @@ export interface ChatSessionMessage {
   content: string;
   created_at: string | null;
   thinking_steps?: ProgressStep[];
+  // Optional metadata written with the final Markdown body.
+  answer_meta?: Record<string, unknown> | null;
 }
 
 export interface ChatSessionDetail extends ChatStateFields {
@@ -192,6 +194,9 @@ export interface ChatSessionDetail extends ChatStateFields {
   running_turn_anchor?: number | null;
   running_started_at?: string | null;
   running_heartbeat_at?: string | null;
+  // Refresh recovery for the guided questionnaire and its frozen brief.
+  pending_intake?: Record<string, unknown> | null;
+  analysis_brief?: Record<string, unknown> | null;
 }
 
 export const agentApi = {
@@ -310,10 +315,11 @@ export const intakeApi = {
    * Create a new intake draft for guided questioning.
    */
   async create(request: IntakeCreateRequest): Promise<IntakeCreateResponse> {
-    const response = await fetch(`${API_BASE_URL}/agent/chat/intake`, {
+    const response = await fetch(`${API_BASE_URL}/api/v1/agent/chat/intake`, {
       method: 'POST',
       headers: { 'Content-Type': 'application/json' },
       body: JSON.stringify(request),
+      credentials: 'include',
     });
     if (!response.ok) {
       const error = await response.json().catch(() => ({}));
@@ -326,10 +332,11 @@ export const intakeApi = {
    * Update intake answers and optionally confirm or skip.
    */
   async update(intakeId: string, request: IntakeUpdateRequest): Promise<IntakeUpdateResponse> {
-    const response = await fetch(`${API_BASE_URL}/agent/chat/intake/${intakeId}`, {
+    const response = await fetch(`${API_BASE_URL}/api/v1/agent/chat/intake/${intakeId}`, {
       method: 'PATCH',
       headers: { 'Content-Type': 'application/json' },
       body: JSON.stringify(request),
+      credentials: 'include',
     });
     if (!response.ok) {
       const error = await response.json().catch(() => ({}));
@@ -341,8 +348,12 @@ export const intakeApi = {
   /**
    * Get the current state of an intake draft.
    */
-  async get(intakeId: string): Promise<IntakeDraft> {
-    const response = await fetch(`${API_BASE_URL}/agent/chat/intake/${intakeId}`);
+  async get(intakeId: string, sessionId?: string): Promise<IntakeDraft> {
+    const query = sessionId ? `?session_id=${encodeURIComponent(sessionId)}` : '';
+    const response = await fetch(
+      `${API_BASE_URL}/api/v1/agent/chat/intake/${intakeId}${query}`,
+      { credentials: 'include' },
+    );
     if (!response.ok) {
       const error = await response.json().catch(() => ({}));
       throw createApiError(parseApiError(error), { cause: error });

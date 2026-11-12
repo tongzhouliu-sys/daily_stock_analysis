@@ -13,8 +13,24 @@ from fastapi.testclient import TestClient
 from api.app import create_app
 from api.v1.endpoints import agent as agent_endpoint
 from src.config import Config
+from src.schemas.agent_domain_guard import DomainAction
 from src.services.agent_chat_session_service import AgentChatSessionService
 from src.storage import DatabaseManager
+
+
+@pytest.fixture(autouse=True)
+def allow_domain_guard():
+    """These tests assert Chat/Research transactions, not classifier policy.
+
+    Without a configured classifier the real guard would fail closed and turn
+    every generic test question into a reminder, hiding the behaviour under
+    test. Keep the guard as an isolated ALLOW dependency here.
+    """
+    with patch("api.v1.endpoints.agent.AgentDomainGuardService") as service:
+        decision = MagicMock()
+        decision.action = DomainAction.ALLOW
+        service.return_value.classify.return_value = (decision, MagicMock())
+        yield
 
 
 @pytest.fixture(autouse=True)
@@ -395,6 +411,8 @@ def test_agent_status_exposes_only_compatibility_fields() -> None:
         "version": None,
         "error_code": None,
         "message": None,
+        # Capability flag; the Web client uses it to decide guided intake.
+        "guided_intake": True,
     }
 
 

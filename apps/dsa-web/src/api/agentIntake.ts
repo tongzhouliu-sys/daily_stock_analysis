@@ -74,7 +74,7 @@ export interface IntakeCreateRequest {
   session_generation?: string | null;
   request_id?: string | null;
   skills?: string[] | null;
-  context?: Record<string, any> | null;
+  context?: Record<string, unknown> | null;
 }
 
 export interface IntakeCreateResponse {
@@ -92,6 +92,7 @@ export interface IntakeUpdateRequest {
   expected_revision: number;
   answers: Answer[];
   action?: 'save' | 'confirm' | 'skip';
+  session_id?: string | null;
 }
 
 export interface IntakeUpdateResponse {
@@ -99,6 +100,7 @@ export interface IntakeUpdateResponse {
   revision: number;
   status: IntakeStatus;
   brief_preview?: AnalysisBrief | null;
+  questions?: Question[];
 }
 
 export interface ChatRequestWithIntake {
@@ -107,16 +109,20 @@ export interface ChatRequestWithIntake {
   session_generation?: string | null;
   request_id?: string | null;
   skills?: string[] | null;
-  context?: Record<string, any> | null;
+  context?: Record<string, unknown> | null;
   interaction_version?: number;
   intake_id?: string | null;
   intake_revision?: number | null;
 }
 
 export interface AnswerMeta {
-  schema_version: number;
-  editor_version: string;
-  editor_status: 'applied' | 'normalized' | 'fallback';
+  schema_version?: number;
+  editor_version?: string;
+  editor_status?: 'applied' | 'normalized' | 'fallback';
   brief_snapshot?: AnalysisBrief | null;
   source_refs?: string[];
+  used_source_refs?: string[];
+  // Additive metadata written by other runtime steps on the same message.
+  domain_guard?: unknown;
+  [key: string]: unknown;
 }

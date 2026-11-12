@@ -201,6 +201,7 @@ const ChatPage: React.FC = () => {
   const [agentStatus, setAgentStatus] = useState<AgentStatusResponse | null>(null);
   const [agentStatusError, setAgentStatusError] = useState<string | null>(null);
   const [agentStatusChecking, setAgentStatusChecking] = useState(true);
+  const [legacyIntakeNotice, setLegacyIntakeNotice] = useState(false);
   // The registry is used only to validate report hints, never to confirm Chat state.
   const { index: stockIndex, loading: stockIndexLoading } = useStockIndex();
 
@@ -322,8 +323,14 @@ const ChatPage: React.FC = () => {
     chatError,
     terminalStatus,
     intakeDraft,
-    intakeStatus,
+    analysisBrief,
+    intakeBusy,
+    intakeError,
+    createIntake,
     updateIntakeAnswers,
+    refreshIntakeDraft,
+    startIntakeAnalysis,
+    skipIntake,
     clearIntake,
     setSelectedSkillIds,
     loadSessions,
@@ -624,6 +631,7 @@ const ChatPage: React.FC = () => {
   const skillLimitReached = selectedSkillIds.length >= MAX_SELECTED_SKILLS;
   const agentConfirmedUnavailable = Boolean(agentStatus && !agentStatus.available);
   const agentAvailable = Boolean(agentStatus?.available) && !agentStatusChecking;
+  const guidedIntakeSupported = Boolean(agentStatus?.guidedIntake);
   const agentUnavailableMessage = agentStatus?.errorCode === 'backend_removed'
     ? t('settings.agentBackendRemoved')
     : agentStatus?.errorCode === 'agent_mode_disabled'
@@ -783,7 +791,7 @@ const ChatPage: React.FC = () => {
       overrideStockContext?: ActiveStockContext,
     ) => {
       const msgText = (overrideMessage ?? input).trim();
-      if (!msgText || loading || !agentAvailable || !agentStatus) return;
+      if (!msgText || loading || !agentAvailable || !agentStatus || intakeDraft) return;
       if (overrideMessage !== undefined) {
         setInput(msgText);
       }
@@ -804,7 +812,7 @@ const ChatPage: React.FC = () => {
           : {}),
         context: contextForSend ?? undefined,
       };
-      await startStream(payload, {
+      const streamMeta = {
         skillNames: usedSkillNames,
         skillName: usedSkillNames.join('、'),
         onAccepted: () => {
@@ -814,9 +822,22 @@ const ChatPage: React.FC = () => {
           setInput('');
           requestScrollToBottom('smooth');
         },
-      });
+      };
+      // First valid question of a new session: prepare 1-5 controlled choices.
+      // No research, quotes or news lookups start while a draft is pending.
+      const isFirstQuestion = messages.length === 0 && hasInitialLoad && !intakeDraft;
+      if (isFirstQuestion && guidedIntakeSupported) {
+        await createIntake(msgText, payload, streamMeta);
+        setInput('');
+        requestScrollToBottom('smooth');
+        return;
+      }
+      if (isFirstQuestion) setLegacyIntakeNotice(true);
+      await startStream(payload, streamMeta);
     },
-    [agentAvailable, agentStatus, getSkillNames, input, loading, normalizeSelectedSkillIds, requestScrollToBottom, selectedSkillIds, sessionId, sessionSelectedSkillIds, startStream],
+    [agentAvailable, agentStatus, createIntake, getSkillNames, guidedIntakeSupported,
+      hasInitialLoad, input, intakeDraft, loading, messages.length, normalizeSelectedSkillIds,
+      requestScrollToBottom, selectedSkillIds, sessionId, sessionSelectedSkillIds, startStream],
   );
 
   const handleStockClarificationDecision = useCallback((
@@ -1133,6 +1154,10 @@ const ChatPage: React.FC = () => {
                       text = getStageDoneLabel(step);
                       statusClass = isSuccess ? 'chat-progress-item-success' : 'chat-progress-item-danger';
                       iconClass = isSuccess ? 'chat-progress-dot-success' : 'chat-progress-dot-danger';
+                    } else if (step.type === 'pipeline_budget_skipped') {
+                      text = getPipelineBudgetSkippedLabel(step);
+                      statusClass = 'chat-progress-item-muted';
+                      iconClass = 'chat-progress-dot-thinking';
                     } else if (step.type === 'thinking') {
                       text = step.message || `第 ${step.step} 步：思考`;
                       statusClass = 'chat-progress-item-thinking';
@@ -1382,7 +1407,7 @@ const ChatPage: React.FC = () => {
               </form>
             ) : (
               <div className="chat-current-title-wrap">
-                <span className="chat-current-title" title={activeSessionTitle}>{activeSessionTitle}</span>
+                <span className="chat-current-title">{activeSessionTitle}</span>
                 {activeSession ? (
                   <button
                     type="button"
@@ -1523,15 +1548,56 @@ const ChatPage: React.FC = () => {
                 </section>
               ) : (
                 <>
-                  {/* T3: Intake guided questioning card */}
-                  {intakeStatus === 'pending' && intakeDraft && (
+                  {intakeDraft && (
+                    <div className="chat-msg chat-msg-user" data-testid="intake-original-message">
+                      <div className="chat-user-bubble">{intakeDraft.original_message}</div>
+                    </div>
+                  )}
+                  {intakeDraft && (
                     <ChatIntakeCard
                       questions={intakeDraft.questions}
-                      initialAnswers={intakeDraft.answers}
-                      onConfirm={(a) => updateIntakeAnswers(a, 'confirm')}
-                      onSkip={() => updateIntakeAnswers(intakeDraft.answers, 'skip')}
-                      onCancel={clearIntake}
+                      answers={intakeDraft.answers}
+                      revision={intakeDraft.revision}
+                      status={intakeDraft.status}
+                      brief={analysisBrief}
+                      originalMessage={intakeDraft.original_message}
+                      isLoading={intakeBusy}
+                      errorMessage={intakeError === 'intake_capability_missing'
+                        ? t('chat.intake.legacyApi') : intakeError}
+                      onSave={(a) => updateIntakeAnswers(a, 'save')}
+                      onConfirm={async (a) => {
+                        const saved = await updateIntakeAnswers(a, 'confirm');
+                        if (saved) await startIntakeAnalysis();
+                        return saved;
+                      }}
+                      onSkip={async () => {
+                        await skipIntake();
+                        return !useAgentChatStore.getState().intakeError;
+                      }}
+                      onCancel={() => {
+                        setInput(intakeDraft.original_message);
+                        clearIntake();
+                        composerRef.current?.focus();
+                      }}
+                      onRetry={() => { void refreshIntakeDraft(); }}
                     />
+                  )}
+                  {intakeError && !intakeDraft && (
+                    <div className="chat-intake chat-intake-error" role="alert">
+                      <span>{intakeError === 'intake_capability_missing'
+                        ? t('chat.intake.legacyApi') : intakeError}</span>
+                      <div className="chat-intake-error-actions">
+                        <button type="button" onClick={() => {
+                          const pending = useAgentChatStore.getState().intakeSendPayload;
+                          if (pending) void createIntake(pending.message, pending);
+                        }}>{t('chat.intake.retry')}</button>
+                        <button type="button" onClick={() => {
+                          const pending = useAgentChatStore.getState().intakeSendPayload;
+                          clearIntake();
+                          if (pending) void startStream(pending);
+                        }}>{t('chat.intake.direct')}</button>
+                      </div>
+                    </div>
                   )}
                   {messages.map((msg) => {
                   const skillLabel = getMessageSkillLabel(msg);
@@ -1559,7 +1625,11 @@ const ChatPage: React.FC = () => {
                       {msg.role === 'assistant' ? (
                         <>
                           <div className="chat-prose">
-                            <ChatAnswer content={msg.content} />
+                            <ChatAnswer
+                              content={msg.content}
+                              answerMeta={msg.answerMeta}
+                              onFollowUp={(question) => { void handleSend(question); }}
+                            />
                           </div>
                           {msg.stockClarification && activeClarificationMessageId === msg.id && (
                             <StockClarificationCard
@@ -1657,6 +1727,14 @@ const ChatPage: React.FC = () => {
 
           <div className="chat-composer-area">
             <div className="chat-composer-stack">
+              {intakeDraft && (
+                <div className="chat-intake-composer-hint" role="status">
+                  {t('chat.intake.composerHint')}
+                </div>
+              )}
+              {legacyIntakeNotice && (
+                <div role="status" className="chat-notice is-muted">{t('chat.intake.legacyApi')}</div>
+              )}
               {chatError ? (
                 <ApiErrorAlert error={chatError.code === 'backend_removed'
                   ? { ...chatError, title: t('settings.agentBackendRemovedLabel'), message: t('settings.agentBackendRemoved') }
@@ -1829,7 +1907,8 @@ const ChatPage: React.FC = () => {
                   value={input}
                   onChange={(event) => setInput(event.target.value)}
                   onKeyDown={handleKeyDown}
-                  placeholder={t('chat.composerPlaceholder')}
+                  placeholder={intakeDraft
+                    ? t('chat.intake.composerHint') : t('chat.composerPlaceholder')}
                   disabled={loading || !agentAvailable}
                   rows={1}
                   className="chat-composer-input"

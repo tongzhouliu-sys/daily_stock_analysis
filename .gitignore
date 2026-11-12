@@ -67,6 +67,16 @@ reports/
 # 本地回测产物（CSV、JSON、Markdown 等，仅本地使用，不上传 GitHub）
 /backtest_results/
 /backtest_results/**
+/backtest_output/
+/backtest_output/**
+/backtest_results_real/
+/backtest_results_real/**
+/real_data_converted/
+/real_data_converted/**
+/test_data/
+/test_data/**
+/test_e2e_output/
+/test_e2e_output/**
 
 # 系统文件
 .DS_Store

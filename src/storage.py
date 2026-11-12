@@ -748,6 +748,7 @@ class ConversationMessage(Base):
     content = Column(Text, nullable=False)
     # Persisted thinking/progress steps for assistant messages (JSON array)
     thinking_steps_json = Column(Text, nullable=True)
+    answer_meta_json = Column(Text, nullable=True)
     created_at = Column(DateTime, default=datetime.now, index=True)
 
     __table_args__ = (
@@ -788,6 +789,38 @@ class ConversationSessionState(Base):
     running_turn_anchor = Column(Integer, nullable=True)
     running_started_at = Column(DateTime, nullable=True)
     running_heartbeat_at = Column(DateTime, nullable=True)
+
+
+class IntakeDraftRecord(Base):
+    """Server-owned guided questionnaire draft; never a public chat message."""
+
+    __tablename__ = 'intake_drafts'
+
+    intake_id = Column(String(64), primary_key=True)
+    schema_version = Column(Integer, nullable=False, default=1)
+    session_id = Column(String(100), index=True, nullable=False)
+    session_generation = Column(String(64), nullable=False)
+    base_state_version = Column(Integer, nullable=False, default=0)
+    revision = Column(Integer, nullable=False, default=1)
+    original_message = Column(Text, nullable=False)
+    questions_json = Column(Text, nullable=False)
+    answers_json = Column(Text, nullable=False, default='[]')
+    status = Column(String(20), nullable=False, default='pending', index=True)
+    request_id = Column(String(64), nullable=True, unique=True, index=True)
+    consumed_request_id = Column(String(64), nullable=True, unique=True, index=True)
+    created_at = Column(DateTime, default=datetime.now, nullable=False, index=True)
+    updated_at = Column(DateTime, default=datetime.now, onupdate=datetime.now, nullable=False)
+
+
+def _safe_intake_json_loads(raw: Optional[str]) -> Optional[Dict[str, Any]]:
+    """Corrupt legacy metadata must not break history rendering."""
+    if not raw:
+        return None
+    try:
+        value = json.loads(raw)
+    except (TypeError, ValueError):
+        return None
+    return value if isinstance(value, dict) else None
 
 
 class ConversationSessionTitle(Base):
@@ -1626,6 +1659,7 @@ class DatabaseManager(metaclass=_DatabaseManagerMeta):
             # Migration for conversation_messages.thinking_steps_json
             message_columns = {
                 "thinking_steps_json": "TEXT",
+                "answer_meta_json": "TEXT",
             }
             existing = {
                 column["name"] for column in inspect(self._engine).get_columns(
@@ -4035,7 +4069,8 @@ class DatabaseManager(metaclass=_DatabaseManagerMeta):
                 "messages": [
                     {"id": int(message.id), "role": message.role, "content": message.content,
                      "created_at": message.created_at.isoformat(),
-                     "thinking_steps": json.loads(message.thinking_steps_json) if message.thinking_steps_json else None}
+                     "thinking_steps": json.loads(message.thinking_steps_json) if message.thinking_steps_json else None,
+                     "answer_meta": _safe_intake_json_loads(getattr(message, "answer_meta_json", None))}
                     for message in messages
                 ],
                 "summary": {
@@ -4189,6 +4224,7 @@ class DatabaseManager(metaclass=_DatabaseManagerMeta):
         self, session_id: str, role: str, content: str,
         *, accepted_turn: Optional[Dict[str, Any]] = None,
         thinking_steps: Optional[List[Dict[str, Any]]] = None,
+        answer_meta: Optional[Dict[str, Any]] = None,
     ) -> Optional[int]:
         """
         保存 Agent 对话消息
@@ -4204,12 +4240,124 @@ class DatabaseManager(metaclass=_DatabaseManagerMeta):
                 role=role,
                 content=content,
                 thinking_steps_json=json.dumps(thinking_steps, ensure_ascii=False) if thinking_steps else None,
+                answer_meta_json=self._safe_json_dumps(answer_meta) if answer_meta else None,
             )
             session.add(msg)
             session.flush()
             return int(msg.id)
 
         return self._run_write_transaction("save_conversation_message", write)
+
+    # ------------------------------------------------------------------
+    # Guided intake drafts (T1/T2)
+    # ------------------------------------------------------------------
+
+    @staticmethod
+    def _intake_row_to_dict(row) -> Dict[str, Any]:
+        return {
+            "intake_id": row.intake_id, "schema_version": row.schema_version,
+            "session_id": row.session_id, "session_generation": row.session_generation,
+            "base_state_version": row.base_state_version, "revision": row.revision,
+            "original_message": row.original_message, "questions_json": row.questions_json,
+            "answers_json": row.answers_json, "status": row.status,
+            "request_id": row.request_id, "consumed_request_id": row.consumed_request_id,
+            "created_at": row.created_at.isoformat() if row.created_at else None,
+            "updated_at": row.updated_at.isoformat() if row.updated_at else None,
+        }
+
+    def create_intake_draft(
+        self, *, intake_id: str, session_id: str, session_generation: str,
+        original_message: str, questions_json: str, base_state_version: int = 0,
+        request_id: Optional[str] = None, schema_version: int = 1,
+    ) -> Dict[str, Any]:
+        """Insert a draft, or return the existing one for a creation retry."""
+        def write(session: Session) -> Dict[str, Any]:
+            if request_id:
+                existing = session.execute(
+                    select(IntakeDraftRecord).where(IntakeDraftRecord.request_id == request_id)
+                ).scalar_one_or_none()
+                if existing is not None:
+                    return self._intake_row_to_dict(existing)
+            row = IntakeDraftRecord(
+                intake_id=intake_id, schema_version=schema_version,
+                session_id=session_id, session_generation=session_generation,
+                base_state_version=base_state_version, revision=1,
+                original_message=original_message, questions_json=questions_json,
+                answers_json="[]", status="pending", request_id=request_id,
+            )
+            session.add(row)
+            session.flush()
+            return self._intake_row_to_dict(row)
+        return self._run_write_transaction("create_intake_draft", write)
+
+    def get_intake_draft(self, intake_id: str) -> Optional[Dict[str, Any]]:
+        with self.session_scope() as session:
+            row = session.get(IntakeDraftRecord, intake_id)
+            return self._intake_row_to_dict(row) if row is not None else None
+
+    def find_pending_intake_draft(self, session_id: str, session_generation: Optional[str] = None):
+        with self.session_scope() as session:
+            stmt = select(IntakeDraftRecord).where(
+                IntakeDraftRecord.session_id == session_id,
+                IntakeDraftRecord.status.in_(("pending", "confirmed")),
+                IntakeDraftRecord.consumed_request_id.is_(None),
+            )
+            if session_generation:
+                stmt = stmt.where(IntakeDraftRecord.session_generation == session_generation)
+            row = session.execute(
+                stmt.order_by(IntakeDraftRecord.created_at.desc(), IntakeDraftRecord.intake_id.desc())
+            ).scalars().first()
+            return self._intake_row_to_dict(row) if row is not None else None
+
+    def update_intake_draft(
+        self, *, intake_id: str, expected_revision: int, answers_json: str,
+        questions_json: str, status: str,
+    ) -> Optional[Dict[str, Any]]:
+        """Revision compare-and-swap; returns None when the CAS loses."""
+        def write(session: Session) -> Optional[Dict[str, Any]]:
+            result = session.execute(
+                IntakeDraftRecord.__table__.update().where(
+                    IntakeDraftRecord.intake_id == intake_id,
+                    IntakeDraftRecord.revision == expected_revision,
+                    IntakeDraftRecord.consumed_request_id.is_(None),
+                ).values(
+                    revision=expected_revision + 1, answers_json=answers_json,
+                    questions_json=questions_json, status=status, updated_at=datetime.now(),
+                )
+            )
+            if result.rowcount != 1:
+                return None
+            row = session.get(IntakeDraftRecord, intake_id)
+            return self._intake_row_to_dict(row) if row is not None else None
+        return self._run_write_transaction("update_intake_draft", write)
+
+    def consume_intake_draft(
+        self, *, intake_id: str, expected_revision: int,
+        session_generation: str, consumed_request_id: str,
+    ) -> Optional[Dict[str, Any]]:
+        """Atomically claim a confirmed/skipped draft for exactly one run."""
+        def write(session: Session) -> Optional[Dict[str, Any]]:
+            claimed = session.execute(
+                select(IntakeDraftRecord).where(
+                    IntakeDraftRecord.consumed_request_id == consumed_request_id)
+            ).scalar_one_or_none()
+            if claimed is not None:
+                return self._intake_row_to_dict(claimed)
+            result = session.execute(
+                IntakeDraftRecord.__table__.update().where(
+                    IntakeDraftRecord.intake_id == intake_id,
+                    IntakeDraftRecord.revision == expected_revision,
+                    IntakeDraftRecord.session_generation == session_generation,
+                    IntakeDraftRecord.status.in_(("confirmed", "skipped")),
+                    IntakeDraftRecord.consumed_request_id.is_(None),
+                ).values(consumed_request_id=consumed_request_id, updated_at=datetime.now())
+            )
+            if result.rowcount != 1:
+                return None
+            row = session.get(IntakeDraftRecord, intake_id)
+            return self._intake_row_to_dict(row) if row is not None else None
+        return self._run_write_transaction("consume_intake_draft", write)
+
 
     def set_session_running(
         self,

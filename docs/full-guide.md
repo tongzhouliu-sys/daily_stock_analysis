@@ -1980,3 +1980,12 @@ worker 会把 `triggered`、`skipped`、`degraded`、`failed` 写入 `alert_trig
 - Agent 可通过 `get_portfolio_snapshot` 获取面向账户的紧凑持仓摘要，默认包含精简风险块，适合控制 Token 开销。
 - 可选参数包括 `account_id`、`cost_method`、`as_of`、`include_positions`、`include_risk`。
 - 若风险块生成失败，快照仍会返回；若当前环境未启用持仓模块，工具会返回结构化 `not_supported`。
+
+
+## 问股首次引导与回答精编
+
+新会话首次提出投资问题时，服务端返回 1–5 道受控选择题（对象、目标、周期、持仓、风险侧重等），确认后才提交研究；不选择的信息记为「未提供」，不会变成空仓或风险均衡等默认偏好。草稿保存在服务端，刷新或切换设备可恢复；双击、重试或双标签页只启动一次研究。旧版客户端不带 `interaction_version` 时保持原有直接问答。
+
+研究完成后由 `stock-answer-editor` 编辑器整理一次回答（结论先行、依据、条件、风险、来源），最多一次无工具模型请求、上限 8 秒；数字、日期、市场、最终动作、否定条件与风险校验不通过或调用失败时保留原始分析并做确定性排版。实时、历史、复制、导出与下一轮上下文读取同一份最终 Markdown。进度事件 `stage=answer_editing` 与可选 `answer_meta` 见 [流式事件契约](agent-stream-events.md)。
+
+引导能力由 `/api/v1/agent/status` 的 `guided_intake` 字段声明；三个引导接口为 `POST/PATCH/GET /api/v1/agent/chat/intake`。无需额外环境变量或模型配置，复用现有模型路由与用量统计。

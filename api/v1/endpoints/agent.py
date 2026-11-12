@@ -6,6 +6,7 @@ Agent API endpoints.
 import asyncio
 import json
 import logging
+import re
 import uuid
 from typing import Any, Dict, List, Optional
 
@@ -21,6 +22,13 @@ from src.services.agent_chat_session_service import AgentChatSessionService
 from src.services.agent_domain_guard_service import AgentDomainGuardService
 from src.services.agent_model_service import list_agent_model_deployments
 from src.services.agent_report_context_service import AgentReportContextError
+from src.services.agent_chat_intake_service import (
+    AgentChatIntakeService, IntakeNotConfirmed, IntakeServiceError,
+)
+from src.schemas.agent_intake import (
+    IntakeCreateRequest, IntakeCreateResponse, IntakeStatus,
+    IntakeUpdateRequest, IntakeUpdateResponse,
+)
 from src.storage import ChatSessionStateConflict
 
 # Tool name -> Chinese display name mapping
@@ -86,46 +94,70 @@ class ChatRequest(BaseModel):
         return self.skills
 
 
-def _build_agent_chat_context(
-    request: ChatRequest,
-    config,
-    skills: Optional[List[str]],
-    intake_service: Optional["AgentChatIntakeService"] = None,
-) -> Dict[str, Any]:
-    """Build the shared context contract for regular and streaming Agent Chat.
+_INTAKE_CONFLICT_CODES = frozenset({
+    "intake_revision_conflict", "intake_not_confirmed", "intake_message_mismatch",
+    "session_state_conflict", "intake_already_accepted",
+})
+_EXPLICIT_TICKER_RE = re.compile(r"(?<!\w)(?:[A-Z]{1,5}|\d{6}|HK\d{4,5})(?!\w)")
+_CONCEPT_QUESTION_RE = re.compile(r"什么是|什么叫|是什么意思|如何理解|怎么理解|what\s+is|explain", re.I)
 
-    T2: If intake is confirmed (interaction_version=1, intake_id, intake_revision),
-    inject the analysis_brief into context.
-    """
+
+def _intake_status_code(code: str) -> int:
+    return 409 if code in _INTAKE_CONFLICT_CODES else 422
+
+
+def _public_answer_meta(result) -> Optional[Dict[str, Any]]:
+    """Whitelist metadata shared by done, non-stream and history views."""
+    meta = getattr(result, "answer_meta", None)
+    if meta is None:
+        return None
+    payload = meta.model_dump(mode="json", exclude_none=True) if hasattr(meta, "model_dump") else dict(meta)
+    keys = ("schema_version", "editor_version", "editor_status",
+            "brief_snapshot", "source_refs", "used_source_refs")
+    return {key: payload[key] for key in keys if key in payload}
+
+
+def _needs_object_intake(message: str) -> bool:
+    text = (message or "").strip()
+    if not text or _CONCEPT_QUESTION_RE.search(text) or _EXPLICIT_TICKER_RE.search(text):
+        return False
+    return bool(re.search(r"[\u4e00-\u9fff]{2,}", text))
+
+
+def _reuse_session_brief(session_service, session_id: str) -> Optional[Dict[str, Any]]:
+    """Guided-flow follow-ups keep the brief frozen on a previous answer."""
+    try:
+        from src.schemas.agent_intake import AnalysisBrief
+        detail = session_service.get_session_detail(session_id, limit=-1)
+        for message in reversed(detail.messages):
+            if message.get("role") != "assistant":
+                continue
+            meta = message.get("answer_meta")
+            snapshot = meta.get("brief_snapshot") if isinstance(meta, dict) else None
+            if isinstance(snapshot, dict) and snapshot:
+                return AnalysisBrief.model_validate(snapshot).model_dump(exclude_none=True)
+    except Exception:
+        logger.debug("Could not reuse a confirmed brief for %s", session_id, exc_info=True)
+    return None
+
+
+def _build_agent_chat_context(
+    request: ChatRequest, config, skills: Optional[List[str]],
+    brief: Optional[Dict[str, Any]] = None,
+) -> Dict[str, Any]:
+    """Only the server-consumed brief may enter the prompt."""
     context = dict(request.context or {})
     context.pop("skills", None)
     context.pop("strategies", None)
-    # Only the server projection may enter the prompt; never trust client text.
     context.pop("report_context", None)
+    context.pop("analysis_brief", None)
     if skills is not None:
         context["skills"] = skills
     report_language = context.get("report_language")
     if report_language is None or (isinstance(report_language, str) and not report_language.strip()):
         context["report_language"] = config.report_language
-
-    # T2: Inject analysis_brief if intake is confirmed
-    if (
-        request.interaction_version >= 1
-        and request.intake_id
-        and request.intake_revision is not None
-        and intake_service is not None
-    ):
-        try:
-            brief = intake_service.validate_intake_for_chat(
-                intake_id=request.intake_id,
-                intake_revision=request.intake_revision,
-                message=request.message,
-            )
-            context["analysis_brief"] = brief.model_dump(exclude_none=True)
-        except IntakeServiceError as exc:
-            logger.warning("Intake validation failed for chat: %s", exc.message)
-            # Don't block the chat - proceed without brief
-
+    if brief is not None:
+        context["analysis_brief"] = brief
     return context
 
 
@@ -161,6 +193,7 @@ class ChatResponse(BaseModel):
     clarification: Optional[Dict[str, Any]] = None
     # Domain guard metadata (optional, for non-investment question reminders)
     domain_guard: Optional[Dict[str, Any]] = None
+    answer_meta: Optional[Dict[str, Any]] = None
 
 
 def _public_chat_state(*, active_stock_context, session_state_version, session_generation, selected_skill_ids,
@@ -219,14 +252,31 @@ def _check_domain_guard(request, config, session_service, session_id):
         return None  # Fail open on error
 
 
-def _prepare_chat_request(request, config, session_id, session_service, intake_service=None):
-    """Prepare once against the session snapshot, then commit exactly one turn."""
-    # T2: Domain guard check before any research/tools
+def _prepare_chat_request(request, config, session_id, session_service,
+                          intake_service=None, *, request_id=None):
+    """Prepare once, accept the frozen brief, then commit exactly one turn."""
     domain_guard_result = _check_domain_guard(request, config, session_service, session_id)
-    
+
+    brief_payload = None
+    if request.interaction_version >= 1:
+        if request.intake_id:
+            if request.intake_revision is None or intake_service is None:
+                raise IntakeNotConfirmed(request.intake_id)
+            accepted_brief = intake_service.accept_for_chat(
+                intake_id=request.intake_id,
+                intake_revision=request.intake_revision,
+                message=request.message,
+                session_id=session_id,
+                session_generation=request.session_generation,
+                request_id=request_id or request.request_id or "",
+            )
+            brief_payload = accepted_brief.model_dump(exclude_none=True)
+        else:
+            brief_payload = _reuse_session_brief(session_service, session_id)
+
     resolved = session_service.prepare_session_turn(
         config, session_id, request.message, request.effective_skills,
-        context=_build_agent_chat_context(request, config, None, intake_service),
+        context=_build_agent_chat_context(request, config, None, brief_payload),
         expected_generation=request.session_generation,
     )
     if resolved.clarification is not None:
@@ -320,6 +370,7 @@ def _agent_status_response(payload: Dict[str, Any]) -> AgentBackendStatusRespons
         version=payload.get("version"),
         error_code=payload.get("error_code"),
         message=payload.get("message"),
+        guided_intake=True,
     )
 
 
@@ -378,10 +429,12 @@ async def agent_chat(
     backend_id = _select_agent_chat_backend(config)
 
     session_id = request.session_id or str(uuid.uuid4())
-    
+    request_id = request.request_id or str(uuid.uuid4())
+
     try:
         executor, turn, accepted, clarification, clarification_payload, domain_guard_result = await asyncio.to_thread(
             _prepare_chat_request, request, config, session_id, session_service, intake_service,
+            request_id=request_id,
         )
         
         # T2: Handle domain guard rejection
@@ -427,8 +480,12 @@ async def agent_chat(
             session_id=session_id,
             error=result.error,
             clarification=clarification_payload,
+            answer_meta=_public_answer_meta(result),
             **_accepted_state_payload(accepted),
         )
+    except IntakeServiceError as exc:
+        raise HTTPException(status_code=_intake_status_code(exc.code),
+                            detail={"error": exc.code, "message": exc.message}) from exc
     except ChatSessionStateConflict as exc:
         raise HTTPException(status_code=409, detail={"error": exc.code, "message": str(exc)}) from exc
     except AgentReportContextError as exc:
@@ -468,6 +525,8 @@ class SessionMessagesResponse(BaseModel):
     running_turn_anchor: Optional[int] = None
     running_started_at: Optional[str] = None
     running_heartbeat_at: Optional[str] = None
+    pending_intake: Optional[Dict[str, Any]] = None
+    analysis_brief: Optional[Dict[str, Any]] = None
 
 
 @router.get("/chat/sessions", response_model=SessionsResponse)
@@ -495,15 +554,27 @@ async def get_chat_session_messages(
     session_id: str,
     limit: int = 100,
     session_service: AgentChatSessionService = Depends(get_agent_chat_session_service),
+    intake_service: AgentChatIntakeService = Depends(get_agent_chat_intake_service),
 ):
     """获取单个会话的完整消息"""
-    detail = session_service.get_session_detail(
-        session_id,
-        limit,
-    )
+    detail = session_service.get_session_detail(session_id, limit)
+    pending = intake_service.find_pending_intake(session_id, detail.session_generation)
+    pending_payload = pending.model_dump(mode="json", exclude_none=True) if pending else None
+    brief_payload = None
+    if pending is not None and pending.status == IntakeStatus.CONFIRMED:
+        brief_payload = intake_service.get_confirmed_brief(
+            pending.intake_id).model_dump(mode="json", exclude_none=True)
+    else:
+        for message in reversed(detail.messages):
+            meta = message.get("answer_meta") if isinstance(message, dict) else None
+            if isinstance(meta, dict) and isinstance(meta.get("brief_snapshot"), dict):
+                brief_payload = meta["brief_snapshot"]
+                break
     return SessionMessagesResponse(
         session_id=session_id,
         messages=detail.messages,
+        pending_intake=pending_payload,
+        analysis_brief=brief_payload,
         is_running=detail.is_running,
         running_progress_steps=detail.running_progress_steps or [],
         running_turn_id=detail.running_turn_id,
@@ -716,6 +787,7 @@ async def agent_research(request: ResearchRequest):
 async def agent_chat_stream(
     request: ChatRequest,
     session_service: AgentChatSessionService = Depends(get_agent_chat_session_service),
+    intake_service: AgentChatIntakeService = Depends(get_agent_chat_intake_service),
 ):
     """
     Chat with the AI Agent, streaming progress via SSE.
@@ -774,6 +846,7 @@ async def agent_chat_stream(
                 # T2: Include persisted message ID and thinking steps for UI recovery
                 "assistant_message_id": getattr(result, "assistant_message_id", None),
                 "thinking_steps": getattr(result, "thinking_steps", []),
+                "answer_meta": _public_answer_meta(result),
             })
             asyncio.run_coroutine_threadsafe(queue.put(event), loop)
         except Exception as exc:
@@ -794,18 +867,20 @@ async def agent_chat_stream(
             try:
                 executor, turn, accepted, clarification, clarification_payload, domain_guard_result = await asyncio.to_thread(
                     _prepare_chat_request, request, config, session_id, session_service,
+                    intake_service, request_id=request_id,
                 )
             except asyncio.CancelledError:
                 raise
             except Exception as exc:
                 logger.error("Agent request preparation failed: %s", exc, exc_info=True)
-                recoverable = isinstance(exc, AgentReportContextError)
+                recoverable = isinstance(
+                    exc, (AgentReportContextError, IntakeServiceError, ChatSessionStateConflict))
                 event = {
                     "type": "error",
-                    "message": str(exc) if recoverable or isinstance(exc, ChatSessionStateConflict)
-                    else "Agent request was not accepted",
-                    "error_code": exc.code if recoverable or isinstance(exc, ChatSessionStateConflict)
-                    else "request_not_accepted",
+                    "message": (exc.message if isinstance(exc, IntakeServiceError) else str(exc))
+                    if recoverable else "Agent request was not accepted",
+                    "error_code": (getattr(exc, "code", None) or "request_not_accepted")
+                    if recoverable else "request_not_accepted",
                     "backend": backend_id,
                     "request_id": request_id,
                     "session_id": session_id,
@@ -908,21 +983,8 @@ async def agent_chat_stream(
 
 
 # ============================================================
-# Intake (guided questioning) endpoints — T2
+# Intake (guided questioning) endpoints
 # ============================================================
-
-from src.schemas.agent_intake import (
-    IntakeCreateRequest,
-    IntakeCreateResponse,
-    IntakeUpdateRequest,
-    IntakeUpdateResponse,
-)
-from src.services.agent_chat_intake_service import (
-    AgentChatIntakeService,
-    IntakeNotConfirmed,
-    IntakeRevisionConflict,
-    IntakeServiceError,
-)
 
 
 @router.post("/chat/intake", response_model=IntakeCreateResponse)
@@ -931,61 +993,61 @@ async def create_chat_intake(
     intake_service: AgentChatIntakeService = Depends(get_agent_chat_intake_service),
     session_service: AgentChatSessionService = Depends(get_agent_chat_session_service),
 ):
-    """Create a new intake draft for guided questioning.
-
-    This does NOT execute research — it only prepares questions based on the
-    user's initial message. The client then presents these questions to the
-    user, collects answers, and calls PATCH /chat/intake/{intake_id} to
-    confirm or skip.
-    """
-    session_id = request.session_id or str(uuid.uuid4())
-    session_generation = request.session_generation or str(uuid.uuid4())
-
-    # T2: Domain guard check before intake questionnaire
+    """Create a new intake draft. This never executes research."""
+    session_id = request.session_id
     config = get_config()
     guard_service = AgentDomainGuardService(config)
     decision, meta = guard_service.classify(request.message)
-    
     if decision.action != DomainAction.ALLOW:
-        # Return 422 with domain_scope_required error
-        raise HTTPException(
-            status_code=422,
-            detail={
-                "error": "domain_scope_required",
-                "message": decision.message or "",
-                "domain_guard": {
-                    "action": meta.action.value,
-                    "reason_code": meta.reason_code.value,
-                    "policy_version": meta.policy_version,
-                    "elapsed_ms": meta.elapsed_ms,
-                    "source": meta.source,
-                }
-            }
-        )
-
+        raise HTTPException(status_code=422, detail={
+            "error": "domain_scope_required",
+            "message": decision.message or "",
+            "domain_guard": {
+                "action": meta.action.value, "reason_code": meta.reason_code.value,
+                "policy_version": meta.policy_version, "elapsed_ms": meta.elapsed_ms,
+                "source": meta.source,
+            },
+        })
+    # "First" is server-side session state, not a browser flag.
     try:
+        existing = session_service.get_session_detail(session_id, limit=-1).messages
+    except Exception:
+        existing = []
+    if existing:
+        raise HTTPException(status_code=409, detail={
+            "error": "intake_not_first_turn",
+            "message": "This session already has a conversation; no new intake is needed.",
+        })
+    try:
+        db = getattr(session_service, "db", None)
+        generation = request.session_generation
+        if db is not None:
+            generation = await asyncio.to_thread(
+                db.ensure_chat_session_generation, session_id,
+                expected_generation=request.session_generation,
+            )
+        context = request.context or {}
         draft = await asyncio.to_thread(
             intake_service.create_intake,
-            message=request.message,
-            session_id=session_id,
-            session_generation=session_generation,
-            request_id=request.request_id,
+            message=request.message, session_id=session_id,
+            session_generation=generation or "", request_id=request.request_id,
+            stock_clarification_needed=_needs_object_intake(request.message),
+            report_follow_up=bool(context.get("report_record_id") or context.get("record_id")),
         )
         return IntakeCreateResponse(
-            intake_id=draft.intake_id,
-            schema_version=draft.schema_version,
+            intake_id=draft.intake_id, schema_version=draft.schema_version,
             session_generation=draft.session_generation,
-            base_state_version=draft.base_state_version,
-            revision=draft.revision,
-            status=draft.status,
-            questions=draft.questions,
-            answers=draft.answers,
+            base_state_version=draft.base_state_version, revision=draft.revision,
+            status=draft.status, questions=draft.questions, answers=draft.answers,
         )
+    except ChatSessionStateConflict as exc:
+        raise HTTPException(status_code=409, detail={"error": exc.code, "message": str(exc)}) from exc
     except IntakeServiceError as exc:
-        raise HTTPException(status_code=422, detail={"error": exc.code, "message": exc.message}) from exc
-    except Exception as e:
-        logger.error("Intake create failed: %s", e)
-        raise HTTPException(status_code=500, detail=str(e))
+        raise HTTPException(status_code=_intake_status_code(exc.code),
+                            detail={"error": exc.code, "message": exc.message}) from exc
+    except Exception as exc:
+        logger.error("Intake create failed: %s", exc)
+        raise HTTPException(status_code=500, detail=str(exc)) from exc
 
 
 @router.patch("/chat/intake/{intake_id}", response_model=IntakeUpdateResponse)
@@ -994,50 +1056,41 @@ async def update_chat_intake(
     request: IntakeUpdateRequest,
     intake_service: AgentChatIntakeService = Depends(get_agent_chat_intake_service),
 ):
-    """Update intake answers and optionally confirm or skip.
-
-    Actions:
-    - save: persist answers, increment revision, return updated draft
-    - confirm: finalize the intake and return a brief preview
-    - skip: mark intake as skipped (user chose generic analysis)
-    """
+    """Save, confirm or skip answers with a server-side revision CAS."""
     try:
         draft = await asyncio.to_thread(
             intake_service.update_intake,
-            intake_id=intake_id,
-            expected_revision=request.expected_revision,
-            answers=request.answers,
-            action=request.action,
+            intake_id=intake_id, expected_revision=request.expected_revision,
+            answers=request.answers, action=request.action,
+            session_id=request.session_id,
         )
         brief_preview = None
-        if draft.status.value == "confirmed":
-            brief_preview = intake_service.get_confirmed_brief(intake_id)
-
+        if draft.status == IntakeStatus.CONFIRMED:
+            brief_preview = intake_service.preview_brief(intake_id)
+        elif draft.status == IntakeStatus.SKIPPED:
+            brief_preview = intake_service.get_confirmed_brief(
+                intake_id, session_id=request.session_id)
         return IntakeUpdateResponse(
-            intake_id=draft.intake_id,
-            revision=draft.revision,
-            status=draft.status,
-            brief_preview=brief_preview,
+            intake_id=draft.intake_id, revision=draft.revision,
+            status=draft.status, brief_preview=brief_preview,
+            questions=draft.questions,
         )
-    except IntakeRevisionConflict as exc:
-        raise HTTPException(
-            status_code=409,
-            detail={"error": exc.code, "message": exc.message},
-        ) from exc
     except IntakeServiceError as exc:
-        raise HTTPException(status_code=422, detail={"error": exc.code, "message": exc.message}) from exc
-    except Exception as e:
-        logger.error("Intake update failed: %s", e)
-        raise HTTPException(status_code=500, detail=str(e))
+        raise HTTPException(status_code=_intake_status_code(exc.code),
+                            detail={"error": exc.code, "message": exc.message}) from exc
+    except Exception as exc:
+        logger.error("Intake update failed: %s", exc)
+        raise HTTPException(status_code=500, detail=str(exc)) from exc
 
 
 @router.get("/chat/intake/{intake_id}")
 async def get_chat_intake(
     intake_id: str,
+    session_id: Optional[str] = None,
     intake_service: AgentChatIntakeService = Depends(get_agent_chat_intake_service),
 ):
-    """Get the current state of an intake draft."""
-    draft = intake_service.get_intake(intake_id)
+    """Get a draft without exposing another session's state."""
+    draft = intake_service.get_intake(intake_id, session_id=session_id)
     if draft is None:
         raise HTTPException(status_code=404, detail={"error": "intake_not_found"})
     return draft.model_dump(mode="json")

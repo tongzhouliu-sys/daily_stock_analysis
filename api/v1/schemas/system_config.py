@@ -168,6 +168,8 @@ class AgentBackendStatusResponse(BaseModel):
     version: Optional[str] = None
     error_code: Optional[str] = None
     message: Optional[str] = None
+    # Capability flag: the Web client only starts guided intake when True.
+    guided_intake: bool = False
 
 
 class ExportSystemConfigResponse(BaseModel):

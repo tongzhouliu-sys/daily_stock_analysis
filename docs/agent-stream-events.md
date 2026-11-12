@@ -90,13 +90,21 @@ the persisted result.
 | `accepted` | SSE endpoint | Context preparation and the user-turn/state transaction succeeded; execution has not started yet. | `backend`, `request_id`, `session_id`, `active_stock_context`, `session_state_version`, `session_generation`, `session_state` |
 | `stage_start` | single-agent loop, multi-agent orchestrator | An agent or pipeline stage has started. | `stage`, `message` |
 | `stage_done` | single-agent loop, multi-agent orchestrator | An agent or pipeline stage has completed. | `stage`, `status`, `duration` |
+| `stage_start` / `stage_done` with `stage=answer_editing` | shared answer editor | The final Markdown is being edited after research and before persistence. `status=completed` means applied, `skipped` a deterministic normalization, `failed` a bounded fallback that keeps the original answer. | `stage`, `status`, `outcome`, `category=answer_editing`, `duration` |
 | `thinking` | single-agent loop | The agent is deciding the next action. | `step`, `message` |
 | `tool_start` | single-agent loop | A tool call has started. | `step`, `tool`, `display_name` |
 | `tool_done` | single-agent loop | A tool call has completed or failed. | `step`, `tool`, `success`, `duration`, `display_name` |
 | `generating` | single-agent loop | The final response is being generated. | `step`, `message` |
 | `pipeline_timeout` | multi-agent orchestrator | The orchestrator stopped because the stage or pipeline budget expired. | `stage`, `elapsed`, `timeout` |
 | `pipeline_budget_skipped` | multi-agent orchestrator | The orchestrator stopped before starting the next stage because the remaining budget was too low for useful work. | `stage`, `elapsed`, `timeout`, `remaining`, `minimum`, `reason`, `message` |
-| `done` | SSE endpoint | The request reached its terminal state; the assistant message is already persisted and the turn's running state is cleared. | `success`, `content`, `error`, `total_steps`, `session_id`, `backend`, `request_id`, `error_code`, `assistant_message_id`, `thinking_steps`, `clarification`, `domain_guard` |
+| `done` | SSE endpoint | The request reached its terminal state; the assistant message is already persisted and the turn's running state is cleared. `content` is the single final Markdown body shared by live output, history, copy/export and the next turn. | `success`, `content`, `error`, `total_steps`, `session_id`, `backend`, `request_id`, `error_code`, `assistant_message_id`, `thinking_steps`, `clarification`, `domain_guard`, `answer_meta` |
+
+`answer_meta` is optional and additive. Its public fields are
+`schema_version`, `editor_version`, `editor_status` (`applied` / `normalized` /
+`fallback`), `brief_snapshot`, `source_refs` and `used_source_refs`. Internal
+diagnostics (`validation_codes`, `usage`, `fallback_reason`,
+`processing_time_ms`) are logged but never returned. Legacy clients and
+historical rows without metadata keep rendering as plain Markdown.
 | `error` | SSE endpoint | The request failed before normal completion, including preparation rejection before `accepted`. | `message`, `error_code`, `request_id`, `session_id` |
 
 ## Registered Names And Embedded Mentions

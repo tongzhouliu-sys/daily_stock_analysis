@@ -69,6 +69,7 @@ class AgentResult:
     # T2: Persisted assistant message ID and thinking steps for UI recovery
     assistant_message_id: Optional[int] = None
     thinking_steps: List[Dict[str, Any]] = field(default_factory=list)
+    answer_meta: Optional[Any] = None
 
 
 # ============================================================
@@ -512,6 +513,7 @@ class PreparedAgentChat:
     history_messages: List[Dict[str, Any]]
     stock_scope: Optional[StockScope]
     analysis_brief: Optional["AnalysisBrief"] = None
+    report_language: str = "zh"
 
 
 def prepare_agent_chat(
@@ -652,11 +654,32 @@ def prepare_agent_chat(
         except Exception:
             logger.warning("Ignoring invalid analysis_brief in chat context", exc_info=True)
 
+    if analysis_brief is not None:
+        # The confirmed brief is a user constraint, not a system instruction.
+        from src.agent.intake_questions import describe_analysis_brief
+
+        brief_text = describe_analysis_brief(analysis_brief, report_language)
+        if report_language == "en":
+            header = "[Confirmed background for this question — user preferences, not market facts]"
+            footer = ("Do not treat any 'Not provided' field as a known fact. Keep data dates, "
+                      "limitations and the final risk-bounded action unchanged.")
+            ack = "I will use this background only to organize the answer, without inventing facts."
+        else:
+            header = "[用户确认的本次分析背景 —— 属于用户偏好，不是行情事实]"
+            footer = ("「未提供」不代表任何默认值（例如不代表空仓、不代表风险均衡）。"
+                      "请按这些偏好组织回答，但不得改变数据日期、能力限制、最终风险结论与触发条件。")
+            ack = "我会按以上背景组织回答，不把未提供项当作已知，也不改写事实与风险结论。"
+        history_messages.extend([
+            {"role": "user", "content": f"{header}\n{brief_text}\n\n{footer}"},
+            {"role": "assistant", "content": ack},
+        ])
+
     return PreparedAgentChat(
         system_prompt=system_prompt,
         history_messages=history_messages,
         stock_scope=scope_resolution.stock_scope,
         analysis_brief=analysis_brief,
+        report_language=report_language,
     )
 
 

@@ -1,246 +1,231 @@
-import React, { useState, useMemo } from 'react';
+import { useMemo, useState } from 'react';
 import { cn } from '../../utils/cn';
-import type { Question, Answer, QuestionOption } from '../../api/agentIntake';
-import { Check } from 'lucide-react';
+import type {
+  AnalysisBrief, Answer, IntakeStatus, Question, QuestionOption,
+} from '../../api/agentIntake';
+import { intakeOptionLabel, type IntakeLanguage } from '../../utils/intakeLabels';
+import { useUiLanguage } from '../../contexts/UiLanguageContext';
+import AnalysisBriefSummary from './AnalysisBriefSummary';
 
 interface ChatIntakeCardProps {
   questions: Question[];
+  answers?: Answer[];
   initialAnswers?: Answer[];
-  onConfirm: (answers: Answer[]) => void;
-  onSkip: () => void;
-  onCancel: () => void;
+  revision?: number;
+  status?: IntakeStatus;
+  brief?: AnalysisBrief | null;
+  originalMessage?: string;
   isLoading?: boolean;
+  errorMessage?: string | null;
+  onSave?: (answers: Answer[]) => void | Promise<boolean>;
+  onConfirm: (answers: Answer[]) => void | Promise<boolean>;
+  onSkip: () => void | Promise<boolean>;
+  onCancel: () => void;
+  onRetry?: () => void;
+  onDirect?: () => void;
 }
 
-/**
- * ChatIntakeCard - Displays guided questioning flow for new chat sessions.
- *
- * T3: Frontend guided interface.
- */
-export const ChatIntakeCard: React.FC<ChatIntakeCardProps> = ({
-  questions,
-  initialAnswers = [],
-  onConfirm,
-  onSkip,
-  onCancel,
-  isLoading = false,
-}) => {
-  const [currentQuestionIndex, setCurrentQuestionIndex] = useState(0);
-  const [answers, setAnswers] = useState<Answer[]>(initialAnswers);
+/** Read-only local preview built only from controlled option ids. */
+function previewBrief(questions: Question[], answers: Answer[]): AnalysisBrief {
+  const byId = new Map(answers.map((a) => [a.question_id, a]));
+  const brief: AnalysisBrief = { brief_version: 1, focus_areas: [], unknown_fields: [] };
+  for (const question of questions) {
+    if (question.id === 'confirm') continue;
+    const answer = byId.get(question.id);
+    const unknown = !answer || answer.source === 'unknown' || !answer.option_ids.length
+      || answer.option_ids.every((id) => question.options.find((o) => o.id === id)?.is_unknown);
+    if (unknown) { brief.unknown_fields!.push(question.dimension); continue; }
+    const value = answer!.option_ids[0];
+    switch (question.dimension) {
+      case 'object': brief.object_scope = value; break;
+      case 'goal': brief.goal = value; break;
+      case 'horizon': brief.horizon = value; break;
+      case 'position': brief.position = value; break;
+      case 'risk_focus': brief.risk_focus = value; break;
+      case 'reading_style': brief.reading_style = value; break;
+      case 'research_focus': brief.focus_areas = answer!.option_ids.slice(0, 2); break;
+      default: break;
+    }
+  }
+  return brief;
+}
 
-  const currentQuestion = questions[currentQuestionIndex];
-  const isLastQuestion = currentQuestionIndex === questions.length - 1;
-  const progress = ((currentQuestionIndex + 1) / questions.length) * 100;
+/** Four-step guided experience: question → choices → confirm → research. */
+export default function ChatIntakeCard({
+  questions, answers: controlledAnswers, initialAnswers, status, brief,
+  originalMessage, isLoading = false, errorMessage, onSave, onConfirm,
+  onSkip, onCancel, onRetry, onDirect,
+}: ChatIntakeCardProps) {
+  const { t, language } = useUiLanguage();
+  const lang: IntakeLanguage = language === 'en' ? 'en' : 'zh';
+  const [index, setIndex] = useState(0);
+  const [answers, setAnswers] = useState<Answer[]>(initialAnswers ?? controlledAnswers ?? []);
+  const [viewOverride, setViewOverride] = useState<'questions' | 'summary' | null>(null);
 
-  // Get current answer for the question
+  const validIds = useMemo(() => new Set(questions.map((q) => q.id)), [questions]);
+  const effectiveAnswers = useMemo(
+    () => answers.filter((a) => validIds.has(a.question_id)),
+    [answers, validIds],
+  );
+  const safeIndex = Math.min(index, Math.max(0, questions.length - 1));
+  const view = viewOverride
+    ?? (status === 'confirmed' || status === 'skipped' ? 'summary' : 'questions');
+  const question = questions[safeIndex];
+  const isLast = safeIndex === questions.length - 1;
+  const progress = questions.length ? ((safeIndex + 1) / questions.length) * 100 : 0;
   const currentAnswer = useMemo(
-    () => answers.find((a) => a.question_id === currentQuestion.id),
-    [answers, currentQuestion.id]
+    () => effectiveAnswers.find((a) => a.question_id === question?.id),
+    [effectiveAnswers, question?.id],
   );
 
-  // Handle option selection
-  const handleOptionSelect = (option: QuestionOption) => {
-    if (!currentQuestion) return;
-
-    let newOptionIds: string[];
-
-    if (currentQuestion.type === 'single') {
-      // Single choice: replace selection
-      newOptionIds = [option.id];
+  const select = (option: QuestionOption) => {
+    if (!question || isLoading) return;
+    const previous = currentAnswer?.option_ids ?? [];
+    let optionIds: string[];
+    if (question.type === 'single') {
+      optionIds = [option.id];
+    } else if (previous.includes(option.id)) {
+      optionIds = previous.filter((id) => id !== option.id);
     } else {
-      // Multiple choice: toggle selection
-      const current = currentAnswer?.option_ids || [];
-      if (current.includes(option.id)) {
-        newOptionIds = current.filter((id) => id !== option.id);
-      } else {
-        // Check max_selections
-        const maxSelections = currentQuestion.max_selections;
-        if (maxSelections && current.length >= maxSelections) {
-          // Replace oldest selection
-          newOptionIds = [...current.slice(1), option.id];
-        } else {
-          newOptionIds = [...current, option.id];
-        }
-      }
+      const cap = question.max_selections ?? previous.length + 1;
+      optionIds = previous.length >= cap ? [...previous.slice(1), option.id] : [...previous, option.id];
     }
-
-    // Determine source
-    const source = option.is_unknown ? 'unknown' : 'user_choice';
-
-    // Update answer
-    const newAnswer: Answer = {
-      question_id: currentQuestion.id,
-      option_ids: newOptionIds,
-      source,
+    if (question.id === 'research_focus' && optionIds.includes('comprehensive') && optionIds.length > 1) {
+      optionIds = optionIds.filter((id) => id === 'comprehensive');
+    }
+    const next: Answer = {
+      question_id: question.id,
+      option_ids: optionIds,
+      source: option.is_unknown || optionIds.every((id) => question.options.find((o) => o.id === id)?.is_unknown)
+        ? 'unknown' : 'user_choice',
     };
-
-    setAnswers((prev) => {
-      const filtered = prev.filter((a) => a.question_id !== currentQuestion.id);
-      return [...filtered, newAnswer];
-    });
+    setAnswers((prev) => [...prev.filter((a) => a.question_id !== question.id), next]);
   };
 
-  // Handle next question
-  const handleNext = () => {
-    if (isLastQuestion) {
-      onConfirm(answers);
-    } else {
-      setCurrentQuestionIndex((prev) => prev + 1);
+  const handleNext = async () => {
+    if (!question || !currentAnswer?.option_ids.length || isLoading) return;
+    if (!isLast) {
+      if (question.id === 'goal' || question.id === 'confirm') {
+        await onSave?.(effectiveAnswers);
+      }
+      setIndex((prev) => prev + 1);
+      return;
     }
-  };
-
-  // Handle previous question
-  const handlePrevious = () => {
-    if (currentQuestionIndex > 0) {
-      setCurrentQuestionIndex((prev) => prev - 1);
+    if (onSave) {
+      await onSave(effectiveAnswers);
+      setViewOverride('summary');
+      return;
     }
+    await onConfirm(effectiveAnswers);
   };
 
-  // Check if current question has an answer
-  const hasAnswer = currentAnswer && currentAnswer.option_ids.length > 0;
+  if (view === 'summary') {
+    return (
+      <AnalysisBriefSummary
+        brief={brief ?? previewBrief(questions, effectiveAnswers)}
+        originalMessage={originalMessage}
+        skipped={status === 'skipped'}
+        isLoading={isLoading}
+        error={errorMessage}
+        onStart={() => { void onConfirm(effectiveAnswers); }}
+        onEdit={() => setViewOverride('questions')}
+        onSkip={() => { void onSkip(); }}
+        onCancel={onCancel}
+      />
+    );
+  }
+
+  if (!question) return null;
 
   return (
-    <div className="bg-card border border-border rounded-lg p-6 space-y-6">
-      {/* Progress bar */}
-      <div className="space-y-2">
-        <div className="flex items-center justify-between text-sm text-muted-foreground">
-          <span>问题 {currentQuestionIndex + 1} / {questions.length}</span>
+    <section className="chat-intake" aria-labelledby="chat-intake-heading">
+      <header className="chat-intake-head">
+        <h2 id="chat-intake-heading" className="chat-intake-title">{t('chat.intake.title')}</h2>
+        <p className="chat-intake-subtitle">{t('chat.intake.subtitle')}</p>
+      </header>
+
+      {originalMessage && (
+        <blockquote className="chat-intake-question-quote">
+          <span className="chat-intake-quote-label">{t('chat.intake.yourQuestion')}</span>
+          {originalMessage}
+        </blockquote>
+      )}
+
+      <div className="chat-intake-progress" aria-live="polite">
+        <div className="chat-intake-progress-text">
+          <span>{t('chat.intake.progress')
+            .replace('{current}', String(safeIndex + 1))
+            .replace('{total}', String(questions.length))}</span>
           <span>{Math.round(progress)}%</span>
         </div>
-        <div className="h-2 bg-muted rounded-full overflow-hidden">
-          <div
-            className="h-full bg-primary transition-all duration-300"
-            style={{ width: `${progress}%` }}
-          />
+        <div className="chat-intake-progress-track" aria-hidden="true">
+          <div className="chat-intake-progress-fill" style={{ width: `${progress}%` }} />
         </div>
       </div>
 
-      {/* Question */}
-      {currentQuestion && (
-        <div className="space-y-4">
-          <div className="space-y-2">
-            <h3 className="text-lg font-semibold text-foreground">
-              {currentQuestion.title}
-            </h3>
-            {currentQuestion.help && (
-              <p className="text-sm text-muted-foreground">
-                {currentQuestion.help}
-              </p>
-            )}
-          </div>
+      <fieldset className="chat-intake-question" disabled={isLoading} key={question.id}>
+        <legend className="chat-intake-question-title">{question.title}</legend>
+        {question.help && <p className="chat-intake-question-help">{question.help}</p>}
+        <div className="chat-intake-options">
+          {question.options.map((option) => {
+            const selected = currentAnswer?.option_ids.includes(option.id) ?? false;
+            return (
+              <label key={option.id} className={cn('chat-intake-option', selected && 'is-selected')}>
+                <input
+                  type={question.type === 'multiple' ? 'checkbox' : 'radio'}
+                  name={`intake-${question.id}`}
+                  value={option.id}
+                  checked={selected}
+                  onChange={() => select(option)}
+                />
+                <span className="chat-intake-option-mark" aria-hidden="true" />
+                <span className="chat-intake-option-label">
+                  {intakeOptionLabel(option.id, lang, option.label)}
+                </span>
+                {selected && <span className="chat-intake-option-check" aria-hidden="true">✓</span>}
+              </label>
+            );
+          })}
+        </div>
+      </fieldset>
 
-          {/* Options */}
-          <div className="grid gap-3">
-            {currentQuestion.options.map((option) => {
-              const isSelected = currentAnswer?.option_ids.includes(option.id) || false;
-
-              return (
-                <button
-                  key={option.id}
-                  type="button"
-                  onClick={() => handleOptionSelect(option)}
-                  disabled={isLoading}
-                  className={cn(
-                    'flex items-center gap-3 p-4 border rounded-lg text-left transition-colors',
-                    'hover:bg-accent hover:border-accent-foreground/20',
-                    'focus:outline-none focus:ring-2 focus:ring-ring focus:ring-offset-2',
-                    isSelected
-                      ? 'bg-accent border-primary'
-                      : 'bg-background border-border',
-                    isLoading && 'opacity-50 cursor-not-allowed'
-                  )}
-                  aria-pressed={isSelected}
-                >
-                  {/* Selection indicator */}
-                  <div
-                    className={cn(
-                      'flex-shrink-0 w-5 h-5 rounded-full border-2 flex items-center justify-center',
-                      currentQuestion.type === 'multiple' ? 'rounded' : 'rounded-full',
-                      isSelected
-                        ? 'bg-primary border-primary'
-                        : 'bg-background border-muted-foreground/30'
-                    )}
-                  >
-                    {isSelected && (
-                      <Check className="w-3 h-3 text-primary-foreground" />
-                    )}
-                  </div>
-
-                  {/* Option label */}
-                  <span className="flex-1 text-sm font-medium text-foreground">
-                    {option.label}
-                  </span>
-                </button>
-              );
-            })}
+      {errorMessage && (
+        <div className="chat-intake-error" role="alert">
+          <span>{errorMessage}</span>
+          <div className="chat-intake-error-actions">
+            {onRetry && <button type="button" onClick={onRetry}>{t('chat.intake.retry')}</button>}
+            {onDirect && <button type="button" onClick={onDirect}>{t('chat.intake.direct')}</button>}
           </div>
         </div>
       )}
 
-      {/* Actions */}
-      <div className="flex items-center justify-between pt-4 border-t border-border">
-        <div className="flex gap-2">
-          {/* Previous button */}
+      <div className="chat-intake-actions">
+        <div className="chat-intake-secondary-actions">
           <button
             type="button"
-            onClick={handlePrevious}
-            disabled={currentQuestionIndex === 0 || isLoading}
-            className={cn(
-              'px-4 py-2 text-sm font-medium rounded-lg transition-colors',
-              'text-muted-foreground hover:text-foreground',
-              'disabled:opacity-50 disabled:cursor-not-allowed'
-            )}
+            onClick={() => setIndex((prev) => Math.max(0, prev - 1))}
+            disabled={safeIndex === 0 || isLoading}
           >
-            上一题
+            {t('chat.intake.previous')}
           </button>
-
-          {/* Skip button */}
-          <button
-            type="button"
-            onClick={onSkip}
-            disabled={isLoading}
-            className={cn(
-              'px-4 py-2 text-sm font-medium rounded-lg transition-colors',
-              'text-muted-foreground hover:text-foreground',
-              'disabled:opacity-50 disabled:cursor-not-allowed'
-            )}
-          >
-            跳过
+          <button type="button" onClick={() => { void onSkip(); }} disabled={isLoading}>
+            {t('chat.intake.generic')}
           </button>
         </div>
-
-        <div className="flex gap-2">
-          {/* Cancel button */}
-          <button
-            type="button"
-            onClick={onCancel}
-            disabled={isLoading}
-            className={cn(
-              'px-4 py-2 text-sm font-medium rounded-lg transition-colors',
-              'text-muted-foreground hover:text-foreground',
-              'disabled:opacity-50 disabled:cursor-not-allowed'
-            )}
-          >
-            取消
+        <div className="chat-intake-secondary-actions">
+          <button type="button" onClick={onCancel} disabled={isLoading}>
+            {t('chat.intake.cancel')}
           </button>
-
-          {/* Next/Confirm button */}
           <button
             type="button"
-            onClick={handleNext}
-            disabled={!hasAnswer || isLoading}
-            className={cn(
-              'px-4 py-2 text-sm font-medium rounded-lg transition-colors',
-              'bg-primary text-primary-foreground hover:bg-primary/90',
-              'disabled:opacity-50 disabled:cursor-not-allowed'
-            )}
+            className="chat-intake-primary"
+            onClick={() => { void handleNext(); }}
+            disabled={!currentAnswer?.option_ids.length || isLoading}
           >
-            {isLoading ? '处理中...' : isLastQuestion ? '确认' : '下一题'}
+            {isLast ? t('chat.intake.confirmAnswers') : t('chat.intake.next')}
           </button>
         </div>
       </div>
-    </div>
+    </section>
   );
-};
-
-export default ChatIntakeCard;
+}

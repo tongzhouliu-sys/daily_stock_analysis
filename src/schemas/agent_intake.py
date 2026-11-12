@@ -153,10 +153,12 @@ class AnswerMeta(BaseModel):
         default=None,
         description="Brief snapshot at edit time",
     )
-    source_refs: List[str] = Field(
-        default_factory=list,
-        description="Source references used",
-    )
+    source_refs: List[str] = Field(default_factory=list, description="Source references used")
+    used_source_refs: List[str] = Field(default_factory=list)
+    validation_codes: List[str] = Field(default_factory=list)
+    processing_time_ms: Optional[int] = Field(default=None)
+    fallback_reason: Optional[str] = Field(default=None)
+    usage: Optional[Dict[str, Any]] = Field(default=None)
 
     @field_validator("editor_status")
     @classmethod
@@ -211,10 +213,8 @@ class IntakeUpdateRequest(BaseModel):
 
     expected_revision: int = Field(..., description="Expected current revision")
     answers: List[Answer] = Field(..., description="Updated answers")
-    action: str = Field(
-        default="save",
-        description="Action: save | confirm | skip",
-    )
+    action: str = Field(default="save", description="Action: save | confirm | skip")
+    session_id: Optional[str] = Field(default=None)
 
     @field_validator("action")
     @classmethod
@@ -232,9 +232,9 @@ class IntakeUpdateResponse(BaseModel):
     revision: int = Field(..., description="New revision number")
     status: IntakeStatus = Field(..., description="Updated status")
     brief_preview: Optional[AnalysisBrief] = Field(
-        default=None,
-        description="Brief preview (only on confirm)",
-    )
+        default=None, description="Brief preview (only on confirm)")
+    questions: List[Question] = Field(
+        default_factory=list, description="Replanned questionnaire after this update")
 
 
 class ChatRequestWithIntake(BaseModel):

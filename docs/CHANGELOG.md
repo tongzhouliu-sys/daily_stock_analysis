@@ -9,6 +9,11 @@ and this project adheres to [Semantic Versioning](https://semver.org/).
 
 ## [Unreleased]
 
+- [新功能] 问股首次引导与回答精编完整落地：新会话首问展示 1–5 道受控选择题（概念题只问阅读方式、信息充分只确认一次、持仓为分支题），确认后才提交研究；草稿由 `intake_drafts` 表持久化，支持 revision CAS、会话归属校验、幂等创建与一次性消费，刷新可从会话详情恢复草稿与冻结背景；流式／非流式、单／多 Agent 共用 `stock-answer-editor` 精编服务，一次无工具模型调用、8 秒上限、事实与风险校验失败保守回退，最终正文与 `answer_meta` 同写历史。前端补齐逐题、返回、确认页、通用背景、能力降级、相关追问、页内目录与来源折叠，中英文文案及深浅主题样式同步。
+- [改进] 问股 API 追加 `interaction_version`／`intake_id`／`intake_revision` 正式请求契约、`/status.guided_intake` 能力字段、会话详情 `pending_intake`／`analysis_brief` 恢复字段，以及 `done`／非流式响应的公开 `answer_meta` 白名单；引导冲突统一映射 409，非法答案映射 422，客户端伪造的 `analysis_brief` 在进入提示词前被丢弃。
+- [测试] 新增引导题库／分支／清洗／幂等、真实 SQLite 草稿持久化、API 契约、精编事实保护与有界回退回归用例；补齐单 Agent 执行器、会话详情、前端页面与 store 的既有契约断言。
+- [文档] 同步流式事件契约（`stage=answer_editing`、`done.answer_meta`）、中英文完整指南与首次引导／精编 skill 任务书实施状态。
+- [修复] 收敛仓库基线遗留的合并冲突标记，并修复「分析过程」明细中预算跳过显示为原始类型标识的问题。
 - [修复] 问股多 Agent 回复完成后仍显示运行中、无法追问、停止按钮无法退出加载态：多 Agent `execute_turn` 兼容 `stream_content` 并在 `finally` 中按轮次归属清理运行状态，助手消息落库后才允许清除；运行状态新增 `running_turn_id`/`running_turn_anchor`/`running_started_at`/`running_heartbeat_at`，旧轮次迟到清理不会覆盖新轮次；会话详情返回运行归属与 UTC 心跳时间，服务启动时清理崩溃遗留的过期运行标记。前端将 `done` 视为终态，收到后立即停止读取 SSE，不再等待连接关闭；停止、切换会话和重新发送会失效所有在途流/轮询/详情读取，避免迟到响应恢复加载态；心跳超过 90 秒未更新的运行中会话按中断处理，恢复输入并显示中断提示。同时补齐单 Agent `PreparedAgentChat.analysis_brief` 字段，避免成功回答在精编阶段抛出属性错误。
 - [文档] 复检问股“决策 Agent 完成后卡死、无法追问、停止按钮不生效”问题：新增终态与可追问性修复需求及开发任务书，补充多 Agent 运行状态未清理、`done` 依赖 EOF、停止后轮询/详情竞态等根因与验收标准。
 - [修复] 问股界面回答完成后无法追问、停止按钮无法关闭的问题：修复 `chat_executor.py` 中在同步函数内误用 `await` 调用异步 `answer_editor.format_response()` 导致的 `SyntaxError`，改为 `asyncio.run()` 在线程池中创建临时事件循环；修复前端 `stopStream` 仅调用 `abort()` 但未立即清理 `loading` 状态导致 UI 卡死的问题，改为先置空 `abortController` 再立即重置所有瞬态状态。本次仅覆盖单 Agent 导入错误与本地停止状态；多 Agent 终态、`done` 等待 EOF 和轮询竞态已由上方条目补全。

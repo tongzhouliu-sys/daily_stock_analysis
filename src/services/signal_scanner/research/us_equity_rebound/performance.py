@@ -212,7 +212,7 @@ def calculate_annual_returns(portfolio: Portfolio) -> List[Dict[str, Any]]:
     return results
 
 
-def generate_performance_report(portfolio: Portfolio, config: ReboundConfig) -> Dict[str, Any]:
+def generate_performance_report(portfolio: Portfolio, config: Any) -> Dict[str, Any]:
     """Generate complete performance report."""
     from .config import ReboundConfig
     

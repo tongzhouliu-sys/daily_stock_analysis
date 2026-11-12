@@ -95,6 +95,20 @@ const mockStoreState = {
   activeStockContext: null as ActiveStockContext | null,
   stateContract: 'unbound' as 'unbound' | 'authoritative' | 'legacy',
   loading: false,
+  hasInitialLoad: true,
+  intakeDraft: null,
+  intakeStatus: null,
+  analysisBrief: null,
+  intakeBusy: false,
+  intakeError: null,
+  createIntake: vi.fn(),
+  updateIntakeAnswers: vi.fn().mockResolvedValue(true),
+  refreshIntakeDraft: vi.fn(),
+  startIntakeAnalysis: vi.fn(),
+  skipIntake: vi.fn(),
+  clearIntake: vi.fn(),
+  setSelectedSkillIds: vi.fn(),
+  setCurrentRoute: vi.fn(),
   progressSteps: [] as ProgressStep[],
   sessionId: 'session-1',
   sessions: [
@@ -162,7 +176,7 @@ vi.mock('../../hooks/useStockIndex', () => ({
 
 vi.mock('../../stores/agentChatStore', () => {
   type MockStore = typeof mockStoreState & {
-    setSelectedSkillIds: (skillIds: string[]) => void;
+    setSelectedSkillIds: ReturnType<typeof vi.fn>;
   };
   const useAgentChatStore = (
     selector?: (state: MockStore) => unknown
@@ -173,9 +187,9 @@ vi.mock('../../stores/agentChatStore', () => {
     const state: MockStore = {
       ...mockStoreState,
       selectedSkillIds,
-      setSelectedSkillIds: (skillIds) => {
+      setSelectedSkillIds: vi.fn((skillIds: string[]) => {
         setSelectedSkillIdsState(skillIds);
-      },
+      }),
     };
     return typeof selector === 'function' ? selector(state) : state;
   };
@@ -820,7 +834,7 @@ describe('ChatPage', () => {
       },
     ];
 
-    const { container } = render(
+    render(
       <MemoryRouter initialEntries={['/chat']}>
         <ChatPage />
       </MemoryRouter>
@@ -828,8 +842,11 @@ describe('ChatPage', () => {
 
     expect(await screen.findAllByText('风险 Agent failed')).toHaveLength(2);
 
-    const thinkingToggle = container.querySelector('button[class*="mb-2"][class*="w-full"]') as HTMLButtonElement;
-    fireEvent.click(thinkingToggle);
+    // The thinking block uses category tags; click the matching tag to expand it.
+    // The thinking block uses category tags; expand every relevant tag.
+    screen.getAllByRole('button')
+      .filter((button) => /分析步骤|Agent 协作|工具调用/.test(button.textContent || ''))
+      .forEach((button) => fireEvent.click(button));
 
     const failedStage = screen.getAllByText('risk failed').find((node) =>
       node.closest('.chat-progress-item'),
@@ -855,7 +872,7 @@ describe('ChatPage', () => {
       },
     ];
 
-    const { container } = render(
+    render(
       <MemoryRouter initialEntries={['/chat']}>
         <ChatPage />
       </MemoryRouter>
@@ -864,8 +881,11 @@ describe('ChatPage', () => {
     expect(await screen.findAllByText('decision skipped: insufficient budget')).toHaveLength(1);
     expect(screen.queryByText('decision timed out')).not.toBeInTheDocument();
 
-    const thinkingToggle = container.querySelector('button[class*="mb-2"][class*="w-full"]') as HTMLButtonElement;
-    fireEvent.click(thinkingToggle);
+    // The thinking block uses category tags; click the matching tag to expand it.
+    // The thinking block uses category tags; expand every relevant tag.
+    screen.getAllByRole('button')
+      .filter((button) => /分析步骤|Agent 协作|工具调用/.test(button.textContent || ''))
+      .forEach((button) => fireEvent.click(button));
 
     const budgetSkipped = screen.getAllByText('decision skipped: insufficient budget').find((node) =>
       node.closest('.chat-progress-item'),

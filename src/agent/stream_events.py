@@ -86,6 +86,7 @@ CATEGORY_DISPLAY_LABELS: Dict[str, Dict[str, str]] = {
     "intel": {"zh": "情报搜索", "en": "Intel Search"},
     "analysis_steps": {"zh": "分析步骤", "en": "Analysis Steps"},
     "agent_collaboration": {"zh": "Agent 协作", "en": "Agent Collaboration"},
+    "answer_editing": {"zh": "回答整理", "en": "Answer Editing"},
     "other": {"zh": "工具调用", "en": "Tool Calls"},
 }
 
@@ -244,6 +245,7 @@ def stage_start_event(
     *,
     stage_id: Optional[str] = None,
     message: Optional[str] = None,
+    category: Optional[str] = None,
 ) -> Dict[str, Any]:
     """Build a stage_start event for multi-agent orchestration.
     
@@ -265,6 +267,7 @@ def stage_start_event(
         stage=stage,
         stage_id=stage_id,
         message=message,
+        category=category,
     )
 
 
@@ -276,6 +279,7 @@ def stage_done_event(
     stage_id: Optional[str] = None,
     message: Optional[str] = None,
     outcome: Optional[str] = None,
+    category: Optional[str] = None,
 ) -> Dict[str, Any]:
     """Build a stage_done event for multi-agent orchestration.
     
@@ -308,6 +312,7 @@ def stage_done_event(
         stage_id=stage_id,
         message=message,
         outcome=outcome,
+        category=category,
     )
 
 

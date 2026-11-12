@@ -271,142 +271,69 @@ def classify_question_intent(message: str) -> Dict[str, Any]:
     }
 
 
+def _confirmation_question() -> Question:
+    return Question(
+        id="confirm", dimension=QuestionDimension.GOAL, type=QuestionType.SINGLE,
+        title="按这些条件分析？", help="你的问题已包含足够的分析背景信息。",
+        required=False, depends_on=None,
+        options=[
+            QuestionOption(id="proceed", label="按这些条件分析"),
+            QuestionOption(id="adjust", label="调整条件"),
+            QuestionOption(id="generic", label="只做通用解读"),
+        ],
+    )
+
+
 def select_questions(
-    message: str,
-    *,
-    stock_clarification_needed: bool = False,
+    message: str, *, stock_clarification_needed: bool = False,
     report_follow_up: bool = False,
 ) -> List[Question]:
-    """Select 1-5 questions based on the user's message and context.
-
-    Rules:
-    - Max 5 questions total (including stock clarification if needed)
-    - Resolve object ambiguity first
-    - For concept questions, only ask reading_style
-    - For report follow-ups, only fill missing background
-    - If most info is explicit, show a single confirmation question
-    """
+    """Select 1-5 controlled questions, asking only what is still unknown."""
     intent = classify_question_intent(message)
-    question_type = intent["question_type"]
-    explicit_dims = intent["explicit_dims"]
-
+    question_type, explicit_dims = intent["question_type"], intent["explicit_dims"]
     selected: List[Question] = []
-    asked_dims: Set[str] = set()
-
-    # 1. Object clarification counts as first question
     if stock_clarification_needed:
         selected.append(QUESTION_OBJECT)
-        asked_dims.add("object")
-
-    # 2. For concept questions, only ask reading style
     if question_type == "concept":
-        if "reading_style" not in explicit_dims:
-            selected.append(QUESTION_READING_STYLE)
-        return selected[:MAX_QUESTIONS]
-
-    # 3. For comparison questions, focus on research_focus and reading_style
-    if question_type == "comparison":
-        if "research_focus" not in explicit_dims:
-            selected.append(QUESTION_RESEARCH_FOCUS)
-        if "reading_style" not in explicit_dims:
-            selected.append(QUESTION_READING_STYLE)
-        return selected[:MAX_QUESTIONS]
-
-    # 4. For research questions, follow the priority order
-    # Priority: goal -> horizon -> risk_focus -> position -> research_focus -> reading_style
-
-    # Goal (if not explicit)
-    if "goal" not in explicit_dims and len(selected) < MAX_QUESTIONS:
-        selected.append(QUESTION_GOAL)
-        asked_dims.add("goal")
-
-    # Horizon (for trend/valuation/position questions)
-    if "horizon" not in explicit_dims and len(selected) < MAX_QUESTIONS:
-        selected.append(QUESTION_HORIZON)
-        asked_dims.add("horizon")
-
-    # Risk focus (for decision-oriented research)
-    if "risk_focus" not in explicit_dims and len(selected) < MAX_QUESTIONS:
-        selected.append(QUESTION_RISK_FOCUS)
-        asked_dims.add("risk_focus")
-
-    # Position (only if goal is "evaluate_holding" or similar)
-    # We'll add it conditionally based on goal answer later
-    # For now, include it if we have room
-    if "position" not in explicit_dims and len(selected) < MAX_QUESTIONS:
-        selected.append(QUESTION_POSITION)
-        asked_dims.add("position")
-
-    # Research focus (if room)
-    if "research_focus" not in explicit_dims and len(selected) < MAX_QUESTIONS:
-        selected.append(QUESTION_RESEARCH_FOCUS)
-        asked_dims.add("research_focus")
-
-    # Reading style (if room and not explicit)
-    if "reading_style" not in explicit_dims and len(selected) < MAX_QUESTIONS:
         selected.append(QUESTION_READING_STYLE)
-
-    # If everything is explicit, return a single confirmation question
-    if not selected and not stock_clarification_needed:
-        # Create a confirmation-only question
-        confirm_question = Question(
-            id="confirm",
-            dimension=QuestionDimension.GOAL,
-            type=QuestionType.SINGLE,
-            title="按这些条件分析？",
-            help="你的问题已包含足够的分析背景信息。",
-            required=False,
-            depends_on=None,
-            options=[
-                QuestionOption(id="proceed", label="按这些条件分析"),
-                QuestionOption(id="adjust", label="调整条件"),
-                QuestionOption(id="generic", label="只做通用解读"),
-            ],
-        )
-        selected.append(confirm_question)
-
-    # Report follow-up: only fill missing background, max 2 questions
+        return selected[:MAX_QUESTIONS]
+    if question_type == "comparison":
+        selected.extend([QUESTION_RESEARCH_FOCUS, QUESTION_READING_STYLE])
+        return selected[:MAX_QUESTIONS]
+    for dimension, bank_question in (
+        ("goal", QUESTION_GOAL), ("horizon", QUESTION_HORIZON),
+        ("risk_focus", QUESTION_RISK_FOCUS),
+    ):
+        if dimension not in explicit_dims and len(selected) < MAX_QUESTIONS:
+            selected.append(bank_question)
+    if not selected:
+        selected.append(_confirmation_question())
     if report_follow_up:
         selected = selected[:2]
-
     return selected[:MAX_QUESTIONS]
 
 
-def apply_branching(
-    questions: List[Question],
-    answers: List[Answer],
-) -> List[Question]:
-    """Apply branching logic: remove questions whose dependencies are not met.
-
-    For example, if the user selects "暂不提供" for position, we don't need
-    to ask follow-up questions about position.
-    """
-    answer_map = {a.question_id: a for a in answers}
+def apply_branching(questions: List[Question], answers: List[Answer]) -> List[Question]:
+    """Replan branches; the 5-question cap always applies."""
+    answer_map = {a.question_id: set(a.option_ids) for a in answers}
+    if "adjust" in answer_map.get("confirm", set()):
+        leading = [q for q in questions if q.dimension == QuestionDimension.OBJECT]
+        return (leading + [QUESTION_GOAL, QUESTION_HORIZON, QUESTION_RISK_FOCUS])[:MAX_QUESTIONS]
+    wants_position = "evaluate_holding" in answer_map.get("goal", set())
     result: List[Question] = []
-
-    for q in questions:
-        if q.depends_on is None:
-            result.append(q)
+    for question in questions:
+        if question.id == "position" and not wants_position:
             continue
-
-        # Check if the dependency is satisfied
-        dep_answer = answer_map.get(q.depends_on)
-        if dep_answer is None:
-            # Dependency not answered yet, include the question
-            result.append(q)
-            continue
-
-        # Check if the answer makes this question irrelevant
-        dep_option_ids = set(dep_answer.option_ids)
-        # If user selected "unsure" or "decline" for goal, skip position
-        if q.depends_on == "goal" and dep_option_ids & {"unsure"}:
-            continue
-        # If user selected "not_held" for position, some questions may not apply
-        # (but we still include them for now)
-
-        result.append(q)
-
-    return result
+        if question.depends_on:
+            dependency = answer_map.get(question.depends_on, set())
+            if dependency & {"unsure", "decline"}:
+                continue
+        result.append(question)
+    if wants_position and "position" not in {q.id for q in result}:
+        if any(q.id == "goal" for q in result) and len(result) < MAX_QUESTIONS:
+            at = next(i for i, q in enumerate(result) if q.id == "goal") + 1
+            result.insert(at, QUESTION_POSITION)
+    return result[:MAX_QUESTIONS] or [_confirmation_question()]
 
 
 def invalidate_dependent_answers(
@@ -425,48 +352,36 @@ def invalidate_dependent_answers(
     return [a for a in answers if a.question_id not in dependent_ids]
 
 
-def build_analysis_brief(
-    questions: List[Question],
-    answers: List[Answer],
-) -> AnalysisBrief:
-    """Build the confirmed analysis brief from questions and answers."""
+def build_analysis_brief(questions: List[Question], answers: List[Answer]) -> AnalysisBrief:
+    """Build the confirmed brief; every unprovided dimension stays unknown."""
     answer_map = {a.question_id: a for a in answers}
     unknown_fields: List[str] = []
-
+    known_fields: set = set()
     brief = AnalysisBrief(brief_version=1)
-
     for q in questions:
+        if q.id == "confirm":
+            continue
         answer = answer_map.get(q.id)
         if answer is None:
             continue
-
         dim = q.dimension.value
         option_ids = answer.option_ids
-
-        # Check if user selected "unknown"
         if answer.source == "unknown" or any(
             opt.is_unknown for opt in q.options if opt.id in option_ids
         ):
             unknown_fields.append(dim)
             continue
-
-        # Map dimension to brief field
-        if dim == "object":
-            brief.object_scope = option_ids[0] if option_ids else None
-        elif dim == "goal":
-            brief.goal = option_ids[0] if option_ids else None
-        elif dim == "horizon":
-            brief.horizon = option_ids[0] if option_ids else None
-        elif dim == "position":
-            brief.position = option_ids[0] if option_ids else None
-        elif dim == "risk_focus":
-            brief.risk_focus = option_ids[0] if option_ids else None
-        elif dim == "research_focus":
-            brief.focus_areas = option_ids[:2]  # Max 2
-        elif dim == "reading_style":
-            brief.reading_style = option_ids[0] if option_ids else None
-
-    brief.unknown_fields = unknown_fields
+        if dim == "object": brief.object_scope = option_ids[0] if option_ids else None
+        elif dim == "goal": brief.goal = option_ids[0] if option_ids else None
+        elif dim == "horizon": brief.horizon = option_ids[0] if option_ids else None
+        elif dim == "position": brief.position = option_ids[0] if option_ids else None
+        elif dim == "risk_focus": brief.risk_focus = option_ids[0] if option_ids else None
+        elif dim == "research_focus": brief.focus_areas = option_ids[:2]
+        elif dim == "reading_style": brief.reading_style = option_ids[0] if option_ids else None
+        if option_ids:
+            known_fields.add(dim)
+    all_dimensions = {q.dimension.value for q in QUESTION_BANK.values()}
+    brief.unknown_fields = sorted(set(unknown_fields) | (all_dimensions - known_fields))
     return brief
 
 
@@ -509,6 +424,49 @@ def validate_answers(
     return True, None
 
 
+_BRIEF_LABELS_ZH = {
+    "object": "分析对象", "goal": "分析目标", "horizon": "关注周期",
+    "position": "持仓情况", "risk_focus": "风险侧重",
+    "research_focus": "研究重点", "reading_style": "阅读方式",
+}
+_BRIEF_LABELS_EN = {
+    "object": "Object", "goal": "Goal", "horizon": "Horizon",
+    "position": "Position", "risk_focus": "Risk focus",
+    "research_focus": "Focus areas", "reading_style": "Reading style",
+}
+_BRIEF_ORDER = ("object", "goal", "horizon", "position", "risk_focus", "research_focus", "reading_style")
+
+
+def describe_analysis_brief(brief: AnalysisBrief, language: str = "zh") -> str:
+    """Project a confirmed brief as user constraints, never as market facts."""
+    english = str(language).lower().startswith("en")
+    labels = _BRIEF_LABELS_EN if english else _BRIEF_LABELS_ZH
+    unknown_label = "Not provided" if english else "未提供"
+    unknown = set(brief.unknown_fields or [])
+    values = {
+        "object": [brief.object_scope] if brief.object_scope else [],
+        "goal": [brief.goal] if brief.goal else [],
+        "horizon": [brief.horizon] if brief.horizon else [],
+        "position": [brief.position] if brief.position else [],
+        "risk_focus": [brief.risk_focus] if brief.risk_focus else [],
+        "research_focus": list(brief.focus_areas or []),
+        "reading_style": [brief.reading_style] if brief.reading_style else [],
+    }
+    lines: List[str] = []
+    for dimension in _BRIEF_ORDER:
+        raw = [item for item in values[dimension] if item and dimension not in unknown]
+        if not raw:
+            lines.append(f"- {labels[dimension]}: {unknown_label}")
+            continue
+        if english:
+            rendered = ", ".join(item.replace("_", " ") for item in raw)
+        else:
+            option_labels = {opt.id: opt.label for opt in QUESTION_BANK[dimension].options}
+            rendered = "、".join(option_labels.get(item, item) for item in raw)
+        lines.append(f"- {labels[dimension]}: {rendered}")
+    return "\n".join(lines)
+
+
 __all__ = [
     "MAX_QUESTIONS",
     "QUESTION_BANK",
@@ -517,5 +475,6 @@ __all__ = [
     "apply_branching",
     "invalidate_dependent_answers",
     "build_analysis_brief",
+    "describe_analysis_brief",
     "validate_answers",
 ]

@@ -502,6 +502,16 @@ class AgentOrchestrator:
             "db_manager": session_service.db, "source_snapshot": resolved_turn.snapshot,
         }
         history = build_visible_chat_history(session_id, self.llm_adapter, config, **history_kwargs)
+        brief_data = ctx.meta.get("analysis_brief")
+        if isinstance(brief_data, dict) and brief_data:
+            from src.agent.intake_questions import describe_analysis_brief
+            from src.schemas.agent_intake import AnalysisBrief
+            language = normalize_report_language(ctx.meta.get("report_language", "zh"))
+            brief_text = describe_analysis_brief(AnalysisBrief.model_validate(brief_data), language)
+            history = list(history) + [
+                {"role": "user", "content": "[用户确认的本次分析背景]\n" + brief_text},
+                {"role": "assistant", "content": "我会按以上背景组织回答，不把未提供项当作已知。"},
+            ]
         if history:
             ctx.meta["conversation_history"] = history
 
@@ -585,6 +595,7 @@ class AgentOrchestrator:
         except Exception:
             logger.warning("Failed to mark Agent session running: %s", turn.session_id, exc_info=True)
 
+        turn_started = time.monotonic()
         try:
             orch_result = self._execute_pipeline(
                 turn.context,
@@ -602,23 +613,31 @@ class AgentOrchestrator:
                 )
             ]
 
-            # T4: Apply answer editor if analysis brief is available
+            # T4: The same shared editor runs after final risk convergence.
             edited_content = orch_result.content
+            editor_meta = None
             if orch_result.success and turn.context.meta.get("analysis_brief"):
                 from src.agent.answer_editor import StockAnswerEditorService
-                editor = StockAnswerEditorService()
+                from src.schemas.agent_intake import AnalysisBrief
+                editor = StockAnswerEditorService(llm_client=self.llm_adapter, config=self.config)
+                budget = self._get_timeout_seconds()
+                remaining = (budget - (time.monotonic() - turn_started)) if budget else None
                 try:
-                    from src.schemas.agent_intake import AnalysisBrief
-                    brief_data = turn.context.meta.get("analysis_brief")
-                    brief = AnalysisBrief(**brief_data) if isinstance(brief_data, dict) else brief_data
                     edited_content, editor_meta = editor.format_response_sync(
                         orch_result.content,
-                        brief,
-                        source_refs=[tc.get("tool_name") for tc in orch_result.tool_calls_log if tc.get("tool_name")]
+                        AnalysisBrief.model_validate(turn.context.meta["analysis_brief"]),
+                        source_refs=[tc.get("tool_name") for tc in orch_result.tool_calls_log
+                                    if tc.get("tool_name")],
+                        user_question=turn.context.query,
+                        language=normalize_report_language(turn.context.meta.get("report_language", "zh")),
+                        progress_callback=progress_callback,
+                        remaining_budget_seconds=remaining,
                     )
-                except Exception as e:
-                    # Editor failure should not break the response
-                    logger.warning(f"Answer editor failed: {e}")
+                except Exception:
+                    logger.warning("Answer editor failed", exc_info=True)
+                    editor_meta = None
+            answer_meta_payload = (editor_meta.model_dump(mode="json", exclude_none=True)
+                                   if editor_meta is not None else None)
 
             # Persist assistant response with thinking_steps (T2)
             assistant_message_id = None
@@ -628,11 +647,13 @@ class AgentOrchestrator:
                     turn.session_id, "assistant", content, accepted_turn=turn.accepted_snapshot,
                     db_manager=turn.db_manager,
                     thinking_steps=thinking_steps,
+                    answer_meta=answer_meta_payload if orch_result.success else None,
                 )
             elif orch_result.success:
                 assistant_message_id = conversation_manager.add_message(
                     turn.session_id, "assistant", edited_content,
                     thinking_steps=thinking_steps,
+                    answer_meta=answer_meta_payload,
                 )
             else:
                 conversation_manager.add_message(
@@ -658,6 +679,7 @@ class AgentOrchestrator:
             # Set thinking_steps and assistant_message_id in result for T2
             result.thinking_steps = thinking_steps
             result.assistant_message_id = assistant_message_id
+            result.answer_meta = editor_meta
 
             return result
         finally:
@@ -1389,6 +1411,14 @@ class AgentOrchestrator:
             report_context = context.get("report_context")
             if isinstance(report_context, dict) and report_context:
                 ctx.meta["report_context"] = dict(report_context)
+            brief = context.get("analysis_brief")
+            if isinstance(brief, dict) and brief:
+                try:
+                    from src.schemas.agent_intake import AnalysisBrief
+                    ctx.meta["analysis_brief"] = AnalysisBrief.model_validate(
+                        brief).model_dump(exclude_none=True)
+                except Exception:
+                    logger.warning("Ignoring invalid analysis_brief", exc_info=True)
 
             # Pre-populate data fields that the caller already has
             for data_key in ("realtime_quote", "daily_history", "chip_distribution",

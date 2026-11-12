@@ -1774,3 +1774,28 @@ Technical indicator rules use daily-close edge triggers only. Partial-bar handli
 ---
 
 For more questions, please [submit an Issue](https://github.com/ZhuLinsen/daily_stock_analysis/issues)
+
+
+## Guided first questions and refined answers
+
+For the first investment question in a new session, the server returns 1-5
+controlled multiple-choice questions (object, goal, horizon, position, risk
+focus). Research starts only after confirmation; anything left unanswered stays
+"Not provided" and never becomes an assumed empty position or balanced risk
+profile. Drafts are stored server-side and survive refreshes; double clicks,
+retries and a second tab still start exactly one analysis run. Legacy clients
+without `interaction_version` keep direct question answering.
+
+After research, the `stock-answer-editor` output skill reorganizes the final
+answer once (conclusion, evidence, conditions, risks, sources) using at most one
+tool-free model request with an 8-second cap. If validation of numbers, dates,
+markets, final actions, negations or risks fails, the original analysis is kept
+with deterministic layout cleanup. Live output, history, copy, export and the
+next turn all read the same final Markdown. See
+[Stream event contract](agent-stream-events.md) for `stage=answer_editing` and
+the optional `answer_meta`.
+
+The capability is advertised as `guided_intake` on `/api/v1/agent/status`;
+the three endpoints are `POST/PATCH/GET /api/v1/agent/chat/intake`. No new
+environment variable or model setting is required: the existing model router
+and usage accounting are reused.
