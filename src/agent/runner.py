@@ -377,10 +377,6 @@ def run_agent_loop(
     labels = thinking_labels or _THINKING_TOOL_LABELS
     tool_decls = tool_registry.to_openai_tools()
 
-    # Reset event sequence for this turn
-    from src.agent.stream_events import reset_event_sequence
-    reset_event_sequence()
-
     start_time = time.time()
     tool_calls_log: List[Dict[str, Any]] = []
     non_retriable_tool_results: Dict[str, str] = {}

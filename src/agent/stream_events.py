@@ -99,24 +99,6 @@ OUTCOME_DISPLAY_LABELS: Dict[str, Dict[str, str]] = {
     "incomplete": {"zh": "未完成", "en": "Incomplete"},
 }
 
-# Event sequence counter for ordering and deduplication
-# Each turn maintains its own sequence starting from 0
-_event_sequence_counter = 0
-
-
-def reset_event_sequence() -> None:
-    """Reset the event sequence counter (call at the start of each turn)."""
-    global _event_sequence_counter
-    _event_sequence_counter = 0
-
-
-def next_event_sequence() -> int:
-    """Get the next event sequence number."""
-    global _event_sequence_counter
-    seq = _event_sequence_counter
-    _event_sequence_counter += 1
-    return seq
-
 
 def stream_event(event_type: str, **fields: Any) -> Dict[str, Any]:
     """Build a progress event while dropping unset fields.
@@ -135,8 +117,6 @@ def stream_event(event_type: str, **fields: Any) -> Dict[str, Any]:
     - sequence: Monotonic sequence number for ordering and deduplication
     """
     event: Dict[str, Any] = {"type": event_type}
-    # Add sequence number for ordering and deduplication
-    event["sequence"] = next_event_sequence()
     event.update({key: value for key, value in fields.items() if value is not None})
     return event
 

@@ -387,12 +387,16 @@ async def agent_chat(
         # T2: Handle domain guard rejection
         if domain_guard_result is not None:
             decision, meta = domain_guard_result
-            # Save the reminder as a normal assistant message using the
-            # already-accepted snapshot from _prepare_chat_request (no double
-            # prepare_session_turn).
-            if accepted is not None:
+            # Save the reminder as a normal assistant message
+            accepted_for_save = session_service.prepare_session_turn(
+                config, session_id, request.message, request.effective_skills,
+                context=_build_agent_chat_context(request, config, None, intake_service),
+                expected_generation=request.session_generation,
+            )
+            if accepted_for_save.clarification is None:
+                accepted_snapshot = session_service.commit_user_turn(accepted_for_save)
                 await asyncio.to_thread(
-                    _clarification_result, session_service, accepted,
+                    _clarification_result, session_service, accepted_snapshot, 
                     decision.message or "Domain guard reminder", backend_id
                 )
             
@@ -409,7 +413,7 @@ async def agent_chat(
                     "elapsed_ms": meta.elapsed_ms,
                     "source": meta.source,
                 },
-                **_accepted_state_payload(accepted),
+                **_accepted_state_payload(accepted_snapshot if 'accepted_snapshot' in locals() else accepted),
             )
         
         if clarification is not None:
@@ -824,12 +828,17 @@ async def agent_chat_stream(
             # T2: Handle domain guard rejection in SSE stream
             if domain_guard_result is not None:
                 decision, meta = domain_guard_result
-                # Save the reminder as a normal assistant message using the
-                # already-accepted snapshot (no double prepare_session_turn).
+                # Save the reminder as a normal assistant message
                 try:
-                    if accepted is not None:
+                    accepted_for_save = session_service.prepare_session_turn(
+                        config, session_id, request.message, request.effective_skills,
+                        context=_build_agent_chat_context(request, config, None, None),
+                        expected_generation=request.session_generation,
+                    )
+                    if accepted_for_save.clarification is None:
+                        accepted_snapshot = session_service.commit_user_turn(accepted_for_save)
                         await asyncio.to_thread(
-                            _clarification_result, session_service, accepted,
+                            _clarification_result, session_service, accepted_snapshot,
                             decision.message or "Domain guard reminder", backend_id
                         )
                 except Exception as save_err:

@@ -24,13 +24,6 @@ _RESEARCH_STOCK_CODE_RE = re.compile(
 )
 
 
-def _resolve_research_session_id(message: BotMessage) -> str:
-    """Return the research session id for the current conversation scope."""
-    base_session_id = f"{message.platform}_{message.user_id}"
-    # Research uses a separate session scope from chat
-    return f"{base_session_id}:research"
-
-
 class ResearchCommand(BotCommand):
     """
     Research command handler — invoke the deep research agent.
@@ -90,42 +83,13 @@ class ResearchCommand(BotCommand):
         else:
             question = " ".join(args)
 
-        # T3: Domain guard check before research with context/history
+        # T3: Domain guard check before research
         from src.services.agent_domain_guard_service import AgentDomainGuardService
         from src.schemas.agent_domain_guard import DomainAction
-        from src.storage import get_db
-
+        
         guard_service = AgentDomainGuardService(config)
-
-        # Get session context for classification
-        context = None
-        history_messages = None
-        try:
-            session_id = _resolve_research_session_id(message)
-            db = get_db()
-            messages = db.get_conversation_messages(session_id, limit=10)
-            if messages:
-                history_messages = [
-                    {"role": msg["role"], "content": msg["content"]}
-                    for msg in messages[-6:]
-                ]
-                # Extract active stock context from recent messages
-                for msg in reversed(messages):
-                    if msg.get("role") == "assistant" and msg.get("stock_code"):
-                        context = {
-                            "stock_code": msg["stock_code"],
-                            "stock_name": msg.get("stock_name"),
-                        }
-                        break
-        except Exception as ctx_err:
-            logger.debug("Failed to get bot research context for domain guard: %s", ctx_err)
-
-        decision, meta = guard_service.classify(
-            question,
-            context=context,
-            history_messages=history_messages,
-        )
-
+        decision, meta = guard_service.classify(question)
+        
         if decision.action != DomainAction.ALLOW:
             # Return domain guard reminder without research header
             return BotResponse.text_response(decision.message or "Domain guard reminder")

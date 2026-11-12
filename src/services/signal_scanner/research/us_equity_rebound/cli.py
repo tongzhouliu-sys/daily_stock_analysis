@@ -12,7 +12,6 @@ from .config import ReboundConfig
 from .engine import BacktestEngine
 from .sweep import run_sweep, generate_sensitivity_report
 from .reporting import generate_reports
-from .manifest import load_manifest, validate_manifest, DataManifest
 from .data_loader import (
     load_market_data,
     load_spy_data,
@@ -33,48 +32,33 @@ Examples:
   # Validate input data
   python -m src.services.signal_scanner.research.us_equity_rebound validate --data-dir ./data
   
-  # Validate with manifest
-  python -m src.services.signal_scanner.research.us_equity_rebound validate --manifest ./data/manifest.json
-  
-  # Run single backtest with default parameters (output to backtest_results/)
-  python -m src.services.signal_scanner.research.us_equity_rebound run --data-dir ./data
-  
-  # Run with manifest
-  python -m src.services.signal_scanner.research.us_equity_rebound run --manifest ./data/manifest.json
+  # Run single backtest with default parameters
+  python -m src.services.signal_scanner.research.us_equity_rebound run --data-dir ./data --output ./output
   
   # Run with custom config
-  python -m src.services.signal_scanner.research.us_equity_rebound run --data-dir ./data --config config.json
+  python -m src.services.signal_scanner.research.us_equity_rebound run --data-dir ./data --output ./output --config config.json
   
   # Run parameter sweep (81 combinations)
-  python -m src.services.signal_scanner.research.us_equity_rebound sweep --data-dir ./data
+  python -m src.services.signal_scanner.research.us_equity_rebound sweep --data-dir ./data --output ./output_sweep
         """
     )
     
     subparsers = parser.add_subparsers(dest="command", required=True, help="Command to run")
     
-    # Common arguments for data source
-    def add_data_source_args(subparser):
-        """Add data source arguments to subparser."""
-        data_group = subparser.add_mutually_exclusive_group(required=True)
-        data_group.add_argument("--data-dir", help="Input data directory")
-        data_group.add_argument("--manifest", help="Path to manifest JSON file")
-    
     # Validate command
     validate_parser = subparsers.add_parser("validate", help="Validate input data")
-    add_data_source_args(validate_parser)
+    validate_parser.add_argument("--data-dir", required=True, help="Input data directory")
     
     # Run command
     run_parser = subparsers.add_parser("run", help="Run single backtest")
-    add_data_source_args(run_parser)
-    run_parser.add_argument("--output", default="backtest_results/us_equity_rebound", 
-                           help="Output directory (default: backtest_results/us_equity_rebound)")
+    run_parser.add_argument("--data-dir", required=True, help="Input data directory")
+    run_parser.add_argument("--output", required=True, help="Output directory")
     run_parser.add_argument("--config", help="Custom config JSON file")
     
     # Sweep command
     sweep_parser = subparsers.add_parser("sweep", help="Run parameter sweep")
-    add_data_source_args(sweep_parser)
-    sweep_parser.add_argument("--output", default="backtest_results/us_equity_rebound_sweep",
-                             help="Output directory (default: backtest_results/us_equity_rebound_sweep)")
+    sweep_parser.add_argument("--data-dir", required=True, help="Input data directory")
+    sweep_parser.add_argument("--output", required=True, help="Output directory")
     sweep_parser.add_argument("--config", help="Base config JSON file")
     
     args = parser.parse_args()

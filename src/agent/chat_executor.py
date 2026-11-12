@@ -153,30 +153,6 @@ class AgentChatExecutor:
 
         # T5: Content delta events are transient and must not be persisted
         _TRANSIENT_EVENT_TYPES = {"content_delta", "content_reset"}
-        
-        # T2: Limit event count and field size to prevent unbounded growth
-        _MAX_PROGRESS_EVENTS = 500  # Maximum events per turn
-        _MAX_FIELD_LENGTH = 10000  # Maximum length for string fields
-        _events_truncated = False
-
-        def _truncate_event_fields(event: Dict[str, Any]) -> Dict[str, Any]:
-            """Truncate long string fields in event to prevent storage bloat."""
-            truncated = {}
-            for key, value in event.items():
-                if isinstance(value, str) and len(value) > _MAX_FIELD_LENGTH:
-                    truncated[key] = value[:_MAX_FIELD_LENGTH] + "... [truncated]"
-                elif isinstance(value, dict):
-                    # Recursively truncate nested dicts
-                    truncated[key] = _truncate_event_fields(value)
-                elif isinstance(value, list):
-                    # Truncate long lists
-                    if len(value) > 100:
-                        truncated[key] = value[:100] + ["... [truncated]"]
-                    else:
-                        truncated[key] = value
-                else:
-                    truncated[key] = value
-            return truncated
 
         def _persisting_progress_callback(event: Dict[str, Any]) -> None:
             """Wrap the original callback to also collect and persist progress steps."""
@@ -191,21 +167,7 @@ class AgentChatExecutor:
                 if event.get("type") in _TRANSIENT_EVENT_TYPES:
                     return
                 with progress_lock:
-                    # T2: Enforce event count limit
-                    if len(collected_progress_steps) >= _MAX_PROGRESS_EVENTS:
-                        if not _events_truncated:
-                            # Add truncation marker
-                            collected_progress_steps.append({
-                                "type": "progress_truncated",
-                                "message": f"事件数量已达上限({_MAX_PROGRESS_EVENTS})，后续事件不再记录",
-                                "sequence": len(collected_progress_steps)
-                            })
-                            _events_truncated = True
-                        return
-                    
-                    # Truncate fields and add to collection
-                    truncated_event = _truncate_event_fields(dict(event))
-                    collected_progress_steps.append(truncated_event)
+                    collected_progress_steps.append(dict(event))
                     current_steps = list(collected_progress_steps)
 
                 # Persist running progress to DB (so refresh can restore it)

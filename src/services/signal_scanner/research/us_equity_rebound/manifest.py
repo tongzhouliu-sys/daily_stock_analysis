@@ -1,168 +1,97 @@
-"""Manifest loading and validation for frozen data references.
-
-A manifest JSON file describes the frozen data inputs for a backtest run:
-file paths, SHA-256 hashes, source metadata, and coverage information.
-
-Example manifest structure:
-{
-    "data_dir": "./frozen_data",
-    "files": {
-        "market_data": "market_data.csv",
-        "spy_data": "spy_data.csv",
-        "universe": "universe.json",
-        "corporate_actions": "corporate_actions.json",
-        "trading_calendar": "trading_calendar.json"
-    },
-    "checksums": {
-        "market_data.csv": "sha256:abc123...",
-        ...
-    },
-    "metadata": {
-        "source": "CRSP / S&P DJI",
-        "calendar_version": "2025-01",
-        "data_version": "2025-11-10",
-        "coverage_start": "1999-01-04",
-        "coverage_end": "2025-12-31"
-    }
-}
-"""
+"""Data manifest validation and loading."""
 
 from __future__ import annotations
 
 import hashlib
 import json
-from dataclasses import dataclass, field
 from pathlib import Path
-from typing import Dict, Any, Optional
+from typing import Any, Dict
+
+from src.services.signal_scanner.core import DomainError, require
 
 
-@dataclass
-class DataManifest:
-    """Parsed and validated data manifest."""
-
-    data_dir: Path
-    files: Dict[str, str]
-    checksums: Dict[str, str]
-    metadata: Dict[str, Any]
-
-    def resolve(self, key: str) -> Path:
-        """Resolve a data file path by key."""
-        if key not in self.files:
-            raise KeyError(f"Manifest missing file key: {key}")
-        return self.data_dir / self.files[key]
-
-    def verify_checksum(self, key: str) -> Optional[bool]:
-        """Verify SHA-256 checksum of a data file.
-
-        Returns True if checksum matches, False if mismatch,
-        None if no checksum recorded for this key.
-        """
-        filename = self.files.get(key)
-        if not filename:
-            return None
-        expected = self.checksums.get(filename)
-        if not expected:
-            return None
-
-        path = self.data_dir / filename
-        if not path.exists():
-            return False
-
-        actual = _sha256_file(path)
-        expected_hash = expected.removeprefix("sha256:")
-        return actual == expected_hash
-
-
-def load_manifest(manifest_path: str) -> DataManifest:
-    """Load and validate a manifest JSON file.
-
-    Args:
-        manifest_path: Path to manifest JSON
-
-    Returns:
-        Parsed DataManifest
-
-    Raises:
-        FileNotFoundError: If manifest or referenced data_dir missing
-        ValueError: If manifest structure invalid
+def validate_manifest(manifest_path: str) -> Dict[str, Any]:
+    """Validate data manifest and return manifest dict.
+    
+    Checks:
+    - File exists and is valid JSON
+    - Required fields present
+    - SHA-256 hashes match referenced files
+    - Data files exist
     """
     path = Path(manifest_path).resolve()
-    if not path.exists():
-        raise FileNotFoundError(f"Manifest not found: {path}")
+    require(path.is_file(), "MANIFEST_NOT_FOUND", status=404)
+    
+    try:
+        manifest = json.loads(path.read_text())
+    except (json.JSONDecodeError, OSError) as e:
+        raise DomainError("INVALID_MANIFEST", str(e), status=422) from e
+    
+    # Required fields
+    required = [
+        "schema_version",
+        "data_kind",
+        "calendar_version",
+        "universe_version",
+        "start_date",
+        "end_date",
+        "files",
+    ]
+    
+    missing = [f for f in required if f not in manifest]
+    require(not missing, "MISSING_MANIFEST_FIELDS", status=422, fields=missing)
+    
+    require(manifest["schema_version"] == 1, "UNSUPPORTED_SCHEMA_VERSION", status=422)
+    
+    # Validate file references
+    manifest_dir = path.parent
+    files = manifest["files"]
+    
+    require(isinstance(files, dict), "INVALID_FILES_FIELD", status=422)
+    
+    for key, file_ref in files.items():
+        require(isinstance(file_ref, dict), "INVALID_FILE_REF", status=422, field=key)
+        require("path" in file_ref, "MISSING_FILE_PATH", status=422, field=key)
+        require("sha256" in file_ref, "MISSING_FILE_HASH", status=422, field=key)
+        
+        file_path = (manifest_dir / file_ref["path"]).resolve()
+        require(file_path.is_file(), "REFERENCED_FILE_NOT_FOUND", status=422, field=key)
+        
+        # Verify hash
+        content = file_path.read_bytes()
+        actual_hash = hashlib.sha256(content).hexdigest()
+        require(
+            actual_hash == file_ref["sha256"],
+            "FILE_HASH_MISMATCH",
+            status=422,
+            field=key,
+            expected=file_ref["sha256"],
+            actual=actual_hash,
+        )
+    
+    return manifest
 
-    with open(path, "r") as f:
-        raw = json.load(f)
 
-    if not isinstance(raw, dict):
-        raise ValueError("Manifest must be a JSON object")
-
-    # Resolve data_dir relative to manifest location
-    data_dir_str = raw.get("data_dir", ".")
-    data_dir = (path.parent / data_dir_str).resolve()
-
-    files = raw.get("files", {})
-    if not isinstance(files, dict):
-        raise ValueError("Manifest 'files' must be a dict")
-
-    required_keys = {"market_data", "spy_data", "universe", "trading_calendar"}
-    missing = required_keys - set(files.keys())
-    if missing:
-        raise ValueError(f"Manifest missing required file keys: {sorted(missing)}")
-
-    checksums = raw.get("checksums", {})
-    metadata = raw.get("metadata", {})
-
-    return DataManifest(
-        data_dir=data_dir,
-        files=files,
-        checksums=checksums,
-        metadata=metadata,
-    )
-
-
-def validate_manifest(manifest: DataManifest) -> Dict[str, Any]:
-    """Validate all files referenced by the manifest.
-
-    Returns a validation report dict.
+def load_data(manifest: Dict[str, Any], manifest_path: str) -> Dict[str, Any]:
+    """Load all data files referenced in manifest.
+    
+    Returns dict with loaded data keyed by file type.
     """
-    report: Dict[str, Any] = {
-        "status": "VALID",
-        "files": {},
-        "errors": [],
-        "metadata": manifest.metadata,
-    }
-
-    for key, filename in manifest.files.items():
-        file_path = manifest.data_dir / filename
-        file_report: Dict[str, Any] = {"path": str(file_path)}
-
-        if not file_path.exists():
-            file_report["exists"] = False
-            report["errors"].append(f"Missing file: {key} -> {filename}")
-            report["status"] = "INVALID"
+    path = Path(manifest_path).resolve()
+    manifest_dir = path.parent
+    data = {}
+    
+    for key, file_ref in manifest["files"].items():
+        file_path = (manifest_dir / file_ref["path"]).resolve()
+        content = file_path.read_bytes()
+        
+        # Parse based on file type
+        if file_path.suffix == ".json":
+            data[key] = json.loads(content)
+        elif file_path.suffix == ".csv":
+            # CSV files loaded as-is for now
+            data[key] = content.decode("utf-8")
         else:
-            file_report["exists"] = True
-            file_report["size_bytes"] = file_path.stat().st_size
-
-            checksum_result = manifest.verify_checksum(key)
-            if checksum_result is True:
-                file_report["checksum"] = "OK"
-            elif checksum_result is False:
-                file_report["checksum"] = "MISMATCH"
-                report["errors"].append(f"Checksum mismatch: {key} -> {filename}")
-                report["status"] = "INVALID"
-            else:
-                file_report["checksum"] = "NOT_RECORDED"
-
-        report["files"][key] = file_report
-
-    return report
-
-
-def _sha256_file(path: Path) -> str:
-    """Compute SHA-256 hex digest of a file."""
-    h = hashlib.sha256()
-    with open(path, "rb") as f:
-        for chunk in iter(lambda: f.read(8192), b""):
-            h.update(chunk)
-    return h.hexdigest()
+            data[key] = content
+    
+    return data
