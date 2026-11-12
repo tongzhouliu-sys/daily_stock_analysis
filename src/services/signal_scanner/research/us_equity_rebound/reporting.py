@@ -31,6 +31,9 @@ def generate_reports(
     _write_equity_csv(results["daily_records"], output_path)
     _write_annual_returns_csv(results["performance"]["annual_returns"], output_path)
     _write_exit_breakdown_csv(results["performance"]["exit_breakdown"], output_path)
+    _write_open_positions_csv(results.get("final_portfolio", {}), output_path)
+    _write_orders_csv(results.get("order_log", []), output_path)
+    _write_data_quality_json(results.get("data_quality", {}), output_path)
     
     # Write run manifest
     _write_run_manifest(output_path, config, results)
@@ -243,3 +246,90 @@ def _write_run_manifest(
     
     with open(output_path / "run_manifest.json", "w") as f:
         json.dump(manifest, f, indent=2)
+
+
+def _write_open_positions_csv(
+    final_portfolio: Dict[str, Any],
+    output_path: Path,
+):
+    """Write open_positions.csv with positions at end of backtest."""
+    positions = final_portfolio.get("positions", {})
+    if not positions:
+        return
+    
+    rows = []
+    for security_id, pos in positions.items():
+        rows.append({
+            "security_id": security_id,
+            "shares": pos.get("shares", 0),
+            "entry_price": pos.get("entry_price", 0.0),
+            "entry_date": pos.get("entry_date", ""),
+            "stop_price": pos.get("stop_price", 0.0),
+            "holding_sessions": pos.get("holding_sessions", 0),
+        })
+    
+    fieldnames = [
+        "security_id",
+        "shares",
+        "entry_price",
+        "entry_date",
+        "stop_price",
+        "holding_sessions",
+    ]
+    
+    with open(output_path / "open_positions.csv", "w", newline="") as f:
+        writer = csv.DictWriter(f, fieldnames=fieldnames)
+        writer.writeheader()
+        writer.writerows(rows)
+
+
+def _write_orders_csv(
+    order_log: List[Dict[str, Any]],
+    output_path: Path,
+):
+    """Write orders.csv with all buy and sell orders."""
+    if not order_log:
+        return
+    
+    fieldnames = [
+        "order_id",
+        "order_type",
+        "security_id",
+        "signal_date",
+        "execution_date",
+        "shares",
+        "price",
+        "status",
+        "reason",
+    ]
+    
+    with open(output_path / "orders.csv", "w", newline="") as f:
+        writer = csv.DictWriter(f, fieldnames=fieldnames)
+        writer.writeheader()
+        for order in order_log:
+            writer.writerow({
+                "order_id": order.get("order_id", ""),
+                "order_type": order.get("order_type", ""),
+                "security_id": order.get("security_id", ""),
+                "signal_date": order.get("signal_date", ""),
+                "execution_date": order.get("execution_date", ""),
+                "shares": order.get("shares", 0),
+                "price": order.get("price", 0.0),
+                "status": order.get("status", ""),
+                "reason": order.get("reason", ""),
+            })
+
+
+def _write_data_quality_json(
+    data_quality: Dict[str, Any],
+    output_path: Path,
+):
+    """Write data_quality.json with data validation and coverage info."""
+    quality_report = {
+        "generated_at": datetime.utcnow().isoformat() + "Z",
+        "data_quality": data_quality,
+    }
+    
+    with open(output_path / "data_quality.json", "w") as f:
+        json.dump(quality_report, f, indent=2)
+
