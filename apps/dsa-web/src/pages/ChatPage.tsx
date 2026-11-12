@@ -1520,7 +1520,7 @@ const ChatPage: React.FC = () => {
             testId="chat-message-scroll"
           >
             <div className="chat-thread">
-              {messages.length === 0 && !loading && hasInitialLoad ? (
+              {messages.length === 0 && !loading && hasInitialLoad && !intakeDraft ? (
                 <section className="chat-empty" data-testid="chat-welcome" aria-labelledby="chat-welcome-title">
                   <span className="chat-empty-icon" aria-hidden="true">
                     <Sparkles size={20} />
