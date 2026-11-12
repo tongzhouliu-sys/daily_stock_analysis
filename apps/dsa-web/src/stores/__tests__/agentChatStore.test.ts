@@ -578,6 +578,82 @@ describe('agentChatStore.startStream', () => {
     expect(state.chatError).toBeNull();
   });
 
+  it('treats done as terminal without waiting for the SSE connection to close', async () => {
+    const stream = openStream();
+    const pending = useAgentChatStore.getState().startStream({
+      message: '分析茅台',
+      session_id: 'session-test',
+      request_id: 'request-done-terminal',
+    });
+    stream.send([
+      accepted('request-done-terminal'),
+      'data: {"type":"done","success":true,"content":"立即结束","assistant_message_id":"a1"}',
+    ].join('\n') + '\n');
+
+    await pending;
+
+    const state = useAgentChatStore.getState();
+    expect(state.loading).toBe(false);
+    expect(state.messages.map((message) => [message.role, message.id, message.content])).toEqual([
+      ['user', expect.any(String), '分析茅台'],
+      ['assistant', 'a1', '立即结束'],
+    ]);
+  });
+
+  it('does not duplicate an assistant message already restored by polling', async () => {
+    useAgentChatStore.setState({
+      messages: [{ id: 'a-existing', role: 'assistant', content: '轮询结果' }],
+    });
+    vi.mocked(agentApi.chatStream).mockResolvedValue(createStreamResponse([
+      accepted('request-dedupe'),
+      'data: {"type":"done","success":true,"content":"轮询结果","assistant_message_id":"a-existing"}',
+    ]));
+
+    await useAgentChatStore.getState().startStream({
+      message: '分析茅台',
+      session_id: 'session-test',
+      request_id: 'request-dedupe',
+    });
+
+    expect(useAgentChatStore.getState().messages.filter((message) => message.role === 'assistant')).toHaveLength(1);
+  });
+
+  it('prefers terminal thinking_steps even when the list is empty', async () => {
+    vi.mocked(agentApi.chatStream).mockResolvedValue(createStreamResponse([
+      accepted('request-thinking'),
+      'data: {"type":"thinking","message":"本地事件"}',
+      'data: {"type":"done","success":true,"content":"完成","thinking_steps":[]}',
+    ]));
+
+    await useAgentChatStore.getState().startStream({
+      message: '分析茅台',
+      session_id: 'session-test',
+      request_id: 'request-thinking',
+    });
+
+    expect(useAgentChatStore.getState().messages[1].thinkingSteps).toEqual([]);
+  });
+
+  it('ends loading on a timeout done event without waiting for EOF', async () => {
+    const stream = openStream();
+    const pending = useAgentChatStore.getState().startStream({
+      message: '分析茅台',
+      session_id: 'session-test',
+      request_id: 'request-timeout-done',
+    });
+    stream.send([
+      accepted('request-timeout-done'),
+      'data: {"type":"done","success":false,"error_code":"timeout","content":""}',
+    ].join('\n') + '\n');
+
+    await pending;
+
+    expect(useAgentChatStore.getState()).toMatchObject({
+      loading: false,
+      terminalStatus: 'timeout',
+    });
+  });
+
   it('sends the store session id when the caller omits session_id', async () => {
     useAgentChatStore.setState({ sessionId: 'session-from-store' });
     vi.mocked(agentApi.chatStream).mockResolvedValue(
@@ -793,6 +869,102 @@ describe('agentChatStore.startStream', () => {
       title: '连接上游服务超时',
       category: 'upstream_timeout',
       rawMessage: 'connect timeout while calling upstream provider',
+    });
+  });
+});
+
+describe('agentChatStore stop and recovery races', () => {
+  it('does not revive loading or append messages when a pending poll returns after stop', async () => {
+    vi.useFakeTimers();
+    try {
+      vi.mocked(agentApi.getChatSessionMessages).mockResolvedValueOnce({
+        session_id: 'session-test',
+        messages: [{ id: 'u1', role: 'user', content: '分析茅台', created_at: null }],
+        session_generation: 'g', session_state_version: 1,
+        active_stock_context: null,
+        session_state: { selected_skill_ids: null },
+        is_running: true,
+        running_progress_steps: [{ type: 'thinking', message: '分析中' }],
+        running_heartbeat_at: new Date().toISOString(),
+      });
+      await useAgentChatStore.getState().refreshSession();
+      expect(useAgentChatStore.getState().loading).toBe(true);
+
+      const pendingPoll = createDeferred<Awaited<ReturnType<typeof agentApi.getChatSessionMessages>>>();
+      vi.mocked(agentApi.getChatSessionMessages).mockReturnValueOnce(pendingPoll.promise);
+      await vi.advanceTimersByTimeAsync(2000);
+
+      await useAgentChatStore.getState().stopStream();
+      pendingPoll.resolve({
+        session_id: 'session-test',
+        messages: [
+          { id: 'u1', role: 'user', content: '分析茅台', created_at: null },
+          { id: 'a1', role: 'assistant', content: '迟到结果', created_at: null },
+        ],
+        session_generation: 'g', session_state_version: 1,
+        active_stock_context: null,
+        session_state: { selected_skill_ids: null },
+        is_running: false,
+        running_progress_steps: [],
+      });
+      await vi.advanceTimersByTimeAsync(0);
+
+      expect(useAgentChatStore.getState()).toMatchObject({
+        loading: false,
+        terminalStatus: 'stopped',
+      });
+      expect(useAgentChatStore.getState().messages.map((message) => message.content)).toEqual(['分析茅台']);
+    } finally {
+      useAgentChatStore.getState().stopStream();
+      vi.useRealTimers();
+    }
+  });
+
+  it('does not let a detail read that was pending at stop overwrite state', async () => {
+    const pendingDetail = createDeferred<ChatSessionDetail>();
+    vi.mocked(agentApi.getChatSessionMessages).mockReturnValue(pendingDetail.promise);
+    const read = useAgentChatStore.getState().refreshSession();
+
+    await useAgentChatStore.getState().stopStream();
+    pendingDetail.resolve({
+      session_id: 'session-test',
+      messages: [{ id: 'late', role: 'assistant', content: '迟到详情', created_at: null }],
+      session_generation: 'late', session_state_version: 9,
+      active_stock_context: null,
+      session_state: { selected_skill_ids: [] },
+      is_running: true,
+      running_progress_steps: [],
+      running_heartbeat_at: new Date().toISOString(),
+    });
+    await read;
+
+    expect(useAgentChatStore.getState()).toMatchObject({
+      messages: [],
+      loading: false,
+      terminalStatus: 'stopped',
+      sessionGeneration: null,
+    });
+  });
+
+  it('releases loading when a running detail heartbeat is stale', async () => {
+    vi.mocked(agentApi.getChatSessionMessages).mockResolvedValue({
+      session_id: 'session-test',
+      messages: [{ id: 'u1', role: 'user', content: '分析茅台', created_at: null }],
+      session_generation: 'g', session_state_version: 1,
+      active_stock_context: null,
+      session_state: { selected_skill_ids: null },
+      is_running: true,
+      running_progress_steps: [{ type: 'thinking', message: '卡住的进度' }],
+      running_started_at: new Date(Date.now() - 10 * 60_000).toISOString(),
+      running_heartbeat_at: new Date(Date.now() - 5 * 60_000).toISOString(),
+    });
+
+    await useAgentChatStore.getState().refreshSession();
+
+    expect(useAgentChatStore.getState()).toMatchObject({
+      loading: false,
+      progressSteps: [],
+      terminalStatus: 'interrupted',
     });
   });
 });

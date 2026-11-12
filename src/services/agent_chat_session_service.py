@@ -242,6 +242,10 @@ class ChatSessionDetail:
     session_generation: Optional[str] = None
     is_running: bool = False
     running_progress_steps: Optional[List[Dict[str, Any]]] = None
+    running_turn_id: Optional[str] = None
+    running_turn_anchor: Optional[int] = None
+    running_started_at: Optional[str] = None
+    running_heartbeat_at: Optional[str] = None
 
 
 @dataclass(frozen=True)
@@ -335,6 +339,10 @@ class AgentChatSessionService:
             session_generation=snapshot["session_generation"],
             is_running=snapshot.get("is_running", False),
             running_progress_steps=snapshot.get("running_progress_steps", []),
+            running_turn_id=snapshot.get("running_turn_id"),
+            running_turn_anchor=snapshot.get("running_turn_anchor"),
+            running_started_at=snapshot.get("running_started_at"),
+            running_heartbeat_at=snapshot.get("running_heartbeat_at"),
         )
 
     def _session_report_context(

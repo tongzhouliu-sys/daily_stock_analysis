@@ -614,6 +614,38 @@ def test_litellm_stream_keeps_existing_execution_signature(tmp_path: Path) -> No
     assert "cancel_event" not in executor.execute_turn.call_args.kwargs
 
 
+def test_multi_agent_stream_accepts_stream_content_and_finishes_with_done() -> None:
+    from src.agent.orchestrator import AgentOrchestrator, OrchestratorResult
+
+    orchestrator = AgentOrchestrator(
+        tool_registry=MagicMock(),
+        llm_adapter=MagicMock(),
+        config=_litellm_config(agent_chat_stream_content=True),
+    )
+    with patch.object(
+        orchestrator,
+        "_execute_pipeline",
+        return_value=OrchestratorResult(success=True, content="multi-agent answer"),
+    ), patch("api.v1.endpoints.agent._build_executor", return_value=orchestrator), \
+         patch("api.v1.endpoints.agent.get_config", return_value=_litellm_config(agent_chat_stream_content=True)):
+        events = asyncio.run(
+            _collect_stream_events(
+                agent_endpoint.ChatRequest(
+                    message="分析 AAPL",
+                    session_id="multi-agent-stream",
+                    request_id="multi-agent-request",
+                    stream_content=True,
+                )
+            )
+        )
+
+    assert [event["type"] for event in events] == ["accepted", "done"]
+    assert events[1]["success"] is True
+    assert events[1]["content"] == "multi-agent answer"
+    assert events[1]["assistant_message_id"] is not None
+    assert AgentChatSessionService().get_session_detail("multi-agent-stream", limit=100).is_running is False
+
+
 def test_litellm_non_streaming_error_keeps_legacy_detail(tmp_path: Path) -> None:
     executor = _executor()
     executor.execute_turn.side_effect = RuntimeError("legacy failure")

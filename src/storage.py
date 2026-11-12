@@ -88,6 +88,18 @@ def to_utc_naive_datetime(value: datetime) -> datetime:
     return value
 
 
+def to_utc_isoformat(value: Optional[datetime]) -> Optional[str]:
+    """Serialize stored UTC-naive datetimes with an explicit UTC offset."""
+    if value is None:
+        return None
+    aware = value.replace(tzinfo=timezone.utc) if value.tzinfo is None else value.astimezone(timezone.utc)
+    return aware.isoformat().replace("+00:00", "Z")
+
+
+_PROCESS_STARTED_AT = utc_naive_now()
+_CHAT_RUNNING_STALE_AFTER = timedelta(seconds=90)
+
+
 # === 数据模型定义 ===
 
 class DatabaseSchemaMigration(Base):
@@ -770,6 +782,12 @@ class ConversationSessionState(Base):
     is_running = Column(Boolean, nullable=False, default=False, server_default=text("0"))
     # Persisted progress steps for the currently running analysis (JSON array)
     running_progress_steps_json = Column(Text, nullable=True)
+    # Turn ownership: only the newest accepted turn may own the running state.
+    # The anchor is the accepted user message id, which increases monotonically.
+    running_turn_id = Column(String(64), nullable=True)
+    running_turn_anchor = Column(Integer, nullable=True)
+    running_started_at = Column(DateTime, nullable=True)
+    running_heartbeat_at = Column(DateTime, nullable=True)
 
 
 class ConversationSessionTitle(Base):
@@ -1486,6 +1504,14 @@ class DatabaseManager(metaclass=_DatabaseManagerMeta):
             self._ensure_chat_session_schema()
 
             self._initialized = True
+            try:
+                self.clear_stale_chat_running_states()
+            except Exception:
+                # Stale recovery must never block database initialization.
+                logger.warning(
+                    "Failed to clear stale Agent chat running states",
+                    exc_info=True,
+                )
             logger.info(f"数据库初始化完成: {db_url}")
 
             # 注册退出钩子，确保程序退出时关闭数据库连接
@@ -1536,6 +1562,46 @@ class DatabaseManager(metaclass=_DatabaseManagerMeta):
         finally:
             session.close()
 
+    def clear_stale_chat_running_states(self) -> int:
+        """Clear running markers left behind by a crashed worker.
+
+        Rows started after this process began are never touched, and a row
+        whose heartbeat is still advancing is preserved even when it was
+        started by another worker. This runs at database initialization and is
+        safe to call more than once.
+        """
+        cutoff = _PROCESS_STARTED_AT - _CHAT_RUNNING_STALE_AFTER
+
+        def write(session: Session) -> int:
+            result = session.execute(
+                ConversationSessionState.__table__.update().where(
+                    and_(
+                        ConversationSessionState.is_running.is_(True),
+                        or_(
+                            ConversationSessionState.running_heartbeat_at.is_(None),
+                            ConversationSessionState.running_heartbeat_at < cutoff,
+                        ),
+                        or_(
+                            ConversationSessionState.running_started_at.is_(None),
+                            ConversationSessionState.running_started_at <= _PROCESS_STARTED_AT,
+                        ),
+                    )
+                ).values(
+                    is_running=False,
+                    running_progress_steps_json=None,
+                    running_turn_id=None,
+                    running_turn_anchor=None,
+                    running_started_at=None,
+                    running_heartbeat_at=None,
+                )
+            )
+            return int(result.rowcount or 0)
+
+        cleared = self._run_write_transaction("clear_stale_chat_running_states", write)
+        if cleared:
+            logger.info("Cleared %s stale Agent chat running state(s)", cleared)
+        return cleared
+
     def _ensure_chat_session_schema(self) -> None:
         """Additive Chat state migration; old writers may omit every new column."""
         if self._is_sqlite_engine:
@@ -1552,6 +1618,10 @@ class DatabaseManager(metaclass=_DatabaseManagerMeta):
                 "last_accepted_user_message_id": "INTEGER",
                 "is_running": "BOOLEAN NOT NULL DEFAULT 0",
                 "running_progress_steps_json": "TEXT",
+                "running_turn_id": "VARCHAR(64)",
+                "running_turn_anchor": "INTEGER",
+                "running_started_at": "DATETIME",
+                "running_heartbeat_at": "DATETIME",
             }
             # Migration for conversation_messages.thinking_steps_json
             message_columns = {
@@ -3958,6 +4028,10 @@ class DatabaseManager(metaclass=_DatabaseManagerMeta):
                 "last_accepted_user_anchor": self._chat_message_anchor(last_accepted),
                 "is_running": state.is_running if state else False,
                 "running_progress_steps": json.loads(state.running_progress_steps_json) if state and state.running_progress_steps_json else [],
+                "running_turn_id": state.running_turn_id if state else None,
+                "running_turn_anchor": state.running_turn_anchor if state else None,
+                "running_started_at": to_utc_isoformat(state.running_started_at) if state else None,
+                "running_heartbeat_at": to_utc_isoformat(state.running_heartbeat_at) if state else None,
                 "messages": [
                     {"id": int(message.id), "role": message.role, "content": message.content,
                      "created_at": message.created_at.isoformat(),
@@ -4142,36 +4216,86 @@ class DatabaseManager(metaclass=_DatabaseManagerMeta):
         session_id: str,
         is_running: bool,
         progress_steps: Optional[List[Dict[str, Any]]] = None,
-    ) -> None:
-        """Set or clear the running state for a session."""
-        def write(session: Session) -> None:
+        *,
+        turn_id: Optional[str] = None,
+        turn_anchor: Optional[int] = None,
+    ) -> bool:
+        """Set or clear the running state for a session.
+
+        When ``turn_id`` is supplied, the write is a compare-and-set:
+        only the newest accepted turn may claim the session, and only the
+        owning turn may clear it. Legacy callers without a turn id retain the
+        previous unconditional semantics.
+        """
+        def write(session: Session) -> bool:
             state = session.get(ConversationSessionState, session_id)
             if state is None:
-                return
-            state.is_running = is_running
-            state.running_progress_steps_json = (
-                json.dumps(progress_steps, ensure_ascii=False)
-                if progress_steps else None
-            )
-            state.updated_at = datetime.now()
+                return False
+            now = datetime.now()
+            heartbeat_now = utc_naive_now()
+            if is_running:
+                if turn_id is None:
+                    state.running_progress_steps_json = (
+                        json.dumps(progress_steps, ensure_ascii=False)
+                        if progress_steps else None
+                    )
+                    state.running_turn_id = None
+                    state.running_turn_anchor = turn_anchor
+                    state.running_started_at = heartbeat_now
+                    state.running_heartbeat_at = heartbeat_now
+                else:
+                    current_turn = state.running_turn_id
+                    current_anchor = state.running_turn_anchor
+                    if (state.is_running and current_turn and current_turn != turn_id
+                            and current_anchor is not None and turn_anchor is not None
+                            and turn_anchor < current_anchor):
+                        # A newer accepted turn already owns the session.
+                        return False
+                    if not state.is_running or current_turn != turn_id:
+                        state.running_started_at = heartbeat_now
+                        state.running_progress_steps_json = (
+                            json.dumps(progress_steps, ensure_ascii=False)
+                            if progress_steps else None
+                        )
+                    state.running_turn_id = turn_id
+                    state.running_turn_anchor = turn_anchor
+                    state.running_heartbeat_at = heartbeat_now
+                state.is_running = True
+            else:
+                if turn_id is not None and state.running_turn_id not in (None, turn_id):
+                    return False
+                state.is_running = False
+                state.running_progress_steps_json = None
+                state.running_turn_id = None
+                state.running_turn_anchor = None
+                state.running_started_at = None
+                state.running_heartbeat_at = None
+            state.updated_at = now
             session.flush()
+            return True
 
-        self._run_write_transaction("set_session_running", write)
+        return self._run_write_transaction("set_session_running", write)
 
     def update_session_running_progress(
         self,
         session_id: str,
         progress_steps: List[Dict[str, Any]],
-    ) -> None:
-        """Update the progress steps for a running session."""
-        def write(session: Session) -> None:
+        *,
+        turn_id: Optional[str] = None,
+    ) -> bool:
+        """Update the progress steps for the owning running turn."""
+        def write(session: Session) -> bool:
             state = session.get(ConversationSessionState, session_id)
             if state is None or not state.is_running:
-                return
+                return False
+            if turn_id is not None and state.running_turn_id not in (None, turn_id):
+                return False
             state.running_progress_steps_json = json.dumps(progress_steps, ensure_ascii=False)
+            state.running_heartbeat_at = utc_naive_now()
             session.flush()
+            return True
 
-        self._run_write_transaction("update_session_running_progress", write)
+        return self._run_write_transaction("update_session_running_progress", write)
 
     def save_conversation_user_turn(
         self,

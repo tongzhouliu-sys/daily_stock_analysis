@@ -18,7 +18,7 @@ import json
 import logging
 import uuid
 from dataclasses import dataclass, field
-from typing import Any, Callable, Dict, List, Optional
+from typing import Any, Callable, Dict, List, Optional, TYPE_CHECKING
 
 from src.config import get_config
 from src.agent.chat_context import build_agent_chat_context_bundle, build_visible_chat_history
@@ -35,6 +35,9 @@ from src.market_phase_prompt import format_market_phase_prompt_section
 from src.market_structure_prompt import format_market_structure_prompt_section
 from src.agent.report_context_prompt import format_report_context_prompt_section
 from src.services.daily_market_context import format_daily_market_context_prompt_section
+
+if TYPE_CHECKING:
+    from src.schemas.agent_intake import AnalysisBrief
 
 logger = logging.getLogger(__name__)
 
@@ -508,6 +511,7 @@ class PreparedAgentChat:
     system_prompt: str
     history_messages: List[Dict[str, Any]]
     stock_scope: Optional[StockScope]
+    analysis_brief: Optional["AnalysisBrief"] = None
 
 
 def prepare_agent_chat(
@@ -636,10 +640,23 @@ def prepare_agent_chat(
                 ]
             )
 
+    brief_data = (effective_context or {}).get("analysis_brief")
+    analysis_brief: Optional["AnalysisBrief"] = None
+    if brief_data:
+        try:
+            from src.schemas.agent_intake import AnalysisBrief
+
+            analysis_brief = (
+                AnalysisBrief(**brief_data) if isinstance(brief_data, dict) else brief_data
+            )
+        except Exception:
+            logger.warning("Ignoring invalid analysis_brief in chat context", exc_info=True)
+
     return PreparedAgentChat(
         system_prompt=system_prompt,
         history_messages=history_messages,
         stock_scope=scope_resolution.stock_scope,
+        analysis_brief=analysis_brief,
     )
 
 

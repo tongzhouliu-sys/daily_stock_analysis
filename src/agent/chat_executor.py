@@ -173,7 +173,10 @@ class AgentChatExecutor:
                 # Persist running progress to DB (so refresh can restore it)
                 try:
                     conversation_manager.update_running_progress(
-                        turn.session_id, current_steps, db_manager=turn.db_manager,
+                        turn.session_id,
+                        current_steps,
+                        turn_id=turn.run_id,
+                        db_manager=turn.db_manager,
                     )
                 except Exception:
                     pass  # Non-critical; don't break the analysis
@@ -181,7 +184,12 @@ class AgentChatExecutor:
         # Mark session as running
         try:
             conversation_manager.set_running(
-                turn.session_id, True, [], db_manager=turn.db_manager,
+                turn.session_id,
+                True,
+                [],
+                turn_id=turn.run_id,
+                turn_anchor=turn.user_message_id,
+                db_manager=turn.db_manager,
             )
         except Exception:
             pass  # Non-critical
@@ -343,7 +351,10 @@ class AgentChatExecutor:
             # load the finished turn in the same snapshot.
             try:
                 conversation_manager.set_running(
-                    turn.session_id, False, db_manager=turn.db_manager,
+                    turn.session_id,
+                    False,
+                    turn_id=turn.run_id,
+                    db_manager=turn.db_manager,
                 )
             except Exception:
                 pass

@@ -100,22 +100,39 @@ class ConversationManager:
         is_running: bool,
         progress_steps: Optional[List[Dict[str, Any]]] = None,
         *,
+        turn_id: Optional[str] = None,
+        turn_anchor: Optional[int] = None,
         db_manager: Optional[Any] = None,
-    ) -> None:
-        """Set or clear the running state for a session."""
+    ) -> bool:
+        """Set or clear the running state for a session.
+
+        ``turn_id`` scopes the write to the owning turn so a late completion
+        cannot clear a newer accepted turn.
+        """
         db = db_manager if db_manager is not None else get_db()
-        db.set_session_running(session_id, is_running, progress_steps)
+        return db.set_session_running(
+            session_id,
+            is_running,
+            progress_steps,
+            turn_id=turn_id,
+            turn_anchor=turn_anchor,
+        )
 
     def update_running_progress(
         self,
         session_id: str,
         progress_steps: List[Dict[str, Any]],
         *,
+        turn_id: Optional[str] = None,
         db_manager: Optional[Any] = None,
-    ) -> None:
-        """Update the progress steps for a running session."""
+    ) -> bool:
+        """Update the progress steps for the owning running turn."""
         db = db_manager if db_manager is not None else get_db()
-        db.update_session_running_progress(session_id, progress_steps)
+        return db.update_session_running_progress(
+            session_id,
+            progress_steps,
+            turn_id=turn_id,
+        )
 
     def prepare_turn(self, session_id: str):
         """Bind the database instance before history preparation/model work."""

@@ -3,11 +3,12 @@
 
 from __future__ import annotations
 
+from datetime import timedelta
 from types import SimpleNamespace
 from unittest.mock import patch
 
 import pytest
-from src.storage import DatabaseManager
+from src.storage import ConversationSessionState, DatabaseManager, utc_naive_now
 
 
 @pytest.fixture(autouse=True)
@@ -237,3 +238,94 @@ def test_running_state_is_visible_during_execution_and_cleared_after_result(
     assert after["is_running"] is False
     assert after["running_progress_steps"] == []
     assert [message["content"] for message in after["messages"]] == ["question", "answer"]
+
+
+def test_old_turn_cannot_clear_or_update_newer_running_turn(
+    isolated_chat_database,
+) -> None:
+    db = isolated_chat_database
+    session_id = "turn-ownership-session"
+    db.ensure_chat_session_generation(session_id)
+    first = db.commit_chat_user_turn(db.read_chat_session_snapshot(session_id), "first")
+    assert db.set_session_running(
+        session_id,
+        True,
+        [],
+        turn_id="turn-1",
+        turn_anchor=first["user_message_id"],
+    ) is True
+
+    second = db.commit_chat_user_turn(db.read_chat_session_snapshot(session_id), "second")
+    assert db.set_session_running(
+        session_id,
+        True,
+        [],
+        turn_id="turn-2",
+        turn_anchor=second["user_message_id"],
+    ) is True
+
+    assert db.update_session_running_progress(
+        session_id,
+        [{"type": "thinking", "message": "late"}],
+        turn_id="turn-1",
+    ) is False
+    assert db.set_session_running(session_id, False, turn_id="turn-1") is False
+
+    snapshot = db.read_chat_session_snapshot(session_id)
+    assert snapshot["is_running"] is True
+    assert snapshot["running_turn_id"] == "turn-2"
+    assert snapshot["running_turn_anchor"] == second["user_message_id"]
+    assert snapshot["running_heartbeat_at"] is not None
+
+    assert db.set_session_running(session_id, False, turn_id="turn-2") is True
+    snapshot = db.read_chat_session_snapshot(session_id)
+    assert snapshot["is_running"] is False
+    assert snapshot["running_turn_id"] is None
+    assert snapshot["running_heartbeat_at"] is None
+
+
+def test_clear_stale_chat_running_states_only_clears_expired_turns(
+    isolated_chat_database,
+    monkeypatch,
+) -> None:
+    from src import storage
+
+    db = isolated_chat_database
+    process_started_at = utc_naive_now()
+    monkeypatch.setattr(storage, "_PROCESS_STARTED_AT", process_started_at)
+
+    def start_session(session_id: str) -> None:
+        db.ensure_chat_session_generation(session_id)
+        accepted = db.commit_chat_user_turn(db.read_chat_session_snapshot(session_id), "question")
+        assert db.set_session_running(
+            session_id,
+            True,
+            [],
+            turn_id=f"turn-{session_id}",
+            turn_anchor=accepted["user_message_id"],
+        ) is True
+
+    start_session("stale-session")
+    start_session("fresh-heartbeat-session")
+    start_session("newer-than-process-session")
+
+    with db.get_session() as session:
+        stale = session.get(ConversationSessionState, "stale-session")
+        stale.running_started_at = process_started_at - timedelta(minutes=10)
+        stale.running_heartbeat_at = process_started_at - timedelta(minutes=2)
+
+        fresh = session.get(ConversationSessionState, "fresh-heartbeat-session")
+        fresh.running_started_at = process_started_at - timedelta(hours=1)
+        fresh.running_heartbeat_at = utc_naive_now()
+
+        newer = session.get(ConversationSessionState, "newer-than-process-session")
+        newer.running_started_at = process_started_at + timedelta(seconds=1)
+        newer.running_heartbeat_at = process_started_at - timedelta(hours=1)
+        session.commit()
+
+    assert db.clear_stale_chat_running_states() == 1
+
+    assert db.read_chat_session_snapshot("stale-session")["is_running"] is False
+    assert db.read_chat_session_snapshot("stale-session")["running_turn_id"] is None
+    assert db.read_chat_session_snapshot("fresh-heartbeat-session")["is_running"] is True
+    assert db.read_chat_session_snapshot("newer-than-process-session")["is_running"] is True

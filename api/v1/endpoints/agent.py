@@ -13,7 +13,7 @@ from fastapi import APIRouter, Depends, HTTPException
 from fastapi.responses import StreamingResponse
 from pydantic import AliasChoices, BaseModel, ConfigDict, Field
 
-from api.deps import get_agent_chat_session_service
+from api.deps import get_agent_chat_intake_service, get_agent_chat_session_service
 from api.v1.schemas.system_config import AgentBackendStatusResponse
 from src.config import get_config
 from src.schemas.agent_domain_guard import DomainAction, DomainGuardMeta
@@ -464,6 +464,10 @@ class SessionMessagesResponse(BaseModel):
     session_generation: Optional[str]
     is_running: bool = False
     running_progress_steps: List[Dict[str, Any]] = []
+    running_turn_id: Optional[str] = None
+    running_turn_anchor: Optional[int] = None
+    running_started_at: Optional[str] = None
+    running_heartbeat_at: Optional[str] = None
 
 
 @router.get("/chat/sessions", response_model=SessionsResponse)
@@ -502,6 +506,10 @@ async def get_chat_session_messages(
         messages=detail.messages,
         is_running=detail.is_running,
         running_progress_steps=detail.running_progress_steps or [],
+        running_turn_id=detail.running_turn_id,
+        running_turn_anchor=detail.running_turn_anchor,
+        running_started_at=detail.running_started_at,
+        running_heartbeat_at=detail.running_heartbeat_at,
         **_public_chat_state(
             active_stock_context=detail.active_stock_context,
             session_state_version=detail.session_state_version,
@@ -903,7 +911,6 @@ async def agent_chat_stream(
 # Intake (guided questioning) endpoints — T2
 # ============================================================
 
-from api.deps import get_agent_chat_intake_service
 from src.schemas.agent_intake import (
     IntakeCreateRequest,
     IntakeCreateResponse,

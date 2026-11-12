@@ -1680,6 +1680,9 @@ const ChatPage: React.FC = () => {
               {terminalStatus === 'stopped' && (
                 <div role="status" className="chat-notice is-muted">{t('chat.stoppedNotice')}</div>
               )}
+              {terminalStatus === 'interrupted' && (
+                <div role="status" className="chat-notice is-muted">{t('chat.interruptedNotice')}</div>
+              )}
               {agentUnavailableError ? (
                 <div className="space-y-2">
                   <ApiErrorAlert

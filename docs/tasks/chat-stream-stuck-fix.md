@@ -1,5 +1,7 @@
 # 问股界面卡死与停止按钮失效修复任务书
 
+> 2026-11-12 复检补充：本任务书只覆盖单 Agent 的导入错误和前端 `stopStream` 的本地状态清理，没有覆盖多 Agent 运行状态未清理、`done` 等待 EOF、停止后的轮询/详情竞态。后续完整分析见[问股回复终态与可追问性修复需求](../tyrone/stock-chat-stream-terminal-recovery-requirements.md)与[开发任务书](../tyrone/stock-chat-stream-terminal-recovery-tasks.md)。
+
 ## 背景
 
 用户反馈：问股界面问完问题后卡死，决策 Agent 已完成，但无法追问，停止按钮也关不掉。
