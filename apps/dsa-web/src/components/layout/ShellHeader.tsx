@@ -77,6 +77,18 @@ export function ShellHeader({ onOpenMobileNav, navCollapsed = false, onToggleNav
       <div className="ml-auto flex items-center gap-2">
         <DesktopUpdateIndicator />
         <div className="flex items-center gap-1">
+          <UiLanguageToggle iconOnly />
+          <ThemeToggle iconOnly />
+          {authEnabled ? (
+            <button
+              type="button"
+              onClick={() => setShowLogoutConfirm(true)}
+              className="inline-flex h-10 items-center gap-2 rounded-xl border border-border/70 bg-card/80 px-3 text-sm text-secondary-text shadow-soft-card transition-colors hover:bg-hover hover:text-foreground"
+              aria-label={t('layout.logout')}
+            >
+              <LogOut className="h-4 w-4" />
+            </button>
+          ) : null}
           <div className="relative group">
             <button
               type="button"
@@ -89,18 +101,6 @@ export function ShellHeader({ onOpenMobileNav, navCollapsed = false, onToggleNav
               {t('layout.copyright')}
             </div>
           </div>
-          <UiLanguageToggle />
-          <ThemeToggle />
-          {authEnabled ? (
-            <button
-              type="button"
-              onClick={() => setShowLogoutConfirm(true)}
-              className="inline-flex h-10 items-center gap-2 rounded-xl border border-border/70 bg-card/80 px-3 text-sm text-secondary-text shadow-soft-card transition-colors hover:bg-hover hover:text-foreground"
-              aria-label={t('layout.logout')}
-            >
-              <LogOut className="h-4 w-4" />
-            </button>
-          ) : null}
         </div>
       </div>
       <ConfirmDialog

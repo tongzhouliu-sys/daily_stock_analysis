@@ -1,361 +1,342 @@
-"""
-意图推断服务 - 从用户问题提取分析背景维度
+"""v2: Intent inference for smart intake.
 
-T3: 意图推断与会话背景继承
+Extracts analysis background from user input using deterministic rules.
+Covers: goal, horizon, position, risk_focus, research_focus, reading_style.
 
-从用户原始问题中提取 6 个维度的分析背景：
-1. goal (目标): 分析目的
-2. horizon (周期): 时间范围
-3. position (持仓): 当前持仓状态
-4. risk_preference (风险偏好): 风险承受能力
-5. focus (研究重点): 关注的分析维度
-6. presentation (呈现方式): 期望的回答风格
+Each inference includes source, confidence, and evidence (text span).
+P0: No LLM calls; pure rule-based inference.
 
-支持会话继承：从上一轮 brief_snapshot 继承未明确改变的维度。
+T3: Intent inference service.
 """
 
+from __future__ import annotations
+
+import logging
 import re
 from dataclasses import dataclass, field
 from typing import Any, Dict, List, Optional, Tuple
 
-from src.schemas.agent_intake import (
-    AnalysisBrief,
-    BriefSource,
-    ObjectIdentity,
-)
+from src.schemas.agent_intake import BriefSource
+
+logger = logging.getLogger(__name__)
 
 
-# ============================================================================
-# 数据类定义
-# ============================================================================
+# ─────────────────────────────────────────────────────────────────────────────
+# Constants
+# ─────────────────────────────────────────────────────────────────────────────
+
 
 @dataclass
-class DimensionInference:
-    """单个维度的推断结果"""
+class InferredDimension:
+    """Inferred dimension with source and evidence."""
+
     value: str
-    source: BriefSource  # explicit_message, system_inferred, session_inherited, user_default
-    confidence: float = 1.0  # 0.0-1.0
-    evidence: Optional[str] = None  # 原文片段
+    source: BriefSource
+    confidence: float = 1.0
+    evidence: Optional[str] = None
+    evidence_start: Optional[int] = None
+    evidence_end: Optional[int] = None
 
 
 @dataclass
-class IntentInferenceResult:
-    """意图推断完整结果"""
-    goal: Optional[DimensionInference] = None
-    horizon: Optional[DimensionInference] = None
-    position: Optional[DimensionInference] = None
-    risk_preference: Optional[DimensionInference] = None
-    focus: Optional[DimensionInference] = None
-    presentation: Optional[DimensionInference] = None
-    
-    assumptions: List[str] = field(default_factory=list)
+class IntentInference:
+    """Complete intent inference result."""
+
+    goal: Optional[InferredDimension] = None
+    horizon: Optional[InferredDimension] = None
+    position: Optional[InferredDimension] = None
+    risk_focus: Optional[InferredDimension] = None
+    research_focus: List[InferredDimension] = field(default_factory=list)
+    reading_style: Optional[InferredDimension] = None
     unknown_fields: List[str] = field(default_factory=list)
-    conflicts: List[str] = field(default_factory=list)
-    
-    def to_brief_sources(self) -> Dict[str, BriefSource]:
-        """转换为 BriefSource 字典"""
-        sources = {}
-        for dim_name in ['goal', 'horizon', 'position', 'risk_preference', 'focus', 'presentation']:
-            inference = getattr(self, dim_name)
-            if inference:
-                sources[dim_name] = inference.source
-        return sources
-    
-    def to_dict(self) -> Dict[str, Any]:
-        """转换为可序列化字典"""
-        result = {}
-        for dim_name in ['goal', 'horizon', 'position', 'risk_preference', 'focus', 'presentation']:
-            inference = getattr(self, dim_name)
-            if inference:
-                result[dim_name] = {
-                    'value': inference.value,
-                    'source': inference.source.value,
-                    'confidence': inference.confidence,
-                    'evidence': inference.evidence,
-                }
-        result['assumptions'] = self.assumptions
-        result['unknown_fields'] = self.unknown_fields
-        result['conflicts'] = self.conflicts
-        return result
+    assumptions: List[str] = field(default_factory=list)
 
 
-# ============================================================================
-# 规则定义
-# ============================================================================
-
-# 目标维度规则
-GOAL_RULES = [
-    # (正则模式, 推断值, 来源类型)
-    (r'(能不能买|值不值得买|可以买吗|适合买入)', 'evaluate_buy', 'explicit_message'),
-    (r'(值不值得关注|要不要关注|是否值得关注)', 'evaluate_watch', 'explicit_message'),
-    (r'(已持有|持有中|持仓中)', 'evaluate_hold', 'explicit_message'),
-    (r'(被套|套牢|亏损中)', 'evaluate_loss', 'explicit_message'),
-    (r'(为什么涨|为什么跌|涨跌原因)', 'explain_movement', 'explicit_message'),
-    (r'(怎么分析|如何分析|分析方法)', 'learn_method', 'explicit_message'),
-    (r'(分析|评估|看看|研究)', 'general_analysis', 'system_inferred'),
-]
-
-# 周期维度规则
-HORIZON_RULES = [
-    (r'(短线|几天内|短期)', 'short_term', 'explicit_message'),
-    (r'(1-4周|几周|一个月左右)', 'medium_term', 'explicit_message'),
-    (r'(半年|6个月|中长期)', 'long_term', 'explicit_message'),
-    (r'(长期|一年以上|几年)', 'very_long_term', 'explicit_message'),
-    (r'(今年|年内)', 'yearly', 'explicit_message'),
-    (r'(日内|当天|今天)', 'intraday', 'explicit_message'),
-]
-
-# 持仓维度规则
-POSITION_RULES = [
-    (r'(空仓|没买|未持有|没有持仓)', 'not_holding', 'explicit_message'),
-    (r'(持有|已买|持仓|有仓位)', 'holding', 'explicit_message'),
-    (r'(盈利|赚钱|有收益)', 'holding_profit', 'explicit_message'),
-    (r'(被套|套牢|亏损|亏钱)', 'holding_loss', 'explicit_message'),
-    (r'(加仓|增持|补仓)', 'adding_position', 'explicit_message'),
-    (r'(减仓|减持|卖出部分)', 'reducing_position', 'explicit_message'),
-]
-
-# 风险偏好规则
-RISK_RULES = [
-    (r'(稳健|保守|低风险|怕回撤)', 'conservative', 'explicit_message'),
-    (r'(能接受波动|可以承受风险|中等风险)', 'moderate', 'explicit_message'),
-    (r'(激进|高风险|追求高收益)', 'aggressive', 'explicit_message'),
-]
-
-# 研究重点规则
-FOCUS_RULES = [
-    (r'(估值|PE|PB|市盈率|市净率)', 'valuation', 'explicit_message'),
-    (r'(基本面|财务|业绩|营收|利润)', 'fundamental', 'explicit_message'),
-    (r'(消息|新闻|事件|公告)', 'news_event', 'explicit_message'),
-    (r'(技术面|K线|均线|MACD|RSI)', 'technical', 'explicit_message'),
-    (r'(风险|问题|隐患|担忧)', 'risk', 'explicit_message'),
-    (r'(对比|比较|vs|和.*比)', 'comparison', 'explicit_message'),
-]
-
-# 呈现方式规则
-PRESENTATION_RULES = [
-    (r'(简单说|简要|概括|总结)', 'concise', 'explicit_message'),
-    (r'(详细|深入|全面|完整)', 'detailed', 'explicit_message'),
-    (r'(先给结论|结论先行)', 'conclusion_first', 'explicit_message'),
-    (r'(通俗|易懂|简单解释)', 'plain_language', 'explicit_message'),
-]
+# ─────────────────────────────────────────────────────────────────────────────
+# Pattern definitions
+# ─────────────────────────────────────────────────────────────────────────────
 
 
-# ============================================================================
-# 主服务类
-# ============================================================================
+# Goal patterns
+GOAL_PATTERNS = {
+    "worth_watching": [
+        (r"(?:值不值得|是否值得).*(?:关注|买)", "worth_watching"),
+        (r"能不能.*买", "worth_watching"),
+        (r"可以.*买", "worth_watching"),
+        (r"有没有.*价值", "worth_watching"),
+    ],
+    "evaluate_holding": [
+        (r"(?:已|已经).*(?:持仓|持有)", "evaluate_holding"),
+        (r"我.*有.*仓位", "evaluate_holding"),
+        (r"成本.*是", "evaluate_holding"),
+    ],
+    "understand_move": [
+        (r"为什么.*(?:涨|跌)", "understand_move"),
+        (r"(?:涨|跌).*原因", "understand_move"),
+        (r"啥原因", "understand_move"),
+    ],
+    "learn_method": [
+        (r"怎么分析", "learn_method"),
+        (r"分析方法", "learn_method"),
+        (r"如何分析", "learn_method"),
+    ],
+}
 
-class ChatIntakeIntentResolver:
-    """意图推断服务"""
-    
-    def __init__(self):
-        self.goal_rules = GOAL_RULES
-        self.horizon_rules = HORIZON_RULES
-        self.position_rules = POSITION_RULES
-        self.risk_rules = RISK_RULES
-        self.focus_rules = FOCUS_RULES
-        self.presentation_rules = PRESENTATION_RULES
-    
-    def infer_intent(
-        self,
-        message: str,
-        brief_snapshot: Optional[Dict[str, Any]] = None,
-        active_stock: Optional[ObjectIdentity] = None,
-    ) -> IntentInferenceResult:
-        """
-        从用户问题推断意图
-        
-        Args:
-            message: 用户原始问题
-            brief_snapshot: 上一轮 brief 快照（用于会话继承）
-            active_stock: 当前会话标的（用于判断是否切换标的）
-        
-        Returns:
-            IntentInferenceResult: 推断结果
-        """
-        result = IntentInferenceResult()
-        
-        # 1. 从当前消息提取各维度
-        result.goal = self._infer_dimension(message, self.goal_rules)
-        result.horizon = self._infer_dimension(message, self.horizon_rules)
-        result.position = self._infer_dimension(message, self.position_rules)
-        result.risk_preference = self._infer_dimension(message, self.risk_rules)
-        result.focus = self._infer_dimension(message, self.focus_rules)
-        result.presentation = self._infer_dimension(message, self.presentation_rules)
-        
-        # 2. 会话继承：从 brief_snapshot 继承未明确改变的维度
-        if brief_snapshot:
-            self._apply_session_inheritance(result, brief_snapshot, active_stock)
-        
-        # 3. 检测冲突
-        self._detect_conflicts(result, message)
-        
-        # 4. 生成假设
-        self._generate_assumptions(result)
-        
-        # 5. 标记未知字段
-        self._mark_unknown_fields(result)
-        
-        return result
-    
-    def _infer_dimension(
-        self,
-        message: str,
-        rules: List[Tuple[str, str, str]],
-    ) -> Optional[DimensionInference]:
-        """从消息中推断单个维度"""
-        message_lower = message.lower()
-        
-        for pattern, value, source_type in rules:
-            match = re.search(pattern, message_lower, re.IGNORECASE)
-            if match:
-                evidence = match.group(0)
-                source = BriefSource(source_type)
-                
-                # 计算置信度
-                confidence = 1.0
-                if source == BriefSource.SYSTEM_INFERRED:
-                    confidence = 0.7  # 系统推断的置信度较低
-                
-                return DimensionInference(
-                    value=value,
-                    source=source,
-                    confidence=confidence,
-                    evidence=evidence,
-                )
-        
-        return None
-    
-    def _apply_session_inheritance(
-        self,
-        result: IntentInferenceResult,
-        brief_snapshot: Dict[str, Any],
-        active_stock: Optional[ObjectIdentity],
-    ) -> None:
-        """
-        应用会话继承逻辑
-        
-        规则：
-        1. 如果当前消息没有明确改变某个维度，从 brief_snapshot 继承
-        2. 如果切换了标的，清理持仓相关的继承
-        """
-        # 检查是否切换了标的
-        stock_changed = self._check_stock_changed(brief_snapshot, active_stock)
-        
-        # 遍历各维度
-        dimensions = ['goal', 'horizon', 'position', 'risk_preference', 'focus', 'presentation']
-        
-        for dim_name in dimensions:
-            current_inference = getattr(result, dim_name)
-            
-            # 如果当前消息没有明确推断该维度
-            if not current_inference or current_inference.source == BriefSource.SYSTEM_INFERRED:
-                # 从 brief_snapshot 继承
-                snapshot_value = brief_snapshot.get(dim_name)
-                snapshot_source = brief_snapshot.get('sources', {}).get(dim_name)
-                
-                if snapshot_value and snapshot_source:
-                    # 如果切换了标的，不继承 position
-                    if stock_changed and dim_name == 'position':
-                        continue
-                    
-                    # 继承该维度
-                    setattr(result, dim_name, DimensionInference(
-                        value=snapshot_value,
-                        source=BriefSource.SESSION_INHERITED,
-                        confidence=0.9,
-                        evidence=None,
-                    ))
-    
-    def _check_stock_changed(
-        self,
-        brief_snapshot: Dict[str, Any],
-        active_stock: Optional[ObjectIdentity],
-    ) -> bool:
-        """检查是否切换了标的"""
-        if not active_stock:
-            return False
-        
-        snapshot_object = brief_snapshot.get('object')
-        if not snapshot_object:
-            return False
-        
-        # 比较标的代码
-        snapshot_code = snapshot_object.get('stock_code')
-        current_code = active_stock.stock_code
-        
-        return snapshot_code != current_code
-    
-    def _detect_conflicts(
-        self,
-        result: IntentInferenceResult,
-        message: str,
-    ) -> None:
-        """检测维度间的冲突"""
-        message_lower = message.lower()
-        
-        # 冲突 1: 长期 vs 只看明天
-        if result.horizon:
-            if result.horizon.value == 'very_long_term' and '明天' in message_lower:
-                result.conflicts.append('horizon_conflict: 长期 vs 明天')
-        
-        # 冲突 2: 空仓 vs 被套
-        if result.position:
-            if result.position.value == 'not_holding' and '被套' in message_lower:
-                result.conflicts.append('position_conflict: 空仓 vs 被套')
-        
-        # 冲突 3: 保守 vs 激进
-        # 这个需要在规则匹配时检测，这里简化处理
-    
-    def _generate_assumptions(self, result: IntentInferenceResult) -> None:
-        """生成假设说明"""
-        dimensions = ['goal', 'horizon', 'position', 'risk_preference', 'focus', 'presentation']
-        
-        for dim_name in dimensions:
-            inference = getattr(result, dim_name)
-            if inference:
-                # 只对 system_inferred 和 user_default 生成假设
-                if inference.source in [BriefSource.SYSTEM_INFERRED, BriefSource.USER_DEFAULT]:
-                    assumption = f"{dim_name} 为系统推断: {inference.value}"
-                    result.assumptions.append(assumption)
-    
-    def _mark_unknown_fields(self, result: IntentInferenceResult) -> None:
-        """标记未知字段"""
-        dimensions = ['goal', 'horizon', 'position', 'risk_preference', 'focus', 'presentation']
-        
-        for dim_name in dimensions:
-            inference = getattr(result, dim_name)
-            if not inference:
-                result.unknown_fields.append(dim_name)
+# Horizon patterns
+HORIZON_PATTERNS = {
+    "days": [
+        (r"短线", "days"),
+        (r"日内", "days"),
+        (r"几天", "days"),
+        (r"今天|明天", "days"),
+    ],
+    "weeks": [
+        (r"短期", "weeks"),
+        (r"几周", "weeks"),
+        (r"1.*4.*周", "weeks"),
+    ],
+    "months": [
+        (r"中期", "months"),
+        (r"几个月", "months"),
+        (r"1.*6.*月", "months"),
+        (r"半年", "months"),
+    ],
+    "long": [
+        (r"长期", "long"),
+        (r"长线", "long"),
+        (r"半年以上", "long"),
+        (r"一年", "long"),
+    ],
+}
+
+# Position patterns
+POSITION_PATTERNS = {
+    "not_held": [
+        (r"没有.*持仓", "not_held"),
+        (r"未.*持有", "not_held"),
+        (r"空仓", "not_held"),
+        (r"想.*买", "not_held"),
+        (r"准备.*买", "not_held"),
+    ],
+    "held_protect_profit": [
+        (r"持有.*盈利", "held_protect_profit"),
+        (r"持仓.*赚", "held_protect_profit"),
+        (r"浮盈", "held_protect_profit"),
+    ],
+    "held_control_drawdown": [
+        (r"持有.*亏", "held_control_drawdown"),
+        (r"持仓.*套", "held_control_drawdown"),
+        (r"被套", "held_control_drawdown"),
+        (r"浮亏", "held_control_drawdown"),
+    ],
+}
+
+# Risk focus patterns
+RISK_PATTERNS = {
+    "downside": [
+        (r"控制.*风险", "downside"),
+        (r"下行.*风险", "downside"),
+        (r"稳健", "downside"),
+        (r"保守", "downside"),
+    ],
+    "balanced": [
+        (r"均衡", "balanced"),
+        (r"机会.*风险", "balanced"),
+    ],
+    "tolerant": [
+        (r"激进", "tolerant"),
+        (r"波动", "tolerant"),
+        (r"高风险.*高收益", "tolerant"),
+    ],
+}
+
+# Research focus patterns (multi-select)
+RESEARCH_FOCUS_PATTERNS = {
+    "trend_levels": [
+        (r"趋势", "trend_levels"),
+        (r"关键位置", "trend_levels"),
+        (r"支撑.*压力", "trend_levels"),
+    ],
+    "business_valuation": [
+        (r"基本面", "business_valuation"),
+        (r"估值", "business_valuation"),
+        (r"业绩", "business_valuation"),
+    ],
+    "news_events": [
+        (r"消息", "news_events"),
+        (r"新闻", "news_events"),
+        (r"事件", "news_events"),
+    ],
+    "risks_counterpoints": [
+        (r"风险", "risks_counterpoints"),
+        (r"反例", "risks_counterpoints"),
+    ],
+    "comprehensive": [
+        (r"综合分析", "comprehensive"),
+    ],
+}
+
+# Reading style patterns
+READING_STYLE_PATTERNS = {
+    "highlights": [
+        (r"简单说", "highlights"),
+        (r"先看重点", "highlights"),
+        (r"简要", "highlights"),
+    ],
+    "detailed": [
+        (r"详细", "detailed"),
+        (r"深入", "detailed"),
+        (r"全面", "detailed"),
+    ],
+    "plain": [
+        (r"通俗", "plain"),
+        (r"易懂", "plain"),
+        (r"小白", "plain"),
+    ],
+}
 
 
-# ============================================================================
-# 便捷函数
-# ============================================================================
+# ─────────────────────────────────────────────────────────────────────────────
+# Main inference function
+# ─────────────────────────────────────────────────────────────────────────────
 
-def infer_chat_intent(
+
+def infer_intent(
     message: str,
-    brief_snapshot: Optional[Dict[str, Any]] = None,
-    active_stock: Optional[ObjectIdentity] = None,
-) -> IntentInferenceResult:
-    """
-    推断用户意图的便捷函数
-    
+    *,
+    previous_brief: Optional[Dict[str, Any]] = None,
+) -> IntentInference:
+    """Infer analysis intent from user message.
+
     Args:
-        message: 用户原始问题
-        brief_snapshot: 上一轮 brief 快照
-        active_stock: 当前会话标的
-    
+        message: User input message
+        previous_brief: Previous session brief for inheritance
+
     Returns:
-        IntentInferenceResult: 推断结果
+        IntentInference with inferred dimensions
     """
-    resolver = ChatIntakeIntentResolver()
-    return resolver.infer_intent(message, brief_snapshot, active_stock)
+    if not message or not message.strip():
+        return IntentInference(
+            unknown_fields=["goal", "horizon", "position", "risk_focus", "reading_style"],
+            assumptions=["未指定分析背景，按综合判断处理"],
+        )
+
+    text = message.strip()
+    result = IntentInference()
+
+    # Infer goal
+    result.goal = _infer_from_patterns(text, GOAL_PATTERNS, "goal")
+
+    # Infer horizon
+    result.horizon = _infer_from_patterns(text, HORIZON_PATTERNS, "horizon")
+
+    # Infer position
+    result.position = _infer_from_patterns(text, POSITION_PATTERNS, "position")
+
+    # Infer risk_focus
+    result.risk_focus = _infer_from_patterns(text, RISK_PATTERNS, "risk_focus")
+
+    # Infer research_focus (multi-select)
+    result.research_focus = _infer_multi_from_patterns(text, RESEARCH_FOCUS_PATTERNS, "research_focus")
+
+    # Infer reading_style
+    result.reading_style = _infer_from_patterns(text, READING_STYLE_PATTERNS, "reading_style")
+
+    # Build unknown_fields list
+    result.unknown_fields = _build_unknown_fields(result)
+
+    # Build assumptions
+    result.assumptions = _build_assumptions(result)
+
+    return result
+
+
+def _infer_from_patterns(
+    text: str,
+    patterns: Dict[str, List[Tuple[str, str]]],
+    dimension: str,
+) -> Optional[InferredDimension]:
+    """Infer single dimension from patterns."""
+    for value, pattern_list in patterns.items():
+        for pattern, _ in pattern_list:
+            match = re.search(pattern, text, re.IGNORECASE)
+            if match:
+                return InferredDimension(
+                    value=value,
+                    source=BriefSource.EXPLICIT_MESSAGE,
+                    confidence=1.0,
+                    evidence=match.group(0),
+                    evidence_start=match.start(),
+                    evidence_end=match.end(),
+                )
+    return None
+
+
+def _infer_multi_from_patterns(
+    text: str,
+    patterns: Dict[str, List[Tuple[str, str]]],
+    dimension: str,
+) -> List[InferredDimension]:
+    """Infer multi-select dimension from patterns."""
+    results = []
+    for value, pattern_list in patterns.items():
+        for pattern, _ in pattern_list:
+            match = re.search(pattern, text, re.IGNORECASE)
+            if match:
+                results.append(
+                    InferredDimension(
+                        value=value,
+                        source=BriefSource.EXPLICIT_MESSAGE,
+                        confidence=1.0,
+                        evidence=match.group(0),
+                        evidence_start=match.start(),
+                        evidence_end=match.end(),
+                    )
+                )
+                break  # Only match once per value
+    return results
+
+
+def _build_unknown_fields(inference: IntentInference) -> List[str]:
+    """Build list of unknown fields."""
+    unknown = []
+    if inference.goal is None:
+        unknown.append("goal")
+    if inference.horizon is None:
+        unknown.append("horizon")
+    if inference.position is None:
+        unknown.append("position")
+    if inference.risk_focus is None:
+        unknown.append("risk_focus")
+    if inference.reading_style is None:
+        unknown.append("reading_style")
+    return unknown
+
+
+def _build_assumptions(inference: IntentInference) -> List[str]:
+    """Build assumptions list."""
+    assumptions = []
+
+    if inference.goal is None:
+        assumptions.append("未指定目标，按综合判断处理")
+
+    if inference.horizon is None:
+        assumptions.append("未指定周期，按中期与短期结合的综合视角回答")
+
+    if inference.position is None:
+        assumptions.append("未指定持仓状态，不假设用户持仓")
+
+    if inference.risk_focus is None:
+        assumptions.append("未指定风险偏好，按中性风险呈现")
+
+    if inference.reading_style is None:
+        assumptions.append("使用默认阅读方式：先看重点")
+
+    return assumptions
 
 
 __all__ = [
-    'ChatIntakeIntentResolver',
-    'DimensionInference',
-    'IntentInferenceResult',
-    'infer_chat_intent',
+    "InferredDimension",
+    "IntentInference",
+    "infer_intent",
 ]

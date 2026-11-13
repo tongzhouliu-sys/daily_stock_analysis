@@ -525,6 +525,226 @@ def describe_analysis_brief(brief: AnalysisBrief, language: str = "zh") -> str:
     return "\n".join(lines)
 
 
+def plan_intake_v2(
+    message: str,
+    resolution: Any,  # IntakeObjectResolution
+    inference: Any,   # IntentInferenceResult
+    session_context: Optional[Dict[str, Any]] = None,
+) -> Dict[str, Any]:
+    """Plan v2 intake questions based on resolution and inference.
+    
+    V2 selection rules (per requirements R6/R7):
+    1. Object resolved + no ambiguity + no conflict → 0 questions, auto_start=true
+    2. Object ambiguous → 1 question (candidate selection)
+    3. Object missing → 1 question (search)
+    4. Has conflict → 1 question (clarification)
+    5. Concept/market/portfolio/watchlist → 0 questions, auto_start=true
+    
+    Args:
+        message: User's original message
+        resolution: Object resolution result from chat_intake_object_resolver
+        inference: Intent inference result from chat_intake_intent_resolver
+        session_context: Session context (active_stock, brief_snapshot, etc.)
+    
+    Returns:
+        Dict with keys:
+        - questions: List[Question] (0-2 questions)
+        - brief_preview: Dict (preview of analysis brief)
+        - auto_start: bool (whether to auto-start research)
+        - blocking_reason: Optional[str] (why auto_start is false)
+    """
+    from src.schemas.agent_intake import Question, QuestionOption, QuestionDimension, QuestionType
+    
+    questions: List[Question] = []
+    auto_start = True
+    blocking_reason = None
+    
+    # Check resolution status
+    status = getattr(resolution, 'status', 'missing')
+    scope = getattr(resolution, 'scope', 'unknown')
+    candidates = getattr(resolution, 'candidates', [])
+    recommended_option_id = getattr(resolution, 'recommended_option_id', None)
+    recommendation_reason = getattr(resolution, 'recommendation_reason', None)
+    
+    # Check for conflicts in inference
+    conflicts = getattr(inference, 'conflicts', [])
+    
+    # Rule 1: Concept/market/portfolio/watchlist → auto-start
+    if scope in ['concept', 'market', 'portfolio', 'watchlist']:
+        auto_start = True
+        blocking_reason = None
+    
+    # Rule 2: Object ambiguous → 1 question (candidate selection)
+    elif status == 'ambiguous' and len(candidates) >= 2:
+        auto_start = False
+        blocking_reason = '需要确认标的'
+        
+        # Build candidate options
+        options = []
+        for idx, candidate in enumerate(candidates[:5]):  # Max 5 candidates
+            stock_code = getattr(candidate, 'stock_code', '')
+            stock_name = getattr(candidate, 'stock_name', '')
+            market_label = getattr(candidate, 'market_label', '')
+            
+            label = f"{stock_name} {stock_code} · {market_label}"
+            if recommended_option_id and idx == 0:
+                label += " [推荐]"
+            
+            option = QuestionOption(
+                id=f"candidate_{idx}",
+                label=label,
+                is_unknown=False,
+                identity=candidate,  # v2: attach concrete identity
+            )
+            options.append(option)
+        
+        # Add "search other" option
+        options.append(QuestionOption(
+            id="search_other",
+            label="都不是，搜索其他代码或名称",
+            is_unknown=True,
+        ))
+        
+        question = Question(
+            id="object_candidate",
+            dimension=QuestionDimension.OBJECT,
+            type=QuestionType.SINGLE,
+            title="需要确认标的",
+            help=f"“{message}”可能对应多个标的，请选择具体的一个。",
+            required=True,
+            depends_on=None,
+            options=options,
+            kind="object_choice",  # v2: question kind
+            recommended_option_id=recommended_option_id,
+            allow_free_text=True,
+            free_text_kind="stock_search",
+        )
+        questions.append(question)
+    
+    # Rule 3: Object missing → 1 question (search)
+    elif status == 'missing':
+        auto_start = False
+        blocking_reason = '没有找到这个代码'
+        
+        question = Question(
+            id="object_search",
+            dimension=QuestionDimension.OBJECT,
+            type=QuestionType.SINGLE,
+            title="没有找到这个代码",
+            help="请搜索其他代码或名称，或提供更多信息。",
+            required=True,
+            depends_on=None,
+            options=[
+                QuestionOption(id="retry", label="重试", is_unknown=False),
+                QuestionOption(id="search_other", label="搜索其他代码或名称", is_unknown=True),
+            ],
+            kind="object_search",  # v2: question kind
+            allow_free_text=True,
+            free_text_kind="stock_search",
+        )
+        questions.append(question)
+    
+    # Rule 4: Has conflict → 1 question (clarification)
+    elif conflicts:
+        auto_start = False
+        blocking_reason = '背景信息有冲突'
+        
+        # Build clarification question based on conflict
+        conflict_text = "；".join(conflicts[:2])  # Show first 2 conflicts
+        
+        question = Question(
+            id="conflict_clarification",
+            dimension=QuestionDimension.GOAL,  # Generic dimension
+            type=QuestionType.SINGLE,
+            title="背景信息有冲突",
+            help=f"检测到以下冲突：{conflict_text}。请澄清你的意图。",
+            required=True,
+            depends_on=None,
+            options=[
+                QuestionOption(id="clarify_1", label="以第一条为准", is_unknown=False),
+                QuestionOption(id="clarify_2", label="以第二条为准", is_unknown=False),
+                QuestionOption(id="unsure", label="暂不确定", is_unknown=True),
+            ],
+            kind="conflict_clarification",  # v2: question kind
+        )
+        questions.append(question)
+    
+    # Rule 5: Object resolved + no conflict → auto-start
+    elif status == 'resolved':
+        auto_start = True
+        blocking_reason = None
+    
+    # Fallback: unknown status
+    else:
+        auto_start = False
+        blocking_reason = '无法确定分析对象'
+    
+    # Build brief preview
+    brief_preview = _build_brief_preview_v2(resolution, inference, session_context)
+    
+    return {
+        "questions": questions,
+        "brief_preview": brief_preview,
+        "auto_start": auto_start,
+        "blocking_reason": blocking_reason,
+    }
+
+
+def _build_brief_preview_v2(
+    resolution: Any,
+    inference: Any,
+    session_context: Optional[Dict[str, Any]] = None,
+) -> Dict[str, Any]:
+    """Build a preview of the analysis brief for v2.
+    
+    This is a lightweight preview that doesn't require full brief construction.
+    """
+    preview = {
+        "object": None,
+        "goal": None,
+        "horizon": None,
+        "position": None,
+        "risk_preference": None,
+        "focus": None,
+        "presentation": None,
+        "sources": {},
+        "assumptions": [],
+    }
+    
+    # Object from resolution
+    if resolution:
+        status = getattr(resolution, 'status', 'missing')
+        identity = getattr(resolution, 'identity', None)
+        scope = getattr(resolution, 'scope', 'unknown')
+        
+        if status == 'resolved' and identity:
+            preview["object"] = {
+                "stock_code": getattr(identity, 'stock_code', ''),
+                "stock_name": getattr(identity, 'stock_name', ''),
+                "market": getattr(identity, 'market', ''),
+                "market_label": getattr(identity, 'market_label', ''),
+            }
+            preview["sources"]["object"] = "explicit_message"
+        elif scope in ['concept', 'market', 'portfolio', 'watchlist']:
+            preview["object"] = {"scope": scope}
+            preview["sources"]["object"] = "explicit_message"
+    
+    # Dimensions from inference
+    if inference:
+        for dim in ['goal', 'horizon', 'position', 'risk_preference', 'focus', 'presentation']:
+            dim_inference = getattr(inference, dim, None)
+            if dim_inference:
+                preview[dim] = getattr(dim_inference, 'value', None)
+                source = getattr(dim_inference, 'source', None)
+                if source:
+                    preview["sources"][dim] = source.value if hasattr(source, 'value') else str(source)
+        
+        # Assumptions
+        preview["assumptions"] = getattr(inference, 'assumptions', [])
+    
+    return preview
+
+
 __all__ = [
     "MAX_QUESTIONS",
     "QUESTION_BANK",
@@ -535,4 +755,5 @@ __all__ = [
     "build_analysis_brief",
     "describe_analysis_brief",
     "validate_answers",
+    "plan_intake_v2",
 ]

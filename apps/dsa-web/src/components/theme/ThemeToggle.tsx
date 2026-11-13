@@ -33,6 +33,7 @@ function resolveThemeLabel(theme: string | undefined, t: (key: UiTextKey) => str
 interface ThemeToggleProps {
   variant?: ThemeToggleVariant;
   collapsed?: boolean;
+  iconOnly?: boolean;
   wrapperClassName?: string;
   triggerClassName?: string;
   triggerActiveClassName?: string;
@@ -43,6 +44,7 @@ interface ThemeToggleProps {
 export const ThemeToggle: React.FC<ThemeToggleProps> = ({
   variant = 'default',
   collapsed = false,
+  iconOnly = false,
   wrapperClassName,
   triggerClassName,
   triggerActiveClassName,
@@ -136,12 +138,14 @@ export const ThemeToggle: React.FC<ThemeToggleProps> = ({
         aria-label={t('theme.toggle')}
       >
         <TriggerIcon className={iconClassName ?? cn('shrink-0', isRailVariant ? 'h-[18px] w-[18px]' : isNavVariant ? 'h-5 w-5' : 'h-4 w-4')} />
-        {isRailVariant ? (
-          <span className={labelClassName}>{t('theme.theme')}</span>
-        ) : isNavVariant ? (
-          collapsed ? null : <span className="truncate text-[1.02rem] font-medium">{t('theme.theme')}</span>
-        ) : (
-          <span className="hidden sm:inline">{resolveThemeLabel(activeTheme, t)}</span>
+        {!iconOnly && (
+          isRailVariant ? (
+            <span className={labelClassName}>{t('theme.theme')}</span>
+          ) : isNavVariant ? (
+            collapsed ? null : <span className="truncate text-[1.02rem] font-medium">{t('theme.theme')}</span>
+          ) : (
+            <span className="hidden sm:inline">{resolveThemeLabel(activeTheme, t)}</span>
+          )
         )}
       </button>
 
