@@ -1709,6 +1709,11 @@ const ChatPage: React.FC = () => {
                       </div>
                     )}
                   </div>
+                  {streamingContent && (
+                    <div className="chat-prose chat-streaming-preview" aria-live="polite">
+                      <ChatAnswer content={streamingContent} />
+                    </div>
+                  )}
                 </div>
               )}
 

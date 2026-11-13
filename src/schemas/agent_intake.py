@@ -146,6 +146,11 @@ class QuestionOption(BaseModel):
         default=False,
         description="Whether this represents 'unknown/not provided'",
     )
+    # v2: Optional identity for object choice questions
+    identity: Optional[ObjectIdentity] = Field(
+        default=None,
+        description="v2: Concrete stock identity for object choice options",
+    )
 
 
 class Question(BaseModel):
@@ -165,6 +170,26 @@ class Question(BaseModel):
     max_selections: Optional[int] = Field(
         default=None,
         description="For MULTIPLE type, max selectable options",
+    )
+    # v2: Question kind for smart intake
+    kind: Optional[QuestionKind] = Field(
+        default=None,
+        description="v2: Question kind for smart intake",
+    )
+    # v2: Recommended option ID
+    recommended_option_id: Optional[str] = Field(
+        default=None,
+        description="v2: Recommended option ID",
+    )
+    # v2: Allow free text input
+    allow_free_text: bool = Field(
+        default=False,
+        description="v2: Whether to allow free text input",
+    )
+    # v2: Free text kind
+    free_text_kind: Optional[str] = Field(
+        default=None,
+        description="v2: Free text kind: stock_search",
     )
 
     @field_validator("max_selections")
@@ -217,6 +242,31 @@ class AnalysisBrief(BaseModel):
     unknown_fields: List[str] = Field(
         default_factory=list,
         description="Dimensions where user selected 'unknown'",
+    )
+    # v2: Concrete object identity
+    object: Optional[ObjectIdentity] = Field(
+        default=None,
+        description="v2: Concrete resolved object identity",
+    )
+    # v2: Sources for each field
+    sources: Dict[str, BriefSource] = Field(
+        default_factory=dict,
+        description="v2: Source of each field value",
+    )
+    # v2: Evidence for inferred fields
+    evidence: Dict[str, str] = Field(
+        default_factory=dict,
+        description="v2: Evidence text for inferred fields",
+    )
+    # v2: Assumptions made by system
+    assumptions: List[str] = Field(
+        default_factory=list,
+        description="v2: Assumptions made by system inference",
+    )
+    # v2: Auto-confirmed flag
+    auto_confirmed: bool = Field(
+        default=False,
+        description="v2: Whether this brief was auto-confirmed",
     )
 
 
