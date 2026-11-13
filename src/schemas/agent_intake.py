@@ -1,6 +1,7 @@
 """Agent Chat Intake - Data structures for guided questioning.
 
 T1: Contract and question bank convergence.
+v2: Smart intake with object resolution and auto-inference.
 
 This module defines the data structures for the intake (guided questioning)
 flow, including questions, answers, and analysis brief.
@@ -10,6 +11,111 @@ from enum import Enum
 from typing import Any, Dict, List, Optional
 
 from pydantic import BaseModel, Field, field_validator
+
+
+# ─────────────────────────────────────────────────────────────────────────────
+# v2 Types: Object Resolution and Smart Intake
+# ─────────────────────────────────────────────────────────────────────────────
+
+
+class ResolutionStatus(str, Enum):
+    """Object resolution status."""
+
+    RESOLVED = "resolved"
+    AMBIGUOUS = "ambiguous"
+    MISSING = "missing"
+    UNSUPPORTED = "unsupported"
+    NOT_REQUIRED = "not_required"
+
+
+class ResolutionScope(str, Enum):
+    """Object resolution scope."""
+
+    STOCK = "stock"
+    INDEX = "index"
+    ETF = "etf"
+    MARKET = "market"
+    PORTFOLIO = "portfolio"
+    WATCHLIST = "watchlist"
+    REPORT = "report"
+    CONCEPT = "concept"
+    UNKNOWN = "unknown"
+
+
+class BriefSource(str, Enum):
+    """Source of a brief field value."""
+
+    EXPLICIT_MESSAGE = "explicit_message"
+    USER_CHOICE = "user_choice"
+    SESSION_INHERITED = "session_inherited"
+    SYSTEM_INFERRED = "system_inferred"
+    USER_DEFAULT = "user_default"
+    UNKNOWN = "unknown"
+
+
+class QuestionKind(str, Enum):
+    """v2 question kind for smart intake."""
+
+    OBJECT_CHOICE = "object_choice"
+    OBJECT_SEARCH = "object_search"
+    SCOPE_CLARIFY = "scope_clarify"
+    INFO_CONFIRM = "info_confirm"
+
+
+class ObjectIdentity(BaseModel):
+    """v2: Stock identity with market label."""
+
+    stock_code: str = Field(..., description="Stock code (e.g. '600519', 'HK00700', 'AAPL')")
+    stock_name: Optional[str] = Field(default=None, description="Stock name")
+    canonical_id: str = Field(..., description="Canonical ID (e.g. '600519.SH', 'HK00700')")
+    asset_type: str = Field(default="stock", description="Asset type: stock | index | etf")
+    market: str = Field(..., description="Market code: CN | HK | US | JP | KR | TW | UNKNOWN")
+    market_label: str = Field(..., description="User-readable market label")
+
+
+class ResolutionEvidence(BaseModel):
+    """Evidence for object resolution."""
+
+    kind: str = Field(..., description="Evidence kind: bare_cn_code | suffix_code | name_match | etc.")
+    text: str = Field(..., description="Matched text from input")
+    start: Optional[int] = Field(default=None, description="Start position in input")
+    end: Optional[int] = Field(default=None, description="End position in input")
+
+
+class ObjectResolution(BaseModel):
+    """v2: Result of object resolution."""
+
+    status: ResolutionStatus = Field(..., description="Resolution status")
+    scope: ResolutionScope = Field(default=ResolutionScope.UNKNOWN, description="Resolution scope")
+    identity: Optional[ObjectIdentity] = Field(default=None, description="Resolved identity")
+    candidates: List[ObjectIdentity] = Field(
+        default_factory=list,
+        description="Candidate identities for ambiguous cases",
+    )
+    recommended_option_id: Optional[str] = Field(
+        default=None,
+        description="Recommended candidate ID",
+    )
+    recommendation_reason: Optional[str] = Field(
+        default=None,
+        description="Reason for recommendation",
+    )
+    evidence: Optional[ResolutionEvidence] = Field(default=None, description="Resolution evidence")
+    reason: Optional[str] = Field(
+        default=None,
+        description="Resolution reason: unique_code | unique_name | session_inherited | etc.",
+    )
+
+
+class IntakePlan(BaseModel):
+    """v2: Intake plan from question selection."""
+
+    auto_start: bool = Field(default=False, description="Whether to auto-start research")
+    blocking_reason: Optional[str] = Field(
+        default=None,
+        description="Reason for blocking: ambiguous | missing | unsupported | etc.",
+    )
+    question_count: int = Field(default=0, description="Number of questions to ask")
 
 
 class QuestionType(str, Enum):

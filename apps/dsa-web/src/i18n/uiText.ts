@@ -1172,6 +1172,8 @@ const en: Record<UiTextKey, string> = {
   'layout.logoutMessage': 'Log out of the current session? You will need to enter the password again.',
   'layout.logoutSettingsMessage': 'Logging out discards unsaved settings on this page. Save any changes you want to keep first. Requests already sent will not be cancelled by logout. Log out of the current session?',
   'layout.logoutTitle': 'Log out',
+  'layout.about': 'About',
+  'layout.copyright': 'Copyright 2026@RHCLOUD PTE. LTD.',
 
   'usage.breakdown': 'Breakdown',
   'usage.callType.agent': 'Ask Agent',
