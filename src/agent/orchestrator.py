@@ -69,6 +69,7 @@ from src.agent.stream_events import (
     stream_event,
     stage_start_event,
     stage_done_event,
+    reset_event_sequence,
 )
 from src.agent.tools.registry import ToolRegistry
 from src.config import AGENT_MAX_STEPS_DEFAULT, get_config
@@ -554,6 +555,9 @@ class AgentOrchestrator:
             # The multi-agent pipeline does not emit content deltas yet. Accept
             # the option so the shared transport contract stays compatible.
             logger.debug("stream_content requested but not supported by multi-agent pipeline")
+
+        # Reset event sequence for this turn (T1: monotonic sequence)
+        reset_event_sequence()
 
         # Collect progress steps for persistence (T2)
         collected_progress_steps: List[Dict[str, Any]] = []
