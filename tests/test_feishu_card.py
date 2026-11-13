@@ -10,7 +10,7 @@ from src.formatters import (
     format_feishu_markdown,
     strip_hidden_markdown_metadata,
 )
-from src.notification_sender.feishu_card import build_feishu_card
+from src.notification_sender.feishu_card import CARD_TITLE, build_feishu_card
 from src.notification_sender.feishu_sender import FeishuSender
 
 REPORT = """# 🎯 2026-11-09 决策仪表盘
@@ -102,11 +102,23 @@ def _config(**overrides):
 def test_short_message_keeps_compact_card_and_full_content():
     card = build_feishu_card("股票日报\nhello")
 
-    assert card["header"]["title"]["content"] == "股票智能分析报告"
+    assert card["header"]["title"]["content"] == CARD_TITLE
     assert card["header"]["template"] == "blue"
     assert card["header"]["subtitle"]["content"]
     assert len(card["elements"]) == 1
     assert card["elements"][0]["text"]["content"] == "股票日报\nhello"
+
+
+def test_report_title_and_summary_move_into_header():
+    card = build_feishu_card(_formatted_report(), max_bytes=20000)
+
+    assert card["header"]["title"]["content"] == "🎯 2026-11-09 决策仪表盘"
+    assert "共分析 1 只股票" in card["header"]["subtitle"]["content"]
+    assert "🟡观望:1" in card["header"]["subtitle"]["content"]
+
+    body = _card_text(card)
+    assert "🎯 2026-11-09 决策仪表盘" not in body
+    assert "共分析" not in body
 
 
 def test_long_report_is_split_into_sections_with_fields_and_note():
@@ -124,7 +136,7 @@ def test_long_report_is_split_into_sections_with_fields_and_note():
 
     text = _card_text(card)
     for token in (
-        "决策仪表盘",
+        "市场状态",
         "贵州茅台",
         "空仓者",
         "腾讯财经",
@@ -135,7 +147,7 @@ def test_long_report_is_split_into_sections_with_fields_and_note():
     assert "| --- |" not in text
 
 
-def test_section_tags_use_semantic_colors():
+def test_headings_use_semantic_colors():
     formatted = format_feishu_markdown(
         "## 🚨 风险警报\n\n" + "风险说明" * 200 + "\n\n### ✨ 利好催化\n\n" + "机会说明" * 200
     )
@@ -159,9 +171,12 @@ def test_header_template_follows_report_type():
 def test_card_over_budget_falls_back_to_compact_card_without_losing_text():
     formatted = _formatted_report()
     card = build_feishu_card(formatted, max_bytes=1000)
+    text = _card_text(card)
 
-    assert len(card["elements"]) == 1
-    assert card["elements"][0]["text"]["content"] == formatted
+    assert len(card["elements"]) >= 1
+    assert not any("fields" in element for element in card["elements"])
+    for token in ("贵州茅台", "空仓者", "腾讯财经", "数据来源"):
+        assert token in text, token
 
 
 def test_page_marker_and_footer_metadata_move_to_note():
@@ -172,10 +187,12 @@ def test_page_marker_and_footer_metadata_move_to_note():
 
     assert "第 2/3 页" in note_text
     assert "数据来源" in note_text
+    assert note_text.startswith("📋 数据来源")
+    assert "📋 📋" not in note_text
     assert "📄 2/3" not in _card_text(card)
 
 
-def test_field_rows_keep_both_keys_and_values():
+def test_position_table_becomes_named_fields_without_duplicate_headers():
     card = build_feishu_card(_formatted_report(), max_bytes=20000)
     fields_text = " ".join(
         item["text"]["content"]
@@ -183,10 +200,34 @@ def test_field_rows_keep_both_keys_and_values():
         for item in element.get("fields", [])
     )
 
-    assert "**当前价**" in fields_text
-    assert "1453.00" in fields_text
-    assert "**持仓情况**" in fields_text
-    assert "空仓者" in fields_text
+    assert "**🆕 空仓者**" in fields_text
+    assert "**💼 持仓者**" in fields_text
+    assert "持仓情况" not in fields_text
+    assert "操作建议" not in fields_text
+
+
+def test_quote_decision_is_highlighted_instead_of_grey():
+    card = build_feishu_card(_formatted_report(), max_bytes=20000)
+    text = _card_text(card)
+    decision_lines = [
+        element["text"]["content"]
+        for element in card["elements"]
+        if "一句话决策" in element.get("text", {}).get("content", "")
+    ]
+
+    assert decision_lines
+    assert all("<font color='grey'>" not in line for line in decision_lines)
+    assert "💡 **一句话决策**" in text
+
+
+def test_formatter_converts_two_column_tables_to_row_keys():
+    result = format_feishu_markdown(
+        "| 指标 | 数值 |\n| --- | --- |\n| 当前价 | 1453.00 |\n| 量比 | 0.65 |"
+    )
+
+    assert "• 当前价：1453.00" in result
+    assert "• 量比：0.65" in result
+    assert "指标：" not in result
 
 
 def test_formatter_keeps_heading_hierarchy_and_grey_quotes():
@@ -197,6 +238,28 @@ def test_formatter_keeps_heading_hierarchy_and_grey_quotes():
     assert "· **三级**" in result
     assert "<font color='grey'>💬 引用</font>" in result
     assert "\n\n\n" not in result
+
+
+def test_wide_market_snapshot_table_becomes_aligned_fields():
+    formatted = format_feishu_markdown(
+        "## 行情快照\n\n"
+        "| 收盘 | 昨收 | 开盘 | 最高 | 最低 | 涨跌幅 | 涨跌额 | 振幅 | 成交量 | 成交额 |\n"
+        "| --- | --- | --- | --- | --- | --- | --- | --- | --- | --- |\n"
+        "| 251.30 | 246.80 | 247.50 | 253.60 | 245.20 | +1.82% | +4.50 | 3.40% | 28.6万手 | 71.2亿 |\n\n"
+        + "盘面描述" * 120
+    )
+    card = build_feishu_card(formatted, max_bytes=20000)
+    fields = [
+        item
+        for element in card["elements"]
+        for item in element.get("fields", [])
+    ]
+    labels = [item["text"]["content"].split("\n")[0] for item in fields]
+
+    assert "**收盘**" in labels
+    assert "**成交额**" in labels
+    assert "指数" not in labels
+    assert all(item["is_short"] for item in fields if item["text"]["content"].startswith("**收盘**"))
 
 
 def test_chunking_can_split_on_formatted_level_two_headings():

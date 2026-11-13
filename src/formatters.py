@@ -824,6 +824,14 @@ def format_feishu_markdown(content: str) -> str:
         for row in data_rows:
             if len(row) < len(header):
                 row = row + [""] * (len(header) - len(row))
+            # 两列表格通常是「指标 | 数值」或「对象 | 建议」，
+            # 用行首单元格作为键更符合阅读语义，也便于卡片渲染成 fields。
+            if len(header) == 2 and len(row) >= 2:
+                key = row[0].strip()
+                value = row[1].strip()
+                output.append(f"• {key}：{value}" if value else f"• {key}")
+                continue
+
             pairs = []
             for idx, cell in enumerate(row):
                 key = header[idx] if idx < len(header) else f"列{idx + 1}"

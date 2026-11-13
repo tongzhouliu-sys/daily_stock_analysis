@@ -414,8 +414,22 @@ class TestNotificationMarkdownFormatters(unittest.TestCase):
 
         self.assertIn("**日报**", result)
         self.assertIn("💬 风险提示", result)
-        self.assertIn("• 股票：600519 | 信号：强势", result)
+        self.assertIn("• 600519：强势", result)
         self.assertIn("• 关注量能", result)
+
+    def test_feishu_formatter_uses_row_keys_for_two_column_tables(self):
+        text = (
+            "| 指标 | 数值 |\n"
+            "| --- | --- |\n"
+            "| 当前价 | 1453.00 |\n"
+            "| 量比 | 0.65 |"
+        )
+
+        result = format_feishu_markdown(text)
+
+        self.assertIn("• 当前价：1453.00", result)
+        self.assertIn("• 量比：0.65", result)
+        self.assertNotIn("指标：", result)
 
     def test_feishu_formatter_preserves_empty_table_cells(self):
         text = (

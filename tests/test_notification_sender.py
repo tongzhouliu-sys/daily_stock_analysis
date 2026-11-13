@@ -400,12 +400,13 @@ class TestFeishuSender(unittest.TestCase):
 
         self.assertTrue(result)
         payload = mock_post.call_args.kwargs["json"]
+        self.assertEqual(payload["card"]["header"]["title"]["content"], "日报")
         rendered = payload["card"]["elements"][0]["text"]["content"]
-        self.assertIn("**日报**", rendered)
-        self.assertIn("**📊 分析结果摘要**", rendered)
-        self.assertIn("• 股票：600519 | 信号：强势", rendered)
+        self.assertIn("📊 分析结果摘要", rendered)
+        self.assertIn("• 600519：强势", rendered)
         self.assertIn("[详情](https://example.com/report)", rendered)
         self.assertNotIn("| --- |", rendered)
+        self.assertNotIn("**日报**", rendered)
 
     @mock.patch("src.notification_sender.feishu_sender.requests.post")
     def test_send_error_response_returns_false(self, mock_post):
@@ -605,7 +606,7 @@ class TestFeishuSender(unittest.TestCase):
         call = mock_raw.call_args
         self.assertEqual(call[0][1], "interactive")  # msg_type
         card = json.loads(call[0][2])
-        self.assertEqual(card["header"]["title"]["content"], "股票智能分析报告")
+        self.assertEqual(card["header"]["title"]["content"], "📊 股票智能分析报告")
         self.assertEqual(card["elements"][0]["text"]["tag"], "lark_md")
         self.assertIn("**bold**", card["elements"][0]["text"]["content"])
 
@@ -776,7 +777,7 @@ class TestFeishuSender(unittest.TestCase):
         mock_post.assert_called_once()
         payload = mock_post.call_args.kwargs["json"]
         rendered = payload["card"]["elements"][0]["text"]["content"]
-        self.assertIn("📄 Markdown 文件内容: report_20260705.md", rendered)
+        self.assertIn("Markdown 文件内容: report_20260705.md", payload["card"]["header"]["title"]["content"])
         self.assertIn("**Test Report**", rendered)
 
     @mock.patch("src.notification_sender.feishu_sender.Path")
