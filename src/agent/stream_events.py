@@ -9,6 +9,28 @@ from __future__ import annotations
 
 from typing import Any, Dict, Optional
 
+# ---------------------------------------------------------------------------
+# Monotonic sequence counter
+# ---------------------------------------------------------------------------
+# Each turn should reset this counter at entry (via ``reset_event_sequence``).
+# ``stream_event`` assigns an incrementing ``sequence`` so consumers can order
+# and dedupe events even when they arrive out of order.
+_event_sequence_counter = 0
+
+
+def reset_event_sequence() -> None:
+    """Reset the monotonic event sequence counter for a new turn."""
+    global _event_sequence_counter
+    _event_sequence_counter = 0
+
+
+def next_event_sequence() -> int:
+    """Return the next sequence number and advance the counter."""
+    global _event_sequence_counter
+    seq = _event_sequence_counter
+    _event_sequence_counter += 1
+    return seq
+
 # Tool name → display label mapping for UI tags
 # Maps internal tool names to user-friendly Chinese labels
 TOOL_DISPLAY_LABELS: Dict[str, str] = {
@@ -99,6 +121,24 @@ OUTCOME_DISPLAY_LABELS: Dict[str, Dict[str, str]] = {
     "skipped": {"zh": "已跳过", "en": "Skipped"},
     "incomplete": {"zh": "未完成", "en": "Incomplete"},
 }
+
+# Monotonic sequence counter for event ordering and deduplication
+# Reset at the start of each agent turn via reset_event_sequence()
+_event_sequence_counter = 0
+
+
+def reset_event_sequence() -> None:
+    """Reset the event sequence counter. Called at the start of each agent turn."""
+    global _event_sequence_counter
+    _event_sequence_counter = 0
+
+
+def next_event_sequence() -> int:
+    """Get the next sequence number and increment the counter."""
+    global _event_sequence_counter
+    seq = _event_sequence_counter
+    _event_sequence_counter += 1
+    return seq
 
 
 def stream_event(event_type: str, **fields: Any) -> Dict[str, Any]:
