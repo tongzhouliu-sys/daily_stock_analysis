@@ -317,6 +317,7 @@ const ChatPage: React.FC = () => {
     stateContract,
     loading,
     progressSteps,
+    streamingContent,
     sessionId,
     sessions,
     sessionsLoading,
