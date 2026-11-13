@@ -401,6 +401,21 @@ class IntakeCreateResponse(BaseModel):
     status: IntakeStatus = Field(..., description="Initial status")
     questions: List[Question] = Field(..., description="Questions to ask")
     answers: List[Answer] = Field(default_factory=list, description="Initial answers")
+    # v2: Object resolution result
+    resolution: Optional[ObjectResolution] = Field(
+        default=None,
+        description="v2: Object resolution result",
+    )
+    # v2: Brief preview
+    brief_preview: Optional[AnalysisBrief] = Field(
+        default=None,
+        description="v2: Brief preview",
+    )
+    # v2: Intake plan
+    plan: Optional[IntakePlan] = Field(
+        default=None,
+        description="v2: Intake plan with auto_start flag",
+    )
 
 
 class IntakeUpdateRequest(BaseModel):
