@@ -1,9 +1,12 @@
-import { Menu, PanelLeftClose, PanelLeftOpen } from 'lucide-react';
+import { useState } from 'react';
+import { Info, LogOut, Menu, PanelLeftClose, PanelLeftOpen } from 'lucide-react';
 import { Link, useLocation } from 'react-router-dom';
+import { useAuth } from '../../contexts/AuthContext';
 import { useUiLanguage } from '../../contexts/UiLanguageContext';
 import type { UiTextKey } from '../../i18n/uiText';
 import { UiLanguageToggle } from '../i18n/UiLanguageToggle';
 import { ThemeToggle } from '../theme/ThemeToggle';
+import { ConfirmDialog } from '../common/ConfirmDialog';
 import { DesktopUpdateIndicator } from './DesktopUpdateIndicator';
 import { ResearchMark } from './ResearchIdentity';
 
@@ -30,6 +33,8 @@ type ShellHeaderProps = {
 export function ShellHeader({ onOpenMobileNav, navCollapsed = false, onToggleNav }: ShellHeaderProps) {
   const { pathname } = useLocation();
   const { t } = useUiLanguage();
+  const { authEnabled, logout } = useAuth();
+  const [showLogoutConfirm, setShowLogoutConfirm] = useState(false);
   const routeLabel = pathname.startsWith('/scanner/')
     ? 'layout.nav.scanner' : ROUTE_LABELS[pathname.replace(/\/$/, '') || '/'];
 
@@ -71,11 +76,46 @@ export function ShellHeader({ onOpenMobileNav, navCollapsed = false, onToggleNav
       </div>
       <div className="ml-auto flex items-center gap-2">
         <DesktopUpdateIndicator />
-        <div className="flex items-center gap-1 lg:hidden">
+        <div className="flex items-center gap-1">
+          <div className="relative group">
+            <button
+              type="button"
+              className="inline-flex h-10 items-center justify-center rounded-xl border border-border/70 bg-card/80 px-3 text-sm text-secondary-text shadow-soft-card transition-colors hover:bg-hover hover:text-foreground"
+              aria-label={t('layout.about')}
+            >
+              <Info className="h-4 w-4" />
+            </button>
+            <div className="pointer-events-none absolute bottom-full right-0 mb-2 whitespace-nowrap rounded-lg border border-border bg-elevated px-3 py-2 text-sm text-foreground opacity-0 shadow-lg transition-opacity group-hover:pointer-events-auto group-hover:opacity-100">
+              {t('layout.copyright')}
+            </div>
+          </div>
           <UiLanguageToggle />
           <ThemeToggle />
+          {authEnabled ? (
+            <button
+              type="button"
+              onClick={() => setShowLogoutConfirm(true)}
+              className="inline-flex h-10 items-center gap-2 rounded-xl border border-border/70 bg-card/80 px-3 text-sm text-secondary-text shadow-soft-card transition-colors hover:bg-hover hover:text-foreground"
+              aria-label={t('layout.logout')}
+            >
+              <LogOut className="h-4 w-4" />
+            </button>
+          ) : null}
         </div>
       </div>
+      <ConfirmDialog
+        isOpen={showLogoutConfirm}
+        title={t('layout.logoutTitle')}
+        message={t(/^\/settings\/?$/.test(pathname) ? 'layout.logoutSettingsMessage' : 'layout.logoutMessage')}
+        confirmText={t('layout.logoutConfirm')}
+        cancelText={t('common.cancel')}
+        isDanger
+        onConfirm={() => {
+          setShowLogoutConfirm(false);
+          void logout();
+        }}
+        onCancel={() => setShowLogoutConfirm(false)}
+      />
     </header>
   );
 }

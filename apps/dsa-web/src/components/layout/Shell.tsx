@@ -73,7 +73,7 @@ export const Shell: React.FC<ShellProps> = ({ children }) => {
         zIndex={90}
         side="left"
       >
-        <SidebarNav onNavigate={() => setMobileOpen(false)} showPreferences={false} />
+        <SidebarNav onNavigate={() => setMobileOpen(false)} />
       </Drawer>
     </div>
   );

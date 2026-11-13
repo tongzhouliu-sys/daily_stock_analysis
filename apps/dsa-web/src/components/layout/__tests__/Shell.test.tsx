@@ -61,7 +61,8 @@ describe('Shell', () => {
     expect(screen.getByRole('button', { name: '展开侧边栏' })).toBeInTheDocument();
     expect(screen.getByRole('button', { name: '展开侧边栏' })).toHaveAttribute('aria-expanded', 'false');
   });
-  it.skip('renders navigation, theme toggle and completion badge', () => {
+
+  it('renders theme toggle, language toggle and logout button in header', () => {
     render(
       <MemoryRouter initialEntries={['/chat']}>
         <ThemeProvider>
@@ -72,15 +73,12 @@ describe('Shell', () => {
       </MemoryRouter>
     );
 
-    expect(screen.getAllByRole('button', { name: '切换主题' }).length).toBeGreaterThan(0);
-    expect(screen.getByRole('link', { name: '问股' })).toBeInTheDocument();
-    expect(screen.getByTestId('chat-completion-badge')).toBeInTheDocument();
-    const logoutButton = screen.getByRole('button', { name: '退出' });
-    expect(logoutButton).toBeInTheDocument();
-    expect(logoutButton).toHaveClass('cursor-pointer');
+    expect(screen.getByRole('button', { name: '切换主题' })).toBeInTheDocument();
+    expect(screen.getByRole('button', { name: '切换界面语言' })).toBeInTheDocument();
+    expect(screen.getByRole('button', { name: '退出' })).toBeInTheDocument();
   });
 
-  it.skip('opens the theme menu from the sidebar toggle', async () => {
+  it('shows about icon with copyright tooltip on hover', () => {
     render(
       <MemoryRouter initialEntries={['/chat']}>
         <ThemeProvider>
@@ -91,9 +89,11 @@ describe('Shell', () => {
       </MemoryRouter>
     );
 
-    fireEvent.click(screen.getAllByRole('button', { name: '切换主题' })[0]);
+    const aboutButton = screen.getByRole('button', { name: '关于我们' });
+    expect(aboutButton).toBeInTheDocument();
 
-    expect(await screen.findByRole('menu', { name: '主题模式' })).toBeInTheDocument();
+    fireEvent.mouseEnter(aboutButton);
+    expect(screen.getByText('版权所有 2026@RHCLOUD PTE. LTD.')).toBeInTheDocument();
   });
 
   it('hides the desktop update entry outside Electron runtime', () => {

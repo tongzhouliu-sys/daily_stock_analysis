@@ -100,6 +100,8 @@ const zh = {
   'layout.logoutMessage': '确认退出当前登录状态吗？退出后需要重新输入密码。',
   'layout.logoutSettingsMessage': '退出会丢弃本页未保存的设置，请先保存需要保留的修改。已发出的保存请求不会因退出而撤销。确认退出当前登录状态吗？',
   'layout.logoutTitle': '退出登录',
+  'layout.about': '关于我们',
+  'layout.copyright': '版权所有 2026@RHCLOUD PTE. LTD.',
 
   'usage.breakdown': 'Breakdown',
   'usage.callType.agent': '问股 Agent',
