@@ -35,6 +35,7 @@ from src.agent.stream_events import (
     tool_done_event,
     content_delta_event,
     content_reset_event,
+    reset_event_sequence,
     TOOL_DISPLAY_LABELS,
     TOOL_CATEGORIES,
 )
@@ -538,6 +539,11 @@ def run_agent_loop(
 
         if response.tool_calls:
             # ---- tool execution branch ----
+            # T5: 如果之前已经流式输出了文本，但 LLM 决定调用工具，需要发出 content_reset 事件
+            if _streamed_any and progress_callback:
+                progress_callback(content_reset_event(step + 1, reason="tool_call"))
+                _streamed_any = False  # 重置标记，下一轮可以重新发 generating
+            
             logger.info(
                 "Agent requesting %d tool call(s): %s",
                 len(response.tool_calls),
