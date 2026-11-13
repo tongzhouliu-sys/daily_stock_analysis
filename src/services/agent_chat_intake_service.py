@@ -143,6 +143,7 @@ class AgentChatIntakeService:
         self, *, message: str, session_id: str, session_generation: str,
         request_id: Optional[str] = None,
         stock_clarification_needed: bool = False, report_follow_up: bool = False,
+        intent_hints: Optional[Dict[str, Any]] = None,
     ) -> IntakeDraft:
         message = (message or "").strip()
         if not message:
@@ -151,9 +152,16 @@ class AgentChatIntakeService:
             raise IntakeServiceError("message is too long", code="invalid_intake_answer")
         if not session_id:
             raise IntakeServiceError("session_id is required", code="intake_error")
+
+        # When the client provides a resolved stock code + market, the object
+        # dimension is no longer ambiguous — suppress the market question.
+        if intent_hints and intent_hints.get("extracted_stock_code") and intent_hints.get("inferred_market"):
+            stock_clarification_needed = False
+
         questions = select_questions(
             message, stock_clarification_needed=stock_clarification_needed,
             report_follow_up=report_follow_up,
+            intent_hints=intent_hints,
         )
         if not questions or len(questions) > MAX_QUESTIONS:
             raise IntakeServiceError("question bank produced an invalid questionnaire", code="intake_error")

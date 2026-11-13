@@ -34,7 +34,7 @@ import {
   type StockClarificationIdentity,
 } from '../stores/agentChatStore';
 import StockClarificationCard from '../components/chat/StockClarificationCard';
-import ChatIntakeCard from '../components/chat/ChatIntakeCard';
+import ChatSmartSummaryCard from '../components/chat/ChatSmartSummaryCard';
 import ChatAnswer from '../components/chat/ChatAnswer';
 import { downloadSessionInFormat, formatSessionAsMarkdown, type ExportFormat } from '../utils/chatExport';
 import { buildScannerFollowUpPrompt } from '../utils/scannerFollowUp';
@@ -55,6 +55,7 @@ import {
 } from '../utils/stockCode';
 import { useStockIndex } from '../hooks/useStockIndex';
 import { useUiLanguage } from '../contexts/UiLanguageContext';
+import { extractIntentHints } from '../utils/chatIntentHints';
 
 // Quick question examples shown on empty state
 type ActiveStockContext = Pick<ChatFollowUpContext, 'stock_code' | 'stock_name'>;
@@ -323,12 +324,10 @@ const ChatPage: React.FC = () => {
     chatError,
     terminalStatus,
     intakeDraft,
-    analysisBrief,
     intakeBusy,
     intakeError,
     createIntake,
     updateIntakeAnswers,
-    refreshIntakeDraft,
     startIntakeAnalysis,
     skipIntake,
     clearIntake,
@@ -827,7 +826,8 @@ const ChatPage: React.FC = () => {
       // No research, quotes or news lookups start while a draft is pending.
       const isFirstQuestion = messages.length === 0 && hasInitialLoad && !intakeDraft;
       if (isFirstQuestion && guidedIntakeSupported) {
-        await createIntake(msgText, payload, streamMeta);
+        const hints = extractIntentHints(msgText, stockIndex);
+        await createIntake(msgText, payload, streamMeta, hints);
         setInput('');
         requestScrollToBottom('smooth');
         return;
@@ -837,7 +837,7 @@ const ChatPage: React.FC = () => {
     },
     [agentAvailable, agentStatus, createIntake, getSkillNames, guidedIntakeSupported,
       hasInitialLoad, input, intakeDraft, loading, messages.length, normalizeSelectedSkillIds,
-      requestScrollToBottom, selectedSkillIds, sessionId, sessionSelectedSkillIds, startStream],
+      requestScrollToBottom, selectedSkillIds, sessionId, sessionSelectedSkillIds, startStream, stockIndex],
   );
 
   const handleStockClarificationDecision = useCallback((
@@ -1554,17 +1554,12 @@ const ChatPage: React.FC = () => {
                     </div>
                   )}
                   {intakeDraft && (
-                    <ChatIntakeCard
+                    <ChatSmartSummaryCard
                       questions={intakeDraft.questions}
                       answers={intakeDraft.answers}
-                      revision={intakeDraft.revision}
                       status={intakeDraft.status}
-                      brief={analysisBrief}
                       originalMessage={intakeDraft.original_message}
                       isLoading={intakeBusy}
-                      errorMessage={intakeError === 'intake_capability_missing'
-                        ? t('chat.intake.legacyApi') : intakeError}
-                      onSave={(a) => updateIntakeAnswers(a, 'save')}
                       onConfirm={async (a) => {
                         const saved = await updateIntakeAnswers(a, 'confirm');
                         if (saved) await startIntakeAnalysis();
@@ -1574,12 +1569,21 @@ const ChatPage: React.FC = () => {
                         await skipIntake();
                         return !useAgentChatStore.getState().intakeError;
                       }}
-                      onCancel={() => {
-                        setInput(intakeDraft.original_message);
-                        clearIntake();
-                        composerRef.current?.focus();
+                      onUpdateAnswer={(questionId, optionId) => {
+                        const currentAnswers = intakeDraft.answers || [];
+                        const existingIndex = currentAnswers.findIndex(a => a.question_id === questionId);
+                        let newAnswers;
+                        if (existingIndex >= 0) {
+                          newAnswers = currentAnswers.map((a, i) => 
+                            i === existingIndex 
+                              ? { ...a, option_ids: [optionId] }
+                              : a
+                          );
+                        } else {
+                          newAnswers = [...currentAnswers, { question_id: questionId, option_ids: [optionId] }];
+                        }
+                        updateIntakeAnswers(newAnswers, 'save');
                       }}
-                      onRetry={() => { void refreshIntakeDraft(); }}
                     />
                   )}
                   {intakeError && !intakeDraft && (
@@ -1589,7 +1593,10 @@ const ChatPage: React.FC = () => {
                       <div className="chat-intake-error-actions">
                         <button type="button" onClick={() => {
                           const pending = useAgentChatStore.getState().intakeSendPayload;
-                          if (pending) void createIntake(pending.message, pending);
+                          if (pending) {
+                            const hints = extractIntentHints(pending.message, stockIndex);
+                            void createIntake(pending.message, pending, undefined, hints);
+                          }
                         }}>{t('chat.intake.retry')}</button>
                         <button type="button" onClick={() => {
                           const pending = useAgentChatStore.getState().intakeSendPayload;

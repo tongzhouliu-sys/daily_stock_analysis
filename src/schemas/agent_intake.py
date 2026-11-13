@@ -172,6 +172,36 @@ class AnswerMeta(BaseModel):
 # Request/Response models for API
 
 
+class IntentHints(BaseModel):
+    """Client-side intent inference hints sent alongside the intake request.
+
+    The server merges these with its own regex-based classification. Every
+    field is optional — the server falls back to its own inference when a
+    hint is absent.
+    """
+
+    extracted_stock_code: Optional[str] = Field(
+        default=None,
+        description="Stock code extracted by the client (e.g. '600519', 'HK00700', 'AAPL')",
+    )
+    inferred_market: Optional[str] = Field(
+        default=None,
+        description="Market inferred by the client: a_share | hk | us | index | other",
+    )
+    goal: Optional[str] = Field(
+        default=None,
+        description="Goal hint: worth_watching | evaluate_holding | understand_move | learn_method",
+    )
+    horizon: Optional[str] = Field(
+        default=None,
+        description="Horizon hint: days | weeks | months | long",
+    )
+    position: Optional[str] = Field(
+        default=None,
+        description="Position hint: not_held | held_protect_profit | held_control_drawdown",
+    )
+
+
 class IntakeCreateRequest(BaseModel):
     """Request to create a new intake draft."""
 
@@ -192,6 +222,10 @@ class IntakeCreateRequest(BaseModel):
     context: Optional[Dict[str, Any]] = Field(
         default=None,
         description="Additional context",
+    )
+    intent_hints: Optional[IntentHints] = Field(
+        default=None,
+        description="Client-side extraction hints for market, goal, horizon, etc.",
     )
 
 
@@ -277,6 +311,7 @@ __all__ = [
     "IntakeStatus",
     "IntakeDraft",
     "AnswerMeta",
+    "IntentHints",
     "IntakeCreateRequest",
     "IntakeCreateResponse",
     "IntakeUpdateRequest",

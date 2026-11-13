@@ -184,25 +184,59 @@ OBJECT_EXPLICIT_PATTERNS = [
 
 # Patterns indicating explicit goal
 GOAL_PATTERNS = {
-    "worth_watching": [r"值得.*关注", r"值得.*买", r"能不能.*买"],
-    "evaluate_holding": [r"持仓", r"持有", r"仓位", r"已买"],
-    "understand_move": [r"为什么.*涨", r"为什么.*跌", r"涨跌.*原因"],
-    "learn_method": [r"怎么分析", r"分析方法", r"学习"],
+    "worth_watching": [
+        r"值得.*关注", r"值得.*买", r"能不能.*买", r"可以.*买",
+        r"是否.*关注", r"有没有.*价值", r"值.*关注",
+    ],
+    "evaluate_holding": [
+        r"持仓", r"持有", r"仓位", r"已买", r"已经.*买",
+        r"我.*有", r"手里.*有", r"成本.*是",
+    ],
+    "understand_move": [
+        r"为什么.*涨", r"为什么.*跌", r"涨跌.*原因",
+        r"为何.*涨", r"为何.*跌", r"怎么.*涨", r"怎么.*跌",
+        r"啥原因", r"什么原因",
+    ],
+    "learn_method": [
+        r"怎么分析", r"分析方法", r"学习", r"如何分析",
+        r"教.*分析", r"分析.*方法", r"用什么.*方法",
+    ],
 }
 
 # Patterns indicating explicit horizon
 HORIZON_PATTERNS = {
-    "days": [r"几天", r"短线", r"日内", r"数日"],
-    "weeks": [r"几周", r"短期", r"1.*4.*周"],
-    "months": [r"几个月", r"中期", r"1.*6.*月", r"半年"],
-    "long": [r"长期", r"半年以上", r"一年", r"数年"],
+    "days": [
+        r"几天", r"短线", r"日内", r"数日", r"今天", r"明天",
+        r"这周", r"本周", r"下周", r"短期.*内",
+    ],
+    "weeks": [
+        r"几周", r"短期", r"1.*4.*周", r"一两周",
+        r"两三周", r"月内",
+    ],
+    "months": [
+        r"几个月", r"中期", r"1.*6.*月", r"半年",
+        r"两三个月", r"三四个月",
+    ],
+    "long": [
+        r"长期", r"半年以上", r"一年", r"数年", r"几年",
+        r"长线", r"一年以上", r"多年",
+    ],
 }
 
 # Patterns indicating explicit position
 POSITION_PATTERNS = {
-    "not_held": [r"没有.*持仓", r"未.*持有", r"空仓", r"想.*买"],
-    "held_protect_profit": [r"持有.*盈利", r"持仓.*赚", r"保护.*利润"],
-    "held_control_drawdown": [r"持有.*亏", r"持仓.*套", r"控制.*回撤"],
+    "not_held": [
+        r"没有.*持仓", r"未.*持有", r"空仓", r"想.*买",
+        r"准备.*买", r"打算.*买", r"还没.*买", r"想.*入手",
+    ],
+    "held_protect_profit": [
+        r"持有.*盈利", r"持仓.*赚", r"保护.*利润", r"已经.*赚",
+        r"有.*利润", r"浮盈", r"盈利.*保护",
+    ],
+    "held_control_drawdown": [
+        r"持有.*亏", r"持仓.*套", r"控制.*回撤", r"已经.*亏",
+        r"被套", r"浮亏", r"亏损", r"套牢",
+    ],
 }
 
 # Patterns indicating explicit risk focus
@@ -287,12 +321,36 @@ def _confirmation_question() -> Question:
 def select_questions(
     message: str, *, stock_clarification_needed: bool = False,
     report_follow_up: bool = False,
+    intent_hints: Optional[Dict[str, Any]] = None,
 ) -> List[Question]:
-    """Select 1-5 controlled questions, asking only what is still unknown."""
+    """Select 1-5 controlled questions, asking only what is still unknown.
+
+    Args:
+        message: Original user message
+        stock_clarification_needed: Whether the object/market is ambiguous
+        report_follow_up: Whether this is a follow-up to a previous report
+        intent_hints: Client-side extraction hints (extracted_stock_code,
+            inferred_market, goal, horizon, position). When present, these
+            dimensions are considered resolved and skipped.
+    """
     intent = classify_question_intent(message)
     question_type, explicit_dims = intent["question_type"], intent["explicit_dims"]
+
+    # Merge client hints into explicit_dims — the client has already resolved
+    # these dimensions via stockCode.ts / extractIntentHints(), so we must not
+    # ask the user again.
+    if intent_hints:
+        if intent_hints.get("extracted_stock_code") and intent_hints.get("inferred_market"):
+            explicit_dims.add("object")
+        if intent_hints.get("goal"):
+            explicit_dims.add("goal")
+        if intent_hints.get("horizon"):
+            explicit_dims.add("horizon")
+        if intent_hints.get("position"):
+            explicit_dims.add("position")
+
     selected: List[Question] = []
-    if stock_clarification_needed:
+    if stock_clarification_needed and "object" not in explicit_dims:
         selected.append(QUESTION_OBJECT)
     if question_type == "concept":
         selected.append(QUESTION_READING_STYLE)

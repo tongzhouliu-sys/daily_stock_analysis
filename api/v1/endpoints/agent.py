@@ -1027,12 +1027,16 @@ async def create_chat_intake(
                 expected_generation=request.session_generation,
             )
         context = request.context or {}
+        intent_hints_dict = None
+        if request.intent_hints is not None:
+            intent_hints_dict = request.intent_hints.model_dump(exclude_none=True)
         draft = await asyncio.to_thread(
             intake_service.create_intake,
             message=request.message, session_id=session_id,
             session_generation=generation or "", request_id=request.request_id,
             stock_clarification_needed=_needs_object_intake(request.message),
             report_follow_up=bool(context.get("report_record_id") or context.get("record_id")),
+            intent_hints=intent_hints_dict,
         )
         return IntakeCreateResponse(
             intake_id=draft.intake_id, schema_version=draft.schema_version,

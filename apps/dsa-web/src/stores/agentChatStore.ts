@@ -15,6 +15,7 @@ import type {
   AnalysisBrief,
   AnswerMeta,
   IntakeStatus,
+  IntentHints,
 } from '../api/agentIntake';
 import {
   createParsedApiError,
@@ -228,7 +229,7 @@ interface AgentChatActions {
   stopStream: () => Promise<void>;
   startStream: (payload: ChatStreamRequest, meta?: StreamMeta) => Promise<void>;
   // T3: Intake actions
-  createIntake: (message: string, payload?: ChatStreamRequest, meta?: StreamMeta) => Promise<void>;
+  createIntake: (message: string, payload?: ChatStreamRequest, meta?: StreamMeta, intentHints?: IntentHints | null) => Promise<void>;
   updateIntakeAnswers: (
     answers: Answer[], action: 'save' | 'confirm' | 'skip',
   ) => Promise<boolean>;
@@ -944,7 +945,7 @@ export const useAgentChatStore = create<AgentChatState & AgentChatActions>((set,
 
   // T3: The original question stays local until the user confirms the
   // background; only startIntakeAnalysis submits one research request.
-  createIntake: async (message, payload, meta) => {
+  createIntake: async (message, payload, meta, intentHints) => {
     const { sessionId, sessionGeneration } = get();
     set({ intakeBusy: true, intakeError: null, chatError: null });
     try {
@@ -955,6 +956,7 @@ export const useAgentChatStore = create<AgentChatState & AgentChatActions>((set,
         request_id: generateUUID(),
         skills: payload?.skills ?? null,
         context: (payload?.context as Record<string, unknown> | undefined) ?? null,
+        intent_hints: intentHints ?? null,
       });
       set({
         intakeDraft: {

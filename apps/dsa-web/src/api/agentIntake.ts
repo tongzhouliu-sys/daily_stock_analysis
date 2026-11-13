@@ -68,6 +68,14 @@ export interface IntakeDraft {
   updated_at?: string | null;
 }
 
+export interface IntentHints {
+  extracted_stock_code?: string;
+  inferred_market?: 'a_share' | 'hk' | 'us' | 'index' | 'other';
+  goal?: 'worth_watching' | 'evaluate_holding' | 'understand_move' | 'learn_method';
+  horizon?: 'days' | 'weeks' | 'months' | 'long';
+  position?: 'not_held' | 'held_protect_profit' | 'held_control_drawdown';
+}
+
 export interface IntakeCreateRequest {
   message: string;
   session_id: string;
@@ -75,6 +83,7 @@ export interface IntakeCreateRequest {
   request_id?: string | null;
   skills?: string[] | null;
   context?: Record<string, unknown> | null;
+  intent_hints?: IntentHints | null;
 }
 
 export interface IntakeCreateResponse {
