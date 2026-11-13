@@ -383,6 +383,11 @@ class IntakeCreateRequest(BaseModel):
         default=None,
         description="Client-side extraction hints for market, goal, horizon, etc.",
     )
+    # v2: Interaction version for smart intake
+    interaction_version: int = Field(
+        default=1,
+        description="Interaction version: 1 = v1 guided questions, 2 = v2 smart intake",
+    )
 
 
 class IntakeCreateResponse(BaseModel):
@@ -458,6 +463,16 @@ class ChatRequestWithIntake(BaseModel):
 
 
 __all__ = [
+    # v2 types
+    "ResolutionStatus",
+    "ResolutionScope",
+    "BriefSource",
+    "QuestionKind",
+    "ObjectIdentity",
+    "ResolutionEvidence",
+    "ObjectResolution",
+    "IntakePlan",
+    # v1 types
     "QuestionType",
     "QuestionDimension",
     "QuestionOption",
