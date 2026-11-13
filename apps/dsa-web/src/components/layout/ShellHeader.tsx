@@ -79,6 +79,18 @@ export function ShellHeader({ onOpenMobileNav, navCollapsed = false, onToggleNav
         <div className="flex items-center gap-1">
           <UiLanguageToggle iconOnly />
           <ThemeToggle iconOnly />
+          <div className="relative group">
+            <button
+              type="button"
+              className="inline-flex h-10 items-center justify-center rounded-xl border border-border/70 bg-card/80 px-3 text-sm text-secondary-text shadow-soft-card transition-colors hover:bg-hover hover:text-foreground"
+              aria-label={t('layout.about')}
+            >
+              <Info className="h-4 w-4" />
+            </button>
+            <div className="pointer-events-none absolute top-full right-0 mt-2 whitespace-nowrap rounded-lg border border-border bg-elevated px-3 py-2 text-sm text-foreground opacity-0 shadow-lg transition-opacity group-hover:pointer-events-auto group-hover:opacity-100">
+              {t('layout.copyright')}
+            </div>
+          </div>
           {authEnabled ? (
             <button
               type="button"
@@ -89,18 +101,6 @@ export function ShellHeader({ onOpenMobileNav, navCollapsed = false, onToggleNav
               <LogOut className="h-4 w-4" />
             </button>
           ) : null}
-          <div className="relative group">
-            <button
-              type="button"
-              className="inline-flex h-10 items-center justify-center rounded-xl border border-border/70 bg-card/80 px-3 text-sm text-secondary-text shadow-soft-card transition-colors hover:bg-hover hover:text-foreground"
-              aria-label={t('layout.about')}
-            >
-              <Info className="h-4 w-4" />
-            </button>
-            <div className="pointer-events-none absolute bottom-full right-0 mb-2 whitespace-nowrap rounded-lg border border-border bg-elevated px-3 py-2 text-sm text-foreground opacity-0 shadow-lg transition-opacity group-hover:pointer-events-auto group-hover:opacity-100">
-              {t('layout.copyright')}
-            </div>
-          </div>
         </div>
       </div>
       <ConfirmDialog
