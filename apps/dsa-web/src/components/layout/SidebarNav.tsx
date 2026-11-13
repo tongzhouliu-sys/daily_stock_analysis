@@ -37,10 +37,9 @@ const NAV_ITEMS: NavItem[] = [
   { key: 'settings', labelKey: 'layout.nav.settings', to: '/settings', icon: Settings2 },
 ];
 
-export const SidebarNav: React.FC<SidebarNavProps> = ({ collapsed = false, onNavigate, variant = 'default' }) => {
+export const SidebarNav: React.FC<SidebarNavProps> = ({ collapsed = false, onNavigate }) => {
   const { t } = useUiLanguage();
   const completionBadge = useAgentChatStore((state) => state.completionBadge);
-  const isRail = variant === 'rail';
   const itemClass = cn('research-nav-item shrink-0', collapsed && 'justify-center');
   const activeClass = 'research-nav-active font-medium';
   const iconClass = 'h-[17px] w-[17px] shrink-0';
