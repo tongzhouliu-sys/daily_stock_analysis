@@ -608,6 +608,7 @@ class StockAnalysisPipeline:
                 try:
                     fundamental_context = self.fetcher_manager.get_fundamental_context(
                         code,
+                        realtime_quote=realtime_quote,
                         budget_seconds=getattr(
                             self.config,
                             'fundamental_stage_timeout_seconds',
@@ -1127,17 +1128,35 @@ class StockAnalysisPipeline:
             if price is not None and price > 0:
                 orig_today = enhanced.get('today') or {}
                 stale_today = orig_today
-                market_today_date = get_market_now(
-                    get_market_for_stock(normalize_stock_code(enhanced.get('code', '')))
-                ).date()
-                market_today = market_today_date.isoformat()
-                # T9: 库里最新的“今日”若早于市场当日，它其实是“昨日”。
+                market_code = get_market_for_stock(normalize_stock_code(enhanced.get('code', '')))
+                market_now = get_market_now(market_code)
+                market_today = market_now.date().isoformat()
+                phase_ctx = market_phase_context if isinstance(market_phase_context, dict) else {}
+                session_started = (
+                    phase_ctx.get('is_trading_day') is True
+                    and phase_ctx.get('phase') in (
+                        'intraday', 'lunch_break', 'closing_auction', 'postmarket',
+                    )
+                )
+                session_date = str(phase_ctx.get('session_date') or market_today)[:10]
+                orig_today_date = _coerce_context_date(orig_today.get('date')) if isinstance(orig_today, dict) else None
+                # T9: 会话已开始、且库里最新一行早于当前会话日时，它其实是"昨日"。
                 # 先顺移，再让实时行情覆盖今日，否则昨收/涨跌额/振幅会按前前日算。
-                orig_today_date = _coerce_context_date(orig_today.get('date'))
-                if orig_today_date is not None and orig_today_date < market_today_date:
-                    enhanced['yesterday'] = orig_today
+                if (
+                    session_started
+                    and orig_today_date is not None
+                    and orig_today_date < date.fromisoformat(session_date)
+                    and self._is_realtime_quote_for_session(
+                        realtime_quote,
+                        session_date=session_date,
+                        market_tz=market_now.tzinfo,
+                    )
+                ):
+                    enhanced['yesterday'] = dict(orig_today) if isinstance(orig_today, dict) else orig_today
+                    yesterday_close = orig_today.get('close') if isinstance(orig_today, dict) else None
                     orig_today = {}
-                yesterday_close = None
+                else:
+                    yesterday_close = None
                 pre_close = getattr(realtime_quote, 'pre_close', None)
                 if pre_close is not None:
                     try:
@@ -2752,6 +2771,49 @@ class StockAnalysisPipeline:
             return "明显放量"
         else:
             return "巨量"
+
+    @staticmethod
+    def _is_realtime_quote_for_session(
+        realtime_quote: Any,
+        *,
+        session_date: str,
+        market_tz: Any = None,
+    ) -> bool:
+        """Require provider-side date evidence before shifting the daily-bar baseline."""
+        for attr in ("session_date", "trade_date", "quote_date", "provider_timestamp"):
+            raw_val = getattr(realtime_quote, attr, None)
+            if raw_val is None:
+                continue
+            quote_date: Optional[str] = None
+            if isinstance(raw_val, datetime):
+                dt = raw_val
+                if dt.tzinfo is not None and market_tz is not None:
+                    dt = dt.astimezone(market_tz)
+                quote_date = dt.date().isoformat()
+            elif isinstance(raw_val, date):
+                quote_date = raw_val.isoformat()
+            else:
+                text = str(raw_val).strip()
+                if len(text) == 10 and text[4:5] == "-" and text[7:8] == "-":
+                    try:
+                        quote_date = date.fromisoformat(text).isoformat()
+                    except ValueError:
+                        quote_date = None
+                elif text:
+                    iso_text = f"{text[:-1]}+00:00" if text.endswith("Z") else text
+                    try:
+                        dt = datetime.fromisoformat(iso_text)
+                        if dt.tzinfo is not None and market_tz is not None:
+                            dt = dt.astimezone(market_tz)
+                        quote_date = dt.date().isoformat()
+                    except ValueError:
+                        quote_date = None
+            if quote_date is not None:
+                return quote_date == session_date
+
+        # Cached providers may omit timestamps and OHLC/pre_close entirely.
+        # Neither price comparisons nor fetched_at establish the quote's session.
+        return False
 
     @staticmethod
     def _compute_ma_status(close: float, ma5: float, ma10: float, ma20: float) -> str:
