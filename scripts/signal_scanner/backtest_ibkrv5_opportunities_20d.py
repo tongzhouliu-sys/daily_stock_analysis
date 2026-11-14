@@ -53,7 +53,7 @@ YAHOO_P2 = int(datetime(2026, 10, 24, tzinfo=timezone.utc).timestamp())
 def load_data10():
     closes = defaultdict(dict)
     dates = set()
-    for fp in sorted(glob.glob(os.path.join(ROOT, "data10/2026-*.csv"))):
+    for fp in sorted(glob.glob(os.path.join(ROOT, "local/data/data10/2026-*.csv"))):
         d = os.path.basename(fp)[:10]
         dates.add(d)
         with open(fp) as f:

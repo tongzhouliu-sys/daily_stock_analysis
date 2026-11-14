@@ -23,7 +23,7 @@ closes, _ = load_data10()
 # also load OHLC for MAE/MFE
 ohlc = defaultdict(dict)
 import glob, os
-for fp in glob.glob('data10/2026-*.csv'):
+for fp in glob.glob('local/data/data10/2026-*.csv'):
     d = os.path.basename(fp)[:10]
     with open(fp) as f:
         for row in csv.DictReader(f):
