@@ -971,136 +971,153 @@ class NotificationService(
             report_lines.extend([f"## 📈 {labels['report_title']}", ""])
             # 逐个股票的详细分析
             for result in sorted_results:
-                signal_text, emoji, _ = self._get_signal_level(result)
-                confidence_stars = result.get_confidence_stars() if hasattr(result, 'get_confidence_stars') else '⭐⭐'
+                # T21-B6: 单股容错 - 单只股票渲染失败不影响整批报告
+                try:
+                    signal_text, emoji, _ = self._get_signal_level(result)
+                    confidence_stars = result.get_confidence_stars() if hasattr(result, 'get_confidence_stars') else '⭐⭐'
 
-                report_lines.extend([
-                    f"### {emoji} {self._get_display_name(result, report_language)} ({result.code})",
-                    "",
-                    f"**{labels['action_advice_label']}：{signal_text}** | "
-                    f"**{labels['score_label']}：{result.sentiment_score}** | "
-                    f"**{labels['trend_label']}：{localize_trend_prediction(result.trend_prediction, report_language)}** | "
-                    f"**Confidence：{confidence_stars}**",
-                    "",
-                ])
-                self._append_market_snapshot(report_lines, result)
-
-                # 核心看点
-                if hasattr(result, 'key_points') and result.key_points:
                     report_lines.extend([
-                        f"**🎯 核心看点**：{result.key_points}",
+                        f"### {emoji} {self._get_display_name(result, report_language)} ({result.code})",
+                        "",
+                        f"**{labels['action_advice_label']}：{signal_text}** | "
+                        f"**{labels['score_label']}：{result.sentiment_score}** | "
+                        f"**{labels['trend_label']}：{localize_trend_prediction(result.trend_prediction, report_language)}** | "
+                        f"**Confidence：{confidence_stars}**",
+                        "",
+                    ])
+                    self._append_market_snapshot(report_lines, result)
+
+                    # 核心看点
+                    if hasattr(result, 'key_points') and result.key_points:
+                        report_lines.extend([
+                            f"**🎯 核心看点**：{result.key_points}",
+                            "",
+                        ])
+
+                    # 买入/卖出理由
+                    if hasattr(result, 'buy_reason') and result.buy_reason:
+                        report_lines.extend([
+                            f"**💡 操作理由**：{result.buy_reason}",
+                            "",
+                        ])
+
+                    # 走势分析
+                    if hasattr(result, 'trend_analysis') and result.trend_analysis:
+                        report_lines.extend([
+                            "#### 📉 走势分析",
+                            f"{result.trend_analysis}",
+                            "",
+                        ])
+
+                    # 短期/中期展望
+                    outlook_lines = []
+                    if hasattr(result, 'short_term_outlook') and result.short_term_outlook:
+                        outlook_lines.append(f"- **短期（1-3日）**：{result.short_term_outlook}")
+                    if hasattr(result, 'medium_term_outlook') and result.medium_term_outlook:
+                        outlook_lines.append(f"- **中期（1-2周）**：{result.medium_term_outlook}")
+                    if outlook_lines:
+                        report_lines.extend([
+                            "#### 🔮 市场展望",
+                            *outlook_lines,
+                            "",
+                        ])
+
+                    # 技术面分析
+                    tech_lines = []
+                    if result.technical_analysis:
+                        tech_lines.append(f"**综合**：{result.technical_analysis}")
+                    if hasattr(result, 'ma_analysis') and result.ma_analysis:
+                        tech_lines.append(f"**均线**：{result.ma_analysis}")
+                    if hasattr(result, 'volume_analysis') and result.volume_analysis:
+                        tech_lines.append(f"**量能**：{result.volume_analysis}")
+                    if hasattr(result, 'pattern_analysis') and result.pattern_analysis:
+                        tech_lines.append(f"**形态**：{result.pattern_analysis}")
+                    if tech_lines:
+                        report_lines.extend([
+                            "#### 📊 技术面分析",
+                            *tech_lines,
+                            "",
+                        ])
+
+                    # 基本面分析
+                    fund_lines = []
+                    if hasattr(result, 'fundamental_analysis') and result.fundamental_analysis:
+                        fund_lines.append(result.fundamental_analysis)
+                    if hasattr(result, 'sector_position') and result.sector_position:
+                        fund_lines.append(f"**板块地位**：{result.sector_position}")
+                    if hasattr(result, 'company_highlights') and result.company_highlights:
+                        fund_lines.append(f"**公司亮点**：{result.company_highlights}")
+                    if fund_lines:
+                        report_lines.extend([
+                            "#### 🏢 基本面分析",
+                            *fund_lines,
+                            "",
+                        ])
+
+                    # 消息面/情绪面
+                    news_lines = []
+                    if result.news_summary:
+                        news_lines.append(f"**新闻摘要**：{result.news_summary}")
+                    if hasattr(result, 'market_sentiment') and result.market_sentiment:
+                        news_lines.append(f"**市场情绪**：{result.market_sentiment}")
+                    if hasattr(result, 'hot_topics') and result.hot_topics:
+                        news_lines.append(f"**相关热点**：{result.hot_topics}")
+                    news_disclosure = self._empty_news_disclosure(result, report_language)
+                    if news_lines or news_disclosure:
+                        report_lines.append("#### 📰 消息面/情绪面")
+                        if news_disclosure:
+                            report_lines.append(news_disclosure)
+                        report_lines.extend(news_lines)
+                        report_lines.append("")
+
+                    # 综合分析
+                    if result.analysis_summary:
+                        report_lines.extend([
+                            "#### 📝 综合分析",
+                            result.analysis_summary,
+                            "",
+                        ])
+
+                    # 风险提示
+                    if hasattr(result, 'risk_warning') and result.risk_warning:
+                        report_lines.extend([
+                            f"⚠️ **风险提示**：{result.risk_warning}",
+                            "",
+                        ])
+
+                    # 数据来源说明
+                    if hasattr(result, 'search_performed') and result.search_performed:
+                        report_lines.append("*🔍 已执行联网搜索*")
+                    self._append_data_sources_line(report_lines, result, labels)
+
+                    # 错误信息（如果有）
+                    if not result.success and result.error_message:
+                        report_lines.extend([
+                            "",
+                            f"❌ **分析异常**：{result.error_message[:100]}",
+                        ])
+
+                    report_lines.extend([
+                        "",
+                        "---",
                         "",
                     ])
 
-                # 买入/卖出理由
-                if hasattr(result, 'buy_reason') and result.buy_reason:
+                except Exception as e:
+                    # T21-B6: 单股渲染失败，输出占位说明，继续处理下一只
+                    logger.error(f"股票 {getattr(result, 'code', '?')} 报告渲染失败: {e}", exc_info=True)
+                    try:
+                        display_name = self._get_display_name(result, report_language)
+                    except Exception:
+                        display_name = str(getattr(result, 'code', 'unknown'))
                     report_lines.extend([
-                        f"**💡 操作理由**：{result.buy_reason}",
+                        f"### {display_name} ({getattr(result, 'code', 'N/A')})",
+                        "",
+                        f"❌ **该股票报告渲染失败**：{str(e)[:100]}",
+                        "",
+                        "---",
                         "",
                     ])
-
-                # 走势分析
-                if hasattr(result, 'trend_analysis') and result.trend_analysis:
-                    report_lines.extend([
-                        "#### 📉 走势分析",
-                        f"{result.trend_analysis}",
-                        "",
-                    ])
-
-                # 短期/中期展望
-                outlook_lines = []
-                if hasattr(result, 'short_term_outlook') and result.short_term_outlook:
-                    outlook_lines.append(f"- **短期（1-3日）**：{result.short_term_outlook}")
-                if hasattr(result, 'medium_term_outlook') and result.medium_term_outlook:
-                    outlook_lines.append(f"- **中期（1-2周）**：{result.medium_term_outlook}")
-                if outlook_lines:
-                    report_lines.extend([
-                        "#### 🔮 市场展望",
-                        *outlook_lines,
-                        "",
-                    ])
-
-                # 技术面分析
-                tech_lines = []
-                if result.technical_analysis:
-                    tech_lines.append(f"**综合**：{result.technical_analysis}")
-                if hasattr(result, 'ma_analysis') and result.ma_analysis:
-                    tech_lines.append(f"**均线**：{result.ma_analysis}")
-                if hasattr(result, 'volume_analysis') and result.volume_analysis:
-                    tech_lines.append(f"**量能**：{result.volume_analysis}")
-                if hasattr(result, 'pattern_analysis') and result.pattern_analysis:
-                    tech_lines.append(f"**形态**：{result.pattern_analysis}")
-                if tech_lines:
-                    report_lines.extend([
-                        "#### 📊 技术面分析",
-                        *tech_lines,
-                        "",
-                    ])
-
-                # 基本面分析
-                fund_lines = []
-                if hasattr(result, 'fundamental_analysis') and result.fundamental_analysis:
-                    fund_lines.append(result.fundamental_analysis)
-                if hasattr(result, 'sector_position') and result.sector_position:
-                    fund_lines.append(f"**板块地位**：{result.sector_position}")
-                if hasattr(result, 'company_highlights') and result.company_highlights:
-                    fund_lines.append(f"**公司亮点**：{result.company_highlights}")
-                if fund_lines:
-                    report_lines.extend([
-                        "#### 🏢 基本面分析",
-                        *fund_lines,
-                        "",
-                    ])
-
-                # 消息面/情绪面
-                news_lines = []
-                if result.news_summary:
-                    news_lines.append(f"**新闻摘要**：{result.news_summary}")
-                if hasattr(result, 'market_sentiment') and result.market_sentiment:
-                    news_lines.append(f"**市场情绪**：{result.market_sentiment}")
-                if hasattr(result, 'hot_topics') and result.hot_topics:
-                    news_lines.append(f"**相关热点**：{result.hot_topics}")
-                news_disclosure = self._empty_news_disclosure(result, report_language)
-                if news_lines or news_disclosure:
-                    report_lines.append("#### 📰 消息面/情绪面")
-                    if news_disclosure:
-                        report_lines.append(news_disclosure)
-                    report_lines.extend(news_lines)
-                    report_lines.append("")
-
-                # 综合分析
-                if result.analysis_summary:
-                    report_lines.extend([
-                        "#### 📝 综合分析",
-                        result.analysis_summary,
-                        "",
-                    ])
-
-                # 风险提示
-                if hasattr(result, 'risk_warning') and result.risk_warning:
-                    report_lines.extend([
-                        f"⚠️ **风险提示**：{result.risk_warning}",
-                        "",
-                    ])
-
-                # 数据来源说明
-                if hasattr(result, 'search_performed') and result.search_performed:
-                    report_lines.append("*🔍 已执行联网搜索*")
-                self._append_data_sources_line(report_lines, result, labels)
-
-                # 错误信息（如果有）
-                if not result.success and result.error_message:
-                    report_lines.extend([
-                        "",
-                        f"❌ **分析异常**：{result.error_message[:100]}",
-                    ])
-
-                report_lines.extend([
-                    "",
-                    "---",
-                    "",
-                ])
-
         # 底部信息（去除免责声明）
         report_lines.extend([
             "",

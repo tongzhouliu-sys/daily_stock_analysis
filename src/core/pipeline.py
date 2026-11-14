@@ -4325,7 +4325,27 @@ class StockAnalysisPipeline:
                             channel_error,
                         )
                     else:
-                        logger.warning(f"未知通知渠道: {channel}")
+                        # T21-B5: 委托给 notification.py 的静态渠道分发函数
+                        # 这样新增的渠道（如钉钉）会自动被处理
+                        def _send_via_static_dispatcher() -> bool:
+                            return self.notifier._send_to_static_channel(
+                                channel,
+                                report,
+                                image_bytes=image_bytes,
+                                email_stock_codes=stock_codes,
+                                email_send_to_all=send_to_all,
+                            )
+                        
+                        channel_success, channel_error = _send_channel_safely(
+                            channel.value,
+                            _send_via_static_dispatcher,
+                        )
+                        non_wechat_success = channel_success or non_wechat_success
+                        _record_channel_result(
+                            channel.value,
+                            channel_success,
+                            channel_error,
+                        )
 
                 has_targeted_channels = bool(channels)
                 success = wechat_success or non_wechat_success or send_context

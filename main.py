@@ -2103,11 +2103,9 @@ def main() -> int:
                 if analysis_ok is False:
                     if start_serve:
                         logger.error("启动时分析执行失败，Web/API 服务继续运行。")
-                    elif _LAST_ANALYSIS_FAILURE_REASON in {
-                        "no_report",
-                        "empty_stock_list",
-                        "report_save_failed",
-                    }:
+                    else:
+                        # T21-B8: 非服务模式，分析失败一律返回 1
+                        logger.error("分析执行失败，返回错误码 1")
                         return 1
         else:
             logger.info("配置为不立即运行分析 (RUN_IMMEDIATELY=false)")

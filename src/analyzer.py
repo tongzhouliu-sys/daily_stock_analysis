@@ -4207,6 +4207,9 @@ Output strictly in the following JSON format. This is a complete Decision Dashbo
             current_prompt = prompt
             retry_count = 0
             max_retries = config.report_integrity_retry if config.report_integrity_enabled else 0
+            # T21-B7: 保存首次解析结果，重试失败时回落到首次结果
+            first_result = None
+            first_missing_fields = None
 
             while True:
                 start_time = time.time()
@@ -4270,6 +4273,10 @@ Output strictly in the following JSON format. This is a complete Decision Dashbo
                 )
                 if pass_integrity:
                     break
+                # T21-B7: 保存首次结果和缺失字段
+                if first_result is None:
+                    first_result = result
+                    first_missing_fields = missing_fields
                 if retry_count < max_retries:
                     current_prompt = self._build_integrity_retry_prompt(
                         prompt,
@@ -4289,6 +4296,13 @@ Output strictly in the following JSON format. This is a complete Decision Dashbo
                         f"{name}：报告字段不完整，正在补全重试（{retry_count}/{max_retries}）",
                     )
                 else:
+                    # T21-B7: 重试耗尽，回落到首次结果并占位补全
+                    if first_result is not None and first_result is not result:
+                        logger.warning(
+                            "[LLM完整性] 重试失败，回落到首次解析结果并占位补全",
+                        )
+                        result = first_result
+                        missing_fields = first_missing_fields
                     self._apply_placeholder_fill(result, missing_fields)
                     logger.warning(
                         "[LLM完整性] 必填字段缺失 %s，已占位补全，不阻塞流程",
