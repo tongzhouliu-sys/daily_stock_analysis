@@ -791,7 +791,8 @@ const ChatPage: React.FC = () => {
       overrideStockContext?: ActiveStockContext,
     ) => {
       const msgText = (overrideMessage ?? input).trim();
-      if (!msgText || loading || !agentAvailable || !agentStatus || intakeDraft) return;
+      // T5: prevent duplicate submissions during intake creation
+      if (!msgText || loading || intakeBusy || !agentAvailable || !agentStatus || intakeDraft) return;
       if (overrideMessage !== undefined) {
         setInput(msgText);
       }
@@ -828,9 +829,12 @@ const ChatPage: React.FC = () => {
       const isFirstQuestion = messages.length === 0 && hasInitialLoad && !intakeDraft;
       if (isFirstQuestion && guidedIntakeSupported) {
         const hints = extractIntentHints(msgText, stockIndex);
-        await createIntake(msgText, payload, streamMeta, hints);
-        setInput('');
-        requestScrollToBottom('smooth');
+        const success = await createIntake(msgText, payload, streamMeta, hints);
+        // T5: only clear input on success to preserve user's question on failure
+        if (success) {
+          setInput('');
+          requestScrollToBottom('smooth');
+        }
         return;
       }
       if (isFirstQuestion) setLegacyIntakeNotice(true);

@@ -256,6 +256,11 @@ def _prepare_chat_request(request, config, session_id, session_service,
                           intake_service=None, *, request_id=None):
     """Prepare once, accept the frozen brief, then commit exactly one turn."""
     domain_guard_result = _check_domain_guard(request, config, session_service, session_id)
+    if domain_guard_result is not None:
+        # T7: stop here. Consuming the intake draft or preparing the turn would
+        # commit the user message a second time when the guard branch persists
+        # the reminder below.
+        return None, None, None, None, None, domain_guard_result
 
     brief_payload = None
     if request.interaction_version >= 1:
@@ -298,6 +303,27 @@ def _clarification_result(session_service, accepted, content, backend_id):
         accepted["session_id"], "assistant", content, accepted_turn=accepted,
     )
     return AgentResult(success=True, content=content, backend=backend_id)
+
+
+def _persist_domain_guard_turn(config, session_service, request, session_id, decision):
+    """Persist exactly one blocked turn: user message + reminder.
+
+    T7: the guard result short-circuits ``_prepare_chat_request``, so this is
+    the only place that writes the blocked turn. The intake draft (if any)
+    stays unconsumed on purpose.
+    """
+    accepted_for_save = session_service.prepare_session_turn(
+        config, session_id, request.message, request.effective_skills,
+        context=_build_agent_chat_context(request, config, None, None),
+        expected_generation=request.session_generation,
+    )
+    accepted_snapshot = session_service.commit_user_turn(accepted_for_save)
+    session_service.db.save_conversation_message(
+        accepted_snapshot["session_id"], "assistant",
+        decision.message or "Domain guard reminder",
+        accepted_turn=accepted_snapshot,
+    )
+    return accepted_snapshot
 
 
 def _accepted_state_payload(accepted):
@@ -440,19 +466,12 @@ async def agent_chat(
         # T2: Handle domain guard rejection
         if domain_guard_result is not None:
             decision, meta = domain_guard_result
-            # Save the reminder as a normal assistant message
-            accepted_for_save = session_service.prepare_session_turn(
-                config, session_id, request.message, request.effective_skills,
-                context=_build_agent_chat_context(request, config, None, intake_service),
-                expected_generation=request.session_generation,
+            # T7: persist the user message and the reminder exactly once.
+            accepted_snapshot = await asyncio.to_thread(
+                _persist_domain_guard_turn,
+                config, session_service, request, session_id, decision,
             )
-            if accepted_for_save.clarification is None:
-                accepted_snapshot = session_service.commit_user_turn(accepted_for_save)
-                await asyncio.to_thread(
-                    _clarification_result, session_service, accepted_snapshot, 
-                    decision.message or "Domain guard reminder", backend_id
-                )
-            
+
             return ChatResponse(
                 success=True,
                 content=decision.message or "",
@@ -466,7 +485,7 @@ async def agent_chat(
                     "elapsed_ms": meta.elapsed_ms,
                     "source": meta.source,
                 },
-                **_accepted_state_payload(accepted_snapshot if 'accepted_snapshot' in locals() else accepted),
+                **_accepted_state_payload(accepted_snapshot),
             )
         
         if clarification is not None:
@@ -888,37 +907,23 @@ async def agent_chat_stream(
                 yield "data: " + json.dumps(event, ensure_ascii=False) + "\n\n"
                 return
 
-            accepted_event = {
-                "type": "accepted",
-                "backend": backend_id,
-                "request_id": request_id,
-                "session_id": session_id,
-                **_accepted_state_payload(accepted),
-            }
-            yield "data: " + json.dumps(accepted_event, ensure_ascii=False) + "\n\n"
-
-            # Backend execution starts only after the accepted event has been
-            # yielded, so Web state and server persistence share one commit point.
-            
-            # T2: Handle domain guard rejection in SSE stream
+            # T2/T7: a blocked turn is persisted exactly once (user message +
+            # reminder) before the accepted event carries its new state.
             if domain_guard_result is not None:
                 decision, meta = domain_guard_result
-                # Save the reminder as a normal assistant message
-                try:
-                    accepted_for_save = session_service.prepare_session_turn(
-                        config, session_id, request.message, request.effective_skills,
-                        context=_build_agent_chat_context(request, config, None, None),
-                        expected_generation=request.session_generation,
-                    )
-                    if accepted_for_save.clarification is None:
-                        accepted_snapshot = session_service.commit_user_turn(accepted_for_save)
-                        await asyncio.to_thread(
-                            _clarification_result, session_service, accepted_snapshot,
-                            decision.message or "Domain guard reminder", backend_id
-                        )
-                except Exception as save_err:
-                    logger.warning("Failed to save domain guard reminder: %s", save_err)
-                
+                accepted_snapshot = await asyncio.to_thread(
+                    _persist_domain_guard_turn,
+                    config, session_service, request, session_id, decision,
+                )
+                accepted_event = {
+                    "type": "accepted",
+                    "backend": backend_id,
+                    "request_id": request_id,
+                    "session_id": session_id,
+                    **_accepted_state_payload(accepted_snapshot),
+                }
+                yield "data: " + json.dumps(accepted_event, ensure_ascii=False) + "\n\n"
+
                 event = {
                     "type": "done",
                     "success": True,
@@ -939,6 +944,18 @@ async def agent_chat_stream(
                 }
                 yield "data: " + json.dumps(event, ensure_ascii=False) + "\n\n"
                 return
+
+            accepted_event = {
+                "type": "accepted",
+                "backend": backend_id,
+                "request_id": request_id,
+                "session_id": session_id,
+                **_accepted_state_payload(accepted),
+            }
+            yield "data: " + json.dumps(accepted_event, ensure_ascii=False) + "\n\n"
+
+            # Backend execution starts only after the accepted event has been
+            # yielded, so Web state and server persistence share one commit point.
             
             if clarification is not None:
                 result = await asyncio.to_thread(_clarification_result, session_service, accepted, clarification, backend_id)
@@ -996,8 +1013,12 @@ async def create_chat_intake(
     """Create a new intake draft. This never executes research."""
     session_id = request.session_id
     config = get_config()
+    
+    # Domain guard check (run in thread to avoid blocking event loop)
     guard_service = AgentDomainGuardService(config)
-    decision, meta = guard_service.classify(request.message)
+    decision, meta = await asyncio.to_thread(
+        guard_service.classify, request.message
+    )
     if decision.action != DomainAction.ALLOW:
         raise HTTPException(status_code=422, detail={
             "error": "domain_scope_required",
@@ -1008,7 +1029,8 @@ async def create_chat_intake(
                 "source": meta.source,
             },
         })
-    # "First" is server-side session state, not a browser flag.
+    
+    # Check if this is first turn
     try:
         existing = session_service.get_session_detail(session_id, limit=-1).messages
     except Exception:
@@ -1018,6 +1040,7 @@ async def create_chat_intake(
             "error": "intake_not_first_turn",
             "message": "This session already has a conversation; no new intake is needed.",
         })
+    
     try:
         db = getattr(session_service, "db", None)
         generation = request.session_generation
@@ -1027,6 +1050,7 @@ async def create_chat_intake(
                 expected_generation=request.session_generation,
             )
         context = request.context or {}
+        
         intent_hints_dict = None
         if request.intent_hints is not None:
             intent_hints_dict = request.intent_hints.model_dump(exclude_none=True)

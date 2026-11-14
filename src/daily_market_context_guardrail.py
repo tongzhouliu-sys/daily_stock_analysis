@@ -14,9 +14,9 @@ from src.report_language import (
 
 
 _CONSERVATIVE_TAGS = {"high_risk", "market_cooling", "conservative", "low_position_cap"}
-_CONSERVATIVE_TEXT_MARKERS_ZH = ("退潮", "观望", "高风险", "谨慎", "保守", "仓位上限", "仓位不超过", "轻仓")
-_CONSERVATIVE_TEXT_MARKERS_EN = ("high risk", "risk-off", "risk off", "watch", "cautious", "conservative", "position cap", "position limit")
-_CONSERVATIVE_TEXT_MARKERS_KO = ("고위험", "관망", "위험", "신중", "보수", "비중 상한", "비중 축소", "경량")
+# T13: only these tags may rewrite the conclusion. "conservative" and
+# "low_position_cap" now only add a hint.
+_DOWNGRADE_TAGS = {"high_risk", "market_cooling"}
 _AGGRESSIVE_BUY_MARKERS_ZH = (
     "立即买入",
     "马上买入",
@@ -65,7 +65,12 @@ def apply_daily_market_context_guardrail(
     daily_market_context: Any,
     report_language: str = "zh",
 ) -> List[str]:
-    """Soften aggressive buy advice when daily market context is conservative."""
+    """Soften aggressive buy advice only when the market context truly requires it.
+
+    T13: an explicit position cap or a high-risk/cooling tag may rewrite the
+    conclusion. A merely conservative tag adds a hint and leaves the decision,
+    advice, confidence and score untouched.
+    """
 
     if result is None or not _is_conservative_context(daily_market_context):
         return []
@@ -73,6 +78,10 @@ def apply_daily_market_context_guardrail(
     language = normalize_report_language(report_language or getattr(result, "report_language", "zh"))
     if not _has_aggressive_buy_signal(result, language=language):
         return []
+
+    if not _is_downgrade_context(daily_market_context):
+        _append_conservative_hint(result, language=language)
+        return ["daily_market_context_conservative_hint"]
 
     adjustments: List[str] = []
     if str(getattr(result, "decision_type", "") or "").lower() == "buy":
@@ -198,21 +207,60 @@ def _append_softening_limitation(phase_decision: dict[str, Any], *, language: st
     )
 
 
+def _risk_tags(context: Any) -> set[str]:
+    if not isinstance(context, Mapping):
+        return set()
+    tags = context.get("risk_tags")
+    if not isinstance(tags, list):
+        return set()
+    return {str(tag) for tag in tags}
+
+
 def _is_conservative_context(context: Any) -> bool:
+    """A conservative hint is warranted (tag or explicit position cap).
+
+    T13: summary-text substring matching is gone. The summary is model prose
+    and a single word like "观望" must not decide the conclusion; tags derived
+    from the market review are the stable signal.
+    """
     if not isinstance(context, Mapping):
         return False
-    tags = context.get("risk_tags")
-    if isinstance(tags, list) and any(str(tag) in _CONSERVATIVE_TAGS for tag in tags):
+    if _risk_tags(context) & _CONSERVATIVE_TAGS:
         return True
+    return bool(str(context.get("position_cap") or "").strip())
+
+
+def _is_downgrade_context(context: Any) -> bool:
+    """Only a real risk state may rewrite a buy into a hold."""
+    if not isinstance(context, Mapping):
+        return False
     if str(context.get("position_cap") or "").strip():
         return True
-    summary = str(context.get("summary") or "")
-    lowered = summary.lower()
-    return (
-        any(marker in summary for marker in _CONSERVATIVE_TEXT_MARKERS_ZH)
-        or any(marker in summary for marker in _CONSERVATIVE_TEXT_MARKERS_KO)
-        or any(marker in lowered for marker in _CONSERVATIVE_TEXT_MARKERS_EN)
-    )
+    return bool(_risk_tags(context) & _DOWNGRADE_TAGS)
+
+
+def _append_conservative_hint(result: Any, *, language: str) -> None:
+    dashboard = getattr(result, "dashboard", None)
+    if not isinstance(dashboard, dict):
+        dashboard = {}
+        result.dashboard = dashboard
+    phase_decision = dashboard.get("phase_decision")
+    if not isinstance(phase_decision, dict):
+        phase_decision = {}
+        dashboard["phase_decision"] = phase_decision
+    limitations = phase_decision.get("data_limitations")
+    if not isinstance(limitations, list):
+        limitations = []
+    if language == "en":
+        hint = "Daily market context is cautious; size positions accordingly."
+    elif language == "ko":
+        hint = "대시장 환경이 보수적입니다. 비중을 보수적으로 조정하세요."
+    else:
+        hint = "大盘环境偏谨慎，请结合仓位与风险承受能力判断。"
+    if hint not in limitations:
+        limitations.append(hint)
+    phase_decision["data_limitations"] = limitations
+    dashboard["daily_market_context_hint"] = hint
 
 
 def _has_aggressive_buy_signal(result: Any, *, language: str) -> bool:

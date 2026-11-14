@@ -48,7 +48,9 @@ if __name__ == "__main__":
     import uvicorn
 
     from api.middlewares.security_guard import uvicorn_proxy_kwargs
+    from src.auth import log_auth_startup_state
 
+    log_auth_startup_state("0.0.0.0", 8000)
     uvicorn.run(
         "server:app",
         host="0.0.0.0",

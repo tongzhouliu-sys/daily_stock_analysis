@@ -143,6 +143,8 @@ cp .env.example .env
 vim .env  # 填入配置
 ```
 
+> Web 管理界面的登录开关 `ADMIN_AUTH_ENABLED` 从活跃 `.env` 文件或进程环境变量读取：文件里有这个键时以文件为准，否则回退到环境变量。使用 `python main.py --webui-only` 对外监听前，请先设置 `ADMIN_AUTH_ENABLED=true`，再执行 `python -m src.auth reset_password` 设置初始密码。服务启动时会打印最终认证状态和监听地址；认证关闭且监听地址不是回环地址时会额外打印警告。
+
 ### 4. 运行
 
 ```bash

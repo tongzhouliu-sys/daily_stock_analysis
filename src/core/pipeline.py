@@ -143,6 +143,20 @@ def _share_image_payload(result: Any) -> Optional[Dict[str, Any]]:
     return payload if isinstance(payload, dict) and payload else None
 
 
+def _coerce_context_date(value: Any) -> Optional[date]:
+    """Parse a context bar date (str/date/datetime) or return None."""
+    if isinstance(value, datetime):
+        return value.date()
+    if isinstance(value, date):
+        return value
+    if isinstance(value, str) and value.strip():
+        try:
+            return datetime.fromisoformat(value.strip()[:10]).date()
+        except ValueError:
+            return None
+    return None
+
+
 def _supports_explicit_keyword(callable_obj: Any, keyword: str) -> bool:
     """Avoid breaking custom notifier overrides that predate an optional kwarg."""
 
@@ -647,12 +661,22 @@ class StockAnalysisPipeline:
                 historical_bars = self.db.get_data_range(code, start_date, end_date)
                 if historical_bars:
                     df = pd.DataFrame([bar.to_dict() for bar in historical_bars])
+                    is_partial_bar = False
                     # Issue #234: Augment with realtime for intraday MA calculation
                     if self.config.enable_realtime_quote and realtime_quote:
                         df = self._augment_historical_with_realtime(
                             df, realtime_quote, code, market=market
                         )
-                    trend_result = self.trend_analyzer.analyze(df, code)
+                        # T10: a bar built from an in-session quote is a partial
+                        # (accumulated) bar; volume must not be scored against
+                        # full-day averages.
+                        phase = (market_phase_context_dict or {}).get("phase")
+                        is_partial_bar = bool(
+                            (market_phase_context_dict or {}).get("is_partial_bar")
+                        ) or phase in ("intraday", "lunch_break", "closing_auction")
+                    trend_result = self.trend_analyzer.analyze(
+                        df, code, is_partial_bar=is_partial_bar
+                    )
                     logger.info(f"{stock_name}({code}) 趋势分析: {trend_result.trend_status.value}, "
                               f"买入信号={trend_result.buy_signal.value}, 评分={trend_result.signal_score}")
             except Exception as e:
@@ -1101,13 +1125,29 @@ class StockAnalysisPipeline:
         if realtime_quote and trend_result and trend_result.ma5 > 0:
             price = getattr(realtime_quote, 'price', None)
             if price is not None and price > 0:
-                yesterday_close = None
-                if enhanced.get('yesterday') and isinstance(enhanced['yesterday'], dict):
-                    yesterday_close = enhanced['yesterday'].get('close')
                 orig_today = enhanced.get('today') or {}
-                market_today = get_market_now(
+                stale_today = orig_today
+                market_today_date = get_market_now(
                     get_market_for_stock(normalize_stock_code(enhanced.get('code', '')))
-                ).date().isoformat()
+                ).date()
+                market_today = market_today_date.isoformat()
+                # T9: 库里最新的“今日”若早于市场当日，它其实是“昨日”。
+                # 先顺移，再让实时行情覆盖今日，否则昨收/涨跌额/振幅会按前前日算。
+                orig_today_date = _coerce_context_date(orig_today.get('date'))
+                if orig_today_date is not None and orig_today_date < market_today_date:
+                    enhanced['yesterday'] = orig_today
+                    orig_today = {}
+                yesterday_close = None
+                pre_close = getattr(realtime_quote, 'pre_close', None)
+                if pre_close is not None:
+                    try:
+                        pre_close_value = float(pre_close)
+                    except (TypeError, ValueError):
+                        pre_close_value = 0.0
+                    if pre_close_value > 0:
+                        yesterday_close = pre_close_value
+                if yesterday_close is None and enhanced.get('yesterday') and isinstance(enhanced['yesterday'], dict):
+                    yesterday_close = enhanced['yesterday'].get('close')
                 source = getattr(realtime_quote, 'source', None)
                 source_name = getattr(source, 'value', source)
                 source_name = str(source_name) if source_name is not None else 'unknown'
@@ -1169,6 +1209,10 @@ class StockAnalysisPipeline:
                 for k, v in orig_today.items():
                     if k not in realtime_today and k not in realtime_owned_fields and v is not None:
                         realtime_today[k] = v
+                # 顺移后原“今日”已属于昨日，只保留标的标识，不再把旧交易日
+                # 的其他字段带进新的今日。
+                if 'code' not in realtime_today and stale_today.get('code'):
+                    realtime_today['code'] = stale_today['code']
                 enhanced['today'] = realtime_today
                 enhanced['ma_status'] = self._compute_ma_status(
                     price, trend_result.ma5, trend_result.ma10, trend_result.ma20

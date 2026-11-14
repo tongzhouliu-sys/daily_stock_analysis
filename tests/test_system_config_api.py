@@ -423,6 +423,58 @@ class SystemConfigApiTestCase(unittest.TestCase):
         self.assertIn("\n\n# Secrets\n", env_content)
         self.assertIn("STOCK_LIST=600519,300750\n", env_content)
 
+    def test_put_config_rejects_startup_only_auth_toggle(self) -> None:
+        current = system_config.get_system_config(include_schema=False, service=self.service).model_dump()
+        original_content = self.env_path.read_text(encoding="utf-8")
+
+        with self.assertRaises(HTTPException) as context:
+            system_config.update_system_config(
+                request=UpdateSystemConfigRequest(
+                    config_version=current["config_version"],
+                    reload_now=False,
+                    items=[{"key": "ADMIN_AUTH_ENABLED", "value": "false"}],
+                ),
+                service=self.service,
+            )
+
+        self.assertEqual(context.exception.status_code, 400)
+        rejected_keys = {issue["key"] for issue in context.exception.detail["issues"]}
+        self.assertIn("ADMIN_AUTH_ENABLED", rejected_keys)
+        self.assertEqual(self.env_path.read_text(encoding="utf-8"), original_content)
+
+    def test_put_config_rejects_invalid_key_format(self) -> None:
+        current = system_config.get_system_config(include_schema=False, service=self.service).model_dump()
+
+        with self.assertRaises(HTTPException) as context:
+            system_config.update_system_config(
+                request=UpdateSystemConfigRequest(
+                    config_version=current["config_version"],
+                    reload_now=False,
+                    items=[{"key": "INVALID-KEY", "value": "x"}],
+                ),
+                service=self.service,
+            )
+
+        self.assertEqual(context.exception.status_code, 400)
+        rejected_keys = {issue["key"] for issue in context.exception.detail["issues"]}
+        self.assertIn("INVALID-KEY", rejected_keys)
+        self.assertNotIn("INVALID-KEY=x", self.env_path.read_text(encoding="utf-8"))
+
+    def test_put_config_still_accepts_valid_unknown_editable_key(self) -> None:
+        current = system_config.get_system_config(include_schema=False, service=self.service).model_dump()
+
+        payload = system_config.update_system_config(
+            request=UpdateSystemConfigRequest(
+                config_version=current["config_version"],
+                reload_now=False,
+                items=[{"key": "CUSTOM_RUNTIME_NOTE", "value": "kept"}],
+            ),
+            service=self.service,
+        ).model_dump()
+
+        self.assertTrue(payload["success"])
+        self.assertIn("CUSTOM_RUNTIME_NOTE=kept\n", self.env_path.read_text(encoding="utf-8"))
+
     def test_put_config_returns_startup_only_schedule_warning(self) -> None:
         current = system_config.get_system_config(include_schema=False, service=self.service).model_dump()
         payload = system_config.update_system_config(
@@ -546,6 +598,26 @@ class SystemConfigApiTestCase(unittest.TestCase):
         self.assertIn("GENERATION_FALLBACK_BACKEND=\n", export_payload["content"])
         self.assertIn("GENERATION_BACKEND_MAX_OUTPUT_BYTES=1048576\n", export_payload["content"])
         self.assertIn("AGENT_GENERATION_BACKEND=auto\n", export_payload["content"])
+
+    def test_import_system_config_rejects_startup_only_keys(self) -> None:
+        current = system_config.get_system_config(include_schema=False, service=self.service).model_dump()
+        original_content = self.env_path.read_text(encoding="utf-8")
+
+        with self.assertRaises(HTTPException) as context:
+            system_config.import_system_config(
+                request_obj=self._build_request(),
+                request=ImportSystemConfigRequest(
+                    config_version=current["config_version"],
+                    content="DATABASE_PATH=./other.db\nSTOCK_LIST=300750\n",
+                    reload_now=False,
+                ),
+                service=self.service,
+            )
+
+        self.assertEqual(context.exception.status_code, 400)
+        rejected_keys = {issue["key"] for issue in context.exception.detail["issues"]}
+        self.assertIn("DATABASE_PATH", rejected_keys)
+        self.assertEqual(self.env_path.read_text(encoding="utf-8"), original_content)
 
     def test_import_system_config_returns_conflict_when_version_is_stale(self) -> None:
         with self.assertRaises(HTTPException) as context:

@@ -4297,6 +4297,16 @@ class DatabaseManager(metaclass=_DatabaseManagerMeta):
 
     def find_pending_intake_draft(self, session_id: str, session_generation: Optional[str] = None):
         with self.session_scope() as session:
+            # T5: Don't return pending drafts if the session already has messages.
+            # Once a conversation has started, orphan drafts should not be restored.
+            message_count = session.execute(
+                select(func.count(ConversationMessage.id)).where(
+                    ConversationMessage.session_id == session_id
+                )
+            ).scalar_one()
+            if message_count > 0:
+                return None
+
             stmt = select(IntakeDraftRecord).where(
                 IntakeDraftRecord.session_id == session_id,
                 IntakeDraftRecord.status.in_(("pending", "confirmed")),
@@ -4354,8 +4364,19 @@ class DatabaseManager(metaclass=_DatabaseManagerMeta):
             )
             if result.rowcount != 1:
                 return None
-            row = session.get(IntakeDraftRecord, intake_id)
-            return self._intake_row_to_dict(row) if row is not None else None
+            
+            # T5: Mark other unconsumed drafts in the same session as invalidated
+            consumed_draft = session.get(IntakeDraftRecord, intake_id)
+            if consumed_draft:
+                session.execute(
+                    IntakeDraftRecord.__table__.update().where(
+                        IntakeDraftRecord.session_id == consumed_draft.session_id,
+                        IntakeDraftRecord.intake_id != intake_id,
+                        IntakeDraftRecord.consumed_request_id.is_(None),
+                    ).values(status="invalidated", updated_at=datetime.now())
+                )
+            
+            return self._intake_row_to_dict(consumed_draft) if consumed_draft is not None else None
         return self._run_write_transaction("consume_intake_draft", write)
 
 

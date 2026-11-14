@@ -13,7 +13,12 @@ from fastapi.testclient import TestClient
 from api.app import create_app
 from api.v1.endpoints import agent as agent_endpoint
 from src.config import Config
-from src.schemas.agent_domain_guard import DomainAction
+from src.schemas.agent_domain_guard import (
+    DomainAction,
+    DomainGuardDecision,
+    DomainGuardMeta,
+    DomainReasonCode,
+)
 from src.services.agent_chat_session_service import AgentChatSessionService
 from src.storage import DatabaseManager
 
@@ -747,3 +752,88 @@ def test_retired_cancel_endpoint_is_not_registered(tmp_path, frontend, expected_
     # Existing SPA GET catch-all returns method-not-allowed for any unknown POST.
     client = TestClient(app)
     assert client.post("/api/v1/agent/chat/stream/old-request/cancel").status_code == expected_status
+
+
+# =============================================================================
+# T7: guard rejection short-circuits preparation and persists exactly once
+# =============================================================================
+
+
+def _blocked_guard():
+    decision = DomainGuardDecision(
+        action=DomainAction.REDIRECT,
+        reason_code=DomainReasonCode.OFF_TOPIC,
+        message="本系统是投资分析系统，请询问股票或投资相关问题。",
+    )
+    meta = DomainGuardMeta(
+        action=DomainAction.REDIRECT,
+        reason_code=DomainReasonCode.OFF_TOPIC,
+    )
+    return decision, meta
+
+
+def test_blocked_turn_persists_user_message_and_reminder_once(tmp_path: Path) -> None:
+    db = DatabaseManager(db_url=f"sqlite:///{tmp_path / 'guard-once.db'}")
+    db.save_conversation_user_turn("guard-once", "first", [])
+    session_service = AgentChatSessionService(db)
+    intake_service = MagicMock()
+
+    async def exercise():
+        with patch(
+            "api.v1.endpoints.agent._check_domain_guard", return_value=_blocked_guard()
+        ), patch(
+            "api.v1.endpoints.agent.asyncio.to_thread", side_effect=_immediate_to_thread
+        ), patch(
+            "api.v1.endpoints.agent.get_config", return_value=_litellm_config()
+        ):
+            return await agent_endpoint.agent_chat(
+                agent_endpoint.ChatRequest(
+                    message="谢谢",
+                    session_id="guard-once",
+                    interaction_version=1,
+                    intake_id="intake_pending",
+                    intake_revision=1,
+                ),
+                session_service=session_service,
+                intake_service=intake_service,
+            )
+
+    response = asyncio.run(exercise())
+
+    assert response.success is True
+    assert response.domain_guard["action"] == "redirect"
+    messages = db.get_conversation_messages("guard-once")
+    assert [msg["role"] for msg in messages] == ["user", "user", "assistant"]
+    assert messages[-1]["content"].startswith("本系统是投资分析系统")
+    # The blocked request must not consume the pending draft.
+    intake_service.accept_for_chat.assert_not_called()
+
+
+def test_blocked_stream_turn_persists_once(tmp_path: Path) -> None:
+    db = DatabaseManager(db_url=f"sqlite:///{tmp_path / 'guard-stream.db'}")
+    db.save_conversation_user_turn("guard-stream", "first", [])
+    session_service = AgentChatSessionService(db)
+
+    async def exercise():
+        with patch(
+            "api.v1.endpoints.agent._check_domain_guard", return_value=_blocked_guard()
+        ), patch(
+            "api.v1.endpoints.agent.asyncio.to_thread", side_effect=_immediate_to_thread
+        ), patch(
+            "api.v1.endpoints.agent.get_config", return_value=_litellm_config()
+        ):
+            response = await agent_endpoint.agent_chat_stream(
+                agent_endpoint.ChatRequest(message="谢谢", session_id="guard-stream"),
+                session_service=session_service,
+            )
+            return [
+                json.loads(chunk.removeprefix("data: ").strip())
+                async for chunk in response.body_iterator
+            ]
+
+    events = asyncio.run(exercise())
+
+    assert [event["type"] for event in events] == ["accepted", "done"]
+    assert events[-1]["domain_guard"]["action"] == "redirect"
+    messages = db.get_conversation_messages("guard-stream")
+    assert [msg["role"] for msg in messages] == ["user", "user", "assistant"]

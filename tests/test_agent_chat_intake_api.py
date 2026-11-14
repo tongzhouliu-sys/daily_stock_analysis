@@ -113,3 +113,67 @@ def test_update_response_carries_the_replanned_questionnaire():
     dumped = response.model_dump(mode="json")
     assert dumped["questions"][0]["id"] == "position"
     assert len(dumped["questions"]) <= 5
+
+
+def test_intake_domain_guard_runs_off_the_event_loop(monkeypatch):
+    """T4: /chat/intake must not block the event loop while classifying."""
+    import asyncio
+    import time
+    from unittest.mock import MagicMock
+
+    from api.v1.endpoints import agent as agent_endpoint
+    from src.schemas.agent_domain_guard import (
+        DomainAction,
+        DomainGuardDecision,
+        DomainGuardMeta,
+        DomainReasonCode,
+    )
+    from src.schemas.agent_intake import IntakeCreateRequest
+    from src.services.agent_domain_guard_service import AgentDomainGuardService
+
+    decision = DomainGuardDecision(
+        action=DomainAction.ALLOW, reason_code=DomainReasonCode.INVESTMENT
+    )
+    meta = DomainGuardMeta(
+        action=DomainAction.ALLOW, reason_code=DomainReasonCode.INVESTMENT
+    )
+
+    def slow_classify(self, message, context=None, history_messages=None):
+        time.sleep(1.0)
+        return decision, meta
+
+    monkeypatch.setattr(AgentDomainGuardService, "classify", slow_classify)
+
+    session_service = MagicMock()
+    session_service.get_session_detail.return_value = SimpleNamespace(messages=[])
+    session_service.db = None
+    draft = SimpleNamespace(
+        intake_id="intake_x",
+        schema_version=1,
+        session_generation="generation-a",
+        base_state_version=0,
+        revision=1,
+        status="pending",
+        questions=[],
+        answers=[],
+    )
+    intake_service = MagicMock()
+    intake_service.create_intake.return_value = draft
+
+    async def exercise() -> float:
+        started = time.perf_counter()
+        task = asyncio.create_task(
+            agent_endpoint.create_chat_intake(
+                IntakeCreateRequest(message="帮我看看 AAPL", session_id="session-a"),
+                intake_service=intake_service,
+                session_service=session_service,
+            )
+        )
+        # If classify ran inline, this sleep could only start after the full
+        # second. Measure how long the loop stayed responsive.
+        await asyncio.sleep(0.05)
+        responsive_after = time.perf_counter() - started
+        await task
+        return responsive_after
+
+    assert asyncio.run(exercise()) < 0.5

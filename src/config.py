@@ -2172,6 +2172,26 @@ class Config:
                 minimum=1,
             ),
             agent_event_alert_rules_json=os.getenv('AGENT_EVENT_ALERT_RULES_JSON', ''),
+            agent_chat_tool_reuse_seconds=parse_env_int(
+                os.getenv('AGENT_CHAT_TOOL_REUSE_SECONDS'),
+                600,
+                field_name='AGENT_CHAT_TOOL_REUSE_SECONDS',
+                minimum=0,
+            ),
+            agent_llm_call_timeout_s=parse_env_float(
+                os.getenv('AGENT_LLM_CALL_TIMEOUT_S'),
+                0.0,
+                field_name='AGENT_LLM_CALL_TIMEOUT_S',
+                minimum=0.0,
+            ),
+            agent_opt_in_thinking=parse_env_bool(
+                os.getenv('AGENT_OPT_IN_THINKING'),
+                default=True,
+            ),
+            agent_chat_stream_content=parse_env_bool(
+                os.getenv('AGENT_CHAT_STREAM_CONTENT'),
+                default=False,
+            ),
             agent_domain_guard_model_timeout=parse_env_int(
                 os.getenv('AGENT_DOMAIN_GUARD_MODEL_TIMEOUT'),
                 5,

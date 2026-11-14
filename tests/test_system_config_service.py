@@ -1920,13 +1920,27 @@ class SystemConfigServiceTestCase(unittest.TestCase):
 
         self.service.import_desktop_env(
             config_version=current_version,
-            content="DATABASE_PATH=./custom/stock_analysis.db\nPROXY_HOST=127.0.0.1\n",
+            content="PROXY_HOST=127.0.0.1\n",
             reload_now=False,
         )
 
         current_map = self.manager.read_config_map()
-        self.assertEqual(current_map["DATABASE_PATH"], "./custom/stock_analysis.db")
         self.assertEqual(current_map["PROXY_HOST"], "127.0.0.1")
+
+    def test_import_desktop_env_rejects_startup_only_database_path(self) -> None:
+        current_version = self.manager.get_config_version()
+
+        with self.assertRaises(ConfigValidationError) as context:
+            self.service.import_desktop_env(
+                config_version=current_version,
+                content="DATABASE_PATH=./custom/stock_analysis.db\nPROXY_HOST=127.0.0.1\n",
+                reload_now=False,
+            )
+
+        rejected_keys = {issue["key"] for issue in context.exception.issues}
+        self.assertEqual(rejected_keys, {"DATABASE_PATH"})
+        self.assertNotIn("DATABASE_PATH", self.manager.read_config_map())
+        self.assertNotIn("PROXY_HOST", self.manager.read_config_map())
 
     def test_import_desktop_env_treats_mask_token_as_literal_value(self) -> None:
         current_version = self.manager.get_config_version()

@@ -96,6 +96,23 @@ from src.services.agent_backend_status_service import AgentBackendStatusService
 
 logger = logging.getLogger(__name__)
 
+# Configuration keys are written as dotenv assignments; anything outside this
+# shape would either be silently skipped or corrupt the file.
+_CONFIG_WRITE_KEY_PATTERN = re.compile(r"^[A-Z][A-Z0-9_]*$")
+
+# Keys that change how the service boots or where it stores data. A Web session
+# must not be able to rewrite them: in particular ADMIN_AUTH_ENABLED would
+# otherwise let any authenticated caller disable the authentication that
+# protects the session itself. They stay configurable through the active config
+# file or the process environment.
+_STARTUP_ONLY_CONFIG_KEYS = frozenset({
+    "ADMIN_AUTH_ENABLED",
+    "ENV_FILE",
+    "DATABASE_PATH",
+    "GUARD_TRUSTED_PROXIES",
+    "FORWARDED_ALLOW_IPS",
+})
+
 
 class ConfigValidationError(Exception):
     """Raised when one or more submitted fields fail validation."""
@@ -518,7 +535,8 @@ class SystemConfigService:
 
     def validate(self, items: Sequence[Dict[str, str]], mask_token: str = "******") -> Dict[str, Any]:
         """Validate submitted items without writing to `.env`."""
-        issues = self._collect_issues(items=items, mask_token=mask_token)
+        issues = self._collect_write_protection_issues(items)
+        issues.extend(self._collect_issues(items=items, mask_token=mask_token))
         valid = not any(issue["severity"] == "error" for issue in issues)
         return {
             "valid": valid,
@@ -2068,6 +2086,10 @@ class SystemConfigService:
         if current_version != config_version:
             raise ConfigConflictError(current_version=current_version)
 
+        issues = self._collect_write_protection_issues(items)
+        if issues:
+            raise ConfigValidationError(issues=issues)
+
         issues = self._collect_issues(items=items, mask_token=mask_token)
         errors = [issue for issue in issues if issue["severity"] == "error"]
         if errors:
@@ -2078,7 +2100,7 @@ class SystemConfigService:
         updates: List[Tuple[str, str]] = []
         sensitive_keys: Set[str] = set()
         for item in items:
-            key = item["key"].upper()
+            key = self._normalize_write_key(item["key"])
             value = item["value"]
             field_schema = get_field_definition(key, value)
             normalized_value = self._normalize_value_for_storage(value, field_schema)
@@ -2399,6 +2421,65 @@ class SystemConfigService:
 
         return updates
 
+    @staticmethod
+    def _normalize_write_key(key: str) -> str:
+        """Normalize a submitted key to the form stored in `.env`."""
+        return str(key or "").strip().upper()
+
+    @classmethod
+    def _collect_write_protection_issues(
+        cls,
+        items: Sequence[Dict[str, str]],
+    ) -> List[Dict[str, Any]]:
+        """Reject keys that must not be written through the config API.
+
+        This is deliberately not a registry-only allowlist: `.env` files carry
+        many deployment keys without registry metadata, and imports would fail
+        if those were rejected. Unknown but well-formed keys stay writable.
+        """
+        issues: List[Dict[str, Any]] = []
+        checked: Set[str] = set()
+        for item in items:
+            raw_key = str(item.get("key", "")).strip()
+            key = cls._normalize_write_key(raw_key)
+            if key in checked:
+                continue
+            checked.add(key)
+
+            if not _CONFIG_WRITE_KEY_PATTERN.fullmatch(key):
+                issues.append({
+                    "key": raw_key or key,
+                    "code": "invalid_key_format",
+                    "message": "Configuration key must match ^[A-Z][A-Z0-9_]*$",
+                    "severity": "error",
+                    "expected": "uppercase dotenv key",
+                    "actual": raw_key,
+                })
+                continue
+
+            if key in _STARTUP_ONLY_CONFIG_KEYS:
+                issues.append({
+                    "key": key,
+                    "code": "startup_only_key",
+                    "message": "This key can only be set in the config file or process environment",
+                    "severity": "error",
+                    "expected": "set outside the Web configuration API",
+                    "actual": key,
+                })
+                continue
+
+            field_schema = get_field_definition(key)
+            if not bool(field_schema.get("is_editable", True)):
+                issues.append({
+                    "key": key,
+                    "code": "read_only_key",
+                    "message": "This key is read-only in the Web configuration API",
+                    "severity": "error",
+                    "expected": "read-only",
+                    "actual": key,
+                })
+        return issues
+
     def _collect_issues(self, items: Sequence[Dict[str, str]], mask_token: str) -> List[Dict[str, Any]]:
         """Collect field-level and cross-field validation issues."""
         saved_config_map = self._manager.read_config_map()
@@ -2412,7 +2493,7 @@ class SystemConfigService:
         updated_map: Dict[str, str] = {}
 
         for item in items:
-            key = item["key"].upper()
+            key = self._normalize_write_key(item["key"])
             value = item["value"]
             field_schema = get_field_definition(key, value)
             is_sensitive = bool(field_schema.get("is_sensitive", False))

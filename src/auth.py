@@ -67,15 +67,53 @@ def _get_credential_path() -> Path:
 
 
 def _is_auth_enabled_from_env() -> bool:
-    """Read ADMIN_AUTH_ENABLED from .env file."""
+    """Resolve ADMIN_AUTH_ENABLED with the `.env` file taking precedence.
+
+    The file wins so that toggling authentication in the Web UI persists across
+    restarts. When the active `.env` file is missing or does not contain the
+    key, fall back to the process environment: container deployments inject
+    configuration through `env_file` / `environment` and never materialize a
+    `.env` inside the container.
+    """
     _ensure_env_loaded()
     env_file = os.getenv("ENV_FILE")
     env_path = Path(env_file) if env_file else Path(__file__).resolve().parent.parent / ".env"
-    if not env_path.exists():
-        return False
-    values = dotenv_values(env_path)
-    val = (values.get("ADMIN_AUTH_ENABLED") or "").strip().lower()
-    return val in ("true", "1", "yes")
+    file_values = {}
+    if env_path.exists():
+        file_values = dotenv_values(env_path)
+    if "ADMIN_AUTH_ENABLED" in file_values:
+        raw_value = file_values.get("ADMIN_AUTH_ENABLED")
+    else:
+        raw_value = os.getenv("ADMIN_AUTH_ENABLED")
+    return (raw_value or "").strip().lower() in ("true", "1", "yes")
+
+
+_LOOPBACK_BIND_HOSTS = frozenset({"127.0.0.1", "localhost", "::1", "[::1]"})
+
+
+def is_loopback_bind_host(host: str) -> bool:
+    """Return whether the Web/API bind address only accepts local connections."""
+    return (host or "").strip().lower() in _LOOPBACK_BIND_HOSTS
+
+
+def log_auth_startup_state(host: str, port: Optional[int] = None) -> None:
+    """Log the effective auth state and bind address once at startup."""
+    enabled = is_auth_enabled()
+    bind_address = f"{host}:{port}" if port is not None else str(host)
+    logger.info(
+        "Admin authentication is %s; Web/API listening on %s",
+        "enabled" if enabled else "disabled",
+        bind_address,
+    )
+    if enabled or is_loopback_bind_host(host):
+        return
+    logger.warning(
+        "ADMIN_AUTH_ENABLED=false while the Web/API is bound to %s, which is "
+        "reachable beyond this machine. Anyone who can reach this address can "
+        "read and change the configuration. Set ADMIN_AUTH_ENABLED=true or keep "
+        "the service behind a trusted network boundary.",
+        bind_address,
+    )
 
 
 def rotate_session_secret() -> bool:

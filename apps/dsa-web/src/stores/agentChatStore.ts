@@ -229,7 +229,7 @@ interface AgentChatActions {
   stopStream: () => Promise<void>;
   startStream: (payload: ChatStreamRequest, meta?: StreamMeta) => Promise<void>;
   // T3: Intake actions
-  createIntake: (message: string, payload?: ChatStreamRequest, meta?: StreamMeta, intentHints?: IntentHints | null) => Promise<void>;
+  createIntake: (message: string, payload?: ChatStreamRequest, meta?: StreamMeta, intentHints?: IntentHints | null) => Promise<boolean>;
   updateIntakeAnswers: (
     answers: Answer[], action: 'save' | 'confirm' | 'skip',
   ) => Promise<boolean>;
@@ -978,6 +978,7 @@ export const useAgentChatStore = create<AgentChatState & AgentChatActions>((set,
         intakeBusy: false,
         intakeError: null,
       });
+      return true;
     } catch (error) {
       const parsed = getParsedApiError(error);
       const capabilityMissing = parsed.status === 404 || parsed.status === 405
@@ -993,6 +994,7 @@ export const useAgentChatStore = create<AgentChatState & AgentChatActions>((set,
         // An old API has no intake: keep the direct question path working.
         await get().startStream(payload, meta);
       }
+      return false;
     }
   },
 

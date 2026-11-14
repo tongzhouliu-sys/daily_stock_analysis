@@ -248,17 +248,18 @@ class MainScheduleModeTestCase(unittest.TestCase):
 
     def test_public_webui_bind_warns_when_auth_is_disabled(self) -> None:
         with patch("src.auth.is_auth_enabled", return_value=False), \
-             patch("main.logger.warning") as warning_log:
-            main._warn_if_public_webui_without_auth("0.0.0.0")
+             patch("src.auth.logger.info"), \
+             patch("src.auth.logger.warning") as warning_log:
+            main._log_startup_auth_state("0.0.0.0", 8000)
 
         warning_log.assert_called_once()
-        self.assertIn("WEBUI_HOST=%s", warning_log.call_args.args[0])
-        self.assertEqual(warning_log.call_args.args[1], "0.0.0.0")
+        self.assertIn("0.0.0.0:8000", warning_log.call_args.args)
 
     def test_loopback_webui_bind_does_not_warn_when_auth_is_disabled(self) -> None:
         with patch("src.auth.is_auth_enabled", return_value=False), \
-             patch("main.logger.warning") as warning_log:
-            main._warn_if_public_webui_without_auth("127.0.0.1")
+             patch("src.auth.logger.info"), \
+             patch("src.auth.logger.warning") as warning_log:
+            main._log_startup_auth_state("127.0.0.1", 8000)
 
         warning_log.assert_not_called()
 

@@ -88,12 +88,12 @@ def action_chat_api(actual_chat_api, monkeypatch):
 @pytest.mark.parametrize("prior,message,expected,clarify", [
     (None, "不要分析300750", None, False),
     ("600519", "不要改看300750，继续分析600519", "600519", False),
-    ("600519", "是否改看300750？", "600519", True),
-    (None, "是否改看300750？", None, True),
-    ("600519", "如果改看300750会怎么样", "600519", True),
+    ("600519", "是否改看300750？", "600519", False),
+    (None, "是否改看300750？", None, False),
+    ("600519", "如果改看300750会怎么样", "600519", False),
     ("600519", "他说“从600519改看300750”", "600519", True),
-    ("300750", "是否改看300750？", "300750", True),
-    ("000001", "是否改看300750？", "000001", True),
+    ("300750", "是否改看300750？", "300750", False),
+    ("000001", "是否改看300750？", "000001", False),
     ("600519", "不要比较600519和300750，继续分析600519", "600519", False),
 ])
 def test_convergence_operation_qualification_reaches_real_api(
@@ -828,19 +828,19 @@ def test_service_clarification_payload_recommends_same_name_a_share_listing(db, 
     assert payload["recommended"]["stock_code"] == "688981"
 
 
-def test_service_clarification_payload_keeps_current_for_conditional_change(db, chat_stock_index):
+def test_service_conditional_switch_question_keeps_current_without_clarification(db, chat_stock_index):
     from src.services.agent_chat_session_service import AgentChatSessionService
 
     service = AgentChatSessionService(db)
     service.commit_user_turn(_resolve(service, "clarify-conditional", "分析600519"))
     resolved = _resolve(service, "clarify-conditional", "如果改看300750会怎么样")
-    assert resolved.clarification
-    payload = resolved.clarification_payload
-    assert payload["reason"] == "missing_object"
-    assert payload["action"] == "keep"
-    assert payload["current"]["stock_code"] == "600519"
-    assert payload["candidates"] == []
-    assert payload["recommended"] is None
+    # A hypothetical switch is a question, not an authorized switch: keep the
+    # current object and answer it rather than forcing a confirmation turn.
+    assert resolved.clarification is None
+    assert resolved.active_stock_context["stock_code"] == "600519"
+    assert resolved.compatibility_disposition == "preserve"
+    detail = service.get_session_detail("clarify-conditional", 100)
+    assert detail.active_stock_context["stock_code"] == "600519"
 
 
 def test_service_clarification_payload_explains_hint_conflict_with_user_target(db, chat_stock_index):
@@ -2360,7 +2360,7 @@ def bundled_chat_stock_index(tmp_path, monkeypatch):
     ("分析长电科技(600900.SH)", "clarify", None),
     ("分析贵州茅台(600584.SH)", "clarify", None),
     ("不要分析长电科技", "maintain", None),
-    ("如果上涨，就分析长电科技", "clarify", None),
+    ("如果上涨，就分析长电科技", "confirm", "600584"),
     ("他说“分析长电科技”", "clarify", None),
     ("分析中芯国际", "clarify", None),
     ("分析中芯国际(688981.SH)", "confirm", "688981"),
@@ -2382,6 +2382,56 @@ def test_full_registered_name_owns_embedded_mentions(bundled_chat_stock_index, m
         assert decision.target.identity.stock_code == code
     if kind == "compare":
         assert {identity.stock_code for identity in decision.participants} == {"600584", "600900"}
+
+
+@pytest.mark.parametrize("current_code,message,kind,code", [
+    ("600519", "能否分析一下茅台", "confirm", "600519"),
+    ("600519", "你是否看好后市？", "maintain", None),
+    ("600519", "如果大盘继续跌，看空的逻辑是什么？", "maintain", None),
+    ("600519", "假设明天低开，分析一下应对策略", "maintain", None),
+    (None, "茅台最近为什么跌", "confirm", "600519"),
+    (None, "帮我查一下茅台的财报", "confirm", "600519"),
+    (None, "茅台 600519 现在什么价位", "confirm", "600519"),
+    (None, "聊聊茅台", "confirm", "600519"),
+    (None, "大盘今天怎么样", "maintain", None),
+])
+def test_unique_mention_binds_without_requiring_polite_or_hypothetical_clarification(
+    chat_stock_index, current_code, message, kind, code,
+):
+    from src.agent.chat_object_decision import decide_chat_object
+    from src.agent.stock_scope import StockIdentity
+    from src.services.agent_chat_session_service import _stock_lookup
+
+    registry, lookup = _stock_lookup()
+    current = StockIdentity.from_code(f"{current_code}.SH", registry) if current_code else None
+    decision = decide_chat_object(message, current, registry, lookup)
+    assert decision.kind == kind
+    if code is not None:
+        assert decision.target.identity.stock_code == code
+
+
+def test_multiple_unique_objects_still_clarify_instead_of_picking_one(chat_stock_index):
+    from src.agent.chat_object_decision import decide_chat_object
+    from src.services.agent_chat_session_service import _stock_lookup
+
+    registry, lookup = _stock_lookup()
+    lookup = dict(lookup, names=dict(lookup["names"]))
+    lookup["names"]["五粮液"] = (("000858.SZ", "五粮液", "stock"),)
+    decision = decide_chat_object("茅台和五粮液哪个好", None, registry, lookup)
+    assert decision.kind in {"clarify", "compare"}
+    if decision.kind == "compare":
+        assert {identity.stock_code for identity in decision.participants} == {"600519", "000858"}
+
+
+def test_explicit_uncertain_switch_keeps_current_without_confirmation(chat_stock_index):
+    from src.agent.chat_object_decision import decide_chat_object
+    from src.agent.stock_scope import StockIdentity
+    from src.services.agent_chat_session_service import _stock_lookup
+
+    registry, lookup = _stock_lookup()
+    current = StockIdentity.from_code("600519.SH", registry)
+    decision = decide_chat_object("是否改看300750？", current, registry, lookup)
+    assert decision.kind == "maintain"
 
 
 @pytest.fixture

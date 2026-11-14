@@ -127,6 +127,12 @@ def _qualification(text: str, operation) -> tuple[str, str]:
     prefix = text[left:operation.start()]
     if re.search(r"(?:不要|别|不想|不必|不用|无需|禁止)[^，。！？!?；;,\n]*$", prefix):
         return "denied", prefix
+    # Only the operation's clause/quotation is qualified, not the whole input.
+    if (re.search(r"他说|她说|引用", prefix)
+            or any(text.rfind(opening, 0, operation.start()) > text.rfind(closing, 0, operation.start())
+                   for opening, closing in (("“", "”"), ("「", "」"), ("‘", "’")))
+            or prefix.count('"') % 2 or prefix.count("'") % 2):
+        return "attributed", prefix
     if re.search(r"是否|要不要|能否|可否|如果|假如|假设|(?:^|\s)若", prefix):
         return "uncertain", prefix
     # A comma separates an antecedent from its adjacent consequent, not two
@@ -137,12 +143,6 @@ def _qualification(text: str, operation) -> tuple[str, str]:
         if (re.search(r"如果|假如|假设|(?:^|\s)若", antecedent)
                 and (not prefix.strip() or re.match(r"\s*(?:就|那么|则)", prefix))):
             return "uncertain", prefix
-    # Only the operation's clause/quotation is qualified, not the whole input.
-    if (re.search(r"他说|她说|引用", prefix)
-            or any(text.rfind(opening, 0, operation.start()) > text.rfind(closing, 0, operation.start())
-                   for opening, closing in (("“", "”"), ("「", "」"), ("‘", "’")))
-            or prefix.count('"') % 2 or prefix.count("'") % 2):
-        return "uncertain", prefix
     if _STRONG_COMPARE_PATTERN.search(prefix):
         return "comparison", prefix
     return "affirmative", prefix
@@ -174,15 +174,22 @@ def decide_chat_object(message: str, current: Optional[StockIdentity], registry:
     """One mutually exclusive decision; callers apply live/history fact eligibility."""
     text = unicodedata.normalize("NFKC", message)
     mentions = object_mentions(text, registry, lookup)
-    affirmative, uncertain, denied = [], False, False
+    affirmative, denied = [], False
+    attributed = uncertain_switch = uncertain_comparison = False
     for operation in _OPERATIONS.finditer(text):
         qualification, prefix = _qualification(text, operation)
         if qualification == "denied":
             denied = True
             continue
-        if qualification == "uncertain":
-            uncertain = True
+        if qualification == "attributed":
+            attributed = True
             continue
+        if qualification == "uncertain":
+            # A yes/no or hypothetical analysis request still names the object
+            # it asks about; only an explicit switch must stay unconfirmed.
+            if operation.group() in _SWITCHES:
+                uncertain_switch = True
+                continue
         if qualification == "comparison":
             continue
         target, has_evidence, evidence = _target(text, operation, mentions)
@@ -213,8 +220,11 @@ def decide_chat_object(message: str, current: Optional[StockIdentity], registry:
         if qualification == "denied":
             denied = True
             continue
+        if qualification == "attributed":
+            attributed = True
+            continue
         if qualification == "uncertain":
-            uncertain = True
+            uncertain_comparison = True
             continue
         offset = clause_match.start()
         local = [item for item in mentions if offset <= item.start and item.end <= offset + len(clause)]
@@ -227,7 +237,15 @@ def decide_chat_object(message: str, current: Optional[StockIdentity], registry:
             participants.extend(item.identity for item in local)
     if participants:
         return ObjectDecision("compare", participants=tuple(dict.fromkeys(participants)))
-    if uncertain and not affirmative:
+    if uncertain_comparison and not affirmative:
+        return ObjectDecision("clarify", candidates=tuple(dict.fromkeys(
+            identity for item in mentions for identity in item.identities
+        )))
+    if uncertain_switch and not affirmative:
+        # A question/hypothetical about switching does not authorize a switch;
+        # keep the current object and let the model answer the question.
+        return ObjectDecision("maintain")
+    if attributed and not affirmative:
         return ObjectDecision("clarify")
     if affirmative:
         identities = {item[0].identity if item[0] else None for item in affirmative}
@@ -278,6 +296,26 @@ def decide_chat_object(message: str, current: Optional[StockIdentity], registry:
                             and item.identity is not None)
         if len(set(relevant)) > 1:
             return ObjectDecision("clarify", candidates=tuple(dict.fromkeys(relevant)))
+    # One unambiguous object is enough to bind it, so natural new-session asks
+    # ("茅台最近为什么跌") do not need a separate confirmation turn. Ambiguous
+    # names and multiple objects keep the clarification/compare paths above.
+    if not denied:
+        # A background aside ("顺带提到…") is evidence, not the subject of the
+        # turn; it must not bind or expand the current scope.
+        asides = [(clause.start(), clause.end()) for clause in re.finditer(
+            r"[^，。！？!?；;,\n]+", text,
+        ) if re.match(r"\s*(?:顺带|顺便|另外)", clause.group())]
+        bound = [item for item in mentions if not any(
+            start <= item.start and item.end <= end for start, end in asides
+        )]
+        identities = tuple(dict.fromkeys(
+            identity for item in bound for identity in item.identities
+        ))
+        if len(identities) == 1 and all(item.identity is not None for item in bound):
+            target = next((item for item in bound if item.kind == "code"), bound[0])
+            if current is not None and target.identity == current:
+                return ObjectDecision("maintain")
+            return ObjectDecision("confirm", target=target, changes_target=True)
     if current is None and re.fullmatch(
         r"\s*(?:(?:分析|看看|研究|诊断)(?:一下子|一下|下)?\s*)?"
         r"(?:近期|最近|当前)?(?:风险|走势|估值|基本面|技术面|财务状况|盈利能力|它|还能买吗|怎么样)"

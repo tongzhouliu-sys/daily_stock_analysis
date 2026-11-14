@@ -23,6 +23,9 @@ import pytest
 from unittest.mock import patch
 
 from src.services.image_stock_extractor import (
+    COMPACT_EXTRACT_PROMPT,
+    EXTRACT_PROMPT,
+    VISION_OUTPUT_TOKENS,
     _resolve_vision_model,
     _get_api_keys_for_model,
     _call_litellm_vision,
@@ -174,7 +177,7 @@ class TestCallLitellmVision:
             mock_comp.assert_called_once()
             kwargs = mock_comp.call_args[1]
             assert kwargs["timeout"] == VISION_API_TIMEOUT
-            assert kwargs["max_tokens"] == 1024
+            assert kwargs["max_tokens"] == VISION_OUTPUT_TOKENS
 
     def test_openai_model_uses_api_base_and_aihubmix_headers(self):
         cfg = _cfg(
@@ -442,6 +445,16 @@ class TestExtractStockCodesFromImage:
         resp.choices = [choice]
         return resp
 
+    def _vision_response(self, content: str, finish_reason: str = "stop"):
+        msg = MagicMock()
+        msg.content = content
+        choice = MagicMock()
+        choice.message = msg
+        choice.finish_reason = finish_reason
+        resp = MagicMock()
+        resp.choices = [choice]
+        return resp
+
     def test_returns_items_and_raw(self):
         cfg = _cfg(gemini_api_keys=[_GEMINI_KEY])
         jpeg = _make_jpeg_bytes()
@@ -453,6 +466,48 @@ class TestExtractStockCodesFromImage:
             assert "600519" in codes
             assert "300750" in codes
             assert isinstance(raw, str)
+
+    def test_retries_truncated_detailed_output_with_compact_prompt(self):
+        """Long holdings use the same image again instead of asking for a split upload."""
+        cfg = _cfg(gemini_api_keys=[_GEMINI_KEY])
+        jpeg = _make_jpeg_bytes()
+        responses = [
+            self._vision_response('[{"code":"600519"', "length"),
+            self._vision_response('["600519","300750","00700"]'),
+        ]
+        with patch("src.services.image_stock_extractor.get_config", return_value=cfg), \
+             patch(
+                 "src.services.image_stock_extractor.litellm.completion",
+                 side_effect=responses,
+             ) as mock_completion:
+            items, raw = extract_stock_codes_from_image(jpeg, "image/jpeg")
+
+        assert [item[0] for item in items] == ["600519", "300750", "00700"]
+        assert raw == '["600519","300750","00700"]'
+        assert mock_completion.call_count == 2
+        first_prompt = mock_completion.call_args_list[0].kwargs["messages"][0]["content"][0]["text"]
+        second_prompt = mock_completion.call_args_list[1].kwargs["messages"][0]["content"][0]["text"]
+        assert first_prompt == EXTRACT_PROMPT
+        assert second_prompt == COMPACT_EXTRACT_PROMPT
+
+    def test_retries_provider_split_upload_message_with_compact_prompt(self):
+        cfg = _cfg(gemini_api_keys=[_GEMINI_KEY])
+        jpeg = _make_jpeg_bytes()
+        responses = [
+            self._vision_response("图片持仓过多导致输出被截断，请分张上传"),
+            self._vision_response('["600519","300750"]'),
+        ]
+        with patch("src.services.image_stock_extractor.get_config", return_value=cfg), \
+             patch(
+                 "src.services.image_stock_extractor.litellm.completion",
+                 side_effect=responses,
+             ) as mock_completion:
+            items, _ = extract_stock_codes_from_image(jpeg, "image/jpeg")
+
+        assert [item[0] for item in items] == ["600519", "300750"]
+        assert mock_completion.call_count == 2
+        second_prompt = mock_completion.call_args_list[1].kwargs["messages"][0]["content"][0]["text"]
+        assert second_prompt == COMPACT_EXTRACT_PROMPT
 
     def test_rejects_unsupported_mime(self):
         jpeg = _make_jpeg_bytes()

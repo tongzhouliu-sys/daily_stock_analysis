@@ -54,6 +54,17 @@ EXTRACT_PROMPT = """请分析这张股票市场截图或图片，提取其中所
 
 禁止只返回代码数组如 ["159887","512880"]，必须使用对象格式。若未找到任何股票代码，返回：[]"""
 
+# A compact fallback for unusually long holdings tables.  It deliberately omits
+# names and confidence so one image can still be imported when the detailed
+# response reaches a provider's output limit.  The normal prompt remains the
+# first choice, so the review UI continues to receive names and confidence in
+# the usual case.
+COMPACT_EXTRACT_PROMPT = """请识别这张持仓或自选股截图中所有可见的股票代码。
+
+仅返回一个 JSON 字符串数组，例如：["600519","00700","AAPL"]。
+不要返回股票名称、价格、数量、置信度、markdown、解释或任何提示文字。
+必须列出全部可见代码；若未找到代码，返回 []。"""
+
 # Valid confidence values; invalid ones normalized to medium
 _VALID_CONFIDENCE = frozenset({"high", "medium", "low"})
 
@@ -63,6 +74,14 @@ _FAKE_CODES = frozenset({"CODE", "NAME", "HIGH", "LOW", "MEDIUM", "CONFIDENCE", 
 ALLOWED_MIME = frozenset({"image/jpeg", "image/png", "image/webp", "image/gif"})
 MAX_SIZE_BYTES = 5 * 1024 * 1024  # 5MB
 VISION_API_TIMEOUT = 60  # seconds; avoid long blocks on network/API issues
+# A detailed holding row needs substantially more than the legacy 1,024-token
+# budget.  Four times that budget covers long brokerage screenshots while
+# retaining a bounded response for provider compatibility.
+VISION_OUTPUT_TOKENS = 4096
+
+
+class _VisionOutputTruncated(ValueError):
+    """The provider stopped generation before completing the image result."""
 
 # Magic bytes for server-side MIME validation (client Content-Type can be forged)
 _IMAGE_SIGNATURES = {
@@ -267,7 +286,47 @@ def _deployment_allows_empty_api_key(deployment: Dict[str, Any]) -> bool:
     return channel_allows_empty_api_key(protocol, params.get("api_base"))
 
 
-def _call_litellm_vision(image_b64: str, mime_type: str, api_key: Optional[str] = None) -> str:
+def _finish_reason_is_truncated(choice: Any) -> bool:
+    """Return whether a LiteLLM choice ended because its output budget was exhausted."""
+    if isinstance(choice, dict):
+        finish_reason = choice.get("finish_reason")
+    else:
+        finish_reason = getattr(choice, "finish_reason", None)
+    if not isinstance(finish_reason, str):
+        return False
+    return finish_reason.strip().lower() in {
+        "length",
+        "max_tokens",
+        "max_output_tokens",
+        "token_limit",
+    }
+
+
+def _response_requests_compact_retry(text: str, items: List[Tuple[str, Optional[str], str]]) -> bool:
+    """Identify a provider message that asks users to split a long holdings image.
+
+    Such a message is neither a successful empty result nor a malformed JSON
+    response.  Retry the same image with the compact codes-only contract,
+    rather than surfacing an instruction that makes the user upload it again.
+    """
+    if items:
+        return False
+    return bool(
+        re.search(
+            r"(?:输出|内容).{0,12}(?:截断|截取)|(?:分张|分图).{0,8}(?:上传|识别)",
+            text,
+            re.IGNORECASE,
+        )
+    )
+
+
+def _call_litellm_vision(
+    image_b64: str,
+    mime_type: str,
+    api_key: Optional[str] = None,
+    *,
+    prompt: str = EXTRACT_PROMPT,
+) -> str:
     """Extract stock codes from an image using litellm (all providers via OpenAI vision format)."""
     global litellm
     cfg = get_config()
@@ -311,12 +370,12 @@ def _call_litellm_vision(image_b64: str, mime_type: str, api_key: Optional[str] 
             {
                 "role": "user",
                 "content": [
-                    {"type": "text", "text": EXTRACT_PROMPT},
+                    {"type": "text", "text": prompt},
                     {"type": "image_url", "image_url": {"url": data_url}},
                 ],
             }
         ],
-        "max_tokens": 1024,
+        "max_tokens": VISION_OUTPUT_TOKENS,
         "timeout": VISION_API_TIMEOUT,
     }
     effective_api_key = str(deployment_params.get("api_key") or key or "").strip()
@@ -336,7 +395,10 @@ def _call_litellm_vision(image_b64: str, mime_type: str, api_key: Optional[str] 
         litellm = litellm_module
     response = litellm.completion(**call_kwargs)
     if response and response.choices and response.choices[0].message.content:
-        return response.choices[0].message.content
+        choice = response.choices[0]
+        if _finish_reason_is_truncated(choice):
+            raise _VisionOutputTruncated("Vision API output reached its token limit")
+        return choice.message.content
     raise ValueError("LiteLLM vision returned empty response")
 
 
@@ -377,17 +439,46 @@ def extract_stock_codes_from_image(
     keys = _get_api_keys_for_model(model, get_config())
 
     last_error: Optional[Exception] = None
+    prompt = EXTRACT_PROMPT
+    compact_retry_used = False
     for attempt in range(3):
         try:
             key = random.choice(keys) if keys else None
-            raw = _call_litellm_vision(image_b64, mime_type, api_key=key)
+            raw = _call_litellm_vision(image_b64, mime_type, api_key=key, prompt=prompt)
             logger.debug("[ImageExtractor] raw LLM response:\n%s", raw)
             items = _parse_items_from_text(raw)
+            if not compact_retry_used and _response_requests_compact_retry(raw, items):
+                compact_retry_used = True
+                prompt = COMPACT_EXTRACT_PROMPT
+                logger.info(
+                    "[ImageExtractor] provider declined long detailed output; "
+                    "retrying the same image with compact code extraction"
+                )
+                continue
             logger.info(
                 f"[ImageExtractor] {model} 提取 {len(items)} 个: "
                 f"{[(i[0], i[1]) for i in items[:5]]}{'...' if len(items) > 5 else ''}"
             )
             return items, raw
+        except _VisionOutputTruncated as e:
+            last_error = e
+            if not compact_retry_used:
+                compact_retry_used = True
+                prompt = COMPACT_EXTRACT_PROMPT
+                logger.info(
+                    "[ImageExtractor] detailed output reached the token limit; "
+                    "retrying the same image with compact code extraction"
+                )
+                continue
+            if attempt < 2:
+                delay = 2 ** attempt
+                logger.warning(
+                    "[ImageExtractor] compact extraction attempt %d/3 reached its output limit; "
+                    "retrying in %ss",
+                    attempt + 1,
+                    delay,
+                )
+                time.sleep(delay)
         except Exception as e:
             last_error = e
             if attempt < 2:

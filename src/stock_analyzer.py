@@ -203,13 +203,17 @@ class StockTrendAnalyzer:
         """初始化分析器"""
         pass
     
-    def analyze(self, df: pd.DataFrame, code: str) -> TrendAnalysisResult:
+    def analyze(
+        self, df: pd.DataFrame, code: str, is_partial_bar: bool = False
+    ) -> TrendAnalysisResult:
         """
         分析股票趋势
         
         Args:
             df: 包含 OHLCV 数据的 DataFrame
             code: 股票代码
+            is_partial_bar: 最后一根 K 线是否是盘中未收盘的累计数据。为真时
+                量能状态不参与评分，避免把盘中累计量与全天均量直接比较。
             
         Returns:
             TrendAnalysisResult 分析结果
@@ -246,7 +250,7 @@ class StockTrendAnalyzer:
         self._calculate_bias(result)
 
         # 3. 量能分析
-        self._analyze_volume(df, result)
+        self._analyze_volume(df, result, is_partial_bar=is_partial_bar)
 
         # 4. 支撑压力分析
         self._analyze_support_resistance(df, result)
@@ -408,11 +412,19 @@ class StockTrendAnalyzer:
         if result.ma20 > 0:
             result.bias_ma20 = (price - result.ma20) / result.ma20 * 100
     
-    def _analyze_volume(self, df: pd.DataFrame, result: TrendAnalysisResult) -> None:
+    def _analyze_volume(
+        self,
+        df: pd.DataFrame,
+        result: TrendAnalysisResult,
+        is_partial_bar: bool = False,
+    ) -> None:
         """
         分析量能
         
         偏好：缩量回调 > 放量上涨 > 缩量上涨 > 放量下跌
+        
+        T10：盘中未收盘的 K 线成交量是累计值，不能与全天均量比较。此时只记录
+        状态说明，不产生“缩量/放量”结论，量能评分保持中性（10 分）。
         """
         if len(df) < 5:
             return
@@ -420,8 +432,18 @@ class StockTrendAnalyzer:
         latest = df.iloc[-1]
         vol_5d_avg = df['volume'].iloc[-6:-1].mean()
         
-        if vol_5d_avg > 0:
-            result.volume_ratio_5d = float(latest['volume']) / vol_5d_avg
+        if is_partial_bar:
+            result.volume_status = VolumeStatus.NORMAL
+            result.volume_trend = "盘中未收盘，量能数据不评分"
+            return
+        
+        # 5 日均量缺失或为 0 时视为“无数据”，不要用默认 0 比值落进缩量分支。
+        if not (vol_5d_avg and vol_5d_avg > 0) or pd.isna(vol_5d_avg):
+            result.volume_status = VolumeStatus.NORMAL
+            result.volume_trend = "5 日均量缺失，量能数据不评分"
+            return
+        
+        result.volume_ratio_5d = float(latest['volume']) / vol_5d_avg
         
         # 判断价格变化
         prev_close = df.iloc[-2]['close']

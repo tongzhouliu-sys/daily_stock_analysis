@@ -299,3 +299,107 @@ def test_conservative_market_context_does_not_soften_do_not_buy_in_english() -> 
     assert adjustments == []
     assert result.decision_type == "buy"
     assert result.operation_advice == "Do not buy now; sell into strength."
+
+
+# =============================================================================
+# T13: 只有明确风险状态才改写结论
+# =============================================================================
+
+
+def test_mildly_positive_summary_does_not_soften_buy() -> None:
+    result = _result()
+
+    adjustments = apply_daily_market_context_guardrail(
+        result,
+        daily_market_context={
+            "region": "cn",
+            "trade_date": "2026-11-14",
+            "summary": "市场谨慎乐观，量能温和放大。",
+            "risk_tags": [],
+        },
+        report_language="zh",
+    )
+
+    assert adjustments == []
+    assert result.decision_type == "buy"
+    assert result.operation_advice == "立即买入并积极加仓"
+    assert "daily_market_context_hint" not in result.dashboard
+
+
+def test_fading_watch_sentiment_does_not_soften_buy() -> None:
+    result = _result()
+
+    adjustments = apply_daily_market_context_guardrail(
+        result,
+        daily_market_context={
+            "region": "cn",
+            "trade_date": "2026-11-14",
+            "summary": "观望情绪消退，资金回流。",
+            "risk_tags": [],
+        },
+        report_language="zh",
+    )
+
+    assert adjustments == []
+    assert result.decision_type == "buy"
+
+
+def test_conservative_tag_only_adds_hint_without_rewriting() -> None:
+    result = _result()
+    original_advice = result.operation_advice
+
+    adjustments = apply_daily_market_context_guardrail(
+        result,
+        daily_market_context={
+            "region": "cn",
+            "trade_date": "2026-11-14",
+            "summary": "建议观望，等待方向确认。",
+            "risk_tags": ["conservative"],
+        },
+        report_language="zh",
+    )
+
+    assert adjustments == ["daily_market_context_conservative_hint"]
+    assert result.decision_type == "buy"
+    assert result.operation_advice == original_advice
+    assert result.confidence_level == "高"
+    assert result.sentiment_score == 82
+    phase_decision = result.dashboard["phase_decision"]
+    assert any("大盘环境偏谨慎" in item for item in phase_decision["data_limitations"])
+
+
+def test_high_risk_tag_still_downgrades_buy() -> None:
+    result = _result()
+
+    adjustments = apply_daily_market_context_guardrail(
+        result,
+        daily_market_context={
+            "region": "cn",
+            "trade_date": "2026-11-14",
+            "summary": "市场高风险，情绪退潮。",
+            "risk_tags": ["high_risk", "market_cooling"],
+        },
+        report_language="zh",
+    )
+
+    assert "daily_market_context_buy_softened" in adjustments
+    assert result.decision_type == "hold"
+
+
+def test_position_cap_still_downgrades_buy() -> None:
+    result = _result()
+
+    adjustments = apply_daily_market_context_guardrail(
+        result,
+        daily_market_context={
+            "region": "cn",
+            "trade_date": "2026-11-14",
+            "summary": "仓位上限三成。",
+            "risk_tags": ["low_position_cap"],
+            "position_cap": "三成",
+        },
+        report_language="zh",
+    )
+
+    assert "daily_market_context_buy_softened" in adjustments
+    assert result.decision_type == "hold"

@@ -23,7 +23,10 @@ export const stocksApi = {
       formData,
       {
         headers,
-        timeout: 60000, // Vision API can be slow; 60s
+        // The server may retry a long holdings screenshot with a compact
+        // codes-only response, so keep the browser request alive throughout
+        // its bounded Vision API retry window.
+        timeout: 195000,
       },
     );
 

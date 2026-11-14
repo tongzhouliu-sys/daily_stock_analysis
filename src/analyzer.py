@@ -1093,7 +1093,11 @@ def stabilize_decision_with_structure(
         flow_bias, flow_reason = _capital_flow_bias_with_status(fundamental_context)
         if flow_bias == "unavailable":
             if isinstance(fundamental_context, dict) and "capital_flow" in fundamental_context:
-                if decision_type == "buy" or advice_decision_type == "buy":
+                # T12: a market that does not provide capital flow at all
+                # (US/HK without Futu, ETF, index) must not lose a valid buy.
+                # Only a genuine fetch failure keeps the downgrade.
+                capability_missing = _capital_flow_status_is_capability_missing(flow_reason)
+                if (decision_type == "buy" or advice_decision_type == "buy") and not capability_missing:
                     _downgrade_buy_without_capital_flow(
                         result,
                         language,
@@ -1317,6 +1321,23 @@ def _first_numeric_value(*values: Any) -> Optional[float]:
 
 def _capital_flow_bias(fundamental_context: Optional[Dict[str, Any]]) -> str:
     return _capital_flow_bias_with_status(fundamental_context)[0]
+
+
+_CAPITAL_FLOW_CAPABILITY_MISSING_STATUS = {
+    "not_supported",
+    "not supported",
+    "unsupported",
+}
+
+
+def _capital_flow_status_is_capability_missing(status: str) -> bool:
+    """Return True when the market itself has no capital-flow data.
+
+    T12: "not supported" means the data does not exist for this instrument,
+    not that the fetch failed. The two cases need different behaviour.
+    """
+    normalized = str(status or "").strip().lower().replace("-", " ").replace("_", " ")
+    return normalized in _CAPITAL_FLOW_CAPABILITY_MISSING_STATUS or "not supported" in normalized
 
 
 def _capital_flow_bias_with_status(

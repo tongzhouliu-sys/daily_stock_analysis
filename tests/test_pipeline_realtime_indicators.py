@@ -425,3 +425,107 @@ class TestEnhanceContextRealtimeOverride(unittest.TestCase):
 
 if __name__ == "__main__":
     unittest.main()
+
+
+class TestEnhanceContextStaleTodayShift(unittest.TestCase):
+    """T9：库里最新一行是 T−1 时，实时覆盖前要先把它顺移成“昨日”。"""
+
+    def setUp(self) -> None:
+        self._db_path = os.path.join(
+            os.path.dirname(__file__), "..", "data", "test_issue234.db"
+        )
+        os.makedirs(os.path.dirname(self._db_path), exist_ok=True)
+        with patch.dict(os.environ, {"DATABASE_PATH": self._db_path}):
+            from src.config import Config
+            Config._instance = None
+            self.config = Config._load_from_env()
+        self.pipeline = StockAnalysisPipeline(config=self.config)
+
+    @patch("src.core.pipeline.get_market_now")
+    @patch("src.core.pipeline.get_market_for_stock", return_value="cn")
+    def test_stale_today_is_shifted_to_yesterday(self, _mock_market, mock_now) -> None:
+        today = date.today()
+        t_minus_1 = today - timedelta(days=1)
+        t_minus_2 = today - timedelta(days=2)
+        mock_now.return_value = datetime(
+            today.year, today.month, today.day, 10, 0, tzinfo=timezone.utc
+        )
+        context = {
+            "code": "600519",
+            "date": t_minus_1.isoformat(),
+            "today": {"date": t_minus_1.isoformat(), "close": 15.0},
+            "yesterday": {"date": t_minus_2.isoformat(), "close": 14.5},
+        }
+        quote = _make_realtime_quote(price=15.72)
+        trend = TrendAnalysisResult(
+            code="600519",
+            trend_status=TrendStatus.BULL,
+            ma5=15.5,
+            ma10=15.2,
+            ma20=14.9,
+        )
+
+        enhanced = self.pipeline._enhance_context(context, quote, None, trend, "贵州茅台")
+
+        self.assertEqual(enhanced["today"]["date"], today.isoformat())
+        self.assertEqual(enhanced["yesterday"]["date"], t_minus_1.isoformat())
+        self.assertEqual(enhanced["yesterday"]["close"], 15.0)
+
+    @patch("src.core.pipeline.get_market_now")
+    @patch("src.core.pipeline.get_market_for_stock", return_value="cn")
+    def test_today_bar_after_close_is_not_shifted(self, _mock_market, mock_now) -> None:
+        today = date.today()
+        t_minus_1 = today - timedelta(days=1)
+        mock_now.return_value = datetime(
+            today.year, today.month, today.day, 16, 0, tzinfo=timezone.utc
+        )
+        context = {
+            "code": "600519",
+            "date": today.isoformat(),
+            "today": {"date": today.isoformat(), "close": 15.9},
+            "yesterday": {"date": t_minus_1.isoformat(), "close": 15.0},
+        }
+        quote = _make_realtime_quote(price=15.72)
+        trend = TrendAnalysisResult(
+            code="600519",
+            trend_status=TrendStatus.BULL,
+            ma5=15.5,
+            ma10=15.2,
+            ma20=14.9,
+        )
+
+        enhanced = self.pipeline._enhance_context(context, quote, None, trend, "贵州茅台")
+
+        self.assertEqual(enhanced["today"]["date"], today.isoformat())
+        self.assertEqual(enhanced["yesterday"]["date"], t_minus_1.isoformat())
+        self.assertEqual(enhanced["yesterday"]["close"], 15.0)
+
+    @patch("src.core.pipeline.get_market_now")
+    @patch("src.core.pipeline.get_market_for_stock", return_value="cn")
+    def test_realtime_pre_close_wins_over_shifted_yesterday(
+        self, _mock_market, mock_now
+    ) -> None:
+        today = date.today()
+        t_minus_1 = today - timedelta(days=1)
+        mock_now.return_value = datetime(
+            today.year, today.month, today.day, 10, 0, tzinfo=timezone.utc
+        )
+        context = {
+            "code": "600519",
+            "date": t_minus_1.isoformat(),
+            "today": {"date": t_minus_1.isoformat(), "close": 14.0},
+            "yesterday": {"date": (today - timedelta(days=2)).isoformat(), "close": 13.0},
+        }
+        quote = _make_realtime_quote(price=15.72, pre_close=15.0)
+        trend = TrendAnalysisResult(
+            code="600519",
+            trend_status=TrendStatus.BULL,
+            ma5=15.5,
+            ma10=15.2,
+            ma20=14.9,
+        )
+
+        enhanced = self.pipeline._enhance_context(context, quote, None, trend, "贵州茅台")
+
+        # (15.72 - 15.0) / 15.0 = 4.8%
+        self.assertEqual(enhanced["price_change_ratio"], 4.8)

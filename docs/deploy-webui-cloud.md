@@ -82,6 +82,8 @@ WEBUI_PORT=8888
 
 Docker Compose 中的 `env_file: ../.env` 只会把 `.env` 作为**启动环境变量**注入容器，不会在容器内创建 `/app/.env`，也不会让 WebUI 保存配置时回写宿主机 `.env`。新版 WebUI 会在活跃 `.env` 文件缺少某些键时展示启动注入的同名环境变量作为兜底，因此页面上能看到 Docker 启动时注入的配置；但“导出 `.env`”仍只导出当前活跃配置文件内容。
 
+`ADMIN_AUTH_ENABLED` 也支持从启动环境变量读取：活跃 `.env` 文件里没有这个键时回退到进程环境变量；文件里有这个键时以文件为准（网页里的认证开关会写入文件，因此重启后仍然生效）。使用 Compose 的 `env_file` 或 `environment` 注入 `ADMIN_AUTH_ENABLED=true` 即可，不需要在容器内创建 `.env`。服务启动时会打印一行最终认证状态和监听地址；认证关闭且监听地址不是回环地址时会额外打印警告。
+
 如果希望 WebUI 中保存的配置在容器删除、重建或升级后继续保留，请把活跃配置文件放到已挂载的数据卷中，例如在 Compose 的 `environment` 中增加：
 
 ```yaml
@@ -331,7 +333,7 @@ sudo systemctl reload nginx
 
 把 Web 界面暴露到公网之前，请启用管理员账号密码登录。
 
-在 `.env` 中设置：
+在 `.env` 中设置（使用 Docker Compose 时也可以写在 `docker-compose.yml` 的 `environment` 里或由 `env_file` 注入的宿主机 `.env` 中；容器内活跃 `.env` 文件存在同名键时以文件为准）：
 
 ```env
 ADMIN_AUTH_ENABLED=true

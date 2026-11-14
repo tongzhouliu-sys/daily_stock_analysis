@@ -128,7 +128,12 @@ def test_downgrades_buy_mid_range_with_neutral_fund_flow() -> None:
     assert "资金流不明确" in result.risk_warning
 
 
-def test_downgrades_buy_when_capital_flow_is_unavailable() -> None:
+def test_unsupported_market_keeps_buy_without_downgrade() -> None:
+    """T12 变更：旧断言要求 not_supported 时把买入降为持有。
+
+    市场本身不提供资金流（美股、未接 Futu 的港股、ETF、指数）时，缺失的是
+    数据能力而不是数据质量，不应因此推翻买入结论。
+    """
     buy_result = _result(
         decision_type="buy",
         operation_advice="买入",
@@ -154,13 +159,10 @@ def test_downgrades_buy_when_capital_flow_is_unavailable() -> None:
         _unsupported_fund_flow(),
     )
 
-    assert buy_result.decision_type == "hold"
-    assert buy_result.operation_advice == "持有观察"
-    assert buy_result.confidence_level == "低"
-    assert buy_result.sentiment_score <= 59
-    assert buy_result.dashboard["decision_stability"]["applied"] is True
-    assert "买入结论缺少资金面确认" in buy_result.dashboard["decision_stability"]["reason"]
-    assert buy_result.dashboard["core_conclusion"]["signal_type"] == "🟡持有观望"
+    assert buy_result.decision_type == "buy"
+    assert buy_result.operation_advice == "买入"
+    assert buy_result.dashboard["decision_stability"]["applied"] is False
+    assert "未使用资金流校准" in buy_result.dashboard["decision_stability"]["reason"]
     assert sell_result.decision_type == "sell"
     assert sell_result.operation_advice == "卖出"
     assert sell_result.dashboard["decision_stability"]["applied"] is False
@@ -198,7 +200,8 @@ def test_downgrades_buy_when_capital_flow_values_are_na() -> None:
     assert "资金流数据缺失" in result.dashboard["decision_stability"]["capital_flow_status"]
 
 
-def test_downgrades_buy_advice_when_decision_type_is_hold_and_capital_flow_unavailable() -> None:
+def test_unsupported_market_keeps_buy_advice_when_decision_type_is_hold() -> None:
+    """T12 变更：旧断言要求 not_supported 时把“建议买入”改写为持有观察。"""
     result = _result(
         decision_type="hold",
         operation_advice="建议买入",
@@ -213,13 +216,12 @@ def test_downgrades_buy_advice_when_decision_type_is_hold_and_capital_flow_unava
     )
 
     assert result.decision_type == "hold"
-    assert result.operation_advice == "持有观察"
-    assert result.sentiment_score <= 59
-    assert result.dashboard["decision_stability"]["applied"] is True
-    assert "买入结论缺少资金面确认" in result.dashboard["decision_stability"]["reason"]
+    assert result.operation_advice == "建议买入"
+    assert result.dashboard["decision_stability"]["applied"] is False
 
 
-def test_downgrades_buy_when_capital_flow_status_is_unavailable_case_insensitive() -> None:
+def test_unsupported_status_is_case_insensitive_and_keeps_buy() -> None:
+    """T12 变更：旧断言要求 NOT_SUPPORTED 被当成取数失败并降级。"""
     buy_result = _result(
         decision_type="buy",
         operation_advice="买入",
@@ -233,9 +235,9 @@ def test_downgrades_buy_when_capital_flow_status_is_unavailable_case_insensitive
         _unsupported_fund_flow_caps(),
     )
 
-    assert buy_result.decision_type == "hold"
-    assert buy_result.operation_advice == "持有观察"
-    assert buy_result.dashboard["decision_stability"]["applied"] is True
+    assert buy_result.decision_type == "buy"
+    assert buy_result.operation_advice == "买入"
+    assert buy_result.dashboard["decision_stability"]["applied"] is False
     assert "暂不支持" in str(buy_result.dashboard["decision_stability"]["capital_flow_status"])
 
 
@@ -340,3 +342,43 @@ def test_refines_hold_pullback_near_support_as_shakeout_watch() -> None:
     assert result.decision_type == "hold"
     assert result.operation_advice == "洗盘观察"
     assert "更适合按洗盘观察处理" in result.risk_warning
+
+
+def test_fetch_failure_still_downgrades_buy() -> None:
+    """T12: 取数失败（超时）与能力缺失不同，仍按原逻辑降级。"""
+    result = _result(
+        decision_type="buy",
+        operation_advice="买入",
+        score=66,
+        current_price=32.0,
+    )
+
+    stabilize_decision_with_structure(
+        result,
+        SimpleNamespace(support_levels=[30.0], resistance_levels=[34.0]),
+        {"capital_flow": {"status": "timeout", "data": {}}},
+    )
+
+    assert result.decision_type == "hold"
+    assert result.operation_advice == "持有观察"
+    assert result.dashboard["decision_stability"]["applied"] is True
+    assert "买入结论缺少资金面确认" in result.dashboard["decision_stability"]["reason"]
+
+
+def test_empty_flow_payload_still_downgrades_buy() -> None:
+    """T12: 市场提供资金流但本次取空，属于取数失败，仍降级。"""
+    result = _result(
+        decision_type="buy",
+        operation_advice="买入",
+        score=66,
+        current_price=32.0,
+    )
+
+    stabilize_decision_with_structure(
+        result,
+        SimpleNamespace(support_levels=[30.0], resistance_levels=[34.0]),
+        {"capital_flow": {"status": "ok", "data": {}}},
+    )
+
+    assert result.decision_type == "hold"
+    assert result.dashboard["decision_stability"]["applied"] is True

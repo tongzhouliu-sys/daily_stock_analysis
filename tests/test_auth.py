@@ -183,6 +183,84 @@ class AuthRateLimitTestCase(unittest.TestCase):
         self.assertTrue(auth.check_rate_limit(ip))
 
 
+class AuthEnabledResolutionTestCase(unittest.TestCase):
+    """ADMIN_AUTH_ENABLED resolves from the .env file first, then process env."""
+
+    def setUp(self) -> None:
+        _reset_auth_globals()
+        self.temp_dir = tempfile.TemporaryDirectory()
+        self.addCleanup(self.temp_dir.cleanup)
+        self.env_path = Path(self.temp_dir.name) / ".env"
+
+    def _resolve(self, *, file_content, env_value):
+        if file_content is not None:
+            self.env_path.write_text(file_content, encoding="utf-8")
+        env = {"ENV_FILE": str(self.env_path)}
+        if env_value is not None:
+            env["ADMIN_AUTH_ENABLED"] = env_value
+        with patch.dict(os.environ, env, clear=False):
+            if env_value is None:
+                os.environ.pop("ADMIN_AUTH_ENABLED", None)
+            # Keep the real project .env out of the test: the resolution logic
+            # under test reads ENV_FILE directly.
+            with patch.object(auth, "_ensure_env_loaded"):
+                return auth._is_auth_enabled_from_env()
+
+    def test_missing_env_file_falls_back_to_process_env(self) -> None:
+        self.assertTrue(self._resolve(file_content=None, env_value="true"))
+
+    def test_env_file_without_key_falls_back_to_process_env(self) -> None:
+        self.assertTrue(self._resolve(file_content="STOCK_LIST=600519\n", env_value="true"))
+
+    def test_env_file_value_wins_over_process_env(self) -> None:
+        self.assertFalse(self._resolve(file_content="ADMIN_AUTH_ENABLED=false\n", env_value="true"))
+
+    def test_env_file_enables_auth_without_process_env(self) -> None:
+        self.assertTrue(self._resolve(file_content="ADMIN_AUTH_ENABLED=true\n", env_value=None))
+
+    def test_missing_env_file_and_process_env_keeps_auth_disabled(self) -> None:
+        self.assertFalse(self._resolve(file_content=None, env_value=None))
+
+
+class AuthStartupLogTestCase(unittest.TestCase):
+    """Startup log line reports the final auth state and bind address."""
+
+    def test_logs_enabled_state_with_address(self) -> None:
+        with patch.object(auth, "is_auth_enabled", return_value=True), \
+             patch.object(auth.logger, "info") as info_log, \
+             patch.object(auth.logger, "warning") as warning_log:
+            auth.log_auth_startup_state("127.0.0.1", 8000)
+
+        info_log.assert_called_once()
+        self.assertIn("127.0.0.1:8000", info_log.call_args.args)
+        warning_log.assert_not_called()
+
+    def test_warns_when_disabled_and_bound_publicly(self) -> None:
+        with patch.object(auth, "is_auth_enabled", return_value=False), \
+             patch.object(auth.logger, "info"), \
+             patch.object(auth.logger, "warning") as warning_log:
+            auth.log_auth_startup_state("0.0.0.0", 8000)
+
+        warning_log.assert_called_once()
+        self.assertIn("0.0.0.0:8000", warning_log.call_args.args)
+
+    def test_warns_when_disabled_and_bound_to_lan_interface(self) -> None:
+        with patch.object(auth, "is_auth_enabled", return_value=False), \
+             patch.object(auth.logger, "info"), \
+             patch.object(auth.logger, "warning") as warning_log:
+            auth.log_auth_startup_state("192.168.1.20", 8000)
+
+        warning_log.assert_called_once()
+
+    def test_does_not_warn_when_disabled_on_loopback(self) -> None:
+        with patch.object(auth, "is_auth_enabled", return_value=False), \
+             patch.object(auth.logger, "info"), \
+             patch.object(auth.logger, "warning") as warning_log:
+            auth.log_auth_startup_state("127.0.0.1", 8000)
+
+        warning_log.assert_not_called()
+
+
 class AuthSetPasswordTestCase(unittest.TestCase):
     """Test set_initial_password, change_password, overwrite_password."""
 

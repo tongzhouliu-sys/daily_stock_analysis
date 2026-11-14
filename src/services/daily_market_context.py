@@ -46,7 +46,11 @@ _MARKET_REVIEW_LOCK_WAIT_MAX_ATTEMPTS = 40
 _RISK_PATTERNS: Tuple[Tuple[str, Tuple[str, ...]], ...] = (
     ("high_risk", ("高风险", "风险偏高", "风险较高", "high risk", "elevated risk")),
     ("market_cooling", ("退潮", "降温", "risk-off", "risk off", "cooling")),
-    ("conservative", ("观望", "谨慎", "保守", "等待确认", "watch", "cautious", "conservative")),
+    ("conservative", (
+        "建议观望", "保持谨慎", "谨慎观望", "以观望为主", "保守配置", "等待确认",
+        "stay cautious", "remain cautious", "wait for confirmation",
+        "conservative positioning",
+    )),
     ("low_position_cap", ("仓位上限", "轻仓", "低仓位", "小仓", "position cap", "low position", "small position")),
 )
 

@@ -131,7 +131,6 @@ from src.services.stock_code_utils import resolve_index_stock_code_for_analysis
 
 logger = logging.getLogger(__name__)
 _RUNTIME_ENV_FILE_KEYS = set()
-_PUBLIC_BIND_HOSTS = frozenset({"0.0.0.0", "::", "[::]", "*"})
 _LAST_ANALYSIS_FAILURE_REASON: Optional[str] = None
 
 
@@ -142,24 +141,11 @@ def _get_active_env_path() -> Path:
     return Path(__file__).resolve().parent / ".env"
 
 
-def _is_public_bind_host(host: str) -> bool:
-    return (host or "").strip().lower() in _PUBLIC_BIND_HOSTS
+def _log_startup_auth_state(host: str, port: int) -> None:
+    """Log the effective auth state and warn for non-loopback bindings."""
+    from src.auth import log_auth_startup_state
 
-
-def _warn_if_public_webui_without_auth(host: str) -> None:
-    if not _is_public_bind_host(host):
-        return
-
-    from src.auth import is_auth_enabled
-
-    if is_auth_enabled():
-        return
-    logger.warning(
-        "WEBUI_HOST=%s binds the Web UI to a public interface while "
-        "ADMIN_AUTH_ENABLED=false. Keep this service behind a trusted network "
-        "boundary or enable admin authentication before exposing it.",
-        host,
-    )
+    log_auth_startup_state(host, port)
 
 
 def _resolve_web_service_bind(args: argparse.Namespace, config: Config) -> Tuple[str, int]:
@@ -1818,7 +1804,7 @@ def main() -> int:
 
     if start_serve:
         args.host, args.port = _resolve_web_service_bind(args, config)
-        _warn_if_public_webui_without_auth(args.host)
+        _log_startup_auth_state(args.host, args.port)
 
     bot_clients_started = False
     if start_serve:
