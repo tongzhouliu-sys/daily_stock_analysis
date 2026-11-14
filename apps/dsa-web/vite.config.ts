@@ -166,6 +166,10 @@ const vendorChunkByPackage: Record<string, string> = {
   'space-separated-tokens': 'vendor-markdown',
   'trim-lines': 'vendor-markdown',
   'vfile-message': 'vendor-markdown',
+  // T18: Export libraries in separate chunk to avoid bloating first-screen vendor bundle
+  'html2canvas': 'vendor-export',
+  'jspdf': 'vendor-export',
+  'docx': 'vendor-export',
 }
 
 const vendorChunkByPackagePrefix: Array<[string, string]> = [
@@ -207,7 +211,6 @@ const getVendorChunkName = (id: string): string | undefined => {
   return (
     vendorChunkByPackage[packageName]
     ?? vendorChunkByPackagePrefix.find(([prefix]) => packageName.startsWith(prefix))?.[1]
-    ?? 'vendor'
   )
 }
 

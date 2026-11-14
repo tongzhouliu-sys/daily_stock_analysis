@@ -9,6 +9,10 @@ import { INDEX_FIELD } from './stockIndexFields';
 
 const STOCK_INDEX_LOAD_TIMEOUT_MS = 10_000;
 
+// T19: Cache the in-flight promise so concurrent calls share one request.
+// Cleared on failure to allow retry.
+let cachedLoadPromise: Promise<IndexLoadResult> | null = null;
+
 export interface IndexLoadResult {
   /** Index data */
   data: StockIndexItem[];
@@ -26,50 +30,62 @@ export interface IndexLoadResult {
  * @returns Index load result
  */
 export async function loadStockIndex(): Promise<IndexLoadResult> {
-  const abortController = new AbortController();
-  const timeoutId = globalThis.setTimeout(
-    () => abortController.abort(),
-    STOCK_INDEX_LOAD_TIMEOUT_MS,
-  );
-  try {
-    // Add time parameter to bypass cache (in case the backend doesn't handle ETag/Cache-Control)
-    const response = await fetch(
-      `/stocks.index.json?_t=${Math.floor(Date.now() / 3600000)}`,
-      { signal: abortController.signal },
-    );
-
-    if (!response.ok) {
-      throw new Error(`Failed to load index: ${response.status} ${response.statusText}`);
-    }
-
-    const data: StockIndexData = await response.json();
-
-    // Uncompress format (if array format)
-    const items = isCompressedFormat(data)
-      ? unpackTuples(data as StockIndexTuple[])
-      : data as StockIndexItem[];
-
-    // Registered index rows flow to autocomplete/search/group consumers. The
-    // per-consumer gates (popular keeps stock-only) are enforced by each
-    // consumer, not by a global filter here.
-    const visibleItems = items;
-
-    return {
-      data: visibleItems,
-      loaded: true,
-      fallback: false,
-    };
-  } catch (error) {
-    console.error('[StockIndexLoader] Failed to load stock index:', error);
-    return {
-      data: [],
-      loaded: false,
-      error: error as Error,
-      fallback: true,  // Load failed, fallback to old mode
-    };
-  } finally {
-    globalThis.clearTimeout(timeoutId);
+  // T19: Return cached promise if load is in progress
+  if (cachedLoadPromise) {
+    return cachedLoadPromise;
   }
+
+  // Create and cache the load promise
+  cachedLoadPromise = (async () => {
+    const abortController = new AbortController();
+    const timeoutId = globalThis.setTimeout(
+      () => abortController.abort(),
+      STOCK_INDEX_LOAD_TIMEOUT_MS,
+    );
+    try {
+      // Add time parameter to bypass cache (in case the backend doesn't handle ETag/Cache-Control)
+      const response = await fetch(
+        `/stocks.index.json?_t=${Math.floor(Date.now() / 3600000)}`,
+        { signal: abortController.signal },
+      );
+
+      if (!response.ok) {
+        throw new Error(`Failed to load index: ${response.status} ${response.statusText}`);
+      }
+
+      const data: StockIndexData = await response.json();
+
+      // Uncompress format (if array format)
+      const items = isCompressedFormat(data)
+        ? unpackTuples(data as StockIndexTuple[])
+        : data as StockIndexItem[];
+
+      // Registered index rows flow to autocomplete/search/group consumers. The
+      // per-consumer gates (popular keeps stock-only) are enforced by each
+      // consumer, not by a global filter here.
+      const visibleItems = items;
+
+      return {
+        data: visibleItems,
+        loaded: true,
+        fallback: false,
+      };
+    } catch (error) {
+      console.error('[StockIndexLoader] Failed to load stock index:', error);
+      // T19: Clear cache on failure to allow retry
+      cachedLoadPromise = null;
+      return {
+        data: [],
+        loaded: false,
+        error: error as Error,
+        fallback: true,  // Load failed, fallback to old mode
+      };
+    } finally {
+      globalThis.clearTimeout(timeoutId);
+    }
+  })();
+
+  return cachedLoadPromise;
 }
 
 /**

@@ -122,7 +122,7 @@ export interface StockPoolState {
   removeTask: (taskId: string) => void;
   resetDashboardState: () => void;
   loadStockBar: () => Promise<void>;
-  refreshStockBar: () => Promise<void>;
+  refreshStockBar: (silent?: boolean) => Promise<void>;
 }
 
 const initialState = {
@@ -1092,9 +1092,12 @@ export const useStockPoolStore = create<StockPoolState>((set, get) => ({
     }
   },
 
-  refreshStockBar: async () => {
+  refreshStockBar: async (silent = false) => {
     const requestSeq = ++stockBarRequestSeq;
-    set({ isLoadingStockBar: true });
+    // T20: Only set loading state if not silent
+    if (!silent) {
+      set({ isLoadingStockBar: true });
+    }
     try {
       const response = await historyApi.getStockBarList({
         startDate: getRecentStartDate(90),
@@ -1110,7 +1113,8 @@ export const useStockPoolStore = create<StockPoolState>((set, get) => ({
       }
       set({ stockBarRefreshFailed: true });
     } finally {
-      if (requestSeq === stockBarRequestSeq) {
+      // T20: Only clear loading state if not silent
+      if (requestSeq === stockBarRequestSeq && !silent) {
         set({ isLoadingStockBar: false });
       }
     }
