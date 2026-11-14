@@ -98,6 +98,7 @@ uvicorn server:app --reload --host 0.0.0.0 --port 8000
 ### 后端验证
 
 ```bash
+source .venv/bin/activate  # Python 3.11
 pip install -r requirements.txt
 pip install flake8 pytest
 ./scripts/ci_gate.sh
