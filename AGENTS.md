@@ -229,6 +229,9 @@ gh run view <run_id> --log-failed
 
 ## 8. Issue / PR / Skill 工作流
 
+- 一个任务对应一个分支、一个 PR；提交说明只描述当前任务，不夹带其他任务的改动。
+- 普通提交的正文不写 `#patch`、`#minor`、`#major`。自动打 tag 只读取提交标题第一行；只有标题包含版本标记时才触发发布。
+- 同一时间一个分支只由一个会话或工具操作；不直接推 `main`，所有用户可见变更走 PR。
 - 仓库内已有以下 skill，可优先复用：
   - `.claude/skills/analyze-issue/SKILL.md`
   - `.claude/skills/analyze-pr/SKILL.md`

@@ -16,27 +16,42 @@ on:
 jobs:
   tag:
     runs-on: ubuntu-latest
-    # Default: NO tag. Only tag when commit message contains #patch, #minor, or #major.
-    if: >-
-      contains(github.event.head_commit.message, '#patch') ||
-      contains(github.event.head_commit.message, '#minor') ||
-      contains(github.event.head_commit.message, '#major')
-
-    permissions:
-      contents: write
-
+    # Default: NO tag. Only the commit title (first line) may opt in.
     steps:
+      - name: Detect release marker in commit title
+        id: release
+        env:
+          COMMIT_MESSAGE: ${{ github.event.head_commit.message }}
+        run: |
+          set -euo pipefail
+          title=$(printf '%s\n' "$COMMIT_MESSAGE" | sed -n '1p')
+          bump=""
+          case "$title" in
+            *#major*) bump="major" ;;
+            *#minor*) bump="minor" ;;
+            *#patch*) bump="patch" ;;
+          esac
+          if [ -n "$bump" ]; then
+            echo "enabled=true" >> "$GITHUB_OUTPUT"
+            echo "bump=$bump" >> "$GITHUB_OUTPUT"
+          else
+            echo "enabled=false" >> "$GITHUB_OUTPUT"
+          fi
+
       - uses: actions/checkout@v5
+        if: steps.release.outputs.enabled == 'true'
         with:
           fetch-depth: 0
 
       - name: Bump version and push tag
+        if: steps.release.outputs.enabled == 'true'
         uses: anothrNick/github-tag-action@v1
         env:
           GITHUB_TOKEN: ${{ secrets.GITHUB_TOKEN }}
           WITH_V: true
           DEFAULT_BUMP: patch
           INITIAL_VERSION: 2.1.0
+          BUMP: ${{ steps.release.outputs.bump }}
           PATCH_STRING_TOKEN: '#patch'
           MINOR_STRING_TOKEN: '#minor'
           MAJOR_STRING_TOKEN: '#major'

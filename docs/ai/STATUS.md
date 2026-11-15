@@ -31,6 +31,17 @@
 | T43 | 测试治理：`tests/support/pipeline_factory.py` 统一 pipeline 构造，清理旧常量断言 | 已合入 |
 | T44 | 双语补齐（第一批）：选股页与模型渠道编辑器文案迁入 `uiText.ts` | 已合入 |
 
+### 2.1 上线审查任务书进度（`.claude/reviews/release-fix-tasks-20261115.md`）
+
+- R2–R25 已按任务书合入；对应提交见 `git log`。
+- R26（日线成交量统一成“股”，含历史库迁移）已完成代码与离线测试；真实数据源在线复验需联网，未在本次验收中执行，因此**不阻塞上线，但保持“待联网确认”**。
+- R27：基线（`f052eaba`）与当前 HEAD 的全量测试已跑完，分诊见 `.claude/reviews/test-triage-20261115.md`。
+- R28：Instabox 运维文件已移出公开仓库到 `local/ops/`；`local/scratch/market_router` 已取消跟踪；扫描器 `data10` 路径已参数化。
+- R29：`auto-tag.yml` 已改为只读提交标题第一行；`AGENTS.md` 第 8 节已补分支/PR/并发规则；提交 `8d68c6d77` 的任务映射见 `.claude/reviews/commit-8d68c6d77-task-map.md`。所有者侧的 `main` 分支保护仍需在 GitHub 设置中确认。
+- R30：自动检查与手工验收见本轮交付记录；桌面端和真实数据源联网项按实际情况标注未验证。
+
+原任务书中的历史任务状态：T5 未完成，见 R15；T16 未完成，见 R3；T20 未完成，见 R16；T11 未完成，见 R26。
+
 ## 3. 半成品与已知限制
 
 | 项 | 状态 | 处理建议 |
