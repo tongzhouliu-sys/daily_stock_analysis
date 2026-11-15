@@ -12,6 +12,7 @@ from typing import Any, Callable, Dict, List, Optional, TYPE_CHECKING
 
 from data_provider.base import interactive_mode
 from src.agent.agent_backend import AgentBackend, AgentRunRequest
+from src.agent.answer_editor import brief_has_preferences
 from src.agent.conversation import conversation_manager
 from src.agent.executor import AgentResult, PreparedAgentChat, prepare_agent_chat
 from src.agent.provider_trace import persist_provider_trace_turns
@@ -291,8 +292,9 @@ class AgentChatExecutor:
             result.thinking_steps = thinking_steps
 
             # T4: The shared editor runs after research, before persistence.
+            # T27: 偏好全空 / unknown 时跳过，避免白跑一次整篇改写模型调用
             editor_meta = None
-            if result.success and turn.prepared.analysis_brief:
+            if result.success and brief_has_preferences(turn.prepared.analysis_brief):
                 from src.agent.answer_editor import StockAnswerEditorService
 
                 editor = StockAnswerEditorService(

@@ -36,6 +36,7 @@ from dataclasses import dataclass, field
 from math import ceil
 from typing import TYPE_CHECKING, Any, Callable, Dict, List, Optional
 
+from src.agent.answer_editor import brief_has_preferences
 from src.agent.chat_context import build_visible_chat_history
 from src.agent.dashboard_payload import sanitize_agent_dashboard_payload
 from src.agent.disagreement import build_agent_disagreement_summary
@@ -626,7 +627,7 @@ class AgentOrchestrator:
             # T4: The same shared editor runs after final risk convergence.
             edited_content = orch_result.content
             editor_meta = None
-            if orch_result.success and turn.context.meta.get("analysis_brief"):
+            if orch_result.success and brief_has_preferences(turn.context.meta.get("analysis_brief")):
                 from src.agent.answer_editor import StockAnswerEditorService
                 from src.schemas.agent_intake import AnalysisBrief
                 editor = StockAnswerEditorService(llm_client=self.llm_adapter, config=self.config)

@@ -58,6 +58,47 @@ _NOT_ACTION_RE = re.compile(
 )
 _STATUS_SUCCESS, _STATUS_SKIPPED, _STATUS_FAILED = "success", "skipped", "failed"
 
+# T27: 引导偏好维度。全部为空 / unknown 时，回答编辑器没有可对齐的目标，
+# 多跑一次整篇改写只是白花一次模型调用，因此直接跳过。
+_PREFERENCE_FIELDS = (
+    "object_scope", "goal", "horizon", "position", "risk_focus", "reading_style",
+)
+
+
+def brief_has_preferences(brief: Any) -> bool:
+    """Return True when the confirmed brief carries any usable preference.
+
+    ``brief`` may be an ``AnalysisBrief`` or an already-serialized dict. Only
+    real answers count: empty strings, empty lists, the ``unknown`` sentinel and
+    bookkeeping fields (``unknown_fields`` / ``sources`` / ``evidence``) are
+    ignored.
+    """
+    if brief is None:
+        return False
+
+    def _value(name: str) -> Any:
+        if isinstance(brief, dict):
+            return brief.get(name)
+        return getattr(brief, name, None)
+
+    def _meaningful(value: Any) -> bool:
+        if value is None:
+            return False
+        if isinstance(value, str):
+            text = value.strip()
+            return bool(text) and text.lower() not in ("unknown", "n/a", "na", "-")
+        if isinstance(value, (list, tuple, set, dict)):
+            return bool(value)
+        return True
+
+    if any(_meaningful(_value(name)) for name in _PREFERENCE_FIELDS):
+        return True
+    if _meaningful(_value("focus_areas")):
+        return True
+    if _meaningful(_value("object")):
+        return True
+    return False
+
 
 @dataclass(frozen=True)
 class EditorResult:

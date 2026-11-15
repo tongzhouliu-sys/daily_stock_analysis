@@ -979,6 +979,7 @@ const ChatPage: React.FC = () => {
         technical: ['技术分析 Agent', 'Technical agent'], intel: ['情报 Agent', 'Intelligence agent'],
         risk: ['风险 Agent', 'Risk agent'], decision: ['决策 Agent', 'Decision agent'],
         portfolio: ['组合 Agent', 'Portfolio agent'], agent_loop: ['分析 Agent', 'Analysis agent'],
+        answer_editing: ['回答润色', 'Answer editing'],
       };
       const agent = names[last.stage || '']?.[language === 'en' ? 1 : 0] || last.stage || 'Agent';
       if (last.type === 'stage_start') return language === 'en' ? `${agent} is working` : `${agent} 正在分析`;
