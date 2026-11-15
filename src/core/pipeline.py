@@ -4389,13 +4389,19 @@ class StockAnalysisPipeline:
                     else:
                         # T21-B5: 委托给 notification.py 的静态渠道分发函数
                         # 这样新增的渠道（如钉钉）会自动被处理
+                        aggregate_codes = [
+                            str(getattr(item, "code", "") or "").strip()
+                            for item in (results or [])
+                            if str(getattr(item, "code", "") or "").strip()
+                        ]
+
                         def _send_via_static_dispatcher() -> bool:
                             return self.notifier._send_to_static_channel(
                                 channel,
                                 report,
                                 image_bytes=image_bytes,
-                                email_stock_codes=stock_codes,
-                                email_send_to_all=send_to_all,
+                                email_stock_codes=aggregate_codes or None,
+                                email_send_to_all=not aggregate_codes,
                             )
                         
                         channel_success, channel_error = _send_channel_safely(
