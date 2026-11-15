@@ -3,6 +3,9 @@
 
 from types import SimpleNamespace
 
+import pytest
+from pydantic import ValidationError
+
 from api.v1.endpoints.agent import (
     ChatRequest,
     _agent_status_response,
@@ -61,6 +64,14 @@ def test_chat_request_accepts_the_guided_interaction_contract():
     assert request.intake_id == "intake_abc"
     assert request.intake_revision == 3
     assert _request().interaction_version == 0
+
+
+def test_chat_request_rejects_unsupported_interaction_versions():
+    # R24d: v2 was never implemented server-side, so it must fail fast instead
+    # of silently running the v1 intake flow.
+    for version in (2, -1):
+        with pytest.raises(ValidationError):
+            _request(interaction_version=version)
 
 
 def test_status_advertises_guided_intake_capability():

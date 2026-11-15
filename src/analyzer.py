@@ -4429,6 +4429,18 @@ Output strictly in the following JSON format. This is a complete Decision Dashbo
                         llm_usage = exc.last_usage
                     else:
                         raise
+                except Exception as exc:
+                    # R24c: a failed integrity retry must not discard the first
+                    # parsed result; fall back to it and fill placeholders.
+                    if first_result is not None:
+                        logger.warning(
+                            "[LLM完整性] 重试调用失败，回落到首次解析结果: %s",
+                            exc,
+                        )
+                        self._apply_placeholder_fill(first_result, first_missing_fields or [])
+                        result = first_result
+                        break
+                    raise
                 elapsed = time.time() - start_time
 
                 # 记录响应信息
@@ -4491,13 +4503,19 @@ Output strictly in the following JSON format. This is a complete Decision Dashbo
                         f"{name}：报告字段不完整，正在补全重试（{retry_count}/{max_retries}）",
                     )
                 else:
-                    # T21-B7: 重试耗尽，回落到首次结果并占位补全
+                    # T21-B7: 重试耗尽，选缺字段更少的那份并占位补全
+                    candidate_result = result
+                    candidate_missing = missing_fields
                     if first_result is not None and first_result is not result:
+                        if len(first_missing_fields or []) <= len(missing_fields or []):
+                            candidate_result = first_result
+                            candidate_missing = first_missing_fields
+                    if candidate_result is not result:
                         logger.warning(
-                            "[LLM完整性] 重试失败，回落到首次解析结果并占位补全",
+                            "[LLM完整性] 重试失败，回落到缺字段更少的首次解析结果并占位补全",
                         )
-                        result = first_result
-                        missing_fields = first_missing_fields
+                    result = candidate_result
+                    missing_fields = candidate_missing
                     self._apply_placeholder_fill(result, missing_fields)
                     logger.warning(
                         "[LLM完整性] 必填字段缺失 %s，已占位补全，不阻塞流程",

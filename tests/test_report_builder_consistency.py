@@ -158,6 +158,60 @@ class ReportBuilderConsistencyTest(unittest.TestCase):
         self.assertEqual(report.summary.action, "buy")
         self.assertEqual(report.summary.operation_advice, "持有")
 
+    def test_dashboard_guardrail_reason_keeps_neutral_action(self):
+        # R24b: a guardrail reason that only exists inside dashboard must still
+        # prevent the score-based alignment from turning hold into buy.
+        record = _record()
+        source = _record_source(record)
+        source["sentiment_score"] = 80
+        source["raw_result"] = {
+            **RAW_RESULT,
+            "operation_advice": "持有",
+            "action": "hold",
+            "sentiment_score": 80,
+            "dashboard": {
+                "decision_score_calibration": {
+                    "guardrail_reason": "评分偏高但量能不足，维持持有",
+                }
+            },
+        }
+
+        report = build_analysis_report(source, query_id="query-t39")
+
+        self.assertEqual(report.summary.action, "hold")
+
+    def test_score_alignment_still_applies_without_any_guardrail(self):
+        record = _record()
+        source = _record_source(record)
+        source["sentiment_score"] = 80
+        source["raw_result"] = {
+            **RAW_RESULT,
+            "operation_advice": "持有",
+            "action": "hold",
+            "sentiment_score": 80,
+        }
+
+        report = build_analysis_report(source, query_id="query-t39")
+
+        self.assertEqual(report.summary.action, "buy")
+
+    def test_source_action_label_is_used_when_action_is_missing(self):
+        record = _record()
+        source = _record_source(record)
+        source.pop("operation_advice", None)
+        source["action_label"] = "持有"
+        source["sentiment_score"] = 50
+        source["raw_result"] = {
+            key: value
+            for key, value in RAW_RESULT.items()
+            if key not in {"operation_advice", "action"}
+        }
+        source["raw_result"]["sentiment_score"] = 50
+
+        report = build_analysis_report(source, query_id="query-t39")
+
+        self.assertEqual(report.summary.action, "hold")
+
     def test_legacy_empty_strategy_stays_null_for_payload_path(self):
         report = _build_analysis_report(
             {"meta": {"stock_code": "600519"}, "summary": {}, "strategy": {}, "details": {}},

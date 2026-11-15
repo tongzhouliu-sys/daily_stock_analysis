@@ -84,7 +84,9 @@ class ChatRequest(BaseModel):
     # T2: Intake flow integration
     interaction_version: int = Field(
         default=0,
-        description="Interaction version (1 = intake flow)",
+        ge=0,
+        le=1,
+        description="Interaction version: 0 = direct chat, 1 = intake flow",
     )
     intake_id: Optional[str] = Field(
         default=None,

@@ -386,7 +386,9 @@ class IntakeCreateRequest(BaseModel):
     # v2: Interaction version for smart intake
     interaction_version: int = Field(
         default=1,
-        description="Interaction version: 1 = v1 guided questions, 2 = v2 smart intake",
+        ge=0,
+        le=1,
+        description="Interaction version: 0 = direct chat, 1 = intake flow",
     )
 
 
@@ -465,7 +467,9 @@ class ChatRequestWithIntake(BaseModel):
     # New fields for intake integration
     interaction_version: int = Field(
         default=0,
-        description="Interaction version (1 = intake flow)",
+        ge=0,
+        le=1,
+        description="Interaction version: 0 = direct chat, 1 = intake flow",
     )
     intake_id: Optional[str] = Field(
         default=None,

@@ -372,6 +372,25 @@ class RuntimeSchedulerServiceTestCase(unittest.TestCase):
             _BLOCKING_THREAD_RELEASE.set()
             trigger.join(timeout=5)
 
+    def test_disabling_schedule_does_not_terminate_running_analysis(self) -> None:
+        config = SimpleNamespace(
+            schedule_enabled=True,
+            schedule_time="18:00",
+            schedule_times=["18:00"],
+        )
+        service = RuntimeSchedulerService(config_provider=lambda: config)
+        running_process = SimpleNamespace(pid=4242, poll=lambda: None)
+        service._analysis_process = running_process
+
+        config.schedule_enabled = False
+        with patch(
+            "src.services.runtime_scheduler._terminate_analysis_process_tree",
+        ) as terminate_mock:
+            service.reconcile_from_config()
+
+        terminate_mock.assert_not_called()
+        self.assertIs(service._analysis_process, running_process)
+
     def test_stop_terminates_active_analysis_worker(self) -> None:
         config = SimpleNamespace(
             schedule_enabled=True,

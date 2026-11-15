@@ -774,6 +774,10 @@ class RuntimeSchedulerService:
             if scheduler is not None:
                 scheduler.stop()
             if process is not None:
+                logger.warning(
+                    "[RuntimeScheduler] 正在终止运行中的分析任务: pid=%s",
+                    getattr(process, "pid", None),
+                )
                 _terminate_analysis_process_tree(process)
             self._scheduler = None
             self._thread = None
@@ -794,7 +798,16 @@ class RuntimeSchedulerService:
         if self._is_schedule_enabled(config):
             self.start(run_immediately=run_immediately)
         else:
-            self.stop()
+            # R24e: turning the schedule off must not kill an analysis that is
+            # already running; only the schedule itself is stopped here.
+            with self._analysis_process_lock:
+                running_process = self._analysis_process
+            if running_process is not None and getattr(running_process, "poll", lambda: None)() is None:
+                logger.info(
+                    "[RuntimeScheduler] 调度已关闭，正在运行的分析任务继续执行: pid=%s",
+                    getattr(running_process, "pid", None),
+                )
+            self.stop(terminate_analysis=False)
 
     def run_now(self) -> Dict[str, Any]:
         if not self._start_analysis_watchdog():

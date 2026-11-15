@@ -241,6 +241,33 @@ class TestPipelineSingleStockNotify(unittest.TestCase):
         self.assertEqual(calls[1].kwargs["query_id"], "query-1")
         self.assertEqual(calls[1].kwargs["code"], "600519")
 
+    def test_aggregate_notification_keys_dedup_by_report_type_and_stock_set(self):
+        pipeline = make_pipeline()
+        pipeline.config = SimpleNamespace(stock_email_groups=[])
+        pipeline.db = MagicMock()
+        pipeline.notifier = MagicMock()
+        pipeline.notifier.is_available.return_value = True
+        pipeline.notifier.send_with_results.return_value = SimpleNamespace(
+            status="success",
+            success=True,
+            channel_results=[],
+        )
+        results = [_make_result("600519"), _make_result("000001")]
+
+        with patch.object(
+            StockAnalysisPipeline,
+            "_generate_aggregate_report",
+            return_value="report",
+        ):
+            pipeline._send_notifications(results, ReportType.SIMPLE, skip_push=False)
+
+        kwargs = pipeline.notifier.send_with_results.call_args.kwargs
+        self.assertEqual(
+            kwargs["dedup_key"],
+            "report:aggregate:simple:000001,600519",
+        )
+        self.assertEqual(kwargs["cooldown_key"], kwargs["dedup_key"])
+
     def test_process_single_stock_direct_path_does_not_notify_when_failed(self):
         pipeline = make_pipeline()
         pipeline.fetch_and_save_stock_data = MagicMock(return_value=(True, None))

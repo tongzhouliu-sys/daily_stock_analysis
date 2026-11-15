@@ -2811,6 +2811,107 @@ class TestAnalyzerGenerateText:
         assert "补全重试" in progress_updates[2][1]
         assert "解析 JSON" in progress_updates[3][1]
 
+    def test_analyze_integrity_retry_exception_falls_back_to_first_result(self):
+        analyzer = self._make_analyzer()
+        analyzer._config_override = SimpleNamespace(
+            gemini_request_delay=0,
+            report_language="zh",
+            litellm_model="gemini/gemini-2.0-flash",
+            llm_temperature=0.2,
+            report_integrity_enabled=True,
+            report_integrity_retry=1,
+        )
+
+        from src.analyzer import AnalysisResult
+
+        first_result = AnalysisResult(
+            code="600519",
+            name="贵州茅台",
+            sentiment_score=80,
+            trend_prediction="看多",
+            operation_advice="持有",
+            analysis_summary="首轮结果",
+        )
+
+        with patch.object(analyzer, "is_available", return_value=True), \
+             patch.object(analyzer, "_get_analysis_system_prompt", return_value="system"), \
+             patch.object(analyzer, "_format_prompt", return_value="prompt"), \
+             patch.object(
+                 analyzer,
+                 "_call_litellm",
+                 side_effect=[
+                     ("first response", "model-a", {"prompt_tokens": 1, "completion_tokens": 2, "total_tokens": 3}),
+                     RuntimeError("retry network down"),
+                 ],
+             ), \
+             patch.object(analyzer, "_parse_response", return_value=first_result), \
+             patch.object(analyzer, "_build_market_snapshot", return_value={}), \
+             patch.object(analyzer, "_check_content_integrity", return_value=(False, ["analysis_summary"])), \
+             patch.object(analyzer, "_build_integrity_retry_prompt", return_value="retry prompt"), \
+             patch.object(analyzer, "_apply_placeholder_fill") as mock_fill, \
+             patch("src.analyzer.persist_llm_usage"):
+            result = analyzer.analyze({"code": "600519", "stock_name": "贵州茅台"})
+
+        assert result.analysis_summary == "首轮结果"
+        mock_fill.assert_called_once()
+        assert mock_fill.call_args[0][1] == ["analysis_summary"]
+
+    def test_analyze_integrity_exhausted_picks_result_with_fewer_missing_fields(self):
+        analyzer = self._make_analyzer()
+        analyzer._config_override = SimpleNamespace(
+            gemini_request_delay=0,
+            report_language="zh",
+            litellm_model="gemini/gemini-2.0-flash",
+            llm_temperature=0.2,
+            report_integrity_enabled=True,
+            report_integrity_retry=1,
+        )
+
+        from src.analyzer import AnalysisResult
+
+        first_result = AnalysisResult(
+            code="600519",
+            name="贵州茅台",
+            sentiment_score=80,
+            trend_prediction="看多",
+            operation_advice="持有",
+            analysis_summary="首轮结果",
+        )
+        retry_result = AnalysisResult(
+            code="600519",
+            name="贵州茅台",
+            sentiment_score=80,
+            trend_prediction="看多",
+            operation_advice="持有",
+            analysis_summary="重试结果",
+        )
+
+        with patch.object(analyzer, "is_available", return_value=True), \
+             patch.object(analyzer, "_get_analysis_system_prompt", return_value="system"), \
+             patch.object(analyzer, "_format_prompt", return_value="prompt"), \
+             patch.object(
+                 analyzer,
+                 "_call_litellm",
+                 side_effect=[
+                     ("first response", "model-a", {"prompt_tokens": 1, "completion_tokens": 2, "total_tokens": 3}),
+                     ("second response", "model-a", {"prompt_tokens": 1, "completion_tokens": 2, "total_tokens": 3}),
+                 ],
+             ), \
+             patch.object(analyzer, "_parse_response", side_effect=[first_result, retry_result]), \
+             patch.object(analyzer, "_build_market_snapshot", return_value={}), \
+             patch.object(
+                 analyzer,
+                 "_check_content_integrity",
+                 side_effect=[(False, ["analysis_summary"]), (False, ["analysis_summary", "trend_prediction"])],
+             ), \
+             patch.object(analyzer, "_build_integrity_retry_prompt", return_value="retry prompt"), \
+             patch.object(analyzer, "_apply_placeholder_fill") as mock_fill, \
+             patch("src.analyzer.persist_llm_usage"):
+            result = analyzer.analyze({"code": "600519", "stock_name": "贵州茅台"})
+
+        assert result.analysis_summary == "首轮结果"
+        assert mock_fill.call_args[0][1] == ["analysis_summary"]
+
     def test_analyze_persists_provider_usage_from_private_stream_hidden_usage_best_effort(self):
         analyzer = self._make_analyzer()
         analyzer._config_override = SimpleNamespace(

@@ -4134,17 +4134,26 @@ class StockAnalysisPipeline:
                 single_share_payload = (
                     _share_image_payload(results[0]) if len(results) == 1 else None
                 )
+                # R24a: keep the aggregate dedup/cooldown identity per stock set;
+                # otherwise two different watchlists share one cooldown window.
+                report_type_key = (
+                    report_type.value
+                    if isinstance(report_type, ReportType)
+                    else str(report_type)
+                )
+                codes_key = ",".join(
+                    sorted(str(getattr(result, "code", "") or "") for result in results)
+                )
+                aggregate_noise_key = f"report:aggregate:{report_type_key}:{codes_key}"
                 dispatch = self.notifier.send_with_results(
                     report,
                     route_type="report",
+                    dedup_key=aggregate_noise_key,
+                    cooldown_key=aggregate_noise_key,
                     structured_payload=single_share_payload,
                     results=results,
                     report_builder=lambda group: self._generate_aggregate_report(group, report_type),
-                    report_type=(
-                        report_type.value
-                        if isinstance(report_type, ReportType)
-                        else str(report_type)
-                    ),
+                    report_type=report_type_key,
                     on_channel_result=_record_channel_result,
                 )
 

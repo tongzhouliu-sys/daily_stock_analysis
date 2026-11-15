@@ -41,6 +41,7 @@ from src.report_language import (
     normalize_report_language,
 )
 from src.schemas.decision_action import build_action_fields
+from src.schemas.decision_scale import extract_decision_guardrail_reason
 from src.services.analysis_service import asset_type_from_canonical_code
 from src.services.empty_news import empty_news_disclosure_from_stored
 from src.utils.data_processing import (
@@ -218,7 +219,11 @@ def build_analysis_report(
         explicit_action=first_non_empty_report_value(
             raw_result.get("action"),
             source.get("action"),
+            source.get("action_label"),
             source.get("details", {}).get("action")
+            if isinstance(source.get("details"), dict)
+            else None,
+            source.get("details", {}).get("action_label")
             if isinstance(source.get("details"), dict)
             else None,
         ),
@@ -231,7 +236,11 @@ def build_analysis_report(
             if isinstance(source.get("details"), dict)
             else None,
         ),
-        guardrail_reason=extract_guardrail_reason(raw_result),
+        guardrail_reason=first_non_empty_report_value(
+            extract_guardrail_reason(raw_result),
+            extract_decision_guardrail_reason(raw_result),
+            extract_decision_guardrail_reason(source),
+        ),
         align_with_score=True,
     )
 
