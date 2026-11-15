@@ -13,6 +13,21 @@ import { UI_LANGUAGE_STORAGE_KEY } from '../../utils/uiLanguage';
 import ChatPage from '../ChatPage';
 import { extractStockCodeFromMessage, extractStockCodesFromMessage } from '../../utils/chatStockCode';
 
+const { mockChatAnswerRenderSpy } = vi.hoisted(() => ({
+  mockChatAnswerRenderSpy: vi.fn(),
+}));
+
+vi.mock('../../components/chat/ChatAnswer', async (importOriginal) => {
+  const actual = await importOriginal<typeof import('../../components/chat/ChatAnswer')>();
+  const Actual = actual.default;
+  return {
+    default: (props: Parameters<typeof Actual>[0]) => {
+      mockChatAnswerRenderSpy(props.content);
+      return <Actual {...props} />;
+    },
+  };
+});
+
 vi.mock('../../components/scanner/api/client', () => ({ api: vi.fn() }));
 
 function createDeferred<T>() {
@@ -2353,5 +2368,32 @@ describe('watchlist button with code variants', () => {
 
     expect(mockStoreState.clearIntake).toHaveBeenCalledOnce();
     expect(document.querySelector('.chat-composer-input')).toHaveValue('茅台最近为什么跌');
+  });
+
+  it('does not re-render history messages while typing in the real ChatPage', async () => {
+    mockStoreState.messages = Array.from({ length: 20 }, (_, index) => ({
+      id: `history-${index}`,
+      role: 'assistant' as const,
+      content: `历史回答 ${index}`,
+    }));
+
+    render(
+      <MemoryRouter initialEntries={['/chat']}>
+        <ChatPage />
+      </MemoryRouter>,
+    );
+
+    expect(await screen.findByText('历史回答 0')).toBeInTheDocument();
+    expect(mockChatAnswerRenderSpy).toHaveBeenCalled();
+    mockChatAnswerRenderSpy.mockClear();
+
+    const input = screen.getByPlaceholderText(/分析 600519/);
+    for (const value of ['分', '分析', '分析一', '分析一下', '分析一下茅']) {
+      fireEvent.change(input, { target: { value } });
+    }
+
+    // R25: every message item keeps the same props, so memo skips the whole
+    // history even though ChatPage owns the composer state.
+    expect(mockChatAnswerRenderSpy).not.toHaveBeenCalled();
   });
 });

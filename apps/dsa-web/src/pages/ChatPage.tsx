@@ -955,7 +955,7 @@ const ChatPage: React.FC = () => {
     });
   }, []);
 
-  const copyMessageToClipboard = async (msgId: string, content: string) => {
+  const copyMessageToClipboard = useCallback(async (msgId: string, content: string) => {
     try {
       await navigator.clipboard.writeText(content);
       setCopiedMessages((prev) => new Set(prev).add(msgId));
@@ -974,7 +974,7 @@ const ChatPage: React.FC = () => {
     } catch (err) {
       console.error('Copy failed:', err);
     }
-  };
+  }, []);
 
   const downloadMessageAsMarkdown = useCallback((msg: Message) => {
     const skillLabel = getMessageSkillLabel(msg);
@@ -1338,7 +1338,7 @@ const ChatPage: React.FC = () => {
                       copied={copiedMessages.has(msg.id)}
                       copyLabel={copiedMessages.has(msg.id) ? text.copied : text.copy}
                       exportLabel={t('chat.exportMessage')}
-                      onCopy={(messageId, content) => { void copyMessageToClipboard(messageId, content); }}
+                      onCopy={copyMessageToClipboard}
                       onExport={downloadMessageAsMarkdown}
                       onRequestComposerFocus={focusComposer}
                       onClarificationDecision={handleMessageClarificationDecision}
