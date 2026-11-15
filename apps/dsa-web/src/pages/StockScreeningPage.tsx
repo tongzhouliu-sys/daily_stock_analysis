@@ -40,28 +40,33 @@ import {
 } from '../api/screening';
 import { formatParsedApiError, getParsedApiError, toApiErrorMessage, type ParsedApiError } from '../api/error';
 import { AppPage, Button, InlineAlert, Select } from '../components/common';
+import { useUiLanguage, type TranslateFn } from '../contexts/UiLanguageContext';
+import type { UiLanguage, UiTextKey } from '../i18n/uiText';
 
-const MARKETS = [{ id: 'cn', label: 'A 股' }];
+const MARKETS = [{ id: 'cn' }];
 const SCREEN_TASK_STORAGE_KEY = 'dsa.screening.activeScreenTask.v1';
 const SCREEN_TASK_POLL_INTERVAL_MS = 2000;
 const CUSTOM_STRATEGY_OPTION_VALUE = '__custom_strategy__';
-const STRATEGY_CATEGORY_LABELS: Record<string, string> = {
-  framework: '综合',
-  income: '收益',
-  momentum: '动量',
-  quality: '质量',
-  reversal: '反转',
-  trend: '趋势',
-  value: '价值',
+const STRATEGY_CATEGORY_KEYS: Record<string, UiTextKey> = {
+  framework: 'screening.category.framework',
+  income: 'screening.category.income',
+  momentum: 'screening.category.momentum',
+  quality: 'screening.category.quality',
+  reversal: 'screening.category.reversal',
+  trend: 'screening.category.trend',
+  value: 'screening.category.value',
 };
 
-const formatStrategyCategory = (value?: string) => {
+const formatStrategyCategory = (value: string | undefined, t: TranslateFn) => {
   const normalized = value?.trim();
   if (!normalized) {
-    return '自定义';
+    return t('screening.category.custom');
   }
-  return STRATEGY_CATEGORY_LABELS[normalized.toLowerCase()] || normalized;
+  const key = STRATEGY_CATEGORY_KEYS[normalized.toLowerCase()];
+  return key ? t(key) : normalized;
 };
+
+const dateLocale = (language: UiLanguage) => (language === 'en' ? 'en-US' : 'zh-CN');
 
 type PersistedScreenTask = {
   taskId: string;
@@ -71,15 +76,19 @@ type PersistedScreenTask = {
   maxResults: number;
 };
 
-const formatRunCreatedAt = (value: string | null | undefined) => {
+const formatRunCreatedAt = (
+  value: string | null | undefined,
+  language: UiLanguage,
+  t: TranslateFn,
+) => {
   if (!value) {
-    return '时间未知';
+    return t('screening.time.unknown');
   }
   const parsed = new Date(value);
   if (Number.isNaN(parsed.getTime())) {
     return value;
   }
-  return parsed.toLocaleString('zh-CN', {
+  return parsed.toLocaleString(dateLocale(language), {
     month: '2-digit',
     day: '2-digit',
     hour: '2-digit',
@@ -88,15 +97,23 @@ const formatRunCreatedAt = (value: string | null | undefined) => {
   });
 };
 
-// 历史条目里展示筛选条件：策略 ID → 中文名（找不到时回退到原始 ID）
-const formatHistoryStrategyName = (strategyId: string, strategies: ScreeningStrategy[]): string => {
+// 历史条目里展示筛选条件：策略 ID → 当前语言名称（找不到时回退到原始 ID）
+const formatHistoryStrategyName = (
+  strategyId: string,
+  strategies: ScreeningStrategy[],
+  t: TranslateFn,
+): string => {
   const matched = strategies.find((item) => item.id === strategyId);
-  return matched?.name || matched?.title || strategyId || '未知策略';
+  return matched?.name || matched?.title || strategyId || t('screening.strategy.unknown');
 };
 
-// 历史条目里展示筛选条件：市场 ID → 中文标签
-const formatHistoryMarketLabel = (marketId: string | null | undefined): string =>
-  MARKETS.find((item) => item.id === marketId)?.label || marketId || 'cn';
+// 历史条目里展示筛选条件：市场 ID → 当前语言标签
+const formatHistoryMarketLabel = (marketId: string | null | undefined, t: TranslateFn): string => {
+  if (!marketId || marketId === 'cn') {
+    return t('screening.market.cn');
+  }
+  return marketId;
+};
 
 const readPersistedScreenTask = (): PersistedScreenTask | null => {
   if (typeof window === 'undefined') {
@@ -143,14 +160,14 @@ const clearPersistedScreenTask = () => {
 const isUnrecoverableScreenTaskError = (error: ParsedApiError) =>
   error.title === '选股任务不可恢复';
 
-const formatRecoverableScreenTaskPollingError = (error: ParsedApiError) => {
+const formatRecoverableScreenTaskPollingError = (error: ParsedApiError, t: TranslateFn) => {
   if (error.category === 'upstream_timeout') {
-    return '选股任务仍在后台运行，状态轮询暂时超时，将自动重试。';
+    return t('screening.task.pollTimeout');
   }
   if (error.category === 'upstream_network' || error.category === 'local_connection_failed') {
-    return '选股任务仍在后台运行，暂时无法连接本地服务获取状态，将自动重试。';
+    return t('screening.task.pollDisconnected');
   }
-  return formatParsedApiError(error) || '暂时无法获取选股任务状态，稍后将自动重试。';
+  return formatParsedApiError(error) || t('screening.task.pollFailed');
 };
 
 const formatScore = (score: ScreeningCandidate['score']) => {
@@ -167,11 +184,20 @@ const formatNumber = (value: unknown, digits = 2) => {
   return Number(value).toFixed(digits);
 };
 
-const formatAmount = (value: unknown) => {
+const formatAmount = (value: unknown, language: UiLanguage) => {
   if (value == null || value === '' || Number.isNaN(Number(value))) {
     return '-';
   }
   const amount = Number(value);
+  if (language === 'en') {
+    if (Math.abs(amount) >= 1_000_000_000) {
+      return `${(amount / 1_000_000_000).toFixed(2)}B`;
+    }
+    if (Math.abs(amount) >= 1_000_000) {
+      return `${(amount / 1_000_000).toFixed(2)}M`;
+    }
+    return amount.toFixed(2);
+  }
   if (Math.abs(amount) >= 100_000_000) {
     return `${(amount / 100_000_000).toFixed(2)} 亿`;
   }
@@ -188,78 +214,72 @@ const formatPercent = (value: unknown) => {
   return `${(Number(value) * 100).toFixed(0)}%`;
 };
 
-const FACTOR_LABELS: Record<string, string> = {
-  value: '估值',
-  liquidity: '流动性',
-  momentum: '动量',
-  reversal: '反转',
-  activity: '活跃度',
-  stability: '稳定性',
-  size: '规模',
-  theme_heat: '题材热度',
-  topic_alignment: '题材匹配',
+const FACTOR_LABEL_KEYS: Record<string, UiTextKey> = {
+  value: 'screening.factor.value',
+  liquidity: 'screening.factor.liquidity',
+  momentum: 'screening.factor.momentum',
+  reversal: 'screening.factor.reversal',
+  activity: 'screening.factor.activity',
+  stability: 'screening.factor.stability',
+  size: 'screening.factor.size',
+  theme_heat: 'screening.factor.themeHeat',
+  topic_alignment: 'screening.factor.topicAlignment',
 };
 
-const HOTSPOT_QUALITY_LABELS: Record<string, string> = {
-  available: '可用',
-  failed: '不可用',
-  partial: '部分可用',
-  stale: '缓存',
+const HOTSPOT_QUALITY_LABEL_KEYS: Record<string, UiTextKey> = {
+  available: 'screening.hotspot.quality.available',
+  failed: 'screening.hotspot.quality.failed',
+  partial: 'screening.hotspot.quality.partial',
+  stale: 'screening.hotspot.quality.stale',
 };
 
-const HOTSPOT_STAGE_LABELS: Record<string, string> = {
-  accelerating: '加速主升',
-  cooling: '降温退潮',
-  diverging: '分歧放量',
-  initial: '初次异动',
-  persistent_hot: '确认扩散',
-  warming: '确认扩散',
-  weakening: '降温退潮',
+const HOTSPOT_STAGE_LABEL_KEYS: Record<string, UiTextKey> = {
+  accelerating: 'screening.hotspot.stage.accelerating',
+  cooling: 'screening.hotspot.stage.cooling',
+  diverging: 'screening.hotspot.stage.diverging',
+  initial: 'screening.hotspot.stage.initial',
+  persistent_hot: 'screening.hotspot.stage.persistent',
+  warming: 'screening.hotspot.stage.persistent',
+  weakening: 'screening.hotspot.stage.weakening',
 };
 
-const HOTSPOT_ROLE_LABELS: Record<string, string> = {
-  core_leader: '核心龙头',
-  follower: '助攻',
-  laggard: '掉队',
-  leader: '核心龙头',
-  secondary: '补涨',
+const HOTSPOT_ROLE_LABEL_KEYS: Record<string, UiTextKey> = {
+  core_leader: 'screening.hotspot.role.coreLeader',
+  follower: 'screening.hotspot.role.follower',
+  laggard: 'screening.hotspot.role.laggard',
+  leader: 'screening.hotspot.role.coreLeader',
+  secondary: 'screening.hotspot.role.secondary',
 };
 
-const HOTSPOT_MISSING_FIELD_LABELS: Record<string, string> = {
-  canonical_topic: '标准题材',
-  hotspot_constituents: '概念股列表',
-  leader_stocks: '核心股',
-  live_stocks: '实时概念股行情',
-  route: '发酵路径',
-  source: '数据来源',
-  stocks: '概念股列表',
-  timeline: '发酵时间线',
+const HOTSPOT_MISSING_FIELD_LABEL_KEYS: Record<string, UiTextKey> = {
+  canonical_topic: 'screening.hotspot.missingField.canonicalTopic',
+  hotspot_constituents: 'screening.hotspot.missingField.hotspotConstituents',
+  leader_stocks: 'screening.hotspot.missingField.leaderStocks',
+  live_stocks: 'screening.hotspot.missingField.liveStocks',
+  route: 'screening.hotspot.missingField.route',
+  source: 'screening.hotspot.missingField.source',
+  stocks: 'screening.hotspot.missingField.stocks',
+  timeline: 'screening.hotspot.missingField.timeline',
 };
 
-const getHotspotStageLabel = (value: unknown) => {
+const labelFrom = (keys: Record<string, UiTextKey>, value: unknown, t: TranslateFn) => {
   const text = String(value || '').trim();
-  if (!text) {
-    return '';
-  }
-  return HOTSPOT_STAGE_LABELS[text.toLowerCase()] || text;
+  const key = keys[text.toLowerCase()];
+  return key ? t(key) : text;
 };
 
-const getHotspotRoleLabel = (value: unknown) => {
-  const text = String(value || '').trim();
-  if (!text) {
-    return '概念股';
-  }
-  return HOTSPOT_ROLE_LABELS[text.toLowerCase()] || text;
-};
+const getHotspotStageLabel = (value: unknown, t: TranslateFn) =>
+  labelFrom(HOTSPOT_STAGE_LABEL_KEYS, value, t);
 
-const getHotspotQualityLabel = (value: unknown) => {
-  const text = String(value || '').trim();
-  return HOTSPOT_QUALITY_LABELS[text.toLowerCase()] || '待确认';
-};
+const getHotspotRoleLabel = (value: unknown, t: TranslateFn) =>
+  labelFrom(HOTSPOT_ROLE_LABEL_KEYS, value, t) || t('screening.hotspot.role.default');
 
-const getCandidateReason = (item: ScreeningCandidate) => {
+const getHotspotQualityLabel = (value: unknown, t: TranslateFn) =>
+  labelFrom(HOTSPOT_QUALITY_LABEL_KEYS, value, t) || t('screening.hotspot.quality.pending');
+
+const getCandidateReason = (item: ScreeningCandidate, t: TranslateFn) => {
   if (item.llmThesis || item.llmScore != null) {
-    return item.reason || item.llmThesis || 'LLM 已完成相对排序。';
+    return item.reason || item.llmThesis || t('screening.candidate.defaultReason');
   }
   if (item.reason) {
     return item.reason;
@@ -269,12 +289,12 @@ const getCandidateReason = (item: ScreeningCandidate) => {
   if (typeof summary === 'string') {
     return summary;
   }
-  return '暂无摘要，请查看因子和风险信息。';
+  return t('screening.candidate.noSummary');
 };
 
-const getSignal = (item: ScreeningCandidate) => {
+const getSignal = (item: ScreeningCandidate, t: TranslateFn) => {
   const rawSignal = item.raw.action ?? item.raw.signal ?? item.raw.recommendation;
-  return typeof rawSignal === 'string' && rawSignal.trim() ? rawSignal : '观察';
+  return typeof rawSignal === 'string' && rawSignal.trim() ? rawSignal : t('screening.signal.watch');
 };
 
 const getFactorEntries = (item: ScreeningCandidate) =>
@@ -283,7 +303,10 @@ const getFactorEntries = (item: ScreeningCandidate) =>
     .sort((a, b) => Number(b[1]) - Number(a[1]))
     .slice(0, 6);
 
-const getSelectionExplanations = (item: ScreeningCandidate): ScreeningExplanationItem[] => {
+const getSelectionExplanations = (
+  item: ScreeningCandidate,
+  t: TranslateFn,
+): ScreeningExplanationItem[] => {
   if (item.whySelected?.length) return item.whySelected;
   // Legacy runs lack provenance. Retain every stored summary as unknown rather
   // than re-scoring historical factors or asserting it was observed.
@@ -294,26 +317,30 @@ const getSelectionExplanations = (item: ScreeningCandidate): ScreeningExplanatio
   ));
   return summaries.map((summary) => ({
     code: 'legacy_summary',
-    text: `历史摘要（来源未记录）：${summary}`,
+    text: t('screening.candidate.legacySummary', { summary }),
     source: 'legacy_result',
     quality: 'unknown',
   }));
 };
 
-const ExplanationItems = ({ items, emptyText }: { items?: ScreeningExplanationItem[]; emptyText: string }) => (
-  items?.length ? (
+const ExplanationItems = ({ items, emptyText }: { items?: ScreeningExplanationItem[]; emptyText: string }) => {
+  const { t } = useUiLanguage();
+  return items?.length ? (
     <ul className="mt-2 space-y-2">
       {items.map((item, index) => (
         <li key={`${item.code}-${item.source}-${index}`} className="rounded-lg border border-border/50 bg-background/30 p-2">
           <p className="text-sm leading-6 text-foreground">{item.text}</p>
           <p className="mt-1 text-xs text-secondary-text">
-            来源：{item.source || 'unknown'} · 质量：{item.quality || 'unknown'}
+            {t('screening.candidate.sourceLine', {
+              source: item.source || 'unknown',
+              quality: item.quality || 'unknown',
+            })}
           </p>
         </li>
       ))}
     </ul>
-  ) : <p className="mt-1 text-sm leading-6 text-foreground">{emptyText}</p>
-);
+  ) : <p className="mt-1 text-sm leading-6 text-foreground">{emptyText}</p>;
+};
 
 const toMessageList = (values: string[] | undefined) =>
   Array.isArray(values) ? values.map((value) => String(value).trim()).filter(Boolean) : [];
@@ -329,33 +356,33 @@ const truncateMessageDetail = (value: string, maxLength = MAX_MESSAGE_DETAIL_LEN
   return `${text.slice(0, maxLength - 1)}…`;
 };
 
-const summarizeScreeningDiagnostic = (detail: string) => {
+const summarizeScreeningDiagnostic = (detail: string, t: TranslateFn) => {
   if (/no_json_found|invalid_response|coverage below threshold/i.test(detail)) {
-    return '模型未返回可用的结构化排序结果';
+    return t('screening.llm.diagnostic.noStructured');
   }
   if (/call_failed/i.test(detail)) {
-    return '模型调用失败';
+    return t('screening.llm.diagnostic.callFailed');
   }
   if (/trade_cal returned no open trading days/i.test(detail)) {
-    return '交易日历暂无可用开市日';
+    return t('screening.llm.diagnostic.noTradingDays');
   }
   if (/too many requests|rate limit|http\s*429/i.test(detail)) {
-    return '请求过于频繁';
+    return t('screening.llm.diagnostic.rateLimited');
   }
   if (/403 forbidden|forbidden|access denied/i.test(detail)) {
-    return '访问被拒绝';
+    return t('screening.llm.diagnostic.forbidden');
   }
   if (/timeout|timed out/i.test(detail)) {
-    return '请求超时';
+    return t('screening.llm.diagnostic.timeout');
   }
   if (/RemoteDisconnected|Connection aborted|ProtocolError|ConnectionPool|Max retries exceeded|ProxyError|NameResolutionError/i.test(detail)) {
-    return '网络连接中断';
+    return t('screening.llm.diagnostic.network');
   }
   if (/missing .*api key|GEMINI_API_KEY|GOOGLE_API_KEY|gemini_api_key/i.test(detail)) {
-    return '缺少可用 LLM API Key';
+    return t('screening.llm.diagnostic.missingKey');
   }
   if (/returned no data|empty/i.test(detail)) {
-    return '未返回可用数据';
+    return t('screening.llm.diagnostic.empty');
   }
 
   const withoutUrl = detail
@@ -376,29 +403,29 @@ const parseSourceDiagnostic = (value: string) => {
   };
 };
 
-const normalizeScreenMessageKey = (value: string) => {
-  const formatted = formatScreenMessage(value);
+const normalizeScreenMessageKey = (value: string, t: TranslateFn) => {
+  const formatted = formatScreenMessage(value, t);
   return formatted ? formatted.trim().toLowerCase() : value.trim().toLowerCase();
 };
 
-const formatEnrichmentSummary = (value: string) =>
+const formatEnrichmentSummary = (value: string, t: TranslateFn) =>
   value
-    .replace(/DSA行情\s*[:：]\s*/gi, '行情：')
-    .replace(/DSA新闻\s*[:：]\s*/gi, '新闻：')
-    .replace(/DSA事件\s*[:：]\s*/gi, '事件：');
+    .replace(/DSA行情\s*[:：]\s*/gi, t('screening.enrich.quote'))
+    .replace(/DSA新闻\s*[:：]\s*/gi, t('screening.enrich.news'))
+    .replace(/DSA事件\s*[:：]\s*/gi, t('screening.enrich.events'));
 
-const formatScreenMessage = (value: string) => {
+const formatScreenMessage = (value: string, t: TranslateFn) => {
   if (/^DSA provider context applied \d+ of \d+ candidates/i.test(value)) {
     return '';
   }
   if (/^LLM ranking skipped:\s*no LLM config/i.test(value)) {
-    return '未配置智能重排模型，当前使用确定性因子排序。';
+    return t('screening.llm.skipped');
   }
   if (/^LLM ranking failed/i.test(value)) {
-    return `未完成智能重排：${summarizeScreeningDiagnostic(value)}；当前结果继续使用确定性因子评分。`;
+    return t('screening.llm.failed', { reason: summarizeScreeningDiagnostic(value, t) });
   }
   if (/no_json_found|invalid_response|coverage below threshold|call_failed/i.test(value)) {
-    return `未完成智能重排：${summarizeScreeningDiagnostic(value)}；当前结果继续使用确定性因子评分。`;
+    return t('screening.llm.failed', { reason: summarizeScreeningDiagnostic(value, t) });
   }
   if (/^(?:LLM ranking prompt|LLM context) truncated:/i.test(value)) {
     return '';
@@ -410,38 +437,46 @@ const formatScreenMessage = (value: string) => {
     return '';
   }
   if (/^Daily K-line enrichment row errors:/i.test(value)) {
-    return '部分候选的日线数据未能补齐，结果已按可用数据生成。';
+    return t('screening.enrich.dailyRowsFailed');
   }
   if (/^Daily K-line enrichment skipped:/i.test(value)) {
-    return '可选日线数据补充未完成，结果已按快照数据生成。';
+    return t('screening.enrich.dailySkipped');
   }
   if (/^Candidate context row errors:/i.test(value)) {
-    return '部分候选的辅助数据未能补齐。';
+    return t('screening.enrich.contextRowsFailed');
   }
   if (/^Industry\/concepts enrichment:/i.test(value)) {
-    return '部分行业或题材信息未能补齐。';
+    return t('screening.enrich.industryFailed');
   }
   if (/^DSA deep analysis failed for /i.test(value)) {
-    return '部分候选的深度分析未完成。';
+    return t('screening.enrich.deepAnalysisFailed');
   }
 
   const snapshotFallback = value.match(/^Snapshot source fallback:\s*(.+)$/i);
   if (snapshotFallback) {
     const parsed = parseSourceDiagnostic(snapshotFallback[1]);
     if (parsed) {
-      return `数据源降级：${parsed.source}（${summarizeScreeningDiagnostic(parsed.detail)}）`;
+      return t('screening.enrich.sourceFallback', {
+        source: parsed.source,
+        reason: summarizeScreeningDiagnostic(parsed.detail, t),
+      });
     }
-    return `数据源降级：${summarizeScreeningDiagnostic(snapshotFallback[1])}`;
+    return t('screening.enrich.sourceFallbackNoSource', {
+      reason: summarizeScreeningDiagnostic(snapshotFallback[1], t),
+    });
   }
 
   const parsed = parseSourceDiagnostic(value);
   if (parsed && KNOWN_SNAPSHOT_SOURCES.has(parsed.source.toLowerCase())) {
-    return `数据源降级：${parsed.source}（${summarizeScreeningDiagnostic(parsed.detail)}）`;
+    return t('screening.enrich.sourceFallback', {
+      source: parsed.source,
+      reason: summarizeScreeningDiagnostic(parsed.detail, t),
+    });
   }
   return truncateMessageDetail(value);
 };
 
-const getScreenMessages = (meta: ScreeningScreenResponse | null) => {
+const getScreenMessages = (meta: ScreeningScreenResponse | null, t: TranslateFn) => {
   if (!meta) {
     return [];
   }
@@ -449,11 +484,11 @@ const getScreenMessages = (meta: ScreeningScreenResponse | null) => {
   const seen = new Set<string>();
   [...toMessageList(meta.warnings), ...toMessageList(meta.sourceErrors), ...toMessageList(meta.llmParseErrors)].forEach(
     (value) => {
-      const key = normalizeScreenMessageKey(value);
+      const key = normalizeScreenMessageKey(value, t);
       if (seen.has(key)) {
         return;
       }
-      const message = formatScreenMessage(value);
+      const message = formatScreenMessage(value, t);
       if (!message) {
         return;
       }
@@ -466,31 +501,35 @@ const getScreenMessages = (meta: ScreeningScreenResponse | null) => {
 
 const isRunningScreenTask = (status: string | undefined | null) => status === 'pending' || status === 'processing';
 
-const formatScreenTaskFailure = (value: string | null | undefined) => {
+const formatScreenTaskFailure = (value: string | null | undefined, t: TranslateFn) => {
   const text = String(value || '').trim();
   if (!text) {
-    return '选股任务失败，请稍后重试。';
+    return t('screening.task.failed');
   }
-  return `选股任务失败：${summarizeScreeningDiagnostic(text)}`;
+  return t('screening.task.failedWithReason', {
+    reason: summarizeScreeningDiagnostic(text, t),
+  });
 };
 
 const SCREENING_HOTSPOT_NO_CACHE_HINT = 'No cached Screening hotspot snapshot. Click refresh to fetch live hotspots.';
 const SCREENING_HOTSPOT_UNAVAILABLE_CODE = 'eastmoney_hotspot_unavailable';
 
-const formatHotspotEmptyMessage = (result: ScreeningHotspotsResponse) => {
+const formatHotspotEmptyMessage = (result: ScreeningHotspotsResponse, t: TranslateFn) => {
   const message = String(result.message || '').trim();
   const sourceErrors = result.sourceErrors || [];
   if (message && sourceErrors.includes(SCREENING_HOTSPOT_UNAVAILABLE_CODE)) {
     return message;
   }
   if (message === SCREENING_HOTSPOT_NO_CACHE_HINT) {
-    return '暂无热点缓存';
+    return t('screening.hotspot.noCache');
   }
   const sourceError = sourceErrors[0];
   if (sourceError) {
-    return `热点题材暂未返回数据：${summarizeScreeningDiagnostic(sourceError)}`;
+    return t('screening.hotspot.unavailableWithReason', {
+      reason: summarizeScreeningDiagnostic(sourceError, t),
+    });
   }
-  return '热点题材暂未返回数据';
+  return t('screening.hotspot.unavailable');
 };
 
 const ScreenAlertMessage: React.FC<{ messages: string[] }> = ({ messages }) => {
@@ -529,24 +568,28 @@ const getRiskClassName = (riskLevel: string | undefined) => {
   return 'bg-surface text-secondary-text';
 };
 
-const getRiskLabel = (riskLevel: string | undefined) => {
-  if (riskLevel === 'high') return '高';
-  if (riskLevel === 'medium') return '中';
-  if (riskLevel === 'low') return '低';
-  return '待评估';
+const getRiskLabel = (riskLevel: string | undefined, t: TranslateFn) => {
+  if (riskLevel === 'high') return t('screening.risk.high');
+  if (riskLevel === 'medium') return t('screening.risk.medium');
+  if (riskLevel === 'low') return t('screening.risk.low');
+  return t('screening.risk.unknown');
 };
 
-const getRouteTimeLabel = (item: ScreeningHotspotDetail['route'][number]) => {
+const getRouteTimeLabel = (
+  item: ScreeningHotspotDetail['route'][number],
+  language: UiLanguage,
+  t: TranslateFn,
+) => {
   const rawTime = item.publishedAt || item.date || item.time || '';
   if (!rawTime) {
-    return '时间待确认';
+    return t('screening.hotspot.timePending');
   }
   if (/^\d{4}-\d{2}-\d{2}$/.test(rawTime)) {
     return rawTime;
   }
   const parsed = new Date(rawTime);
   if (!Number.isNaN(parsed.getTime())) {
-    return parsed.toLocaleString('zh-CN', {
+    return parsed.toLocaleString(dateLocale(language), {
       month: '2-digit',
       day: '2-digit',
       hour: '2-digit',
@@ -557,82 +600,86 @@ const getRouteTimeLabel = (item: ScreeningHotspotDetail['route'][number]) => {
   return rawTime;
 };
 
-const formatHotspotRouteTitle = (value: string) => {
+const formatHotspotRouteTitle = (value: string, t: TranslateFn) => {
   const text = String(value || '').trim();
   const normalized = text.toLowerCase();
   if (normalized === 'current fermentation') {
-    return '当前发酵';
+    return t('screening.hotspot.route.current');
   }
   if (normalized === 'news catalyst') {
-    return '消息催化';
+    return t('screening.hotspot.route.news');
   }
-  return text || '热点变化';
+  return text || t('screening.hotspot.route.fallback');
 };
 
-const formatHotspotRouteDescription = (value: string) => {
+const formatHotspotRouteDescription = (value: string, t: TranslateFn) => {
   const text = String(value || '').trim();
   if (!text) {
-    return '暂无更多说明。';
+    return t('screening.hotspot.route.empty');
   }
   const parts = text.split(/\s*;\s*/).map((part) => part.trim()).filter(Boolean);
   if (parts.some((part) => /\b(?:heat|stage|leaders?)\b/i.test(part))) {
     const localized = parts.map((part) => {
       const heat = part.match(/^(.*?)\s+heat\s+(-?\d+(?:\.\d+)?)$/i);
       if (heat) {
-        return `${heat[1]}热度 ${formatNumber(heat[2], 1)}`;
+        return t('screening.hotspot.routeHeat', { name: heat[1], value: formatNumber(heat[2], 1) });
       }
       const stage = part.match(/^stage\s+(.+)$/i);
       if (stage) {
-        return `阶段 ${getHotspotStageLabel(stage[1])}`;
+        return t('screening.hotspot.summaryStage', { stage: getHotspotStageLabel(stage[1], t) });
       }
       const leaders = part.match(/^leaders?\s+(.+)$/i);
       if (leaders) {
-        return `核心股 ${leaders[1].split(/\s*,\s*/).filter(Boolean).join('、')}`;
+        return t('screening.hotspot.summaryLeaders', {
+          leaders: leaders[1].split(/\s*,\s*/).filter(Boolean).join(', '),
+        });
       }
       return part;
     });
-    return `${localized.join('，')}。`;
+    return `${localized.join(t('screening.clauseSeparator'))}${t('screening.sentenceEnd')}`;
   }
   if (/Dsa[A-Z]|Provider\b|stock_board_|concept_constituents|leader_stocks|last_good_cache/i.test(text)) {
-    return '热点数据出现新变化。';
+    return t('screening.hotspot.route.changed');
   }
   return text;
 };
 
-const getHotspotMissingFieldLabels = (values: string[] | undefined) => {
-  const labels = (values || []).map((value) => HOTSPOT_MISSING_FIELD_LABELS[String(value).trim().toLowerCase()] || '部分明细');
+const getHotspotMissingFieldLabels = (values: string[] | undefined, t: TranslateFn) => {
+  const labels = (values || []).map((value) =>
+    labelFrom(HOTSPOT_MISSING_FIELD_LABEL_KEYS, value, t) || t('screening.hotspot.partialDetail'),
+  );
   return [...new Set(labels)];
 };
 
-const formatHotspotDiagnostic = (value: string) => {
+const formatHotspotDiagnostic = (value: string, t: TranslateFn) => {
   const text = String(value || '').trim();
   const timeoutSeconds = text.match(/timed out after\s*(\d+(?:\.\d+)?)s/i);
   if (timeoutSeconds) {
-    return `热点明细请求超时（${timeoutSeconds[1]} 秒）`;
+    return t('screening.hotspot.diagnostic.timeoutSeconds', { seconds: timeoutSeconds[1] });
   }
   if (/timeout|timed out/i.test(text)) {
-    return '热点明细请求超时';
+    return t('screening.hotspot.diagnostic.timeout');
   }
   if (/RemoteDisconnected|Connection aborted|ProtocolError|ConnectionPool|Max retries exceeded|ProxyError|NameResolutionError/i.test(text)) {
-    return '热点数据源连接中断';
+    return t('screening.hotspot.diagnostic.network');
   }
   if (/eastmoney_hotspot_unavailable|returned no data|no live hotspot rows|\bempty\b/i.test(text)) {
-    return '热点数据源暂未返回数据';
+    return t('screening.hotspot.diagnostic.noData');
   }
   if (/rate limit|too many requests|http\s*429/i.test(text)) {
-    return '热点数据请求过于频繁';
+    return t('screening.hotspot.diagnostic.rateLimited');
   }
   if (/Dsa[A-Z]|Provider\b|stock_board_|concept_constituents|leader_stocks|last_good_cache|^[a-z0-9_.:-]+$/i.test(text)) {
-    return '部分热点数据暂不可用';
+    return t('screening.hotspot.diagnostic.partial');
   }
   if (/[\u0080-\uFFFF]/.test(text)) {
     return truncateMessageDetail(text);
   }
-  return '部分热点数据暂不可用';
+  return t('screening.hotspot.diagnostic.partial');
 };
 
-const getHotspotDiagnosticMessages = (values: string[] | undefined) =>
-  [...new Set((values || []).map(formatHotspotDiagnostic).filter(Boolean))].slice(0, 4);
+const getHotspotDiagnosticMessages = (values: string[] | undefined, t: TranslateFn) =>
+  [...new Set((values || []).map((value) => formatHotspotDiagnostic(value, t)).filter(Boolean))].slice(0, 4);
 
 const hasHotspotDetailDegradation = (detail: ScreeningHotspotDetail) => {
   if ((detail.missingFields || []).length > 0) {
@@ -645,16 +692,20 @@ const hasHotspotDetailDegradation = (detail: ScreeningHotspotDetail) => {
   return (detail.sourceErrors || []).length > 0;
 };
 
-const getHotspotFallbackLabel = (detail: ScreeningHotspotDetail) => {
+const getHotspotFallbackLabel = (detail: ScreeningHotspotDetail, t: TranslateFn) => {
   if (detail.stale || detail.cacheUsed) {
     return detail.staleAgeHours != null
-      ? `缓存回退 ${formatNumber(detail.staleAgeHours, 1)}h`
-      : '缓存回退';
+      ? t('screening.hotspot.fallback.cacheHours', { hours: formatNumber(detail.staleAgeHours, 1) })
+      : t('screening.hotspot.fallback.cache');
   }
-  return '备用数据源';
+  return t('screening.hotspot.fallback.backup');
 };
 
-const getHotspotSummaryText = (detail: ScreeningHotspotDetail, hotspot?: ScreeningHotspot) => {
+const getHotspotSummaryText = (
+  detail: ScreeningHotspotDetail,
+  hotspot: ScreeningHotspot | undefined,
+  t: TranslateFn,
+) => {
   const summaryDetail = detail.summaryDetail || {};
   const heatScore = summaryDetail.heatScore ?? summaryDetail.heat_score ?? hotspot?.heatScore;
   const stage = summaryDetail.stage ?? hotspot?.stage ?? hotspot?.state;
@@ -664,33 +715,45 @@ const getHotspotSummaryText = (detail: ScreeningHotspotDetail, hotspot?: Screeni
     : [];
   const parts: string[] = [];
   if (heatScore != null && !Number.isNaN(Number(heatScore))) {
-    parts.push(`热度 ${formatNumber(heatScore, 1)}`);
+    parts.push(t('screening.hotspot.summaryHeat', { value: formatNumber(heatScore, 1) }));
   }
   if (stage) {
-    parts.push(`阶段 ${getHotspotStageLabel(stage)}`);
+    parts.push(t('screening.hotspot.summaryStage', { stage: getHotspotStageLabel(stage, t) }));
   }
   if (leaders.length > 0) {
-    parts.push(`核心股 ${leaders.join('、')}`);
+    parts.push(t('screening.hotspot.summaryLeaders', {
+      leaders: leaders.join(t('screening.listSeparator')),
+    }));
   }
   if (parts.length > 0) {
-    return `${detail.name || detail.canonicalTopic || detail.topic}：${parts.join('，')}。`;
+    return t('screening.hotspot.summaryLine', {
+      name: detail.name || detail.canonicalTopic || detail.topic,
+      parts: parts.join(t('screening.clauseSeparator')),
+    });
   }
   const summary = String(detail.summary || '').trim();
   if (summary && !/\b(?:heat|stage|leaders?|quality status|available|partial|stale|failed)\b|Dsa[A-Z]|Provider\b|stock_board_/i.test(summary)) {
     return summary;
   }
-  return '已加载热点详情。';
+  return t('screening.hotspot.loaded');
 };
 
-const buildHotspotPreviewDetail = (hotspot: ScreeningHotspot): ScreeningHotspotDetail => {
+const buildHotspotPreviewDetail = (hotspot: ScreeningHotspot, t: TranslateFn): ScreeningHotspotDetail => {
   const leaders = (hotspot.leaders || []).map((value) => String(value).trim()).filter(Boolean);
-  const stage = getHotspotStageLabel(hotspot.stage || hotspot.state);
-  const descriptionParts = [`${hotspot.name || hotspot.topic}热度 ${formatHotspotMetric(hotspot.heatScore)}`];
+  const stage = getHotspotStageLabel(hotspot.stage || hotspot.state, t);
+  const descriptionParts = [
+    t('screening.hotspot.routeHeat', {
+      name: hotspot.name || hotspot.topic,
+      value: formatHotspotMetric(hotspot.heatScore, t),
+    }),
+  ];
   if (stage) {
-    descriptionParts.push(`阶段 ${stage}`);
+    descriptionParts.push(t('screening.hotspot.summaryStage', { stage }));
   }
   if (leaders.length > 0) {
-    descriptionParts.push(`核心股 ${leaders.slice(0, 3).join('、')}`);
+    descriptionParts.push(t('screening.hotspot.summaryLeaders', {
+      leaders: leaders.slice(0, 3).join(t('screening.listSeparator')),
+    }));
   }
   const stocks = (hotspot.leaderStocks || []).slice(0, 10);
   return {
@@ -704,7 +767,10 @@ const buildHotspotPreviewDetail = (hotspot: ScreeningHotspot): ScreeningHotspotD
       stage: hotspot.stage || hotspot.state,
       leaders,
     },
-    route: [{ title: '当前发酵', description: `${descriptionParts.join('，')}。` }],
+    route: [{
+      title: t('screening.hotspot.route.current'),
+      description: `${descriptionParts.join(t('screening.clauseSeparator'))}${t('screening.sentenceEnd')}`,
+    }],
     stocks,
     stockCount: hotspot.sampleStockCount ?? stocks.length,
     sourceErrors: hotspot.sourceErrors,
@@ -745,40 +811,40 @@ const getHotspotRouteItems = (detail: ScreeningHotspotDetail) => {
   return detail.timeline || [];
 };
 
-const formatHotspotMetric = (value: unknown, digits = 1) => {
+const formatHotspotMetric = (value: unknown, t: TranslateFn, digits = 1) => {
   const formatted = formatNumber(value, digits);
-  return formatted === '-' ? '观察中' : formatted;
+  return formatted === '-' ? t('screening.hotspot.metric.observing') : formatted;
 };
 
-const getHotspotLeadersText = (item: ScreeningHotspot) => {
+const getHotspotLeadersText = (item: ScreeningHotspot, t: TranslateFn) => {
   const leaders = (item.leaders || []).map((value) => String(value).trim()).filter(Boolean);
   if (leaders.length > 0) {
-    return leaders.slice(0, 2).join('、');
+    return leaders.slice(0, 2).join(t('screening.listSeparator'));
   }
-  return '观察中';
+  return t('screening.hotspot.metric.observing');
 };
 
-const getHotspotSampleText = (item: ScreeningHotspot) => {
+const getHotspotSampleText = (item: ScreeningHotspot, t: TranslateFn) => {
   if (item.sampleStockCount == null || Number.isNaN(Number(item.sampleStockCount))) {
-    return '活跃股观察中';
+    return t('screening.hotspot.sample.observing');
   }
-  return `覆盖 ${item.sampleStockCount} 股`;
+  return t('screening.hotspot.sample.coverage', { count: item.sampleStockCount });
 };
 
-const formatStockChangeText = (value: unknown) => {
+const formatStockChangeText = (value: unknown, t: TranslateFn) => {
   const formatted = formatNumber(value);
-  return formatted === '-' ? '暂无行情' : `${formatted}%`;
+  return formatted === '-' ? t('screening.hotspot.noQuote') : `${formatted}%`;
 };
 
-const formatHotspotUpdatedAt = (value: string | null) => {
+const formatHotspotUpdatedAt = (value: string | null, language: UiLanguage, t: TranslateFn) => {
   if (!value) {
-    return '待刷新';
+    return t('screening.hotspot.pendingRefresh');
   }
   const parsed = new Date(value);
   if (Number.isNaN(parsed.getTime())) {
     return value;
   }
-  return parsed.toLocaleString('zh-CN', {
+  return parsed.toLocaleString(dateLocale(language), {
     year: 'numeric',
     month: '2-digit',
     day: '2-digit',
@@ -789,18 +855,20 @@ const formatHotspotUpdatedAt = (value: string | null) => {
   });
 };
 
-const getHotspotStrength = (item: ScreeningHotspot, index: number) => {
+const getHotspotStrength = (item: ScreeningHotspot, index: number, t: TranslateFn) => {
   const heat = Number(item.heatScore ?? 0);
   const changePct = Number(item.changePct ?? 0);
   if (index === 0 || heat >= 90 || changePct >= 8) {
-    return { label: '强势领先', className: 'bg-red-500/10 text-red-500' };
+    return { label: t('screening.hotspot.strength.leading'), className: 'bg-red-500/10 text-red-500' };
   }
   if (heat >= 80 || changePct >= 5) {
-    return { label: '强势', className: 'bg-blue-500/10 text-blue-500' };
+    return { label: t('screening.hotspot.strength.strong'), className: 'bg-blue-500/10 text-blue-500' };
   }
-  return { label: '较强', className: 'bg-cyan/10 text-cyan' };
+  return { label: t('screening.hotspot.strength.firm'), className: 'bg-cyan/10 text-cyan' };
 };
 
+// Provider hot-topic names stay in the source language (mostly Chinese), so the
+// icon heuristics intentionally keep matching Chinese keywords in every UI language.
 const HOTSPOT_ICON_RULES: Array<{
   pattern: RegExp;
   icon: React.ComponentType<{ className?: string }>;
@@ -839,6 +907,7 @@ const MiniSparkline: React.FC<{ score?: number | null; selected?: boolean }> = (
 
 const StockScreeningPage: React.FC = () => {
   const navigate = useNavigate();
+  const { language, t } = useUiLanguage();
   const [restoredTask] = useState<PersistedScreenTask | null>(() => readPersistedScreenTask());
   const [statusState, setStatusState] = useState<'loading' | 'ready' | 'error'>('loading');
   const [statusError, setStatusError] = useState('');
@@ -882,15 +951,29 @@ const StockScreeningPage: React.FC = () => {
   const [activeTaskId, setActiveTaskId] = useState<string | null>(restoredTask?.taskId ?? null);
   const activeTaskContextRef = useRef<PersistedScreenTask | null>(restoredTask);
   const [taskProgress, setTaskProgress] = useState(restoredTask?.taskId ? 10 : 0);
-  const [taskMessage, setTaskMessage] = useState(restoredTask?.taskId ? '正在恢复选股任务状态...' : '');
+  const [taskMessage, setTaskMessage] = useState(
+    restoredTask?.taskId ? 'screening.task.restoring' : '',
+  );
 
   const selectedStrategy = useMemo(() => strategies.find((item) => item.id === strategy), [strategies, strategy]);
-  const selectedStrategyTitle = selectedStrategy?.name || selectedStrategy?.title || '自定义策略';
+  const selectedStrategyTitle = selectedStrategy?.name || selectedStrategy?.title || t('screening.strategy.custom');
   const selectedStrategyTag = formatStrategyCategory(
     selectedStrategy?.category || selectedStrategy?.tag || selectedStrategy?.tags?.[0],
+    t,
   );
-  const displayedStrategy = selectedStrategy ? selectedStrategyTitle : `自定义策略 (${strategy})`;
-  const screenMessages = useMemo(() => getScreenMessages(screenMeta), [screenMeta]);
+  const displayedStrategy = selectedStrategy
+    ? selectedStrategyTitle
+    : t('screening.strategy.customWithId', { id: strategy });
+  const screenMessages = useMemo(() => getScreenMessages(screenMeta, t), [screenMeta, t]);
+  const resolvedTaskMessage = useMemo(() => {
+    if (!taskMessage) {
+      return '';
+    }
+    if (taskMessage.startsWith('screening.')) {
+      return t(taskMessage as UiTextKey);
+    }
+    return taskMessage;
+  }, [taskMessage, t]);
   const selectedHotspot = useMemo(
     () => hotspots.find((item) => item.topic === selectedHotspotTopic),
     [hotspots, selectedHotspotTopic],
@@ -900,16 +983,16 @@ const StockScreeningPage: React.FC = () => {
   const alertMessages = llmFailed
     ? screenMessages.length > 0
       ? screenMessages
-      : ['智能重排未完成，当前候选继续使用确定性因子评分。']
+      : [t('screening.llm.pending')]
     : screenMessages;
   const isScreeningEnabled = statusState === 'ready' && enabled && available;
   const statusText = statusState === 'loading'
-    ? '正在检查选股状态'
+    ? t('screening.status.checking')
     : statusState === 'error'
-      ? '选股状态未知'
+      ? t('screening.status.unknown')
       : !enabled
-        ? '选股未开启'
-        : available ? '选股已开启' : '选股功能不可用';
+        ? t('screening.status.disabled')
+        : available ? t('screening.status.enabled') : t('screening.status.unavailable');
 
   const applyScreenResult = useCallback((result: ScreeningScreenResponse) => {
     const nextCandidates = result.candidates || [];
@@ -925,11 +1008,11 @@ const StockScreeningPage: React.FC = () => {
       const result = await screeningApi.getHistory({ limit: 10 });
       setHistoryRuns(result.runs || []);
     } catch (err) {
-      setHistoryError(toApiErrorMessage(err, '历史记录加载失败'));
+      setHistoryError(toApiErrorMessage(err, t('screening.error.historyLoad')));
     } finally {
       setHistoryLoading(false);
     }
-  }, []);
+  }, [t]);
 
   const handleHistoryRunSelect = useCallback(async (runId: string) => {
     // 竞态防护：快速切换历史条目时，只应用最新一次请求的响应
@@ -970,21 +1053,21 @@ const StockScreeningPage: React.FC = () => {
         }
         setError('');
         setTaskProgress(100);
-        setTaskMessage('已加载历史选股结果');
+        setTaskMessage('screening.task.loadedHistory');
       } else {
-        setError('历史记录中未找到该次运行的结果。');
+        setError(t('screening.error.historyNotFound'));
       }
     } catch (err) {
       if (!isCurrentRequest()) {
         return;
       }
-      setError(toApiErrorMessage(err, '历史结果加载失败'));
+      setError(toApiErrorMessage(err, t('screening.error.historyResult')));
     } finally {
       if (isCurrentRequest()) {
         setLoading(false);
       }
     }
-  }, [applyScreenResult, market, maxResults, strategy]);
+  }, [applyScreenResult, market, maxResults, strategy, t]);
 
   const clearScreeningResults = () => {
     setCandidates([]);
@@ -1035,9 +1118,9 @@ const StockScreeningPage: React.FC = () => {
       };
       setHotspotDetail(options.includeSearch ? detail : cacheableDetail);
       if (options.includeSearch && detail.newsSearchStatus === 'no_results') {
-        setHotspotDetailError('暂未搜到该题材近期的有效消息。');
+        setHotspotDetailError(t('screening.error.hotspotNewsEmpty'));
       } else if (options.includeSearch && detail.newsSearchStatus !== 'available') {
-        setHotspotDetailError('消息搜索失败，请稍后重试。');
+        setHotspotDetailError(t('screening.error.hotspotNews'));
       }
     } catch (err) {
       if (!canApplyRequest()) {
@@ -1048,7 +1131,7 @@ const StockScreeningPage: React.FC = () => {
       }
       setHotspotDetailError(toApiErrorMessage(
         err,
-        options.includeSearch ? '消息搜索失败，请稍后重试。' : '热点题材详情加载失败，请稍后重试。',
+        options.includeSearch ? t('screening.error.hotspotNews') : t('screening.error.hotspotDetail'),
       ));
     } finally {
       if (isCurrentRequest()) {
@@ -1056,7 +1139,7 @@ const StockScreeningPage: React.FC = () => {
         setSearchingHotspotNews(false);
       }
     }
-  }, []);
+  }, [t]);
 
   const loadStrategies = useCallback(async () => {
     setLoadingStrategies(true);
@@ -1074,11 +1157,11 @@ const StockScreeningPage: React.FC = () => {
       }
     } catch (err) {
       setStrategies([]);
-      setStrategyLoadError(err instanceof Error ? err.message : '策略列表加载失败');
+      setStrategyLoadError(err instanceof Error ? err.message : t('screening.error.strategyLoad'));
     } finally {
       setLoadingStrategies(false);
     }
-  }, []);
+  }, [t]);
 
   const loadHotspots = useCallback(async (refresh = false) => {
     setLoadingHotspots(true);
@@ -1111,14 +1194,14 @@ const StockScreeningPage: React.FC = () => {
         await loadHotspotDetail(nextTopic, { refresh: true });
       }
       if (nextHotspots.length === 0) {
-        setHotspotError(formatHotspotEmptyMessage(result));
+        setHotspotError(formatHotspotEmptyMessage(result, t));
       }
     } catch (err) {
-      setHotspotError(toApiErrorMessage(err, '热点题材加载失败，请稍后重试。'));
+      setHotspotError(toApiErrorMessage(err, t('screening.error.hotspotLoad')));
     } finally {
       setLoadingHotspots(false);
     }
-  }, [loadHotspotDetail]);
+  }, [loadHotspotDetail, t]);
 
   const handleHotspotSelect = useCallback((topic: string) => {
     selectedHotspotTopicRef.current = topic;
@@ -1131,10 +1214,10 @@ const StockScreeningPage: React.FC = () => {
     } else {
       const preview = hotspots.find((item) => item.topic === topic);
       setHotspotDetail((currentDetail) => (
-        currentDetail?.topic === topic ? currentDetail : preview ? buildHotspotPreviewDetail(preview) : null
+        currentDetail?.topic === topic ? currentDetail : preview ? buildHotspotPreviewDetail(preview, t) : null
       ));
     }
-  }, [hotspots]);
+  }, [hotspots, t]);
 
   const toggleHotspotsExpanded = useCallback(() => {
     setHotspotsExpanded((expanded) => {
@@ -1214,14 +1297,14 @@ const StockScreeningPage: React.FC = () => {
       })
       .catch((err) => {
         if (active) {
-          setStatusError(toApiErrorMessage(err, '无法确认选股状态，请重试。'));
+          setStatusError(toApiErrorMessage(err, t('screening.error.statusUnknown')));
           setStatusState('error');
         }
       });
     return () => {
       active = false;
     };
-  }, [loadHistory, loadHotspots, loadStrategies, statusAttempt]);
+  }, [loadHistory, loadHotspots, loadStrategies, statusAttempt, t]);
 
   // 刷新后优先从 history API 按 run_id 恢复结果；恢复失败再回退到 task 轮询
   useEffect(() => {
@@ -1255,7 +1338,7 @@ const StockScreeningPage: React.FC = () => {
           }
           setError('');
           setTaskProgress(100);
-          setTaskMessage('已从历史记录恢复上次选股结果');
+          setTaskMessage('screening.task.restoredHistory');
           setActiveTaskId(null);
         }
       })
@@ -1316,7 +1399,7 @@ const StockScreeningPage: React.FC = () => {
             });
           }
         } else {
-          setError('选股任务已完成，但服务端未返回候选结果。');
+          setError(t('screening.task.completedNoResult'));
           setCandidates([]);
           setScreenMeta(null);
         }
@@ -1328,7 +1411,7 @@ const StockScreeningPage: React.FC = () => {
         setCandidates([]);
         setScreenMeta(null);
         setExpandedCode(null);
-        setError(formatScreenTaskFailure(task.error || task.message));
+        setError(formatScreenTaskFailure(task.error || task.message, t));
         clearPersistedScreenTask();
         finishTask();
         return;
@@ -1340,7 +1423,7 @@ const StockScreeningPage: React.FC = () => {
         return;
       }
 
-      setError(`选股任务返回未知状态：${task.status || 'unknown'}`);
+      setError(t('screening.task.unknownStatus', { status: task.status || 'unknown' }));
       clearPersistedScreenTask();
       finishTask();
     }
@@ -1358,14 +1441,14 @@ const StockScreeningPage: React.FC = () => {
         }
         const parsedError = getParsedApiError(err);
         if (isUnrecoverableScreenTaskError(parsedError)) {
-          setError(formatParsedApiError(parsedError) || '选股任务不可恢复，请重新提交。');
+          setError(formatParsedApiError(parsedError) || t('screening.task.unrecoverable'));
           setCandidates([]);
           setScreenMeta(null);
           clearPersistedScreenTask();
           finishTask();
           return;
         }
-        setError(formatRecoverableScreenTaskPollingError(parsedError));
+        setError(formatRecoverableScreenTaskPollingError(parsedError, t));
         setLoading(true);
         timer = window.setTimeout(pollTask, SCREEN_TASK_POLL_INTERVAL_MS);
       }
@@ -1379,7 +1462,7 @@ const StockScreeningPage: React.FC = () => {
         window.clearTimeout(timer);
       }
     };
-  }, [activeTaskId, applyScreenResult, restoreResolved]);
+  }, [activeTaskId, applyScreenResult, restoreResolved, t]);
 
   const handleEnable = async () => {
     setEnabling(true);
@@ -1396,10 +1479,10 @@ const StockScreeningPage: React.FC = () => {
         setAvailable(status.available);
         setStatusState('ready');
       } catch (statusErr) {
-        setStatusError(toApiErrorMessage(statusErr, '无法确认选股状态，请重试。'));
+        setStatusError(toApiErrorMessage(statusErr, t('screening.error.statusUnknown')));
         setStatusState('error');
       }
-      setError(err instanceof Error ? err.message : '开启选股失败');
+      setError(err instanceof Error ? err.message : t('screening.task.enableFailed'));
     } finally {
       setEnabling(false);
     }
@@ -1436,7 +1519,7 @@ const StockScreeningPage: React.FC = () => {
     setError('');
     setScreenMeta(null);
     setTaskProgress(0);
-    setTaskMessage('正在提交选股任务...');
+    setTaskMessage('screening.task.submitting');
     try {
       const task = await screeningApi.startScreen({ market, strategy, maxResults });
       const taskContext = {
@@ -1449,18 +1532,18 @@ const StockScreeningPage: React.FC = () => {
       persistScreenTask(taskContext);
       setActiveTaskId(task.taskId);
       setTaskProgress(0);
-      setTaskMessage(task.message || '选股任务已提交');
+      setTaskMessage(task.message || 'screening.task.submitted');
     } catch (err) {
       setCandidates([]);
       setLoading(false);
-      setError(toApiErrorMessage(err, '选股任务提交失败，请稍后重试。'));
+      setError(toApiErrorMessage(err, t('screening.task.submitFailed')));
     }
   };
 
   return (
     <AppPage className="max-w-6xl space-y-6 pb-12 pt-6">
       <div className="research-page-heading flex flex-wrap items-end justify-between gap-4">
-        <h1 className="research-display text-foreground">选股</h1>
+        <h1 className="research-display text-foreground">{t('screening.pageTitle')}</h1>
 
         <div className="inline-flex w-fit items-center gap-2 rounded-2xl border border-border/70 bg-card/80 px-4 py-2 text-sm shadow-soft-card">
           <span className={`h-2.5 w-2.5 rounded-full ${isScreeningEnabled ? 'bg-success' : 'bg-warning'}`} />
@@ -1469,13 +1552,13 @@ const StockScreeningPage: React.FC = () => {
       </div>
 
       {statusState === 'loading' ? (
-        <InlineAlert variant="info" message="正在读取选股配置，请稍候。" />
+        <InlineAlert variant="info" message={t('screening.statusLoading')} />
       ) : null}
 
       {statusState === 'error' ? (
         <InlineAlert
           variant="warning"
-          title="选股状态加载失败"
+          title={t('screening.statusLoadFailed')}
           message={statusError}
           action={
             <Button size="sm" onClick={() => {
@@ -1483,7 +1566,7 @@ const StockScreeningPage: React.FC = () => {
               setStatusError('');
               setStatusAttempt((attempt) => attempt + 1);
             }}>
-              重试
+              {t('screening.retry')}
             </Button>
           }
         />
@@ -1492,11 +1575,11 @@ const StockScreeningPage: React.FC = () => {
       {statusState === 'ready' && !enabled ? (
         <InlineAlert
           variant="info"
-          title="选股未开启"
-          message="开启后即可运行选股策略。"
+          title={t('screening.enableTitle')}
+          message={t('screening.enableMessage')}
           action={
-            <Button size="sm" isLoading={enabling} loadingText="开启中..." onClick={() => void handleEnable()}>
-              开启选股
+            <Button size="sm" isLoading={enabling} loadingText={t('screening.enabling')} onClick={() => void handleEnable()}>
+              {t('screening.enable')}
             </Button>
           }
         />
@@ -1505,12 +1588,12 @@ const StockScreeningPage: React.FC = () => {
       {statusState === 'ready' && enabled && !available ? (
         <InlineAlert
           variant="warning"
-          title="选股功能不可用"
-          message="请检查后端日志、策略文件和基础数据依赖后重启服务。"
+          title={t('screening.unavailableTitle')}
+          message={t('screening.unavailableMessage')}
         />
       ) : null}
 
-      {error ? <InlineAlert variant="danger" title="调用失败" message={error} /> : null}
+      {error ? <InlineAlert variant="danger" title={t('screening.callFailed')} message={error} /> : null}
 
       <section className="rounded-2xl border border-border/80 bg-card/95 p-4 shadow-soft-card">
         <div className="mb-4 flex flex-col gap-3 lg:flex-row lg:items-start lg:justify-between">
@@ -1518,7 +1601,7 @@ const StockScreeningPage: React.FC = () => {
             <span className="grid h-10 w-10 shrink-0 place-items-center rounded-full bg-orange-500/10 text-orange-500 shadow-[0_10px_30px_rgba(249,115,22,0.16)]">
               <Flame className="h-5 w-5" />
             </span>
-            <h2 className="text-lg font-bold tracking-normal text-foreground">热点题材</h2>
+            <h2 className="text-lg font-bold tracking-normal text-foreground">{t('screening.hotspot.title')}</h2>
           </div>
           <div className="flex flex-col items-start gap-2 lg:items-end">
             <div className="flex flex-wrap items-center gap-2">
@@ -1529,7 +1612,11 @@ const StockScreeningPage: React.FC = () => {
                 onClick={toggleHotspotsExpanded}
               >
                 <Bookmark className="h-4 w-4" />
-                {hotspotsExpanded ? '收起热点题材' : `展开热点题材${hotspots.length ? `（${hotspots.length}）` : ''}`}
+                {hotspotsExpanded
+                  ? t('screening.hotspot.collapse')
+                  : hotspots.length
+                    ? t('screening.hotspot.expandCount', { count: hotspots.length })
+                    : t('screening.hotspot.expand')}
                 <ChevronDown className={`h-4 w-4 transition-transform ${hotspotsExpanded ? 'rotate-180' : ''}`} />
               </Button>
               {hotspotsExpanded ? (
@@ -1537,17 +1624,21 @@ const StockScreeningPage: React.FC = () => {
                 size="sm"
                 variant="secondary"
                 isLoading={loadingHotspots}
-                loadingText="刷新中..."
+                loadingText={t('screening.hotspot.refreshing')}
                 disabled={!isScreeningEnabled || loadingHotspots}
                 onClick={() => void loadHotspots(true)}
               >
                 <RefreshCw className="h-4 w-4" />
-                刷新热点题材
+                {t('screening.hotspot.refresh')}
               </Button>
               ) : null}
             </div>
             {hotspotsUpdatedAt ? (
-              <p className="text-xs text-secondary-text">更新于 {formatHotspotUpdatedAt(hotspotsUpdatedAt)}</p>
+              <p className="text-xs text-secondary-text">
+                {t('screening.hotspot.updatedAt', {
+                  time: formatHotspotUpdatedAt(hotspotsUpdatedAt, language, t),
+                })}
+              </p>
             ) : null}
           </div>
         </div>
@@ -1560,13 +1651,13 @@ const StockScreeningPage: React.FC = () => {
 
         {!hotspotsExpanded ? null : hotspots.length === 0 ? (
           <div className="rounded-xl border border-dashed border-border bg-surface/70 px-4 py-6 text-sm text-secondary-text">
-            暂无热点数据，点击“刷新热点题材”获取。
+            {t('screening.hotspot.empty')}
           </div>
         ) : (
           <div className="grid gap-3 md:grid-cols-2 xl:grid-cols-3 2xl:grid-cols-4">
             {hotspots.map((item, index) => {
               const selected = selectedHotspotTopic === item.topic;
-              const strength = getHotspotStrength(item, index);
+              const strength = getHotspotStrength(item, index, t);
               const iconMeta = getHotspotIcon(item.name || item.topic);
               const Icon = iconMeta.icon;
               return (
@@ -1604,9 +1695,20 @@ const StockScreeningPage: React.FC = () => {
                   </span>
                 </div>
                 <div className="mt-4 grid max-w-[72%] gap-1 text-[11px] text-secondary-text">
-                  <span>涨跌幅 <strong className="font-semibold text-foreground">{formatHotspotMetric(item.changePct)}%</strong></span>
-                  <span>趋势 <strong className="font-semibold text-foreground">{formatHotspotMetric(item.trendScore)}</strong> · 持续 <strong className="font-semibold text-foreground">{formatHotspotMetric(item.persistenceScore)}</strong></span>
-                  <span>{getHotspotSampleText(item)} · 龙头 {getHotspotLeadersText(item)}</span>
+                  <span>
+                    {t('screening.hotspot.change')}{' '}
+                    <strong className="font-semibold text-foreground">{formatHotspotMetric(item.changePct, t)}%</strong>
+                  </span>
+                  <span>
+                    {t('screening.hotspot.trend')}{' '}
+                    <strong className="font-semibold text-foreground">{formatHotspotMetric(item.trendScore, t)}</strong>
+                    {' · '}
+                    {t('screening.hotspot.persistence')}{' '}
+                    <strong className="font-semibold text-foreground">{formatHotspotMetric(item.persistenceScore, t)}</strong>
+                  </span>
+                  <span>
+                    {getHotspotSampleText(item, t)} · {t('screening.hotspot.leaders')} {getHotspotLeadersText(item, t)}
+                  </span>
                 </div>
                 <div className="absolute bottom-3 right-3 opacity-95 transition-transform group-hover:scale-105">
                   <MiniSparkline score={item.heatScore} selected={selected} />
@@ -1626,13 +1728,15 @@ const StockScreeningPage: React.FC = () => {
                 </h3>
                 <p className="mt-1 text-xs leading-5 text-secondary-text">
                   {hotspotDetail
-                    ? getHotspotSummaryText(hotspotDetail, selectedHotspot)
+                    ? getHotspotSummaryText(hotspotDetail, selectedHotspot, t)
                     : loadingHotspotDetail
-                      ? '正在读取发酵路线与概念股...'
-                      : '点击题材查看发酵路线与概念股。'}
+                      ? t('screening.hotspot.loadingDetail')
+                      : t('screening.hotspot.clickDetail')}
                 </p>
                 {hotspotDetail?.canonicalTopic && hotspotDetail.canonicalTopic !== selectedHotspotTopic ? (
-                  <p className="mt-1 text-[11px] text-secondary-text">标准题材：{hotspotDetail.canonicalTopic}</p>
+                  <p className="mt-1 text-[11px] text-secondary-text">
+                    {t('screening.hotspot.canonicalTopic', { topic: hotspotDetail.canonicalTopic })}
+                  </p>
                 ) : null}
               </div>
               <div className="flex flex-wrap items-center gap-2">
@@ -1640,31 +1744,31 @@ const StockScreeningPage: React.FC = () => {
                   size="sm"
                   variant="secondary"
                   isLoading={searchingHotspotNews}
-                  loadingText="搜索中..."
+                  loadingText={t('screening.hotspot.searching')}
                   disabled={loadingHotspotDetail || searchingHotspotNews}
                   onClick={() => void loadHotspotDetail(selectedHotspotTopic, { includeSearch: true })}
                 >
                   <Search className="h-3.5 w-3.5" />
-                  搜索最新消息
+                  {t('screening.hotspot.searchNews')}
                 </Button>
                 {loadingHotspotDetail ? (
                   <span className="w-fit rounded-full bg-cyan/10 px-3 py-1 text-xs font-semibold text-cyan">
-                    正在补充详情
+                    {t('screening.hotspot.loadingSupplement')}
                   </span>
                 ) : null}
                 {hotspotDetail?.qualityStatus ? (
                   <span className="w-fit rounded-full bg-warning/10 px-3 py-1 text-xs font-semibold text-warning">
-                    质量 {getHotspotQualityLabel(hotspotDetail.qualityStatus)}
+                    {t('screening.hotspot.quality', { value: getHotspotQualityLabel(hotspotDetail.qualityStatus, t) })}
                   </span>
                 ) : null}
                 {hotspotDetail?.fallbackUsed || hotspotDetail?.stale ? (
                   <span className="w-fit rounded-full bg-warning/10 px-3 py-1 text-xs font-semibold text-warning">
-                    {getHotspotFallbackLabel(hotspotDetail)}
+                    {getHotspotFallbackLabel(hotspotDetail, t)}
                   </span>
                 ) : null}
                 {hotspotDetail?.stockCount != null ? (
                   <span className="w-fit rounded-full bg-orange-500/10 px-3 py-1 text-xs font-semibold text-orange-500">
-                    概念股 {hotspotDetail.stockCount}
+                    {t('screening.hotspot.stockCount', { count: hotspotDetail.stockCount })}
                   </span>
                 ) : null}
               </div>
@@ -1678,12 +1782,17 @@ const StockScreeningPage: React.FC = () => {
 
             {hotspotDetail && hasHotspotDetailDegradation(hotspotDetail) ? (
               <details className="mb-3 rounded-xl border border-warning/30 bg-warning/10 px-3 py-2 text-xs text-warning">
-                <summary className="cursor-pointer font-semibold">详情数据已降级，展开查看原因</summary>
+                <summary className="cursor-pointer font-semibold">{t('screening.hotspot.degraded')}</summary>
                 <div className="mt-2 space-y-1 leading-5">
                   {(hotspotDetail.missingFields || []).length > 0 ? (
-                    <p>暂缺：{getHotspotMissingFieldLabels(hotspotDetail.missingFields).join('、')}</p>
+                    <p>
+                      {t('screening.hotspot.missing', {
+                        fields: getHotspotMissingFieldLabels(hotspotDetail.missingFields, t)
+                          .join(t('screening.listSeparator')),
+                      })}
+                    </p>
                   ) : null}
-                  {getHotspotDiagnosticMessages(hotspotDetail.sourceErrors).map((message, index) => (
+                  {getHotspotDiagnosticMessages(hotspotDetail.sourceErrors, t).map((message, index) => (
                     <p key={`${message}-${index}`}>{message}</p>
                   ))}
                 </div>
@@ -1695,16 +1804,22 @@ const StockScreeningPage: React.FC = () => {
                 <div>
                   <p className="mb-3 flex items-center gap-1.5 text-xs font-semibold text-secondary-text">
                     <Clock3 className="h-3.5 w-3.5 text-orange-500" />
-                    发酵时间线
+                    {t('screening.hotspot.timeline')}
                   </p>
                   <div className="relative space-y-0 pl-4 before:absolute before:bottom-3 before:left-[5px] before:top-2 before:w-px before:bg-border">
                     {getHotspotRouteItems(hotspotDetail).map((item, index) => (
                       <div key={`${item.title}-${index}`} className="relative pb-4 last:pb-0">
                         <span className="absolute -left-4 top-1 h-2.5 w-2.5 rounded-full border border-orange-400 bg-card" />
                         <div className="rounded-lg border border-border/70 bg-card/80 p-3">
-                          <p className="text-[11px] font-semibold text-orange-500">{getRouteTimeLabel(item)}</p>
-                          <p className="mt-1 text-xs font-semibold text-foreground">{formatHotspotRouteTitle(item.title)}</p>
-                          <p className="mt-1 text-xs leading-5 text-secondary-text">{formatHotspotRouteDescription(item.description)}</p>
+                          <p className="text-[11px] font-semibold text-orange-500">
+                            {getRouteTimeLabel(item, language, t)}
+                          </p>
+                          <p className="mt-1 text-xs font-semibold text-foreground">
+                            {formatHotspotRouteTitle(item.title, t)}
+                          </p>
+                          <p className="mt-1 text-xs leading-5 text-secondary-text">
+                            {formatHotspotRouteDescription(item.description, t)}
+                          </p>
                           {item.url ? (
                             <a
                               className="mt-2 inline-flex text-[11px] font-semibold text-cyan hover:text-foreground"
@@ -1712,7 +1827,7 @@ const StockScreeningPage: React.FC = () => {
                               target="_blank"
                               rel="noreferrer"
                             >
-                              查看消息
+                              {t('screening.hotspot.viewNews')}
                             </a>
                           ) : null}
                         </div>
@@ -1721,7 +1836,7 @@ const StockScreeningPage: React.FC = () => {
                   </div>
                 </div>
                 <div>
-                  <p className="mb-2 text-xs font-semibold text-secondary-text">概念股</p>
+                  <p className="mb-2 text-xs font-semibold text-secondary-text">{t('screening.hotspot.stocks')}</p>
                   <div className="grid gap-2 sm:grid-cols-2">
                     {(hotspotDetail.stocks || []).slice(0, 10).map((stock) => (
                       <div key={`${stock.code || stock.name}`} className="rounded-lg border border-border/70 bg-card/80 p-3">
@@ -1732,23 +1847,26 @@ const StockScreeningPage: React.FC = () => {
                           </div>
                           <div className="flex shrink-0 items-center gap-1">
                             <span className="rounded-full bg-cyan/10 px-2 py-1 text-[11px] font-semibold text-cyan">
-                              {getHotspotRoleLabel(stock.role)}
+                              {getHotspotRoleLabel(stock.role, t)}
                             </span>
                             {stock.code ? (
                               <button
                                 type="button"
-                                aria-label={`分析 ${stock.name || stock.code}`}
+                                aria-label={t('screening.hotspot.analyzeAria', { name: stock.name || stock.code })}
                                 className="inline-flex h-7 items-center gap-1 rounded-full border border-cyan/30 bg-cyan/10 px-2 text-[11px] font-semibold text-cyan transition-colors hover:border-cyan hover:bg-cyan/15 hover:text-foreground"
                                 onClick={() => handleAnalyzeHotspotStock(stock)}
                               >
                                 <Play className="h-3 w-3" />
-                                分析
+                                {t('screening.hotspot.analyze')}
                               </button>
                             ) : null}
                           </div>
                         </div>
                         <p className="mt-2 text-[11px] text-secondary-text">
-                          涨跌幅 {formatStockChangeText(stock.changePct)} · 热度 {formatNumber(stock.hotStockScore, 0)}
+                          {t('screening.hotspot.stockMeta', {
+                            change: formatStockChangeText(stock.changePct, t),
+                            heat: formatNumber(stock.hotStockScore, 0),
+                          })}
                         </p>
                       </div>
                     ))}
@@ -1764,7 +1882,7 @@ const StockScreeningPage: React.FC = () => {
         <div className="mb-4 flex items-start justify-between gap-3">
           <div className="flex items-center gap-2 text-sm font-semibold text-foreground">
             <SlidersHorizontal className="h-4 w-4 text-cyan" />
-            运行选股
+            {t('screening.form.section')}
           </div>
           <span className="rounded-full border border-cyan/30 bg-cyan/10 px-3 py-1 text-xs font-semibold text-cyan">
             {selectedStrategyTag}
@@ -1773,7 +1891,7 @@ const StockScreeningPage: React.FC = () => {
 
         <div className="grid gap-4 lg:grid-cols-[1fr_1.2fr_180px_auto] lg:items-end">
           <label className="space-y-2 text-xs font-medium text-secondary-text">
-            市场
+            {t('screening.form.market')}
             <select
               className="h-11 w-full rounded-xl border border-border bg-surface px-3 text-sm text-foreground outline-none transition-colors focus:border-cyan"
               value={market}
@@ -1782,14 +1900,14 @@ const StockScreeningPage: React.FC = () => {
             >
               {MARKETS.map((item) => (
                 <option key={item.id} value={item.id}>
-                  {item.label}
+                  {t('screening.market.cn')}
                 </option>
               ))}
             </select>
           </label>
 
           <div className="space-y-2 text-xs font-medium text-secondary-text">
-            <label htmlFor="screening-strategy">策略</label>
+            <label htmlFor="screening-strategy">{t('screening.strategy.label')}</label>
             <Select
               id="screening-strategy"
               value={selectedStrategy ? strategy : CUSTOM_STRATEGY_OPTION_VALUE}
@@ -1800,7 +1918,7 @@ const StockScreeningPage: React.FC = () => {
                   value: item.id,
                   label: item.name || item.title || item.id,
                 })),
-                { value: CUSTOM_STRATEGY_OPTION_VALUE, label: '自定义策略…' },
+                { value: CUSTOM_STRATEGY_OPTION_VALUE, label: t('screening.strategy.customOption') },
               ]}
               onChange={(value) =>
                 handleStrategyChange(
@@ -1812,20 +1930,20 @@ const StockScreeningPage: React.FC = () => {
 
           {!selectedStrategy && !loadingStrategies ? (
             <label className="space-y-2 text-xs font-medium text-secondary-text lg:col-start-2">
-              自定义策略 ID
+              {t('screening.strategy.customId')}
               <input
-                aria-label="自定义策略 ID"
+                aria-label={t('screening.strategy.customId')}
                 className="h-11 w-full rounded-xl border border-border bg-surface px-3 text-sm text-foreground outline-none transition-colors focus:border-cyan"
                 value={strategy}
                 disabled={loading}
-                placeholder="输入策略 ID"
+                placeholder={t('screening.strategy.customIdPlaceholder')}
                 onChange={(event) => handleStrategyChange(event.target.value)}
               />
             </label>
           ) : null}
 
           <label className="space-y-2 text-xs font-medium text-secondary-text">
-            返回数量
+            {t('screening.form.maxResults')}
             <input
               className="h-11 w-full rounded-xl border border-border bg-surface px-3 text-sm text-foreground outline-none transition-colors focus:border-cyan"
               type="number"
@@ -1840,19 +1958,19 @@ const StockScreeningPage: React.FC = () => {
           <Button
             className="h-11 min-w-40"
             isLoading={loading}
-            loadingText="筛选中..."
+            loadingText={t('screening.form.screening')}
             disabled={!isScreeningEnabled || loading || !strategy.trim()}
             onClick={() => void handleSubmit()}
           >
             <Play className="h-4 w-4" />
-            运行选股
+            {t('screening.form.run')}
           </Button>
         </div>
 
         <div className="mt-3 rounded-xl border border-border/75 bg-surface/55 px-3 py-2 text-xs leading-5 text-secondary-text">
           {strategyLoadError
             ? strategyLoadError
-            : selectedStrategy?.description || '策略会先执行硬过滤和因子评分，再进行风险与组合约束。'}
+            : selectedStrategy?.description || t('screening.strategy.fallbackDescription')}
         </div>
       </section>
 
@@ -1864,39 +1982,58 @@ const StockScreeningPage: React.FC = () => {
                 {loading ? <CircleAlert className="h-5 w-5" /> : <CheckCircle2 className="h-5 w-5" />}
               </span>
               <div>
-                <h2 className="text-sm font-semibold text-foreground">{loading ? '选股运行中' : '选股完成'}</h2>
+                <h2 className="text-sm font-semibold text-foreground">
+                  {loading ? t('screening.result.running') : t('screening.result.completed')}
+                </h2>
                 <p className="mt-1 text-xs text-secondary-text">
                   {loading
-                    ? `${taskMessage || '正在执行选股'} · ${taskProgress}%`
-                    : `${displayedStrategy} · ${MARKETS.find((item) => item.id === market)?.label}`}
+                    ? `${resolvedTaskMessage || t('screening.result.executing')} · ${taskProgress}%`
+                    : `${displayedStrategy} · ${t('screening.market.cn')}`}
                 </p>
               </div>
             </div>
           </div>
 
           <details className="mt-3 border-t border-border/70 pt-3 text-xs text-secondary-text">
-            <summary className="w-fit cursor-pointer font-medium text-secondary-text">运行详情</summary>
+            <summary className="w-fit cursor-pointer font-medium text-secondary-text">
+              {t('screening.result.details')}
+            </summary>
             <div className="mt-2 grid gap-1">
-              <span>任务：{activeTaskId ? activeTaskId.slice(0, 12) : '-'}</span>
-              <span>Run ID：{screenMeta?.runId || '-'}</span>
+              <span>{t('screening.result.task', { id: activeTaskId ? activeTaskId.slice(0, 12) : '-' })}</span>
+              <span>{t('screening.result.runId', { id: screenMeta?.runId || '-' })}</span>
               <span>
-                快照 {screenMeta?.snapshotCount ?? '-'} · 过滤后 {screenMeta?.afterFilterCount ?? '-'} · 候选 {screenMeta?.candidateCount ?? candidates.length}
+                {t('screening.result.counts', {
+                  snapshot: screenMeta?.snapshotCount ?? '-',
+                  filtered: screenMeta?.afterFilterCount ?? '-',
+                  candidates: screenMeta?.candidateCount ?? candidates.length,
+                })}
               </span>
               <span>
-                排序：{screenMeta?.llmRanked ? '智能重排' : screenMeta ? '确定性因子' : '-'}
+                {t('screening.result.ranking', {
+                  mode: screenMeta?.llmRanked
+                    ? t('screening.result.ranking.llm')
+                    : screenMeta
+                      ? t('screening.result.ranking.factor')
+                      : '-',
+                })}
                 {screenMeta?.llmModelUsed ? ` · ${screenMeta.llmModelUsed}` : ''}
-                {screenMeta?.llmCoverage != null ? ` · 覆盖 ${formatPercent(screenMeta.llmCoverage)}` : ''}
+                {screenMeta?.llmCoverage != null
+                  ? ` · ${t('screening.result.coverage', { value: formatPercent(screenMeta.llmCoverage) })}`
+                  : ''}
               </span>
               {screenMeta?.resultVariantPoolSize ? (
                 <span>
-                  候选差异：近分池 {screenMeta.resultVariantPoolSize} ·{' '}
+                  {t('screening.result.variant', { pool: screenMeta.resultVariantPoolSize })}{' '}
                   {screenMeta.resultVariantApplied
-                    ? `本次替换 ${screenMeta.resultVariantRotatedSlots ?? 0} 位`
-                    : '本次保持基准'}
+                    ? t('screening.result.variantRotated', { count: screenMeta.resultVariantRotatedSlots ?? 0 })
+                    : t('screening.result.variantBaseline')}
                 </span>
               ) : null}
               <span>
-                深度补充：{screenMeta?.dsaEnrichment?.enrichedCount ?? '-'} / {screenMeta?.dsaEnrichment?.requestedCount ?? '-'}
+                {t('screening.result.enrichment', {
+                  enriched: screenMeta?.dsaEnrichment?.enrichedCount ?? '-',
+                  requested: screenMeta?.dsaEnrichment?.requestedCount ?? '-',
+                })}
               </span>
             </div>
           </details>
@@ -1906,7 +2043,7 @@ const StockScreeningPage: React.FC = () => {
       {screenMeta && alertMessages.length > 0 ? (
         <InlineAlert
           variant={llmFailed ? 'warning' : 'info'}
-          title={llmFailed ? '当前使用因子排序' : '选股提示'}
+          title={llmFailed ? t('screening.result.factorTitle') : t('screening.result.hint')}
           message={<ScreenAlertMessage messages={alertMessages} />}
         />
       ) : null}
@@ -1914,39 +2051,39 @@ const StockScreeningPage: React.FC = () => {
       {screenMeta ? (
         <section className="rounded-2xl border border-border bg-card/95 p-4 shadow-soft-card">
           <div className="mb-5 flex flex-col gap-2 sm:flex-row sm:items-end sm:justify-between">
-            <h2 className="text-base font-semibold text-foreground">选股结果</h2>
+            <h2 className="text-base font-semibold text-foreground">{t('screening.result.title')}</h2>
           <div className="flex items-center gap-2 rounded-full border border-border bg-surface px-3 py-2 text-xs text-secondary-text">
             <Search className="h-4 w-4 text-cyan" />
-            {candidates.length} 条候选
+            {t('screening.result.candidateCount', { count: candidates.length })}
           </div>
           </div>
 
         {candidates.length === 0 ? (
           <div className="rounded-xl border border-dashed border-border bg-surface/70 px-5 py-10 text-center">
-            <p className="text-sm font-medium text-foreground">暂无符合条件的候选</p>
+            <p className="text-sm font-medium text-foreground">{t('screening.result.empty')}</p>
           </div>
         ) : (
           <div className="overflow-hidden rounded-xl border border-border">
             <table className="w-full min-w-[860px] border-collapse text-sm">
               <thead className="bg-surface text-left text-xs text-secondary-text">
                 <tr>
-                  <th className="w-14 px-4 py-3 font-semibold">#</th>
-                  <th className="px-4 py-3 font-semibold">代码</th>
-                  <th className="px-4 py-3 font-semibold">名称</th>
-                  <th className="px-4 py-3 font-semibold">行业</th>
-                  <th className="px-4 py-3 font-semibold">价格</th>
-                  <th className="px-4 py-3 font-semibold">涨跌幅</th>
-                  <th className="px-4 py-3 font-semibold">评分</th>
-                  <th className="px-4 py-3 font-semibold">排序依据</th>
-                  <th className="px-4 py-3 font-semibold">风险</th>
-                  <th className="px-4 py-3 font-semibold">详情</th>
+                  <th className="w-14 px-4 py-3 font-semibold">{t('screening.result.column.rank')}</th>
+                  <th className="px-4 py-3 font-semibold">{t('screening.result.column.code')}</th>
+                  <th className="px-4 py-3 font-semibold">{t('screening.result.column.name')}</th>
+                  <th className="px-4 py-3 font-semibold">{t('screening.result.column.industry')}</th>
+                  <th className="px-4 py-3 font-semibold">{t('screening.result.column.price')}</th>
+                  <th className="px-4 py-3 font-semibold">{t('screening.result.column.change')}</th>
+                  <th className="px-4 py-3 font-semibold">{t('screening.result.column.score')}</th>
+                  <th className="px-4 py-3 font-semibold">{t('screening.result.column.ranking')}</th>
+                  <th className="px-4 py-3 font-semibold">{t('screening.result.column.risk')}</th>
+                  <th className="px-4 py-3 font-semibold">{t('screening.result.column.details')}</th>
                 </tr>
               </thead>
               <tbody>
                 {candidates.map((item) => {
                   const expanded = expandedCode === item.code;
                   const factors = getFactorEntries(item);
-                  const selectionExplanations = getSelectionExplanations(item);
+                  const selectionExplanations = getSelectionExplanations(item, t);
                   const selectionQuality = item.whySelected?.length
                     ? item.explanationQuality?.whySelected || 'unknown'
                     : 'unknown';
@@ -1964,10 +2101,12 @@ const StockScreeningPage: React.FC = () => {
                         <td className="px-4 py-3 text-secondary-text">{formatNumber(item.price)}</td>
                         <td className="px-4 py-3 text-secondary-text">{formatNumber(item.changePct)}%</td>
                         <td className="px-4 py-3 font-bold text-cyan">{formatScore(item.score)}</td>
-                        <td className="px-4 py-3 text-secondary-text">{factorRanking ? '因子排序' : formatScore(item.llmScore)}</td>
+                        <td className="px-4 py-3 text-secondary-text">
+                          {factorRanking ? t('screening.result.factorRanking') : formatScore(item.llmScore)}
+                        </td>
                         <td className="px-4 py-3">
                           <span className={`rounded-lg px-2.5 py-1 text-xs font-semibold ${getRiskClassName(item.riskLevel)}`}>
-                            {getRiskLabel(item.riskLevel)}
+                            {getRiskLabel(item.riskLevel, t)}
                           </span>
                         </td>
                         <td className="px-4 py-3">
@@ -1976,7 +2115,7 @@ const StockScreeningPage: React.FC = () => {
                             type="button"
                             onClick={() => setExpandedCode(expanded ? null : item.code)}
                           >
-                            {expanded ? '收起' : '展开查看'}
+                            {expanded ? t('screening.result.collapse') : t('screening.result.expand')}
                           </button>
                         </td>
                       </tr>
@@ -1987,101 +2126,124 @@ const StockScreeningPage: React.FC = () => {
                               <div className="space-y-3">
                                 <div className="grid gap-3 md:grid-cols-2">
                                   <div className="rounded-xl border border-cyan/25 bg-cyan/5 px-3 py-2.5">
-                                    <p className="text-xs font-semibold text-cyan">为什么入选</p>
-                                    <ExplanationItems items={selectionExplanations} emptyText="暂无可验证的入选解释" />
+                                    <p className="text-xs font-semibold text-cyan">{t('screening.result.whySelected')}</p>
+                                    <ExplanationItems
+                                      items={selectionExplanations}
+                                      emptyText={t('screening.result.whySelectedEmpty')}
+                                    />
                                     {selectionExplanations.length > 0 ? (
-                                      <p className="mt-2 text-xs text-secondary-text">综合质量：{selectionQuality}</p>
+                                      <p className="mt-2 text-xs text-secondary-text">
+                                        {t('screening.result.quality', { value: selectionQuality })}
+                                      </p>
                                     ) : null}
                                   </div>
                                   <div className="rounded-xl border border-orange-400/25 bg-orange-500/5 px-3 py-2.5">
-                                    <p className="text-xs font-semibold text-orange-500">为什么现在</p>
-                                    <ExplanationItems items={item.whyNow} emptyText="暂无带来源的价格、消息或事件证据" />
+                                    <p className="text-xs font-semibold text-orange-500">{t('screening.result.whyNow')}</p>
+                                    <ExplanationItems
+                                      items={item.whyNow}
+                                      emptyText={t('screening.result.whyNowEmpty')}
+                                    />
                                     {item.whyNow?.length ? (
-                                      <p className="mt-2 text-xs text-secondary-text">综合质量：{item.explanationQuality?.whyNow || 'unknown'}</p>
+                                      <p className="mt-2 text-xs text-secondary-text">
+                                        {t('screening.result.quality', {
+                                          value: item.explanationQuality?.whyNow || 'unknown',
+                                        })}
+                                      </p>
                                     ) : null}
                                   </div>
                                 </div>
                                 <div>
-                                  <p className="text-xs font-semibold text-secondary-text">摘要</p>
-                                  <p className="mt-1 text-sm leading-6 text-foreground">{getCandidateReason(item)}</p>
+                                  <p className="text-xs font-semibold text-secondary-text">{t('screening.result.summary')}</p>
+                                  <p className="mt-1 text-sm leading-6 text-foreground">{getCandidateReason(item, t)}</p>
                                 </div>
                                 <div>
-                                  <p className="text-xs font-semibold text-secondary-text">操作信号</p>
-                                  <p className="mt-1 text-sm text-foreground">{getSignal(item)}</p>
+                                  <p className="text-xs font-semibold text-secondary-text">{t('screening.result.signal')}</p>
+                                  <p className="mt-1 text-sm text-foreground">{getSignal(item, t)}</p>
                                   <button
                                     className="mt-2 rounded-lg border border-cyan/40 px-3 py-1.5 text-xs font-semibold text-cyan transition-colors hover:bg-cyan/10"
                                     type="button"
                                     onClick={() => handleAnalyzeCandidate(item)}
                                   >
-                                    进一步深度分析
+                                    {t('screening.result.deepAnalysis')}
                                   </button>
                                 </div>
                                 {item.dsaAnalysisSummary ? (
                                   <div>
-                                    <p className="text-xs font-semibold text-secondary-text">增强摘要</p>
+                                    <p className="text-xs font-semibold text-secondary-text">{t('screening.result.enrichedSummary')}</p>
                                     <p className="mt-1 text-sm leading-6 text-foreground">
-                                      {formatEnrichmentSummary(item.dsaAnalysisSummary)}
+                                      {formatEnrichmentSummary(item.dsaAnalysisSummary, t)}
                                     </p>
                                   </div>
                                 ) : null}
                                 {llmInsightAvailable ? (
                                   <div>
-                                    <p className="text-xs font-semibold text-secondary-text">智能判断</p>
+                                    <p className="text-xs font-semibold text-secondary-text">{t('screening.result.llmInsight')}</p>
                                     <p className="mt-1 text-sm leading-6 text-foreground">{item.llmThesis || item.reason}</p>
                                     <p className="mt-1 text-xs text-secondary-text">
-                                      板块 {item.llmSector || '-'} · 主题 {item.llmTheme || '-'} · 置信度 {formatPercent(item.llmConfidence)}
+                                      {t('screening.result.llmMeta', {
+                                        sector: item.llmSector || '-',
+                                        theme: item.llmTheme || '-',
+                                        confidence: formatPercent(item.llmConfidence),
+                                      })}
                                     </p>
                                   </div>
                                 ) : null}
                                 <div>
-                                  <p className="text-xs font-semibold text-secondary-text">风险标签</p>
+                                  <p className="text-xs font-semibold text-secondary-text">{t('screening.result.riskTags')}</p>
                                   <p className="mt-1 text-sm text-foreground">
                                     {[...(item.riskFlags || []), ...(item.llmRisks || [])].length
-                                      ? [...(item.riskFlags || []), ...(item.llmRisks || [])].join('，')
-                                      : '无'}
+                                      ? [...(item.riskFlags || []), ...(item.llmRisks || [])]
+                                        .join(t('screening.clauseSeparator'))
+                                      : t('screening.result.none')}
                                   </p>
                                 </div>
                                 {item.riskSummary ? (
                                   <div>
-                                    <p className="text-xs font-semibold text-secondary-text">风险摘要</p>
+                                    <p className="text-xs font-semibold text-secondary-text">{t('screening.result.riskSummary')}</p>
                                     <p className="mt-1 text-sm text-foreground">{item.riskSummary}</p>
                                   </div>
                                 ) : null}
                               </div>
                               <div className="space-y-3">
                                 <div>
-                                  <p className="text-xs font-semibold text-secondary-text">主要因子</p>
+                                  <p className="text-xs font-semibold text-secondary-text">{t('screening.result.factors')}</p>
                                   <div className="mt-2 grid grid-cols-2 gap-2">
                                     {factors.length > 0 ? (
                                       factors.map(([key, value]) => (
                                         <div key={key} className="rounded-lg border border-border bg-card px-3 py-2">
-                                          <span className="block text-xs text-secondary-text">{FACTOR_LABELS[key] || key}</span>
+                                          <span className="block text-xs text-secondary-text">
+                                            {FACTOR_LABEL_KEYS[key] ? t(FACTOR_LABEL_KEYS[key]) : key}
+                                          </span>
                                           <span className="text-sm font-semibold text-foreground">{formatNumber(value)}</span>
                                         </div>
                                       ))
                                     ) : (
-                                      <span className="text-sm text-secondary-text">无因子明细</span>
+                                      <span className="text-sm text-secondary-text">{t('screening.result.noFactors')}</span>
                                     )}
                                   </div>
                                 </div>
                                 <div>
-                                  <p className="text-xs font-semibold text-secondary-text">成交额</p>
-                                  <p className="mt-1 text-sm text-foreground">{formatAmount(item.amount)}</p>
+                                  <p className="text-xs font-semibold text-secondary-text">{t('screening.result.amount')}</p>
+                                  <p className="mt-1 text-sm text-foreground">{formatAmount(item.amount, language)}</p>
                                 </div>
                                 {item.llmWatchItems?.length ? (
                                   <div>
-                                    <p className="text-xs font-semibold text-secondary-text">智能关注项</p>
-                                    <p className="mt-1 text-sm text-foreground">{item.llmWatchItems.join('，')}</p>
+                                    <p className="text-xs font-semibold text-secondary-text">{t('screening.result.watchItems')}</p>
+                                    <p className="mt-1 text-sm text-foreground">
+                                      {item.llmWatchItems.join(t('screening.clauseSeparator'))}
+                                    </p>
                                   </div>
                                 ) : null}
                                 {item.llmCatalysts?.length ? (
                                   <div>
-                                    <p className="text-xs font-semibold text-secondary-text">催化因素</p>
-                                    <p className="mt-1 text-sm text-foreground">{item.llmCatalysts.join('，')}</p>
+                                    <p className="text-xs font-semibold text-secondary-text">{t('screening.result.catalysts')}</p>
+                                    <p className="mt-1 text-sm text-foreground">
+                                      {item.llmCatalysts.join(t('screening.clauseSeparator'))}
+                                    </p>
                                   </div>
                                 ) : null}
                                 <div>
-                                  <p className="text-xs font-semibold text-secondary-text">相关新闻</p>
+                                  <p className="text-xs font-semibold text-secondary-text">{t('screening.result.news')}</p>
                                   {dsaNews.length > 0 ? (
                                     <ul className="mt-1 space-y-1 text-sm text-foreground">
                                       {dsaNews.slice(0, 3).map((newsItem, newsIndex) => (
@@ -2091,11 +2253,11 @@ const StockScreeningPage: React.FC = () => {
                                       ))}
                                     </ul>
                                   ) : (
-                                    <p className="mt-1 text-sm text-secondary-text">无</p>
+                                    <p className="mt-1 text-sm text-secondary-text">{t('screening.result.none')}</p>
                                   )}
                                 </div>
                                 <div>
-                                  <p className="text-xs font-semibold text-secondary-text">公告与事件</p>
+                                  <p className="text-xs font-semibold text-secondary-text">{t('screening.result.events')}</p>
                                   {dsaEvents.length > 0 ? (
                                     <ul className="mt-1 space-y-1 text-sm text-foreground">
                                       {dsaEvents.slice(0, 3).map((eventItem, eventIndex) => (
@@ -2105,13 +2267,15 @@ const StockScreeningPage: React.FC = () => {
                                       ))}
                                     </ul>
                                   ) : (
-                                    <p className="mt-1 text-sm text-secondary-text">无</p>
+                                    <p className="mt-1 text-sm text-secondary-text">{t('screening.result.none')}</p>
                                   )}
                                 </div>
                                 {dsaWarnings.length > 0 ? (
                                   <div>
-                                    <p className="text-xs font-semibold text-secondary-text">数据补充提示</p>
-                                    <p className="mt-1 text-sm text-secondary-text">{dsaWarnings.join('，')}</p>
+                                    <p className="text-xs font-semibold text-secondary-text">{t('screening.result.warnings')}</p>
+                                    <p className="mt-1 text-sm text-secondary-text">
+                                      {dsaWarnings.join(t('screening.clauseSeparator'))}
+                                    </p>
                                   </div>
                                 ) : null}
                               </div>
@@ -2133,7 +2297,7 @@ const StockScreeningPage: React.FC = () => {
         <div className="mb-3 flex flex-wrap items-center justify-between gap-2">
           <div className="flex items-center gap-2 text-sm font-semibold text-foreground">
             <Clock3 className="h-4 w-4 text-cyan" />
-            历史记录
+            {t('screening.history.title')}
           </div>
           <button
             type="button"
@@ -2141,7 +2305,7 @@ const StockScreeningPage: React.FC = () => {
             onClick={() => void loadHistory()}
             disabled={historyLoading}
           >
-            {historyLoading ? '加载中...' : '刷新'}
+            {historyLoading ? t('screening.history.loadingShort') : t('screening.history.refresh')}
           </button>
         </div>
         {historyError ? (
@@ -2149,7 +2313,7 @@ const StockScreeningPage: React.FC = () => {
         ) : null}
         {historyRuns.length === 0 ? (
           <p className="py-3 text-center text-xs text-secondary-text">
-            {historyLoading ? '正在加载历史记录...' : '暂无历史选股记录'}
+            {historyLoading ? t('screening.history.loading') : t('screening.history.empty')}
           </p>
         ) : (
           <div className="divide-y divide-border/70">
@@ -2162,19 +2326,21 @@ const StockScreeningPage: React.FC = () => {
               >
                 <span className="min-w-0">
                   <span className="block truncate text-sm font-semibold text-foreground">
-                    {formatHistoryStrategyName(run.strategy, strategies)}
+                    {formatHistoryStrategyName(run.strategy, strategies, t)}
                     <span className="ml-2 text-xs font-normal text-secondary-text">
-                      {formatHistoryMarketLabel(run.market)}
+                      {formatHistoryMarketLabel(run.market, t)}
                     </span>
                   </span>
                   <span className="mt-0.5 block text-xs text-secondary-text">
-                    返回 {run.candidateCount ?? 0} 只
-                    {run.snapshotCount != null ? ` · 快照 ${run.snapshotCount}` : ''}
-                    {run.llmRanked ? ' · 智能重排' : ''}
+                    {t('screening.history.returned', { count: run.candidateCount ?? 0 })}
+                    {run.snapshotCount != null
+                      ? t('screening.history.snapshot', { count: run.snapshotCount })
+                      : ''}
+                    {run.llmRanked ? t('screening.history.llmRanked') : ''}
                   </span>
                 </span>
                 <span className="shrink-0 text-xs text-secondary-text">
-                  {formatRunCreatedAt(run.createdAt)}
+                  {formatRunCreatedAt(run.createdAt, language, t)}
                 </span>
               </button>
             ))}
