@@ -136,22 +136,17 @@ const vendorChunkByPackage: Record<string, string> = {
   scheduler: 'vendor-react',
   'react-router': 'vendor-router',
   'react-router-dom': 'vendor-router',
-  motion: 'vendor-motion',
-  'framer-motion': 'vendor-motion',
-  'motion-dom': 'vendor-motion',
-  'motion-utils': 'vendor-motion',
+  // T30: 入口与懒加载块共用的小工具包归到首屏 runtime 块，
+  // 不再跟着图表库一起进大块（clsx 曾随 recharts 进 vendor-charts）。
+  clsx: 'vendor-runtime',
+  'tailwind-merge': 'vendor-runtime',
   'lucide-react': 'vendor-icons',
+  // T30: 图表块只放 recharts 自身与它的渲染依赖。recharts 的其余传递依赖
+  //（`@reduxjs/toolkit`、`react-redux`、`immer`、`es-toolkit`、`use-sync-external-store`、
+  // `tiny-invariant` 等）与首屏代码共用，映射进这个块会让入口为它们静态加载
+  // 整个图表块；交给 Rollup 按实际引用方放置即可。
   recharts: 'vendor-charts',
   'victory-vendor': 'vendor-charts',
-  '@reduxjs/toolkit': 'vendor-charts',
-  'decimal.js-light': 'vendor-charts',
-  'es-toolkit': 'vendor-charts',
-  eventemitter3: 'vendor-charts',
-  immer: 'vendor-charts',
-  'react-redux': 'vendor-charts',
-  reselect: 'vendor-charts',
-  'tiny-invariant': 'vendor-charts',
-  'use-sync-external-store': 'vendor-charts',
   // Markdown renderer dependencies that are not covered by prefix rules below.
   'react-markdown': 'vendor-markdown',
   unified: 'vendor-markdown',
@@ -202,7 +197,26 @@ const getVendorPackageName = (id: string): string | undefined => {
   return firstSegment
 }
 
+// T30: 首屏 runtime 块。虚拟模块（id 以 \0 开头，例如 `vite/preload-helper`、
+// `commonjsHelpers`）被入口与所有懒加载块引用，必须单独成块。
+const FIRST_SCREEN_RUNTIME_CHUNK = 'vendor-runtime'
+
+const isViteRuntimeModule = (id: string): boolean => {
+  const normalizedId = id.replace(/\\/g, '/')
+  return (
+    normalizedId.startsWith('\0')
+    || normalizedId.includes('vite/preload-helper')
+    || normalizedId.includes('commonjsHelpers')
+  )
+}
+
 const getVendorChunkName = (id: string): string | undefined => {
+  // T30: Vite 的 `__vitePreload` 辅助函数等虚拟模块必须单独成块。它们被入口和
+  // 所有懒加载块引用，落进最大的依赖块时，入口就必须静态加载整个大块。
+  if (isViteRuntimeModule(id)) {
+    return FIRST_SCREEN_RUNTIME_CHUNK
+  }
+
   const packageName = getVendorPackageName(id)
   if (!packageName) {
     return undefined

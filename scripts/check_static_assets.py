@@ -22,7 +22,7 @@ from __future__ import annotations
 import re
 import sys
 from pathlib import Path
-from typing import List, Tuple
+from typing import Dict, List, Sequence, Tuple
 
 # Match src="/assets/foo.js" or href="/assets/foo.css", with single or double
 # quotes. Vite emits absolute paths by default (``base: '/'``).
@@ -30,6 +30,21 @@ _ASSET_PATTERN = re.compile(
     r"""(?:src|href)\s*=\s*["'](/assets/[^"']+)["']""",
     re.IGNORECASE,
 )
+
+# T30: 首屏不应整包加载的懒加载依赖。这些库只被懒加载页面使用，
+# 一旦出现在入口的 modulepreload 列表里，首屏就会被它们的体积拖慢。
+_FIRST_SCREEN_FORBIDDEN_MARKERS: Tuple[str, ...] = (
+    "html2canvas",
+    "jspdf",
+    "docx",
+    "recharts",
+)
+
+_MODULEPRELOAD_PATTERN = re.compile(
+    r"""<link[^>]*\brel\s*=\s*["']modulepreload["'][^>]*>""",
+    re.IGNORECASE,
+)
+_HREF_PATTERN = re.compile(r"""\bhref\s*=\s*["']([^"']+)["']""", re.IGNORECASE)
 
 
 def _parse_referenced_assets(index_html: str) -> List[str]:
@@ -40,6 +55,40 @@ def _parse_referenced_assets(index_html: str) -> List[str]:
         if ref not in seen:
             seen.append(ref)
     return seen
+
+
+def parse_modulepreload_assets(index_html: str) -> List[str]:
+    """Return the unique ``/assets/...`` paths the entry preloads."""
+    seen: List[str] = []
+    for tag in _MODULEPRELOAD_PATTERN.finditer(index_html):
+        href_match = _HREF_PATTERN.search(tag.group(0))
+        if not href_match:
+            continue
+        ref = href_match.group(1)
+        if ref.startswith("/assets/") and ref not in seen:
+            seen.append(ref)
+    return seen
+
+
+def check_preload_payloads(static_dir: Path, preload_refs: Sequence[str]) -> Dict[str, List[str]]:
+    """Return ``{asset: [markers]}`` for preloaded files containing lazy-only libs.
+
+    The marker list keeps the first screen from silently regressing: a vendor
+    chunk mapping change (for example moving a dependency shared with an
+    eagerly imported module into ``vendor-charts``) makes the entry preload the
+    whole chart/export bundle again, and the only visible symptom is a slower
+    first paint.
+    """
+    violations: Dict[str, List[str]] = {}
+    for ref in preload_refs:
+        candidate = static_dir / ref.lstrip("/")
+        if not candidate.is_file():
+            continue
+        payload = candidate.read_bytes().lower()
+        found = [marker for marker in _FIRST_SCREEN_FORBIDDEN_MARKERS if marker.encode() in payload]
+        if found:
+            violations[ref] = found
+    return violations
 
 
 def check_static_dir(static_dir: Path) -> Tuple[List[str], List[str]]:
@@ -111,9 +160,28 @@ def main(argv: List[str]) -> int:
         )
         return 1
 
+    html = (static_dir / "index.html").read_text(encoding="utf-8", errors="replace")
+    preload_refs = parse_modulepreload_assets(html)
+    violations = check_preload_payloads(static_dir, preload_refs)
+    if violations:
+        print(
+            "[check_static_assets] ERROR: first-screen modulepreload pulls in "
+            "lazy-only bundles:",
+            file=sys.stderr,
+        )
+        for ref, markers in sorted(violations.items()):
+            print(f"  - {ref}: {', '.join(markers)}", file=sys.stderr)
+        print(
+            "[check_static_assets] Check apps/dsa-web/vite.config.ts "
+            "manualChunks: a dependency shared with eagerly imported code must "
+            "not be mapped into a lazy-only vendor chunk.",
+            file=sys.stderr,
+        )
+        return 1
+
     print(
         f"[check_static_assets] OK: {len(referenced)} asset reference(s) "
-        f"resolved successfully."
+        f"resolved successfully, {len(preload_refs)} preload chunk(s) clean."
     )
     return 0
 

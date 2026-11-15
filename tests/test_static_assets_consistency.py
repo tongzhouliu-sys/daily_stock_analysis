@@ -108,6 +108,66 @@ def test_main_returns_zero_when_consistent(tmp_path: Path) -> None:
     assert rc == 0
 
 
+def _index_with_preload(js_name: str, preload: str) -> str:
+    return (
+        "<!doctype html><html><head>"
+        f'<script type="module" crossorigin src="/assets/{js_name}"></script>'
+        f'<link rel="modulepreload" crossorigin href="/assets/{preload}">'
+        "</head><body><div id=\"root\"></div></body></html>"
+    )
+
+
+def test_parse_modulepreload_assets_reads_only_preload_links() -> None:
+    html = (
+        '<link rel="stylesheet" href="/assets/app.css">'
+        '<link rel="modulepreload" href="/assets/vendor-charts.js">'
+        "<link rel='modulepreload' href='/assets/vendor-react.js'>"
+        '<link rel="modulepreload" href="/assets/vendor-charts.js">'
+    )
+
+    assert check_static_assets.parse_modulepreload_assets(html) == [
+        "/assets/vendor-charts.js",
+        "/assets/vendor-react.js",
+    ]
+
+
+def test_check_preload_payloads_flags_lazy_only_libraries(tmp_path: Path) -> None:
+    static_dir = tmp_path / "static"
+    assets = static_dir / "assets"
+    assets.mkdir(parents=True)
+    (assets / "index-abc.js").write_text("// entry", encoding="utf-8")
+    (assets / "vendor-charts.js").write_text("function RechartsBar(){}", encoding="utf-8")
+    (assets / "vendor-export.js").write_text("html2canvas;jsPDF;docx", encoding="utf-8")
+    _write_index(static_dir, _vite_index("index-abc.js", "vendor-charts.js"))
+
+    violations = check_static_assets.check_preload_payloads(
+        static_dir,
+        ["/assets/index-abc.js", "/assets/vendor-charts.js", "/assets/vendor-export.js"],
+    )
+
+    assert violations == {
+        "/assets/vendor-charts.js": ["recharts"],
+        "/assets/vendor-export.js": ["html2canvas", "jspdf", "docx"],
+    }
+
+
+def test_main_returns_nonzero_when_preload_contains_heavy_library(tmp_path: Path, capsys) -> None:
+    static_dir = tmp_path / "static"
+    assets = static_dir / "assets"
+    assets.mkdir(parents=True)
+    (assets / "index-abc.js").write_text("// entry", encoding="utf-8")
+    (assets / "vendor-charts.js").write_text("recharts", encoding="utf-8")
+    _write_index(static_dir, _index_with_preload("index-abc.js", "vendor-charts.js"))
+
+    rc = check_static_assets.main(["check_static_assets.py", str(static_dir)])
+
+    captured = capsys.readouterr()
+    assert rc == 1
+    assert "lazy-only bundles" in captured.err
+    assert "vendor-charts.js" in captured.err
+    assert "manualChunks" in captured.err
+
+
 def test_backend_startup_check_logs_when_bundle_inconsistent(
     tmp_path: Path,
     caplog: pytest.LogCaptureFixture,
