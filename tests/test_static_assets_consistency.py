@@ -151,6 +151,23 @@ def test_check_preload_payloads_flags_lazy_only_libraries(tmp_path: Path) -> Non
     }
 
 
+def test_check_preload_payloads_flags_markdown_runtime(tmp_path: Path) -> None:
+    static_dir = tmp_path / "static"
+    assets = static_dir / "assets"
+    assets.mkdir(parents=True)
+    (assets / "index-abc.js").write_text("// entry", encoding="utf-8")
+    (assets / "vendor-markdown.js").write_text("/* micromark */ function parse(){}", encoding="utf-8")
+    (assets / "vendor-runtime.js").write_text("function clsx(){}", encoding="utf-8")
+    _write_index(static_dir, _vite_index("index-abc.js", "vendor-runtime.js"))
+
+    violations = check_static_assets.check_preload_payloads(
+        static_dir,
+        ["/assets/index-abc.js", "/assets/vendor-runtime.js", "/assets/vendor-markdown.js"],
+    )
+
+    assert violations == {"/assets/vendor-markdown.js": ["micromark"]}
+
+
 def test_main_returns_nonzero_when_preload_contains_heavy_library(tmp_path: Path, capsys) -> None:
     static_dir = tmp_path / "static"
     assets = static_dir / "assets"

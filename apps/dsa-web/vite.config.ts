@@ -203,6 +203,12 @@ const FIRST_SCREEN_RUNTIME_CHUNK = 'vendor-runtime'
 
 const isViteRuntimeModule = (id: string): boolean => {
   const normalizedId = id.replace(/\\/g, '/')
+  // CommonJS 插件会给每个 CJS 包生成 `\0…/node_modules/<pkg>/…?commonjs-*` 代理模块。
+  // 这些代理必须跟随所属包分块；若一并归入 runtime 块，runtime 块就会反向引用
+  // 包本体所在的块（例如 remove-markdown → vendor-markdown），把它拖进首屏。
+  if (normalizedId.includes('/node_modules/')) {
+    return false
+  }
   return (
     normalizedId.startsWith('\0')
     || normalizedId.includes('vite/preload-helper')

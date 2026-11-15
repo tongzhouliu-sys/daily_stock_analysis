@@ -38,6 +38,9 @@ _FIRST_SCREEN_FORBIDDEN_MARKERS: Tuple[str, ...] = (
     "jspdf",
     "docx",
     "recharts",
+    # Markdown 渲染只在报告、问股等懒加载页面使用；它出现在首屏通常说明
+    # 某个 CommonJS 代理模块被错误归入了首屏 runtime 块。
+    "micromark",
 )
 
 _MODULEPRELOAD_PATTERN = re.compile(
