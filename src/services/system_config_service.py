@@ -10,6 +10,7 @@ import os
 import re
 import shutil
 import time
+import unicodedata
 from dataclasses import dataclass, field
 from pathlib import Path
 from typing import Any, Dict, List, Optional, Sequence, Set, Tuple
@@ -2729,6 +2730,24 @@ class SystemConfigService:
         return self._collect_generation_backend_issues(items=items, mask_token="******")
 
     @staticmethod
+    def _env_value_unsafe_reason(value: str) -> Optional[str]:
+        """Return why ``value`` cannot be stored on a single ``.env`` line.
+
+        Returns ``None`` when the value is safe.  Tabs stay allowed; every
+        other control character (``Cc``) and Unicode line/paragraph separator
+        (``Zl`` / ``Zp``) is rejected because ``dotenv`` would split the line
+        and the remainder could be re-read as a different assignment.
+        """
+        if len(value.splitlines()) > 1:
+            return "contains more than one line"
+        for char in value:
+            if char == "\t":
+                continue
+            if unicodedata.category(char) in ("Cc", "Zl", "Zp"):
+                return f"contains control character U+{ord(char):04X}"
+        return None
+
+    @staticmethod
     def _validate_value(key: str, value: str, field_schema: Dict[str, Any]) -> List[Dict[str, Any]]:
         """Validate a single field value against schema metadata."""
         issues: List[Dict[str, Any]] = []
@@ -2748,15 +2767,30 @@ class SystemConfigService:
         if not value.strip() and not is_required:
             return issues
 
-        if ("\n" in value or "\r" in value) and data_type != "json":
+        # R2: a value must be a single logical line. ``splitlines()`` catches
+        # not only \n / \r but also Unicode separators (\x0b, \x0c, \x1c-\x1e,
+        # \x85, \u2028, \u2029) that ``dotenv`` would treat as line breaks.
+        # JSON payloads are canonicalised to one line first, so pretty-printed
+        # JSON is still accepted while a raw newline smuggled outside a JSON
+        # string cannot reach ``.env``.
+        checked_value = value
+        if data_type == "json" and value.strip():
+            try:
+                checked_value = json.dumps(
+                    json.loads(value), ensure_ascii=False, separators=(",", ":"),
+                )
+            except (json.JSONDecodeError, TypeError, ValueError):
+                checked_value = value
+        unsafe_reason = SystemConfigService._env_value_unsafe_reason(checked_value)
+        if unsafe_reason is not None:
             issues.append(
                 {
                     "key": key,
                     "code": "invalid_value",
-                    "message": "Value cannot contain newline characters",
+                    "message": "Value cannot contain newline or control characters",
                     "severity": "error",
                     "expected": "single-line value",
-                    "actual": "contains newline",
+                    "actual": unsafe_reason,
                 }
             )
             return issues

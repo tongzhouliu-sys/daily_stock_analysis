@@ -953,6 +953,11 @@ def setup_env(override: bool = False):
     preexisting_compose_sensitive_keys = {
         key for key in compose_sensitive_keys if key in os.environ
     }
+    if not override:
+        # R2: surface values that dotenv would split into extra assignments.
+        from src.core.config_manager import warn_unsafe_env_lines
+
+        warn_unsafe_env_lines(env_path)
     load_dotenv(dotenv_path=env_path, override=override)
     try:
         raw_env_values = dotenv_values(env_path, interpolate=False)

@@ -33,6 +33,70 @@ _ESCAPED_APPLICATION_TEMPLATE_PLACEHOLDER_PATTERN = re.compile(
 
 logger = logging.getLogger(__name__)
 
+# R2: characters that must never appear inside a stored ``.env`` value.  They
+# are all treated as line breaks (or dropped) by ``dotenv``/``splitlines()``,
+# so a value carrying one could be re-read as a second assignment.
+_UNSAFE_ENV_VALUE_CHAR_PATTERN = re.compile(
+    "[\x0b\x0c\x1c\x1d\x1e\x85\u2028\u2029]"
+)
+
+
+def _split_env_lines(text: str) -> List[str]:
+    """Split ``.env`` text on ``\\n`` only, tolerating ``\\r\\n`` endings.
+
+    ``str.splitlines()`` also splits on \\x0b, \\x0c, \\x1c-\\x1e, \\x85,
+    \\u2028 and \\u2029, which would silently break a value that contains one
+    of them into a separate line.  Splitting on ``\\n`` keeps the file layout
+    stable and lets :func:`warn_unsafe_env_lines` report such values instead.
+    """
+    lines = text.split("\n")
+    if lines and lines[-1] == "":
+        lines.pop()
+    return [line[:-1] if line.endswith("\r") else line for line in lines]
+
+
+def find_unsafe_env_lines(text: str) -> List[Tuple[int, str]]:
+    """Return ``(line_number, offending_char)`` for ``.env`` lines at risk."""
+    hits: List[Tuple[int, str]] = []
+    for line_number, raw_line in enumerate(_split_env_lines(text), start=1):
+        match = _UNSAFE_ENV_VALUE_CHAR_PATTERN.search(raw_line)
+        if match is not None:
+            hits.append((line_number, match.group(0)))
+    return hits
+
+
+def warn_unsafe_env_lines(env_path: Path) -> None:
+    """Log a warning for every ``.env`` line carrying a line-separator char."""
+    try:
+        if not env_path.exists():
+            return
+        text = env_path.read_text(encoding="utf-8")
+    except OSError as exc:  # pragma: no cover - defensive branch
+        logger.debug("Skipping .env safety scan for %s: %s", env_path, exc)
+        return
+    for line_number, char in find_unsafe_env_lines(text):
+        logger.warning(
+            "Unsafe control character U+%04X found in %s line %d; "
+            "rewrite this value through the settings API or by hand.",
+            ord(char),
+            env_path,
+            line_number,
+        )
+
+
+def _assert_single_line_env_value(key: str, value: str) -> None:
+    """Refuse to mutate/write a value that would break the ``.env`` layout.
+
+    Unlike the previous behaviour this never rewrites the caller's value:
+    silently stripping characters let a crafted payload pass validation and
+    still land in the file.
+    """
+    if "\n" in value or "\r" in value or _UNSAFE_ENV_VALUE_CHAR_PATTERN.search(value):
+        raise ValueError(
+            f"Refusing to write {key}: value contains a line break or control character"
+        )
+
+
 
 def escape_compose_sensitive_env_value(key: str, value: str) -> str:
     """Escape app template placeholders that Docker Compose would interpolate."""
@@ -196,10 +260,11 @@ class ConfigManager:
                         skipped_masked.append(key_upper)
                     continue
 
+                _assert_single_line_env_value(key_upper, value)
                 stored_value = stored_values.get(key_upper)
                 canonical_stored_value = escape_compose_sensitive_env_value(
                     key_upper,
-                    value.replace("\n", ""),
+                    value,
                 )
                 if current_value == value and (
                     key_upper not in _COMPOSE_ESCAPED_ENV_VALUE_KEYS
@@ -220,8 +285,8 @@ class ConfigManager:
         key_to_index = self._find_last_key_indexes(entries)
 
         for key, value in updates.items():
-            line_value = value.replace("\n", "")
-            line_value = escape_compose_sensitive_env_value(key, line_value)
+            _assert_single_line_env_value(key, value)
+            line_value = escape_compose_sensitive_env_value(key, value)
             if key in key_to_index:
                 entries[key_to_index[key]] = ConfigLineEntry.assignment(key, line_value)
             else:
@@ -267,7 +332,7 @@ class ConfigManager:
             return []
         return [
             ConfigLineEntry.parse(raw_line)
-            for raw_line in self._env_path.read_text(encoding="utf-8").splitlines()
+            for raw_line in _split_env_lines(self._env_path.read_text(encoding="utf-8"))
         ]
 
     @staticmethod
