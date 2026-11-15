@@ -2924,6 +2924,67 @@ class TestAnalyzerGenerateText:
         mock_fill.assert_called_once()
         assert mock_fill.call_args[0][1] == ["analysis_summary"]
 
+    def _run_integrity_retry_with_failure(self, retry_failure):
+        analyzer = self._make_analyzer()
+        analyzer._config_override = SimpleNamespace(
+            gemini_request_delay=0,
+            report_language="zh",
+            litellm_model="gemini/gemini-2.0-flash",
+            llm_temperature=0.2,
+            report_integrity_enabled=True,
+            report_integrity_retry=1,
+        )
+
+        from src.analyzer import AnalysisResult
+
+        first_result = AnalysisResult(
+            code="600519",
+            name="贵州茅台",
+            sentiment_score=80,
+            trend_prediction="看多",
+            operation_advice="持有",
+            analysis_summary="首轮结果",
+        )
+
+        with patch.object(analyzer, "is_available", return_value=True), \
+             patch.object(analyzer, "_get_analysis_system_prompt", return_value="system"), \
+             patch.object(analyzer, "_format_prompt", return_value="prompt"), \
+             patch.object(
+                 analyzer,
+                 "_call_litellm",
+                 side_effect=[
+                     ("first response", "model-a", {"prompt_tokens": 1, "completion_tokens": 2, "total_tokens": 3}),
+                     retry_failure,
+                 ],
+             ), \
+             patch.object(analyzer, "_parse_response", return_value=first_result), \
+             patch.object(analyzer, "_build_market_snapshot", return_value={}), \
+             patch.object(analyzer, "_check_content_integrity", return_value=(False, ["analysis_summary"])), \
+             patch.object(analyzer, "_build_integrity_retry_prompt", return_value="retry prompt"), \
+             patch.object(analyzer, "_apply_placeholder_fill") as mock_fill, \
+             patch("src.analyzer.persist_llm_usage"):
+            result = analyzer.analyze({"code": "600519", "stock_name": "贵州茅台"})
+        return result, mock_fill
+
+    def test_analyze_integrity_retry_all_models_failed_falls_back_to_first_result(self):
+        # _call_litellm raises _AllModelsFailedError when every model fails; the
+        # fallback must also cover this production exception, not only RuntimeError.
+        from src.analyzer import _AllModelsFailedError
+
+        result, mock_fill = self._run_integrity_retry_with_failure(
+            _AllModelsFailedError("All LLM models failed", last_response_text=None),
+        )
+
+        assert result.analysis_summary == "首轮结果"
+        mock_fill.assert_called_once()
+        assert mock_fill.call_args[0][1] == ["analysis_summary"]
+
+    def test_analyze_integrity_retry_cancellation_is_not_swallowed(self):
+        from src.core.task_cancellation import TaskCancelledError
+
+        with pytest.raises(TaskCancelledError):
+            self._run_integrity_retry_with_failure(TaskCancelledError("task cancelled"))
+
     def test_analyze_integrity_exhausted_picks_result_with_fewer_missing_fields(self):
         analyzer = self._make_analyzer()
         analyzer._config_override = SimpleNamespace(

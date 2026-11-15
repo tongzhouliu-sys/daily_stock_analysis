@@ -4427,6 +4427,9 @@ Output strictly in the following JSON format. This is a complete Decision Dashbo
                         response_validator=self._validate_json_response,
                         audit_context=legacy_audit_context,
                     )
+                except TaskCancelledError:
+                    # A cancelled task stops here; it is not a failed retry.
+                    raise
                 except _AllModelsFailedError as exc:
                     if exc.last_response_text is not None:
                         logger.warning(
@@ -4437,6 +4440,17 @@ Output strictly in the following JSON format. This is a complete Decision Dashbo
                         response_text = exc.last_response_text
                         model_used = exc.last_model
                         llm_usage = exc.last_usage
+                    elif first_result is not None:
+                        # R24c: this is the exception a failed retry actually
+                        # raises; re-raising it from here bypassed the generic
+                        # fallback below and dropped the parsed first result.
+                        logger.warning(
+                            "[LLM完整性] 重试调用失败，回落到首次解析结果: %s",
+                            exc,
+                        )
+                        self._apply_placeholder_fill(first_result, first_missing_fields or [])
+                        result = first_result
+                        break
                     else:
                         raise
                 except Exception as exc:
@@ -4539,7 +4553,10 @@ Output strictly in the following JSON format. This is a complete Decision Dashbo
             logger.info(f"[LLM解析] {name}({code}) 分析完成: {result.trend_prediction}, 评分 {result.sentiment_score}")
 
             return result
-            
+
+        except TaskCancelledError:
+            # Cancellation is task control flow, not an analysis failure.
+            raise
         except Exception as e:
             safe_error = self._sanitize_hermes_exception_text(e)
             logger.error("AI 分析 %s(%s) 失败: %s", name, code, safe_error)
