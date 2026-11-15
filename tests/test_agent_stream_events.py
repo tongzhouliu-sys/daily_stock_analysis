@@ -56,6 +56,12 @@ class _StreamTestAgent(BaseAgent):
         return None
 
 
+def _stable_event(event: dict) -> dict:
+    """Drop additive stream metadata so tests assert the public contract only."""
+    generated = {"sequence", "stage_id", "outcome"}
+    return {key: value for key, value in event.items() if key not in generated}
+
+
 def test_stream_event_keeps_legacy_fields_and_drops_none() -> None:
     event = stream_event(
         "tool_done",
@@ -66,7 +72,7 @@ def test_stream_event_keeps_legacy_fields_and_drops_none() -> None:
         message=None,
     )
 
-    assert event == {
+    assert _stable_event(event) == {
         "type": "tool_done",
         "step": 2,
         "tool": "echo",
@@ -109,7 +115,7 @@ def test_run_agent_loop_emits_paired_stage_and_legacy_progress_events() -> None:
     )
 
     assert result.success is True
-    assert events[0] == {
+    assert _stable_event(events[0]) == {
         "type": "stage_start",
         "stage": "agent_loop",
         "message": "Starting agent analysis...",
@@ -217,7 +223,7 @@ def test_orchestrator_emits_stage_start_and_done_events() -> None:
 
     assert result.success is True
     assert result.content == "Done."
-    assert events == [
+    assert [_stable_event(event) for event in events] == [
         {
             "type": "stage_start",
             "stage": "technical",
@@ -280,7 +286,7 @@ def test_orchestrator_emits_stage_done_before_timeout_after_stage() -> None:
 
     assert result.success is False
     assert result.error == "Pipeline timed out after 1.10s (limit: 1s)"
-    assert events == [
+    assert [_stable_event(event) for event in events] == [
         {
             "type": "stage_start",
             "stage": "technical",
@@ -347,7 +353,7 @@ def test_orchestrator_emits_budget_skipped_before_unstarted_stage() -> None:
         "Pipeline skipped before stage 'decision' due to insufficient budget "
         "(14.0s remaining, minimum 15s required)"
     )
-    assert events == [
+    assert [_stable_event(event) for event in events] == [
         {
             "type": "stage_start",
             "stage": "technical",

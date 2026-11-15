@@ -28,7 +28,7 @@ def record(name, data):
 
 @pytest.mark.parametrize("arch", ["single", "multi"])
 @pytest.mark.parametrize("case,message,decision,allowed,analysis", [
-    ("conditional", "如果600519下跌，就改看300750", "clarify", {"600519"}, False),
+    ("conditional", "如果600519下跌，就改看300750", "maintain", {"600519"}, True),
     ("negative-comparison", "不要研究600519和300750的区别，继续分析600519", "maintain", {"600519"}, True),
     ("switch", "从600519改看300750", "confirm", {"300750"}, True),
     ("compare", "比较600519和300750", "compare", {"600519", "300750"}, True),

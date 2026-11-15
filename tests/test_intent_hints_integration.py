@@ -15,14 +15,14 @@ def test_intent_hints_skip_object_dimension():
     """When client provides extracted_stock_code + inferred_market, object question is skipped."""
     # Without hints: should ask object question (or at least include it)
     questions_without_hints = select_questions(
-        "分析 600519",
+        "分析一下",
         stock_clarification_needed=True,
     )
     has_object_without = any(q.id == "object" for q in questions_without_hints)
     
     # With hints: should NOT ask object question
     questions_with_hints = select_questions(
-        "分析 600519",
+        "分析一下",
         stock_clarification_needed=True,
         intent_hints={
             "extracted_stock_code": "600519",

@@ -250,7 +250,7 @@ class TestChatCommandCompatibility(unittest.TestCase):
         with patch("bot.commands.chat.get_config", return_value=config), \
              patch("src.storage.get_db", return_value=db), \
              patch("src.agent.factory.build_agent_executor", return_value=executor):
-            response = command.execute(_make_message("/chat hello"), ["hello"])
+            response = command.execute(_make_message("/chat 分析 600519"), ["分析", "600519"])
 
         self.assertEqual(response.text, "ok")
         executor.chat.assert_called_once()
@@ -265,14 +265,14 @@ class TestChatCommandCompatibility(unittest.TestCase):
         executor.chat.return_value = SimpleNamespace(success=True, content="ok", error=None)
         db = MagicMock()
         db.conversation_session_exists.side_effect = lambda session_id: session_id == "feishu_u1"
-        message = _make_message("/chat hello")
+        message = _make_message("/chat 分析 600519")
         message.chat_type = ChatType.GROUP
         message.chat_id = "group-1"
 
         with patch("bot.commands.chat.get_config", return_value=config), \
              patch("src.storage.get_db", return_value=db), \
              patch("src.agent.factory.build_agent_executor", return_value=executor):
-            response = command.execute(message, ["hello"])
+            response = command.execute(message, ["分析", "600519"])
 
         self.assertEqual(response.text, "ok")
         executor.chat.assert_called_once()

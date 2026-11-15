@@ -379,7 +379,7 @@ class AgentSkillsEndpointTestCase(unittest.TestCase):
             return AgentRunResult(success=True, final_answer="ok", backend="litellm", model="fixture")
 
         request = agent.ChatRequest(
-            message="hello",
+            message="分析 600519",
             session_id="empty-skills",
             skills=[],
             context={"skills": ["old_skill"], "strategies": ["older_strategy"]},
