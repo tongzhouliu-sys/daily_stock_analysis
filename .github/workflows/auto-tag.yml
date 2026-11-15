@@ -16,7 +16,11 @@ on:
 jobs:
   tag:
     runs-on: ubuntu-latest
-    # Default: NO tag. Only the commit title (first line) may opt in.
+    # Default: NO tag. Only the commit title (first line) may opt in. With
+    # squash merges the PR title becomes the commit title, so put the marker
+    # there; a plain "Merge pull request" title never triggers a release.
+    permissions:
+      contents: write
     steps:
       - name: Detect release marker in commit title
         id: release
@@ -49,9 +53,11 @@ jobs:
         env:
           GITHUB_TOKEN: ${{ secrets.GITHUB_TOKEN }}
           WITH_V: true
-          DEFAULT_BUMP: patch
+          # The bump level comes from the commit title only. The action itself
+          # scans full commit messages for its tokens, so they are set to
+          # strings that never occur and DEFAULT_BUMP carries the title's level.
+          DEFAULT_BUMP: ${{ steps.release.outputs.bump }}
           INITIAL_VERSION: 2.1.0
-          BUMP: ${{ steps.release.outputs.bump }}
-          PATCH_STRING_TOKEN: '#patch'
-          MINOR_STRING_TOKEN: '#minor'
-          MAJOR_STRING_TOKEN: '#major'
+          PATCH_STRING_TOKEN: '#dsa-title-only-patch-marker-unused'
+          MINOR_STRING_TOKEN: '#dsa-title-only-minor-marker-unused'
+          MAJOR_STRING_TOKEN: '#dsa-title-only-major-marker-unused'
