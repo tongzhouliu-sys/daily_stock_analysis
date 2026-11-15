@@ -30,7 +30,9 @@ from src.storage import (
 
 logger = logging.getLogger(__name__)
 
-SKILL_OPINION_OUTCOME_ENGINE_VERSION = "skill-opinion-outcome-v1"
+# v2: expected start dates for intraday analyses moved to the same-day close
+# (E10, shared resolve_stock_daily_start), so v1 rows use a different basis.
+SKILL_OPINION_OUTCOME_ENGINE_VERSION = "skill-opinion-outcome-v2"
 
 
 class SkillOpinionOutcomeService:

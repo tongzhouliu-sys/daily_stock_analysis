@@ -27,6 +27,9 @@ from src.storage import (
 
 _ROW_SEQUENCE = count(1)
 
+# A version that is never the current one, to check version filtering.
+OTHER_ENGINE_VERSION = f"{SKILL_OPINION_OUTCOME_ENGINE_VERSION}-other"
+
 
 @pytest.fixture()
 def isolated_db(tmp_path):
@@ -266,7 +269,7 @@ def test_service_filters_exact_bucket_identity(isolated_db) -> None:
         isolated_db,
         skill_id="alpha",
         horizon="3d",
-        engine_version="skill-opinion-outcome-v2",
+        engine_version=OTHER_ENGINE_VERSION,
         eval_status="evaluated",
         outcome="hit",
         directional_return_pct=3.0,
@@ -318,7 +321,7 @@ def test_sibling_buckets_cannot_combine_to_unlock_metrics(
         ("alpha", "1d", SKILL_OPINION_OUTCOME_ENGINE_VERSION),
         ("alpha", "3d", SKILL_OPINION_OUTCOME_ENGINE_VERSION),
         ("beta", "1d", SKILL_OPINION_OUTCOME_ENGINE_VERSION),
-        ("alpha", "1d", "skill-opinion-outcome-v2"),
+        ("alpha", "1d", OTHER_ENGINE_VERSION),
     ]:
         for _ in range(16):
             _add_outcome(
@@ -334,7 +337,7 @@ def test_sibling_buckets_cannot_combine_to_unlock_metrics(
     service = SkillOpinionPerformanceService(db_manager=isolated_db)
     current_buckets = service.get_stats()["buckets"]
     future_buckets = service.get_stats(
-        engine_version="skill-opinion-outcome-v2"
+        engine_version=OTHER_ENGINE_VERSION
     )["buckets"]
 
     assert len(current_buckets) == 3
