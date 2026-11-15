@@ -595,6 +595,24 @@ class SystemConfigService:
         if normalized_channel not in self._NOTIFICATION_TEST_CHANNELS:
             raise ValueError(f"Unsupported notification channel: {channel}")
 
+        scope_mismatch_keys = self._notification_test_secret_scope_mismatch(
+            items=items,
+            mask_token=mask_token,
+        )
+        if scope_mismatch_keys:
+            return self._build_notification_test_result(
+                success=False,
+                message=(
+                    "已保存的密钥只能用于原有的通知配置；修改了 "
+                    f"{', '.join(scope_mismatch_keys)} 后，请重新输入密钥再测试"
+                ),
+                error_code="saved_secret_scope_mismatch",
+                stage="config_validation",
+                retryable=False,
+                latency_ms=None,
+                attempts=[],
+            )
+
         effective_map = self._build_notification_test_effective_map(
             items=items,
             mask_token=mask_token,
@@ -3357,6 +3375,47 @@ class SystemConfigService:
     @staticmethod
     def _split_csv(value: str) -> List[str]:
         return [item.strip() for item in (value or "").split(",") if item.strip()]
+
+    def _notification_test_secret_scope_mismatch(
+        self,
+        *,
+        items: Sequence[Dict[str, str]],
+        mask_token: str,
+    ) -> List[str]:
+        """Return changed keys when a masked saved secret is reused with them.
+
+        Submitting the mask placeholder means "use the saved secret". If the
+        same draft also changes any other notification setting (server URL,
+        topic, recipient...), the saved secret would be sent to a target it was
+        never saved for, so the caller must type the secret again. Matching the
+        LLM channel test, any change counts: enumerating which keys are
+        "endpoints" per channel is too easy to get wrong.
+        """
+        allowed_keys = set(self._NOTIFICATION_TEST_KEY_MAP)
+        saved = self._build_notification_test_effective_map(items=(), mask_token=mask_token)
+        reuses_saved_secret = False
+        changed: List[str] = []
+        for item in items:
+            key = str(item.get("key", "")).strip().upper()
+            if key not in allowed_keys:
+                continue
+            value = "" if item.get("value") is None else str(item.get("value"))
+            if value == mask_token:
+                if (saved.get(key) or "").strip():
+                    reuses_saved_secret = True
+                continue
+            # Compare with what the settings page displays: unsaved switches
+            # show their schema default (e.g. WEBHOOK_VERIFY_SSL=true) and the
+            # page submits that value back unchanged.
+            saved_value = saved.get(key) or ""
+            baseline = self._resolve_display_value(
+                saved_value,
+                get_field_definition(key, saved_value),
+                bool(saved_value),
+            )
+            if value.strip() != (baseline or "").strip():
+                changed.append(key)
+        return sorted(changed) if reuses_saved_secret else []
 
     def _build_notification_test_effective_map(
         self,

@@ -3513,6 +3513,85 @@ class SystemConfigServiceTestCase(unittest.TestCase):
         self.assertTrue(payload["success"])
         self.assertEqual(mock_post.call_args[0][0], "https://saved.example.com/hook?key=savedsecret")
 
+    def _run_notification_test_with_dispatch_spy(self, channel, items):
+        dispatched = []
+
+        def fake_dispatch(**kwargs):
+            dispatched.append(kwargs)
+            return {
+                "success": True, "message": "ok", "error_code": None,
+                "stage": "notification_send", "retryable": False,
+                "latency_ms": 0, "attempts": [],
+            }
+
+        with self._notification_test_env(), patch.object(
+            SystemConfigService, "_dispatch_notification_test", side_effect=fake_dispatch,
+        ):
+            payload = self.service.test_notification_channel(
+                channel=channel, items=items, mask_token="******",
+                title="Test title", content="hello", timeout_seconds=3,
+            )
+        return payload, dispatched
+
+    def test_test_notification_channel_refuses_saved_secret_for_changed_target(self) -> None:
+        # Reusing a saved secret through the mask placeholder while pointing the
+        # test at a different server would hand that secret to the new server.
+        self._rewrite_env(
+            "GOTIFY_URL=https://gotify.saved.example.com",
+            "GOTIFY_TOKEN=saved-gotify-token",
+            "NTFY_URL=https://ntfy.saved.example.com/topic",
+            "NTFY_TOKEN=saved-ntfy-token",
+        )
+        cases = {
+            "gotify": [
+                {"key": "GOTIFY_URL", "value": "https://elsewhere.example.net"},
+                {"key": "GOTIFY_TOKEN", "value": "******"},
+            ],
+            "ntfy": [
+                {"key": "NTFY_URL", "value": "https://elsewhere.example.net/topic"},
+                {"key": "NTFY_TOKEN", "value": "******"},
+            ],
+        }
+        for channel, items in cases.items():
+            with self.subTest(channel=channel):
+                payload, dispatched = self._run_notification_test_with_dispatch_spy(channel, items)
+                self.assertFalse(payload["success"])
+                self.assertEqual(payload["error_code"], "saved_secret_scope_mismatch")
+                self.assertEqual(dispatched, [])
+
+    def test_test_notification_channel_reuses_saved_secret_for_unchanged_target(self) -> None:
+        self._rewrite_env(
+            "GOTIFY_URL=https://gotify.saved.example.com",
+            "GOTIFY_TOKEN=saved-gotify-token",
+        )
+        payload, dispatched = self._run_notification_test_with_dispatch_spy(
+            "gotify",
+            [
+                {"key": "GOTIFY_URL", "value": "https://gotify.saved.example.com"},
+                {"key": "GOTIFY_TOKEN", "value": "******"},
+            ],
+        )
+        self.assertTrue(payload["success"])
+        self.assertEqual(dispatched[0]["effective_map"]["GOTIFY_TOKEN"], "saved-gotify-token")
+
+    def test_test_notification_channel_ignores_displayed_switch_defaults(self) -> None:
+        # The settings page submits every field of the category, including
+        # unsaved switches shown with their default value.
+        self._rewrite_env(
+            "GOTIFY_URL=https://gotify.saved.example.com",
+            "GOTIFY_TOKEN=saved-gotify-token",
+        )
+        payload, dispatched = self._run_notification_test_with_dispatch_spy(
+            "gotify",
+            [
+                {"key": "GOTIFY_URL", "value": "https://gotify.saved.example.com"},
+                {"key": "GOTIFY_TOKEN", "value": "******"},
+                {"key": "WEBHOOK_VERIFY_SSL", "value": "true"},
+            ],
+        )
+        self.assertTrue(payload["success"])
+        self.assertEqual(len(dispatched), 1)
+
     @patch("src.notification_sender.custom_webhook_sender.requests.post")
     def test_test_notification_channel_returns_custom_webhook_attempts(self, mock_post) -> None:
         mock_post.side_effect = [
