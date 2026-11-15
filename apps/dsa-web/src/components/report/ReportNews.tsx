@@ -1,5 +1,5 @@
 import type React from 'react';
-import { useState, useEffect, useCallback } from 'react';
+import { useState, useEffect, useCallback, useRef } from 'react';
 import type { ParsedApiError } from '../../api/error';
 import { getParsedApiError } from '../../api/error';
 import { ApiErrorAlert, Card } from '../common';
@@ -50,23 +50,36 @@ export const ReportNews: React.FC<ReportNewsProps> = ({ recordId, limit = 8, lan
   const [isLoading, setIsLoading] = useState(false);
   const [items, setItems] = useState<NewsIntelItem[]>([]);
   const [error, setError] = useState<ParsedApiError | null>(null);
+  // Monotonic request id: switching reports or refreshing leaves the previous
+  // response in flight, and it must not be written into the new report's list.
+  const requestSeqRef = useRef(0);
 
   const fetchNews = useCallback(async () => {
     if (!recordId) return;
+    const seq = requestSeqRef.current + 1;
+    requestSeqRef.current = seq;
     setIsLoading(true);
     setError(null);
 
     try {
       const response = await historyApi.getNews(recordId, limit);
+      if (seq !== requestSeqRef.current) return;
       setItems(response.items || []);
     } catch (err) {
+      if (seq !== requestSeqRef.current) return;
       setError(getParsedApiError(err));
     } finally {
-      setIsLoading(false);
+      if (seq === requestSeqRef.current) {
+        setIsLoading(false);
+      }
     }
   }, [recordId, limit]);
 
   useEffect(() => {
+    // Invalidate any in-flight request from the previous report before the new
+    // one starts so a late older response cannot overwrite this report.
+    requestSeqRef.current += 1;
+    setIsLoading(false);
     setItems([]);
     setError(null);
 

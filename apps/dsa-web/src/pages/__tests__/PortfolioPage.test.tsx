@@ -2430,4 +2430,58 @@ describe('PortfolioPage FX refresh', () => {
     await waitFor(() => expect(screen.queryByText('Main (#1)')).not.toBeInTheDocument());
     expect(screen.getByRole('option', { name: 'Alt (#2)' })).toBeInTheDocument();
   });
+
+  it('drops a late account snapshot after switching account scope', async () => {
+    getAccounts.mockResolvedValueOnce(makeAccounts([
+      { id: 1, name: 'Main' },
+      { id: 2, name: 'Alt' },
+    ]));
+    const staleSnapshot = deferredPromise<ReturnType<typeof makeSnapshot>>();
+    getSnapshot
+      .mockReturnValueOnce(staleSnapshot.promise)
+      .mockResolvedValueOnce(makeSnapshot({
+        accountId: 2,
+        positions: [makePosition({ symbol: '600519' })],
+      }));
+
+    render(<PortfolioPage />);
+
+    // Wait for the accounts to render: the fallback create-account form owns the
+    // first combobox until accounts load, so selecting there hits a detached node.
+    expect(await screen.findByRole('option', { name: 'Alt (#2)' })).toBeInTheDocument();
+    const accountSelect = screen.getAllByRole('combobox')[0];
+    fireEvent.change(accountSelect, { target: { value: '2' } });
+
+    expect(await screen.findByText('600519')).toBeInTheDocument();
+
+    // The older "all accounts" request returns after the account-2 snapshot.
+    await act(async () => {
+      staleSnapshot.resolve(makeSnapshot({
+        accountCount: 2,
+        positions: [makePosition({ symbol: 'STALE0001' })],
+      }));
+      await staleSnapshot.promise;
+    });
+
+    expect(screen.getByText('600519')).toBeInTheDocument();
+    expect(screen.queryByText('STALE0001')).not.toBeInTheDocument();
+  });
+
+  it('debounces ledger symbol filtering into a single request', async () => {
+    render(<PortfolioPage />);
+    await waitForInitialLoad();
+
+    const symbolInput = screen.getByPlaceholderText('按股票代码筛选');
+    const callsBefore = listTrades.mock.calls.length;
+
+    fireEvent.change(symbolInput, { target: { value: '6' } });
+    fireEvent.change(symbolInput, { target: { value: '60' } });
+    fireEvent.change(symbolInput, { target: { value: '600' } });
+    fireEvent.change(symbolInput, { target: { value: '600519' } });
+
+    await waitFor(() => {
+      expect(listTrades).toHaveBeenCalledWith(expect.objectContaining({ symbol: '600519' }));
+    });
+    expect(listTrades.mock.calls.length - callsBefore).toBe(1);
+  });
 });

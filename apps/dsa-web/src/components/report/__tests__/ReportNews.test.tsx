@@ -1,6 +1,7 @@
 import { fireEvent, render, screen, waitFor } from '@testing-library/react';
 import { beforeEach, describe, expect, it, vi } from 'vitest';
 import { historyApi } from '../../../api/history';
+import type { NewsIntelResponse } from '../../../types/analysis';
 import { ReportNews } from '../ReportNews';
 
 vi.mock('../../../api/history', () => ({
@@ -88,5 +89,35 @@ describe('ReportNews', () => {
     fireEvent.click(screen.getByRole('button', { name: '重试' }));
 
     expect(await screen.findByText('重试成功')).toBeInTheDocument();
+  });
+
+  it('ignores a stale news response after switching reports', async () => {
+    const deferred: Array<{ resolve: (value: NewsIntelResponse) => void }> = [];
+    vi.mocked(historyApi.getNews).mockImplementation(
+      () => new Promise<NewsIntelResponse>((resolve) => {
+        deferred.push({ resolve: (value) => resolve(value) });
+      }),
+    );
+
+    const { rerender } = render(<ReportNews recordId={1} />);
+    await waitFor(() => {
+      expect(deferred).toHaveLength(1);
+    });
+
+    rerender(<ReportNews recordId={2} />);
+    await waitFor(() => {
+      expect(deferred).toHaveLength(2);
+    });
+
+    // Newer report resolves first, then the older (stale) request returns late.
+    deferred[1].resolve({ total: 1, items: [{ title: '新报告资讯', snippet: '新', url: 'https://example.com/new' }] });
+    expect(await screen.findByText('新报告资讯')).toBeInTheDocument();
+
+    deferred[0].resolve({ total: 1, items: [{ title: '旧报告资讯', snippet: '旧', url: 'https://example.com/old' }] });
+
+    await waitFor(() => {
+      expect(screen.queryByText('旧报告资讯')).not.toBeInTheDocument();
+    });
+    expect(screen.getByText('新报告资讯')).toBeInTheDocument();
   });
 });

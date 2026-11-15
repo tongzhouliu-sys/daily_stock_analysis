@@ -405,4 +405,43 @@ describe('BacktestPage', () => {
     expect(screen.getByText('准确性')).toBeInTheDocument();
     expect(screen.getByText('1 日验证模式会用下一个交易日收盘表现校验 AI 预测。')).toBeInTheDocument();
   });
+
+  it('surfaces initialization failures instead of claiming there are no results', async () => {
+    mockGetOverallPerformance.mockRejectedValueOnce(new Error('summary unavailable'));
+    mockGetResults.mockResolvedValue({ total: 0, page: 1, limit: 20, items: [] });
+
+    render(<BacktestPage />);
+
+    expect(await screen.findByRole('alert')).toBeInTheDocument();
+    await waitFor(() => {
+      expect(mockGetResults).toHaveBeenCalledTimes(1);
+    });
+    // The failed summary is reported as an error, and the results are still
+    // fetched instead of the page silently showing an empty dataset.
+    expect(screen.getByRole('alert')).toHaveTextContent('summary unavailable');
+  });
+
+  it('paginates with the applied filters, not the live input values', async () => {
+    mockGetResults.mockResolvedValue({ total: 45, page: 1, limit: 20, items: [baseResultItem] });
+
+    render(<BacktestPage />);
+    const filterInput = await screen.findByPlaceholderText('按股票代码筛选（留空表示全部）');
+    await screen.findByText('600519');
+
+    // Edit the input without pressing 筛选.
+    fireEvent.change(filterInput, { target: { value: '999999' } });
+    fireEvent.click(screen.getByRole('button', { name: '2' }));
+
+    await waitFor(() => {
+      expect(mockGetResults).toHaveBeenLastCalledWith({
+        code: undefined,
+        evalWindowDays: 10,
+        analysisDateFrom: undefined,
+        analysisDateTo: undefined,
+        analysisPhase: undefined,
+        page: 2,
+        limit: 20,
+      });
+    });
+  });
 });

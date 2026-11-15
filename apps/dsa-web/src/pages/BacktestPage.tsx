@@ -265,6 +265,19 @@ const BacktestPage: React.FC = () => {
   const [runResult, setRunResult] = useState<BacktestRunResponse | null>(null);
   const [runError, setRunError] = useState<ParsedApiError | null>(null);
   const [pageError, setPageError] = useState<ParsedApiError | null>(null);
+  // Summary failure is reported separately: the results table can still load,
+  // and the page must not look like a successfully loaded empty dataset.
+  const [summaryError, setSummaryError] = useState<ParsedApiError | null>(null);
+  // Pagination must use the filters that produced the visible page, not the
+  // values currently sitting in the inputs (the user may have edited them
+  // without pressing 筛选).
+  const [appliedFilters, setAppliedFilters] = useState<{
+    code?: string;
+    windowDays?: number;
+    startDate: string;
+    endDate: string;
+    phase: BacktestPhaseFilter;
+  }>({ code: '', windowDays: undefined, startDate: '', endDate: '', phase: 'all' });
 
   // Results state
   const [results, setResults] = useState<BacktestResultItem[]>([]);
@@ -342,6 +355,7 @@ const BacktestPage: React.FC = () => {
       } else {
         setStockPerf(null);
       }
+      setSummaryError(null);
       setPageError(null);
     } catch (err) {
       console.error('Failed to fetch performance:', err);
@@ -353,18 +367,33 @@ const BacktestPage: React.FC = () => {
 
   // Initial load — fetch performance first, then filter results by its window
   useEffect(() => {
+    let cancelled = false;
     const init = async () => {
-      // Get latest performance (unfiltered returns most recent summary)
-      const overall = await backtestApi.getOverallPerformance();
-      setOverallPerf(overall);
-      // Use the summary's eval_window_days to filter results consistently
-      const windowDays = overall?.evalWindowDays;
-      if (windowDays && !evalDays) {
-        setEvalDays(String(windowDays));
+      let windowDays: number | undefined;
+      try {
+        // Get latest performance (unfiltered returns most recent summary)
+        const overall = await backtestApi.getOverallPerformance();
+        if (cancelled) return;
+        setOverallPerf(overall);
+        // Use the summary's eval_window_days to filter results consistently
+        windowDays = overall?.evalWindowDays;
+        if (windowDays && !evalDays) {
+          setEvalDays(String(windowDays));
+        }
+      } catch (err) {
+        if (cancelled) return;
+        // A failed initialization is an explicit error, not an empty result set:
+        // the table must not claim "暂无结果" when the request never succeeded.
+        setSummaryError(getParsedApiError(err));
       }
+      if (cancelled) return;
+      setAppliedFilters({ code: '', windowDays, startDate: '', endDate: '', phase: 'all' });
       fetchResults(1, undefined, windowDays, undefined, undefined, 'all');
     };
-    init();
+    void init();
+    return () => {
+      cancelled = true;
+    };
   }, []); // eslint-disable-line react-hooks/exhaustive-deps
 
   // Run backtest
@@ -395,6 +424,13 @@ const BacktestPage: React.FC = () => {
         setEvalDays(String(effectiveEvalWindowDays));
       }
       // Refresh data with same eval_window_days
+      setAppliedFilters({
+        code,
+        windowDays: effectiveEvalWindowDays,
+        startDate: dateFrom ?? '',
+        endDate: dateTo ?? '',
+        phase: phaseFilter,
+      });
       fetchResults(1, code, effectiveEvalWindowDays, dateFrom, dateTo, phaseFilter);
       fetchPerformance(code, effectiveEvalWindowDays, dateFrom, dateTo, phaseFilter);
     } catch (err) {
@@ -408,6 +444,13 @@ const BacktestPage: React.FC = () => {
   const handleFilter = () => {
     const code = normalizeBacktestCode(codeFilter);
     const windowDays = parseEvalWindowDays(evalDays);
+    setAppliedFilters({
+      code,
+      windowDays,
+      startDate: analysisDateFrom,
+      endDate: analysisDateTo,
+      phase: phaseFilter,
+    });
     setCurrentPage(1);
     fetchResults(1, code, windowDays, analysisDateFrom, analysisDateTo, phaseFilter);
     fetchPerformance(code, windowDays, analysisDateFrom, analysisDateTo, phaseFilter);
@@ -422,6 +465,13 @@ const BacktestPage: React.FC = () => {
   const handleShowNextDay = () => {
     const code = normalizeBacktestCode(codeFilter);
     setEvalDays('1');
+    setAppliedFilters({
+      code,
+      windowDays: 1,
+      startDate: analysisDateFrom,
+      endDate: analysisDateTo,
+      phase: phaseFilter,
+    });
     setCurrentPage(1);
     fetchResults(1, code, 1, analysisDateFrom, analysisDateTo, phaseFilter);
     fetchPerformance(code, 1, analysisDateFrom, analysisDateTo, phaseFilter);
@@ -430,8 +480,15 @@ const BacktestPage: React.FC = () => {
   // Pagination
   const totalPages = Math.ceil(totalResults / pageSize);
   const handlePageChange = (page: number) => {
-    const windowDays = parseEvalWindowDays(evalDays);
-    fetchResults(page, normalizeBacktestCode(codeFilter), windowDays, analysisDateFrom, analysisDateTo, phaseFilter);
+    const applied = appliedFilters;
+    fetchResults(
+      page,
+      applied.code || undefined,
+      applied.windowDays,
+      applied.startDate || undefined,
+      applied.endDate || undefined,
+      applied.phase,
+    );
   };
 
   return (
@@ -588,6 +645,9 @@ const BacktestPage: React.FC = () => {
 
         {/* Right content - Results table */}
         <section className="min-h-0 flex-1 overflow-y-auto">
+          {summaryError ? (
+            <ApiErrorAlert error={summaryError} className="mb-3" />
+          ) : null}
           {pageError ? (
             <ApiErrorAlert error={pageError} className="mb-3" />
           ) : null}
@@ -596,7 +656,7 @@ const BacktestPage: React.FC = () => {
               <div className="backtest-spinner md" />
               <p className="mt-3 text-secondary-text text-sm">{text.loadingResults}</p>
             </div>
-          ) : results.length === 0 ? (
+          ) : results.length === 0 && !pageError ? (
             <EmptyState
               title={text.noResultsTitle}
               description={text.noResultsDescription}
@@ -613,11 +673,13 @@ const BacktestPage: React.FC = () => {
                 <div className="backtest-table-toolbar-meta">
                   <span className="label-uppercase">{isNextDayValidation ? text.nextDayValidation : text.resultSet}</span>
                   <span className="text-xs text-secondary-text">
-                    {codeFilter.trim() ? formatUiText(text.filteredStock, { code: codeFilter.trim() }) : text.allStocks}
-                    {evalDays ? ` · ${formatUiText(text.dayWindow, { days: evalDays })}` : ''}
-                    {phaseFilter !== 'all' ? ` · ${phaseFilterOptions.find((item) => item.value === phaseFilter)?.label ?? phaseFilter}` : ''}
-                    {analysisDateFrom ? ` · ${formatUiText(text.fromDate, { date: analysisDateFrom })}` : ''}
-                    {analysisDateTo ? ` · ${formatUiText(text.toDate, { date: analysisDateTo })}` : ''}
+                    {appliedFilters.code
+                      ? formatUiText(text.filteredStock, { code: appliedFilters.code })
+                      : text.allStocks}
+                    {appliedFilters.windowDays ? ` · ${formatUiText(text.dayWindow, { days: appliedFilters.windowDays })}` : ''}
+                    {appliedFilters.phase !== 'all' ? ` · ${phaseFilterOptions.find((item) => item.value === appliedFilters.phase)?.label ?? appliedFilters.phase}` : ''}
+                    {appliedFilters.startDate ? ` · ${formatUiText(text.fromDate, { date: appliedFilters.startDate })}` : ''}
+                    {appliedFilters.endDate ? ` · ${formatUiText(text.toDate, { date: appliedFilters.endDate })}` : ''}
                   </span>
                 </div>
                 <span className="backtest-table-scroll-hint">{text.scrollHint}</span>

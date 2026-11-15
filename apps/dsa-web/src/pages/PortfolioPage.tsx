@@ -666,6 +666,11 @@ const PortfolioPage: React.FC = () => {
   const [portfolioSignalsWarning, setPortfolioSignalsWarning] = useState<string | null>(null);
   const [portfolioSignalsRefreshKey, setPortfolioSignalsRefreshKey] = useState(0);
   const portfolioSignalsRequestRef = useRef(0);
+  // Sequence guards: switching account or filters while a request is in flight
+  // must not let the older response overwrite the newer view.
+  const snapshotRequestRef = useRef(0);
+  const eventsRequestRef = useRef(0);
+  const [debouncedEventSymbol, setDebouncedEventSymbol] = useState('');
   const [positionAnalysisLoadingKey, setPositionAnalysisLoadingKey] = useState<string | null>(null);
   const [positionAnalysisMessage, setPositionAnalysisMessage] = useState<string | null>(null);
 
@@ -789,6 +794,9 @@ const PortfolioPage: React.FC = () => {
   }, [selectedBroker]);
 
   const loadSnapshotAndRisk = useCallback(async () => {
+    const seq = snapshotRequestRef.current + 1;
+    snapshotRequestRef.current = seq;
+    const isActive = () => snapshotRequestRef.current === seq;
     setIsLoading(true);
     setRiskWarning(null);
     try {
@@ -797,6 +805,7 @@ const PortfolioPage: React.FC = () => {
         costMethod,
         includeRealtime: false,
       });
+      if (!isActive()) return;
       setSnapshot(snapshotData);
       setError(null);
 
@@ -806,22 +815,30 @@ const PortfolioPage: React.FC = () => {
           costMethod,
           includeRealtime: false,
         });
+        if (!isActive()) return;
         setRisk(riskData);
       } catch (riskErr) {
+        if (!isActive()) return;
         setRisk(null);
         const parsed = getParsedApiError(riskErr);
         setRiskWarning(parsed.message || '风险数据获取失败，已降级为仅展示快照数据。');
       }
     } catch (err) {
+      if (!isActive()) return;
       setSnapshot(null);
       setRisk(null);
       setError(getParsedApiError(err));
     } finally {
-      setIsLoading(false);
+      if (isActive()) {
+        setIsLoading(false);
+      }
     }
   }, [queryAccountId, costMethod]);
 
   const loadEventsPage = useCallback(async (page: number) => {
+    const seq = eventsRequestRef.current + 1;
+    eventsRequestRef.current = seq;
+    const isActive = () => eventsRequestRef.current === seq;
     setEventLoading(true);
     try {
       if (eventType === 'trade') {
@@ -829,11 +846,12 @@ const PortfolioPage: React.FC = () => {
           accountId: queryAccountId,
           dateFrom: eventDateFrom || undefined,
           dateTo: eventDateTo || undefined,
-          symbol: eventSymbol || undefined,
+          symbol: debouncedEventSymbol || undefined,
           side: eventSide || undefined,
           page,
           pageSize: DEFAULT_PAGE_SIZE,
         });
+        if (!isActive()) return;
         setTradeEvents(response.items || []);
         setEventTotal(response.total || 0);
       } else if (eventType === 'cash') {
@@ -845,6 +863,7 @@ const PortfolioPage: React.FC = () => {
           page,
           pageSize: DEFAULT_PAGE_SIZE,
         });
+        if (!isActive()) return;
         setCashEvents(response.items || []);
         setEventTotal(response.total || 0);
       } else {
@@ -852,18 +871,22 @@ const PortfolioPage: React.FC = () => {
           accountId: queryAccountId,
           dateFrom: eventDateFrom || undefined,
           dateTo: eventDateTo || undefined,
-          symbol: eventSymbol || undefined,
+          symbol: debouncedEventSymbol || undefined,
           actionType: eventActionType || undefined,
           page,
           pageSize: DEFAULT_PAGE_SIZE,
         });
+        if (!isActive()) return;
         setCorporateEvents(response.items || []);
         setEventTotal(response.total || 0);
       }
     } catch (err) {
+      if (!isActive()) return;
       setError(getParsedApiError(err));
     } finally {
-      setEventLoading(false);
+      if (isActive()) {
+        setEventLoading(false);
+      }
     }
   }, [
     eventActionType,
@@ -871,7 +894,7 @@ const PortfolioPage: React.FC = () => {
     eventDateTo,
     eventDirection,
     eventSide,
-    eventSymbol,
+    debouncedEventSymbol,
     eventType,
     queryAccountId,
   ]);
@@ -907,8 +930,17 @@ const PortfolioPage: React.FC = () => {
   }, [refreshViewKey]);
 
   useEffect(() => {
+    // Debounce the symbol filter: typing "600519" must issue one request, not
+    // one per keystroke. The rest of the filters are discrete pickers.
+    const timer = window.setTimeout(() => {
+      setDebouncedEventSymbol(eventSymbol.trim());
+    }, 300);
+    return () => window.clearTimeout(timer);
+  }, [eventSymbol]);
+
+  useEffect(() => {
     setEventPage(1);
-  }, [eventType, queryAccountId, eventDateFrom, eventDateTo, eventSymbol, eventSide, eventDirection, eventActionType]);
+  }, [eventType, queryAccountId, eventDateFrom, eventDateTo, debouncedEventSymbol, eventSide, eventDirection, eventActionType]);
 
   useEffect(() => {
     if (!writeBlocked) {

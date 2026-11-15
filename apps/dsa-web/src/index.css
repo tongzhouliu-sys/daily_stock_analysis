@@ -719,81 +719,87 @@
 }
 
 /* ============ Utilities ============ */
-.text-cyan {
-  color: var(--color-cyan);
-}
-.text-primary {
-  color: var(--color-cyan);
-}
-.text-cyan-400 {
-  color: hsl(var(--color-cyan-400));
-}
-.text-emerald-400 {
-  color: hsl(var(--color-emerald-400));
-}
-.text-red-400 {
-  color: hsl(var(--color-red-400));
-}
-.text-amber-400 {
-  color: hsl(var(--color-amber-400));
-}
-.text-purple {
-  color: hsl(var(--color-purple));
-}
-.text-success {
-  color: hsl(var(--color-success));
-}
-.text-danger {
-  color: hsl(var(--color-danger));
-}
-.text-warning {
-  color: hsl(var(--color-warning));
-}
-.text-muted-text {
-  color: var(--text-muted-text);
-}
-.text-secondary-text {
-  color: var(--text-secondary-text);
-}
+/* These names overlap Tailwind's generated utilities (text-primary, bg-card,
+   border-subtle, ...). Keep them in the utilities layer: an unlayered rule wins
+   over every layered Tailwind utility, which silently killed hover:/focus:
+   variants on secondary and ghost buttons (hover never changed color). */
+@layer utilities {
+  .text-cyan {
+    color: var(--color-cyan);
+  }
+  .text-primary {
+    color: var(--color-cyan);
+  }
+  .text-cyan-400 {
+    color: hsl(var(--color-cyan-400));
+  }
+  .text-emerald-400 {
+    color: hsl(var(--color-emerald-400));
+  }
+  .text-red-400 {
+    color: hsl(var(--color-red-400));
+  }
+  .text-amber-400 {
+    color: hsl(var(--color-amber-400));
+  }
+  .text-purple {
+    color: hsl(var(--color-purple));
+  }
+  .text-success {
+    color: hsl(var(--color-success));
+  }
+  .text-danger {
+    color: hsl(var(--color-danger));
+  }
+  .text-warning {
+    color: hsl(var(--color-warning));
+  }
+  .text-muted-text {
+    color: var(--text-muted-text);
+  }
+  .text-secondary-text {
+    color: var(--text-secondary-text);
+  }
 
-.bg-base {
-  background: var(--bg-base);
-}
-.bg-card {
-  background: var(--bg-card);
-}
-.bg-elevated {
-  background: var(--bg-elevated);
-}
+  .bg-base {
+    background: var(--bg-base);
+  }
+  .bg-card {
+    background: var(--bg-card);
+  }
+  .bg-elevated {
+    background: var(--bg-elevated);
+  }
 
-.bg-subtle {
-  background: var(--bg-subtle);
-}
+  .bg-subtle {
+    background: var(--bg-subtle);
+  }
 
-.bg-subtle-hover:hover {
-  background: var(--bg-hover);
-}
+  .bg-subtle-hover:hover {
+    background: var(--bg-hover);
+  }
 
-.bg-subtle-active:active {
-  background: var(--overlay-selected);
-}
+  .bg-subtle-active:active {
+    background: var(--overlay-selected);
+  }
 
-.border-accent {
-  border-color: var(--border-accent);
-}
-.border-purple {
-  border-color: var(--border-purple);
-}
-.border-cyan {
-  border-color: var(--border-cyan);
-}
+  .border-accent {
+    border-color: var(--border-accent);
+  }
+  .border-purple {
+    border-color: var(--border-purple);
+  }
+  .border-cyan {
+    border-color: var(--border-cyan);
+  }
 
-.border-subtle {
-  border-color: var(--border-subtle);
-}
+  .border-subtle {
+    border-color: var(--border-subtle);
+  }
 
-.border-subtle-hover:hover {
-  border-color: var(--border-subtle-hover);
+  .border-subtle-hover:hover {
+    border-color: var(--border-subtle-hover);
+  }
 }
 
 /* Glow utilities */
