@@ -1479,6 +1479,74 @@ class TestAnalyzerGenerateText:
         assert "cache_observation" not in usage
         assert usage["messages_hmac"]
 
+    def test_call_litellm_stream_cancellation_propagates_without_retry(self):
+        from src.core.task_cancellation import TaskCancelledError
+
+        analyzer = self._make_analyzer()
+        analyzer._config_override = SimpleNamespace(
+            litellm_model="gemini/gemini-2.0-flash",
+            litellm_fallback_models=["openai/gpt-4o-mini"],
+            llm_model_list=[],
+        )
+
+        def stream_response():
+            yield SimpleNamespace(
+                choices=[SimpleNamespace(delta=SimpleNamespace(content="partial output"))],
+                usage=None,
+            )
+            yield SimpleNamespace(
+                choices=[SimpleNamespace(delta=SimpleNamespace(content=" more"))],
+                usage=None,
+            )
+
+        dispatch_calls = []
+
+        def fake_dispatch(model, call_kwargs, **kwargs):
+            dispatch_calls.append((model, call_kwargs.get("stream")))
+            if call_kwargs.get("stream"):
+                return stream_response()
+            raise AssertionError("cancelled task must not retry with a non-stream request")
+
+        def cancel_on_progress(_chars):
+            raise TaskCancelledError("task cancelled")
+
+        with patch.object(analyzer, "_dispatch_litellm_completion", side_effect=fake_dispatch):
+            with pytest.raises(TaskCancelledError):
+                analyzer._call_litellm(
+                    "prompt",
+                    {"max_tokens": 128, "temperature": 0.2},
+                    stream=True,
+                    stream_progress_callback=cancel_on_progress,
+                )
+
+        assert dispatch_calls == [("gemini/gemini-2.0-flash", True)]
+
+    def test_call_litellm_cancellation_before_stream_does_not_try_next_model(self):
+        from src.core.task_cancellation import TaskCancelledError
+
+        analyzer = self._make_analyzer()
+        analyzer._config_override = SimpleNamespace(
+            litellm_model="gemini/gemini-2.0-flash",
+            litellm_fallback_models=["openai/gpt-4o-mini"],
+            llm_model_list=[],
+        )
+
+        dispatch_calls = []
+
+        def fake_dispatch(model, call_kwargs, **kwargs):
+            dispatch_calls.append(model)
+            raise TaskCancelledError("task cancelled")
+
+        with patch.object(analyzer, "_dispatch_litellm_completion", side_effect=fake_dispatch):
+            with pytest.raises(TaskCancelledError):
+                analyzer._call_litellm(
+                    "prompt",
+                    {"max_tokens": 128, "temperature": 0.2},
+                    stream=False,
+                )
+
+        assert dispatch_calls == ["gemini/gemini-2.0-flash"]
+
     def test_call_litellm_stream_falls_back_to_non_stream_before_first_chunk(self):
         analyzer = self._make_analyzer()
         analyzer._config_override = SimpleNamespace(

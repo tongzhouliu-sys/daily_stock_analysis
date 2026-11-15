@@ -3656,6 +3656,9 @@ Output strictly in the following JSON format. This is a complete Decision Dashbo
                 if progress_callback and chars_received >= next_emit_at:
                     progress_callback(chars_received)
                     next_emit_at = chars_received + 160
+        except TaskCancelledError:
+            # 取消是任务级控制流，不是"流中断"；包装后会触发非流式重试。
+            raise
         except Exception as exc:
             raise _LiteLLMStreamError(
                 f"{model} stream interrupted: {exc}",
@@ -3780,6 +3783,8 @@ Output strictly in the following JSON format. This is a complete Decision Dashbo
                         },
                     },
                 ) from fallback_exc
+            except TaskCancelledError:
+                raise
             except Exception as fallback_exc:
                 raise GenerationError(
                     error_code=GenerationErrorCode.UNKNOWN_BACKEND_ERROR,
@@ -3973,6 +3978,8 @@ Output strictly in the following JSON format. This is a complete Decision Dashbo
                             provider=usage_provider,
                             progress_callback=stream_progress_callback,
                         )
+                    except TaskCancelledError:
+                        raise
                     except _LiteLLMStreamError as exc:
                         safe_error = self._sanitize_litellm_exception_text(exc, config=config, model=model)
                         if exc.partial_received:
@@ -4066,6 +4073,9 @@ Output strictly in the following JSON format. This is a complete Decision Dashbo
                     return (content, actual_model, usage)
                 raise ValueError("LLM returned empty response")
 
+            except TaskCancelledError:
+                # 取消不应被当成"该模型失败"而继续尝试下一个模型。
+                raise
             except Exception as e:
                 if uses_router:
                     router_model, router_provider = self._resolve_router_failure_identity(
