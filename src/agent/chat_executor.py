@@ -155,8 +155,15 @@ class AgentChatExecutor:
         # T5: Content delta events are transient and must not be persisted
         _TRANSIENT_EVENT_TYPES = {"content_delta", "content_reset"}
 
+        # T25: 流式正文缓冲放在闭包外，便于 reset 事件清空未下发的片段
+        _delta_buffer: list = []
+        _last_emit_time = [0.0]
+
         def _persisting_progress_callback(event: Dict[str, Any]) -> None:
             """Wrap the original callback to also collect and persist progress steps."""
+            # T25: 回溯/重置时丢弃尚未下发的缓冲，避免旧片段在新一轮被补发
+            if event.get("type") == "content_reset":
+                _delta_buffer.clear()
             # Let the transport layer enrich the event first (for example, add
             # tool display names) so the persisted copy matches what the
             # browser saw.
@@ -202,10 +209,8 @@ class AgentChatExecutor:
             _content_callback = None
             if stream_content and progress_callback:
                 import time as _time
-                from src.agent.stream_events import content_delta_event, content_reset_event
-                _delta_buffer: list = []
-                _last_emit_time = [0.0]
-                
+                from src.agent.stream_events import content_delta_event
+
                 def _emit_delta(text: str) -> None:
                     """Emit content_delta event with throttling (50ms or 24 chars)."""
                     now = _time.monotonic()
@@ -223,13 +228,6 @@ class AgentChatExecutor:
                         _emit_delta(chunk)
                     except Exception:
                         pass  # Non-critical
-                
-                # Flush remaining buffer on completion
-                def _flush_content_callback() -> None:
-                    if _delta_buffer:
-                        buffer_text = ''.join(_delta_buffer)
-                        progress_callback(content_delta_event(0, buffer_text))
-                        _delta_buffer.clear()
             
             with interactive_mode():
                 backend_result = self.backend.run(
@@ -247,9 +245,13 @@ class AgentChatExecutor:
                 )
             
             # Flush any remaining content delta
-            if stream_content and '_flush_content_callback' in dir():
+            if _content_callback is not None and _delta_buffer:
                 try:
-                    _flush_content_callback()
+                    buffer_text = ''.join(_delta_buffer)
+                    _delta_buffer.clear()
+                    if buffer_text:
+                        from src.agent.stream_events import content_delta_event as _cde
+                        progress_callback(_cde(0, buffer_text))
                 except Exception:
                     pass
 

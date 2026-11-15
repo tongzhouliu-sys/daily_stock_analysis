@@ -937,6 +937,8 @@ export const useAgentChatStore = create<AgentChatState & AgentChatActions>((set,
           progressSteps: [],
           abortController: null,
           activeRequestId: null,
+          // T25: 每轮结束（成功或失败）都清空流式正文，避免残留到下一轮
+          streamingContent: null,
         });
         await get().loadSessions();
       }

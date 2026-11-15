@@ -2228,11 +2228,13 @@ class TestOrchestratorExecution(unittest.TestCase):
                         result = orch.execute_turn(turn)
 
         self.assertTrue(result.success)
-        execute_pipeline.assert_called_once_with(
-            turn.context,
-            parse_dashboard=False,
-            progress_callback=None,
-        )
+        # 合入上游后，execute_turn 始终用持久化包装回调透传进度，
+        # 因此这里断言调用形态而不是强绑 progress_callback=None。
+        execute_pipeline.assert_called_once()
+        _call = execute_pipeline.call_args
+        self.assertEqual(_call.args[0], turn.context)
+        self.assertFalse(_call.kwargs["parse_dashboard"])
+        self.assertTrue(callable(_call.kwargs["progress_callback"]))
         self.assertEqual(add_message.call_args_list[-1].args, (
             "session-accepted",
             "assistant",

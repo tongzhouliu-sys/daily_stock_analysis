@@ -572,6 +572,7 @@ class LLMToolAdapter:
         provider: Optional[str] = None,
         timeout: Optional[float] = None,
         stream_callback: Optional[Callable[[str], None]] = None,
+        stream_reset_callback: Optional[Callable[[str], None]] = None,
     ) -> LLMResponse:
         """Send messages + tool declarations to LLM, return normalized response.
 
@@ -581,6 +582,9 @@ class LLMToolAdapter:
             tools: OpenAI-format tool declarations; litellm converts to each provider's format.
             provider: Ignored (kept for backward compatibility).
             stream_callback: Optional callback for streaming content deltas (T5).
+            stream_reset_callback: Optional callback invoked when previously streamed
+                      content must be discarded by the client (T25), e.g. the model
+                      streamed text and then decided to call a tool.
 
         Returns:
             LLMResponse with either content (final answer) or tool_calls.
@@ -591,6 +595,7 @@ class LLMToolAdapter:
             provider=provider,
             timeout=timeout,
             stream_callback=stream_callback,
+            stream_reset_callback=stream_reset_callback,
         )
 
     def call_text(
@@ -622,11 +627,13 @@ class LLMToolAdapter:
         max_tokens: Optional[int] = None,
         timeout: Optional[float] = None,
         stream_callback: Optional[Callable[[str], None]] = None,
+        stream_reset_callback: Optional[Callable[[str], None]] = None,
     ) -> LLMResponse:
         """Shared completion path for both tool and text-only calls.
         
         T4: 支持单次 LLM 调用超时 (agent_llm_call_timeout_s)
         T5: 支持流式输出回调 (stream_callback)
+        T25: 带工具调用时同样流式；正文与工具调用可同时出现
         """
         config = self._config
         if self._backend_error is not None:
@@ -687,6 +694,7 @@ class LLMToolAdapter:
                     max_tokens=max_tokens,
                     timeout=effective_timeout,
                     stream_callback=stream_callback,
+                    stream_reset_callback=stream_reset_callback,
                 )
             except Exception as e:
                 # T4: 超时异常时尝试下一个备用模型
@@ -745,10 +753,12 @@ class LLMToolAdapter:
         max_tokens: Optional[int] = None,
         timeout: Optional[float] = None,
         stream_callback: Optional[Callable[[str], None]] = None,
+        stream_reset_callback: Optional[Callable[[str], None]] = None,
     ) -> LLMResponse:
         """Call a specific litellm model with OpenAI-format messages and tools.
         
         T5: 支持流式输出回调 (stream_callback)
+        T25: 带工具调用时也走流式，并在正文后出现工具调用时通知前端重置
         """
         openai_messages = self._convert_messages(messages, target_model=model)
 
@@ -774,8 +784,8 @@ class LLMToolAdapter:
         if tools:
             call_kwargs["tools"] = tools
 
-        # T5: 流式输出支持
-        use_streaming = stream_callback is not None and not tools
+        # T25: 带工具调用时同样允许流式（此前 `not tools` 导致问股正文从不流式）
+        use_streaming = stream_callback is not None
         if use_streaming:
             call_kwargs["stream"] = True
 
@@ -834,6 +844,7 @@ class LLMToolAdapter:
                 recovery_model_list=recovery_model_list,
                 openai_messages=openai_messages,
                 stream_callback=stream_callback,
+                stream_reset_callback=stream_reset_callback,
             )
 
         # 非流式路径
@@ -884,13 +895,76 @@ class LLMToolAdapter:
         recovery_model_list: List[str],
         openai_messages: List[Dict[str, Any]],
         stream_callback: Callable[[str], None],
+        stream_reset_callback: Optional[Callable[[str], None]] = None,
     ) -> LLMResponse:
-        """T5: 流式调用 LiteLLM 并收集增量内容。
-        
-        使用 stream_chunk_builder 将分块还原成完整响应，再交给 _parse_litellm_response。
+        """T25: 流式调用 LiteLLM，正文增量实时下发，工具调用增量按索引累积。
+
+        与非流式路径的契约保持一致：
+
+        - 正文片段通过 ``stream_callback`` 下发；
+        - 工具调用增量按 index 累积 id / name / arguments 片段，最终拼出与
+          非流式完全相同的 ``LLMResponse``（含 usage 与 provider trace）；
+        - 已经下发过正文、随后又出现工具调用时，先通过
+          ``stream_reset_callback`` 通知调用方丢弃已显示内容；
+        - 在收到任何正文片段之前就失败时，回退为非流式重试一次。
         """
-        chunks = []
-        
+        chunks: List[Any] = []
+        state = {"emitted_text": False, "reset_sent": False}
+
+        # 工具调用增量：index -> {"id": str, "name": str, "arguments": [str, ...]}
+        tool_call_parts: Dict[int, Dict[str, Any]] = {}
+
+        def _iter_tool_call_deltas(delta: Any):
+            raw = getattr(delta, "tool_calls", None)
+            if not raw:
+                return
+            for position, tc in enumerate(raw):
+                index = getattr(tc, "index", None)
+                if not isinstance(index, int):
+                    index = position
+                function = getattr(tc, "function", None)
+                entry = tool_call_parts.setdefault(
+                    index,
+                    {"id": "", "name": "", "arguments": []},
+                )
+                tc_id = getattr(tc, "id", None)
+                if tc_id:
+                    entry["id"] = str(tc_id)
+                name = getattr(function, "name", None) if function is not None else None
+                if name:
+                    entry["name"] = str(name)
+                arguments = getattr(function, "arguments", None) if function is not None else None
+                if arguments:
+                    entry["arguments"].append(
+                        arguments if isinstance(arguments, str) else str(arguments)
+                    )
+                if not state["reset_sent"] and state["emitted_text"]:
+                    # 正文已下发，模型改为调用工具：通知前端清空流式内容。
+                    if stream_reset_callback is not None:
+                        try:
+                            stream_reset_callback("tool_call")
+                        except Exception:
+                            logger.debug("stream_reset_callback failed", exc_info=True)
+                    state["reset_sent"] = True
+
+        def _consume() -> None:
+            for chunk in _get_stream():
+                chunks.append(chunk)
+                choices = getattr(chunk, "choices", None)
+                if not choices:
+                    continue
+                delta = getattr(choices[0], "delta", None)
+                if delta is None:
+                    continue
+                text = getattr(delta, "content", None)
+                if text:
+                    state["emitted_text"] = True
+                    try:
+                        stream_callback(text)
+                    except Exception:
+                        logger.debug("stream_callback failed", exc_info=True)
+                _iter_tool_call_deltas(delta)
+
         def _get_stream():
             if use_channel_router and self._router and model in set(get_configured_llm_models(recovery_model_list)):
                 return self._router.completion(**call_kwargs)
@@ -898,29 +972,46 @@ class LLMToolAdapter:
                 return self._router.completion(**call_kwargs)
             else:
                 return litellm.completion(**call_kwargs)
-        
+
         try:
-            response = _get_stream()
-            for chunk in response:
-                chunks.append(chunk)
-                # 提取增量内容并回调
-                if hasattr(chunk, 'choices') and chunk.choices:
-                    delta = chunk.choices[0].delta
-                    if hasattr(delta, 'content') and delta.content:
-                        stream_callback(delta.content)
+            _consume()
         except Exception as e:
-            logger.warning("Streaming call failed on %s: %s", model, e)
-            raise
-        
+            if state["emitted_text"]:
+                # 已经下发过正文，无法安全重放，直接抛出由上层决定降级。
+                logger.warning("Streaming call failed on %s after emitting content: %s", model, e)
+                raise
+            # T25: 收到任何片段前就失败，回退为非流式重试一次。
+            logger.warning("Streaming call failed on %s before any content, retrying non-stream: %s", model, e)
+            fallback_kwargs = dict(call_kwargs)
+            fallback_kwargs.pop("stream", None)
+            if use_channel_router and self._router and model in set(get_configured_llm_models(recovery_model_list)):
+                response = self._router.completion(**fallback_kwargs)
+            elif self._router and uses_router:
+                response = self._router.completion(**fallback_kwargs)
+            else:
+                response = litellm.completion(**fallback_kwargs)
+            return self._parse_litellm_response(
+                response,
+                model,
+                openai_messages,
+                model_list=recovery_model_list,
+            )
+
         # 使用 stream_chunk_builder 还原完整响应
         try:
             from litellm import stream_chunk_builder
             built_response = stream_chunk_builder(chunks)
         except Exception as e:
             logger.warning("stream_chunk_builder failed: %s, falling back to manual assembly", e)
-            # 手动组装一个简化的响应对象
-            built_response = self._manual_build_stream_response(chunks, model)
-        
+            built_response = None
+
+        if built_response is None:
+            built_response = self._manual_build_stream_response(
+                chunks,
+                model,
+                tool_call_parts=tool_call_parts,
+            )
+
         return self._parse_litellm_response(
             built_response,
             model,
@@ -932,31 +1023,84 @@ class LLMToolAdapter:
         self,
         chunks: List[Any],
         model: str,
+        *,
+        tool_call_parts: Optional[Dict[int, Dict[str, Any]]] = None,
     ) -> Any:
-        """手动从流式分块构建响应对象（当 stream_chunk_builder 失败时的后备方案）。"""
+        """手动从流式分块构建响应对象（当 stream_chunk_builder 失败时的后备方案）。
+
+        T25: 同时拼装正文与工具调用，保证失败回退路径仍能执行工具。
+        """
         from types import SimpleNamespace
         
         content_parts = []
         usage_data = {"prompt_tokens": 0, "completion_tokens": 0, "total_tokens": 0}
-        
+        finish_reason = "stop"
+        collected_tool_calls: Dict[int, Dict[str, Any]] = {}
+
         for chunk in chunks:
-            if hasattr(chunk, 'choices') and chunk.choices:
-                delta = chunk.choices[0].delta
-                if hasattr(delta, 'content') and delta.content:
-                    content_parts.append(delta.content)
+            choices = getattr(chunk, 'choices', None)
+            if choices:
+                choice = choices[0]
+                delta = getattr(choice, 'delta', None)
+                if delta is not None:
+                    if getattr(delta, 'content', None):
+                        content_parts.append(delta.content)
+                    raw_tool_calls = getattr(delta, 'tool_calls', None) or []
+                    for position, tc in enumerate(raw_tool_calls):
+                        index = getattr(tc, 'index', None)
+                        if not isinstance(index, int):
+                            index = position
+                        entry = collected_tool_calls.setdefault(
+                            index, {"id": "", "name": "", "arguments": []}
+                        )
+                        tc_id = getattr(tc, 'id', None)
+                        if tc_id:
+                            entry["id"] = str(tc_id)
+                        function = getattr(tc, 'function', None)
+                        if function is not None:
+                            if getattr(function, 'name', None):
+                                entry["name"] = str(function.name)
+                            if getattr(function, 'arguments', None):
+                                entry["arguments"].append(str(function.arguments))
+                if getattr(choice, 'finish_reason', None):
+                    finish_reason = choice.finish_reason
             if hasattr(chunk, 'usage') and chunk.usage:
                 usage_data["prompt_tokens"] = getattr(chunk.usage, 'prompt_tokens', 0) or 0
                 usage_data["completion_tokens"] = getattr(chunk.usage, 'completion_tokens', 0) or 0
                 usage_data["total_tokens"] = getattr(chunk.usage, 'total_tokens', 0) or 0
-        
+
+        if tool_call_parts:
+            for index, parts in tool_call_parts.items():
+                entry = collected_tool_calls.setdefault(
+                    index, {"id": "", "name": "", "arguments": []}
+                )
+                if parts.get("id"):
+                    entry["id"] = parts["id"]
+                if parts.get("name"):
+                    entry["name"] = parts["name"]
+
+        message_tool_calls = None
+        if collected_tool_calls:
+            message_tool_calls = [
+                SimpleNamespace(
+                    id=entry["id"] or f"call_{index}",
+                    type="function",
+                    function=SimpleNamespace(
+                        name=entry["name"],
+                        arguments="".join(entry["arguments"]),
+                    ),
+                )
+                for index, entry in sorted(collected_tool_calls.items())
+            ]
+
         # 构建一个与 litellm 响应兼容的对象
         mock_response = SimpleNamespace(
             choices=[SimpleNamespace(
                 message=SimpleNamespace(
                     content="".join(content_parts),
-                    tool_calls=None,
+                    tool_calls=message_tool_calls,
                 ),
-                finish_reason="stop",
+                finish_reason="tool_calls" if message_tool_calls else finish_reason,
             )],
             model=model,
             usage=SimpleNamespace(**usage_data),

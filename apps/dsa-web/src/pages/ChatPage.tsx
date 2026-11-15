@@ -487,7 +487,7 @@ const ChatPage: React.FC = () => {
     const behavior = pendingScrollBehaviorRef.current;
     const shouldAutoScroll = shouldStickToBottomRef.current;
     if (!shouldAutoScroll) {
-      if (messages.length > 0 || progressSteps.length > 0 || loading) {
+      if (messages.length > 0 || progressSteps.length > 0 || loading || Boolean(streamingContent)) {
         setShowJumpToBottom(true);
       }
       return;
@@ -499,7 +499,7 @@ const ChatPage: React.FC = () => {
     });
 
     return () => window.cancelAnimationFrame(frame);
-  }, [messages, progressSteps, loading, sessionId, scrollToBottom]);
+  }, [messages, progressSteps, loading, sessionId, streamingContent, scrollToBottom]);
 
   useEffect(() => {
     if (!loading) {

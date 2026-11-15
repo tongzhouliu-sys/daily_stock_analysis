@@ -33,7 +33,6 @@ from src.agent.stream_events import (
     stream_event,
     tool_start_event,
     tool_done_event,
-    content_delta_event,
     content_reset_event,
     reset_event_sequence,
     TOOL_DISPLAY_LABELS,
@@ -473,28 +472,39 @@ def run_agent_loop(
             progress_callback(stream_event("thinking", step=step + 1, message=thinking_msg))
 
         # --- LLM call ---
-        # T5: 流式输出支持
-        # 当 content_callback 存在时，启用流式调用。
-        # 通过包装 stream_callback 来发射 content_delta 事件，并在收到首个分块时发射 generating 事件。
+        # T25: 流式输出
+        # 正文增量只保留一条下发通道（content_callback），由传输层统一转成
+        # content_delta 事件，避免同一片段被下发两次。
+        # 每次模型调用前先发阶段事件；收到首个正文片段时切到"正在生成回答"。
         _stream_cb = None
+        _stream_reset_cb = None
         _streamed_any = False
         _generating_emitted = False
 
         if content_callback is not None:
             def _stream_cb(chunk_text: str) -> None:
                 nonlocal _streamed_any, _generating_emitted
-                # 直接回调调用方（用于 SSE 转发）
+                if progress_callback and not _generating_emitted:
+                    _generating_emitted = True
+                    progress_callback(
+                        stream_event(
+                            "generating",
+                            step=step + 1,
+                            message="正在生成回答...",
+                        )
+                    )
+                _streamed_any = True
                 try:
                     content_callback(chunk_text)
                 except Exception:
-                    pass
-                # 通过 progress_callback 发射 content_delta 事件
+                    logger.debug("content_callback failed", exc_info=True)
+
+            def _stream_reset_cb(reason: str) -> None:
+                nonlocal _streamed_any, _generating_emitted
                 if progress_callback:
-                    if not _generating_emitted:
-                        _generating_emitted = True
-                        progress_callback(stream_event("generating", step=step + 1, message="正在生成最终分析..."))
-                    progress_callback(content_delta_event(step + 1, chunk_text))
-                _streamed_any = True
+                    progress_callback(content_reset_event(step + 1, reason=reason))
+                _streamed_any = False
+                _generating_emitted = False
 
         _llm_t0 = time.monotonic()
         response = llm_adapter.call_with_tools(
@@ -502,6 +512,7 @@ def run_agent_loop(
             tool_decls,
             timeout=remaining_timeout,
             stream_callback=_stream_cb,
+            stream_reset_callback=_stream_reset_cb,
         )
         _llm_elapsed = time.monotonic() - _llm_t0
         _cumulative_llm_seconds += _llm_elapsed
@@ -631,8 +642,14 @@ def run_agent_loop(
                 _cumulative_llm_seconds,
                 _cumulative_tool_seconds,
             )
-            if progress_callback:
-                progress_callback(stream_event("generating", step=step + 1, message="正在生成最终分析..."))
+            if progress_callback and not _generating_emitted:
+                progress_callback(
+                    stream_event(
+                        "generating",
+                        step=step + 1,
+                        message="正在生成回答...",
+                    )
+                )
 
             final_content = response.content or ""
             is_error = response.provider == "error"
