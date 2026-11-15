@@ -3,10 +3,12 @@ import { createContext, useCallback, useContext, useEffect, useMemo, useState } 
 import { formatUiText, UI_TEXT, type UiLanguage, type UiTextKey, type UiTextParams } from '../i18n/uiText';
 import { getRuntimeInitialLanguage, getUiLanguageStorage, persistUiLanguage } from '../utils/uiLanguage';
 
+export type TranslateFn = (key: UiTextKey, params?: UiTextParams) => string;
+
 type UiLanguageContextValue = {
   language: UiLanguage;
   setLanguage: (language: UiLanguage) => void;
-  t: (key: UiTextKey, params?: UiTextParams) => string;
+  t: TranslateFn;
 };
 
 const fallbackContext: UiLanguageContextValue = {

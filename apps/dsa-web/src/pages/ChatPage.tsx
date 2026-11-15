@@ -1,41 +1,33 @@
 import { useState, useRef, useEffect, useCallback, useMemo } from 'react';
 import { useNavigate, useSearchParams } from 'react-router-dom';
+import { useShallow } from 'zustand/react/shallow';
 import {
-  ArrowUp,
-  ArrowUpRight,
   Check,
   ChevronDown,
-  Copy,
   Download,
   MoreHorizontal,
-  PanelLeftClose,
   PanelLeftOpen,
   Pencil,
-  Plus,
   Send,
-  SlidersHorizontal,
-  Sparkles,
-  Square,
-  Star,
   Trash2,
   X,
 } from 'lucide-react';
-import { cn } from '../utils/cn';
 import { agentApi } from '../api/agent';
 import { systemConfigApi } from '../api/systemConfig';
 import { ApiErrorAlert, Badge, Button, ConfirmDialog, InlineAlert, ScrollArea } from '../components/common';
 import { createParsedApiError, getParsedApiError } from '../api/error';
 import type { AgentStatusResponse, SkillInfo } from '../api/agent';
-import { DashboardStateBlock } from '../components/dashboard';
 import {
   useAgentChatStore,
   type Message,
-  type ProgressStep,
   type StockClarificationIdentity,
 } from '../stores/agentChatStore';
-import StockClarificationCard from '../components/chat/StockClarificationCard';
 import ChatSmartSummaryCard from '../components/chat/ChatSmartSummaryCard';
-import ChatAnswer from '../components/chat/ChatAnswer';
+import ChatMessageItem from '../components/chat/ChatMessageItem';
+import ChatLiveProgress from '../components/chat/ChatLiveProgress';
+import ChatInputArea from '../components/chat/ChatInputArea';
+import ChatSessionSidebar from '../components/chat/ChatSessionSidebar';
+import ChatGuideCards from '../components/chat/ChatGuideCards';
 import { downloadSessionInFormat, formatSessionAsMarkdown, type ExportFormat } from '../utils/chatExport';
 import { buildScannerFollowUpPrompt } from '../utils/scannerFollowUp';
 import type { ChatFollowUpContext } from '../utils/chatFollowUp';
@@ -132,24 +124,6 @@ const getMessageSkillNames = (msg: Message): string[] => {
 };
 
 const getMessageSkillLabel = (msg: Message): string => getMessageSkillNames(msg).join('、');
-
-const isStageDoneSuccessful = (status?: string): boolean => {
-  if (!status) return true;
-  const normalized = status.trim().toLowerCase();
-  return ['completed', 'success', 'succeeded', 'done'].includes(normalized);
-};
-
-const getStageDoneLabel = (step: ProgressStep): string => {
-  const stage = step.stage || 'stage';
-  if (step.message) return step.message;
-  if (isStageDoneSuccessful(step.status)) return `${stage} completed`;
-  return `${stage} ${step.status || 'finished'}`;
-};
-
-const getPipelineBudgetSkippedLabel = (step: ProgressStep): string => {
-  if (step.message) return step.message;
-  return `${step.stage || 'pipeline'} skipped: insufficient budget`;
-};
 
 const ChatPage: React.FC = () => {
   const { t, language } = useUiLanguage();
@@ -310,6 +284,9 @@ const ChatPage: React.FC = () => {
     [isWatchlistActioning, watchlistCodes],
   );
 
+  // Shallow selector subscription (T40): the page re-renders only when one of
+  // the fields it actually reads changes. Typing in the composer is local
+  // state, so it never touches the store or the memoized message thread.
   const {
     messages,
     selectedSkillIds: sessionSelectedSkillIds,
@@ -340,7 +317,37 @@ const ChatPage: React.FC = () => {
     startStream,
     stopStream,
     clearCompletionBadge,
-  } = useAgentChatStore();
+  } = useAgentChatStore(useShallow((state) => ({
+    messages: state.messages,
+    selectedSkillIds: state.selectedSkillIds,
+    activeStockContext: state.activeStockContext,
+    stateContract: state.stateContract,
+    loading: state.loading,
+    progressSteps: state.progressSteps,
+    streamingContent: state.streamingContent,
+    sessionId: state.sessionId,
+    sessions: state.sessions,
+    sessionsLoading: state.sessionsLoading,
+    hasInitialLoad: state.hasInitialLoad,
+    chatError: state.chatError,
+    terminalStatus: state.terminalStatus,
+    intakeDraft: state.intakeDraft,
+    intakeBusy: state.intakeBusy,
+    intakeError: state.intakeError,
+    createIntake: state.createIntake,
+    updateIntakeAnswers: state.updateIntakeAnswers,
+    startIntakeAnalysis: state.startIntakeAnalysis,
+    skipIntake: state.skipIntake,
+    clearIntake: state.clearIntake,
+    setSelectedSkillIds: state.setSelectedSkillIds,
+    loadSessions: state.loadSessions,
+    loadInitialSession: state.loadInitialSession,
+    switchSession: state.switchSession,
+    refreshSession: state.refreshSession,
+    startStream: state.startStream,
+    stopStream: state.stopStream,
+    clearCompletionBadge: state.clearCompletionBadge,
+  })));
   const selectedSkillIds = sessionSelectedSkillIds ?? defaultSkillIds;
 
   const closeTitleEditor = useCallback(() => {
@@ -627,7 +634,6 @@ const ChatPage: React.FC = () => {
 
   const availableSkillIds = new Set(skills.map((skill) => skill.id));
   const quickQuestions = QUICK_QUESTIONS.filter((question) => availableSkillIds.size === 0 || availableSkillIds.has(question.skill));
-  const selectedSkillIdSet = new Set(selectedSkillIds);
   const skillLimitReached = selectedSkillIds.length >= MAX_SELECTED_SKILLS;
   const agentConfirmedUnavailable = Boolean(agentStatus && !agentStatus.available);
   const agentAvailable = Boolean(agentStatus?.available) && !agentStatusChecking;
@@ -841,7 +847,7 @@ const ChatPage: React.FC = () => {
       await startStream(payload, streamMeta);
     },
     [agentAvailable, agentStatus, createIntake, getSkillNames, guidedIntakeSupported,
-      hasInitialLoad, input, intakeDraft, loading, messages.length, normalizeSelectedSkillIds,
+      hasInitialLoad, input, intakeBusy, intakeDraft, loading, messages.length, normalizeSelectedSkillIds,
       requestScrollToBottom, selectedSkillIds, sessionId, sessionSelectedSkillIds, startStream, stockIndex],
   );
 
@@ -880,6 +886,32 @@ const ChatPage: React.FC = () => {
     composerRef.current?.focus();
   }, [activeStockContext, agentAvailable, handleSend, loading]);
 
+  // Stable indirection so memoized message items do not re-render on every
+  // keystroke (T40). `handleSend` depends on `input`, so it must not be passed
+  // down to the message tree directly.
+  const handleSendRef = useRef(handleSend);
+  useEffect(() => {
+    handleSendRef.current = handleSend;
+  }, [handleSend]);
+  const handleFollowUpQuestion = useCallback((question: string) => {
+    void handleSendRef.current(question);
+  }, []);
+  const focusComposer = useCallback(() => {
+    composerRef.current?.focus();
+  }, []);
+
+  const clarificationDecisionRef = useRef(handleStockClarificationDecision);
+  useEffect(() => {
+    clarificationDecisionRef.current = handleStockClarificationDecision;
+  }, [handleStockClarificationDecision]);
+  const handleMessageClarificationDecision = useCallback((
+    message: Message,
+    decision: 'switch' | 'keep',
+    target: StockClarificationIdentity | null,
+  ) => {
+    clarificationDecisionRef.current(message, decision, target);
+  }, []);
+
   const lastMessage = messages[messages.length - 1];
   const activeClarificationMessageId = lastMessage?.role === 'assistant'
     && lastMessage.stockClarification
@@ -890,13 +922,6 @@ const ChatPage: React.FC = () => {
     && !loading
     && agentAvailable
     && !input.trim();
-
-  const handleKeyDown = (e: React.KeyboardEvent<HTMLTextAreaElement>) => {
-    if (e.key === 'Enter' && !e.shiftKey) {
-      e.preventDefault();
-      handleSend();
-    }
-  };
 
   const handleQuickQuestion = (q: (typeof QUICK_QUESTIONS)[0]) => {
     setSelectedSkillIds([q.skill]);
@@ -914,7 +939,7 @@ const ChatPage: React.FC = () => {
     }, durationMs);
   }, []);
 
-  const toggleCategory = (msgId: string, category: string) => {
+  const toggleCategory = useCallback((msgId: string, category: string) => {
     const key = `${msgId}:${category}`;
     setExpandedCategories((prev) => {
       const next = new Set(prev);
@@ -928,7 +953,7 @@ const ChatPage: React.FC = () => {
       if (!next.has(msgId)) next.add(msgId);
       return next;
     });
-  };
+  }, []);
 
   const copyMessageToClipboard = async (msgId: string, content: string) => {
     try {
@@ -966,231 +991,7 @@ const ChatPage: React.FC = () => {
     URL.revokeObjectURL(url);
   }, []);
 
-  const getCurrentStage = (steps: ProgressStep[]): string => {
-    if (steps.length === 0) return '正在连接...';
-    const last = steps[steps.length - 1];
-    if (last.type === 'thinking') return last.message || 'AI 正在思考...';
-    if (last.type === 'tool_start')
-      return `${last.display_name || last.tool}...`;
-    if (last.type === 'tool_done')
-      return `${last.display_name || last.tool} 完成`;
-    if (last.type === 'stage_start' || last.type === 'stage_done') {
-      const names: Record<string, [string, string]> = {
-        technical: ['技术分析 Agent', 'Technical agent'], intel: ['情报 Agent', 'Intelligence agent'],
-        risk: ['风险 Agent', 'Risk agent'], decision: ['决策 Agent', 'Decision agent'],
-        portfolio: ['组合 Agent', 'Portfolio agent'], agent_loop: ['分析 Agent', 'Analysis agent'],
-        answer_editing: ['回答润色', 'Answer editing'],
-      };
-      const agent = names[last.stage || '']?.[language === 'en' ? 1 : 0] || last.stage || 'Agent';
-      if (last.type === 'stage_start') return language === 'en' ? `${agent} is working` : `${agent} 正在分析`;
-      const success = isStageDoneSuccessful(last.status);
-      return language === 'en' ? `${agent} ${success ? 'completed' : (last.status || 'finished')}` : `${agent} ${success ? '已完成' : (last.status || '已结束')}`;
-    }
-    if (last.type === 'pipeline_timeout')
-      return last.message || `${last.stage || 'pipeline'} timed out`;
-    if (last.type === 'pipeline_budget_skipped')
-      return getPipelineBudgetSkippedLabel(last);
-    if (last.type === 'recovering')
-      return language === 'en'
-        ? 'Analysis is still running in the background...'
-        : '后台任务仍在运行，正在等待最新进度...';
-    if (last.type === 'generating')
-      return last.message || '正在生成最终分析...';
-    return '处理中...';
-  };
 
-  const renderThinkingBlock = (msg: Message) => {
-    if (!msg.thinkingSteps || msg.thinkingSteps.length === 0) return null;
-    
-    // Group steps by category
-    const categoryMap = new Map<string, ProgressStep[]>();
-    const categoryOrder: string[] = [];
-    
-    msg.thinkingSteps.forEach((step) => {
-      // Determine category from step
-      let category = 'analysis_steps';
-      if (step.type === 'tool_done' || step.type === 'tool_start') {
-        const toolName = step.tool || '';
-        // Map tool names to categories
-        if (toolName.includes('daily_history') || toolName.includes('intraday')) {
-          category = 'kline';
-        } else if (toolName.includes('stock_info') || toolName.includes('financial')) {
-          category = 'fundamental';
-        } else if (toolName.includes('realtime_quote')) {
-          category = 'quote';
-        } else if (toolName.includes('market_indices') || toolName.includes('sector')) {
-          category = 'market';
-        } else if (toolName.includes('trend') || toolName.includes('ma') || toolName.includes('volume') || toolName.includes('pattern')) {
-          category = 'technical';
-        } else if (toolName.includes('news')) {
-          category = 'news';
-        } else if (toolName.includes('intel')) {
-          category = 'intel';
-        } else {
-          category = 'other';
-        }
-      } else if (step.type === 'stage_start' || step.type === 'stage_done') {
-        category = 'agent_collaboration';
-      }
-      
-      if (!categoryMap.has(category)) {
-        categoryMap.set(category, []);
-        categoryOrder.push(category);
-      }
-      categoryMap.get(category)!.push(step);
-    });
-    
-    // Category labels
-    const categoryLabels: Record<string, [string, string]> = {
-      analysis_steps: ['分析步骤', 'Analysis Steps'],
-      kline: ['K线获取', 'K-line Data'],
-      fundamental: ['基本面分析', 'Fundamental Analysis'],
-      quote: ['行情获取', 'Quote Fetch'],
-      market: ['行情分析', 'Market Analysis'],
-      technical: ['技术分析', 'Technical Analysis'],
-      news: ['新闻搜索', 'News Search'],
-      intel: ['情报搜索', 'Intel Search'],
-      agent_collaboration: ['Agent 协作', 'Agent Collaboration'],
-      other: ['工具调用', 'Tool Calls'],
-    };
-    
-    const isExpanded = expandedThinking.has(msg.id);
-    
-    return (
-      <div className="mb-3">
-        <div className="flex items-center gap-2 mb-2">
-          <span className="text-xs text-muted-text opacity-60">分析过程</span>
-        </div>
-        
-        {/* Category tags */}
-        <div className="flex flex-wrap gap-1.5 mb-2">
-          {categoryOrder.map((category) => {
-            const steps = categoryMap.get(category) || [];
-            const [zhLabel, enLabel] = categoryLabels[category] || ['其他', 'Other'];
-            const label = language === 'en' ? enLabel : zhLabel;
-            const count = steps.length;
-            const isCategoryExpanded = isExpanded && expandedCategories.has(`${msg.id}:${category}`);
-            
-            return (
-              <button
-                key={category}
-                onClick={() => toggleCategory(msg.id, category)}
-                className={cn(
-                  'px-2.5 py-1 rounded text-xs transition-all',
-                  'border min-w-[48px] min-h-[32px]',
-                  isCategoryExpanded
-                    ? 'bg-primary/10 border-primary text-primary'
-                    : 'bg-muted/50 border-border hover:border-primary/50 text-secondary-text'
-                )}
-                aria-expanded={isCategoryExpanded}
-              >
-                <span>{label}</span>
-                {count > 0 && (
-                  <span className="ml-1 opacity-60">({count})</span>
-                )}
-              </button>
-            );
-          })}
-        </div>
-        
-        {/* Expanded category details */}
-        {isExpanded && (
-          <div className="space-y-3 animate-fade-in">
-            {categoryOrder.map((category) => {
-              if (!expandedCategories.has(`${msg.id}:${category}`)) return null;
-              const steps = categoryMap.get(category) || [];
-              
-              return (
-                <div key={category} className="pl-4 border-l-2 border-primary/30 space-y-1.5">
-                  {steps.map((step, idx) => {
-                    let statusClass = 'chat-progress-item-muted';
-                    let iconClass = 'chat-progress-dot-muted';
-                    let text = '';
-                    
-                    if (step.type === 'tool_done') {
-                      const outcome = step.outcome || (step.success ? 'success' : 'failed');
-                      const duration = step.duration ? ` · ${step.duration}s` : '';
-                      const stockCode = step.detail?.stock_code || '';
-                      const prefix = stockCode ? `${stockCode} · ` : '';
-                      
-                      text = `${prefix}${step.display_label || step.display_name || step.tool}${duration}`;
-                      
-                      if (outcome === 'success') {
-                        statusClass = 'chat-progress-item-success';
-                        iconClass = 'chat-progress-dot-success';
-                      } else if (outcome === 'timeout') {
-                        statusClass = 'chat-progress-item-danger';
-                        iconClass = 'chat-progress-dot-danger';
-                        text += ' · 超时';
-                      } else if (outcome === 'failed') {
-                        statusClass = 'chat-progress-item-danger';
-                        iconClass = 'chat-progress-dot-danger';
-                      } else if (outcome === 'partial') {
-                        statusClass = 'chat-progress-item-muted';
-                        iconClass = 'chat-progress-dot-muted';
-                        text += ' · 部分可用';
-                      }
-                      
-                      // Add detail info if available
-                      if (step.detail) {
-                        const detailParts: string[] = [];
-                        if (step.detail.record_count) {
-                          detailParts.push(`${step.detail.record_count} 条记录`);
-                        }
-                        if (step.detail.date_range) {
-                          detailParts.push(String(step.detail.date_range));
-                        }
-                        if (step.detail.data_source === 'cache') {
-                          detailParts.push('历史缓存');
-                        }
-                        if (detailParts.length > 0) {
-                          text += ` · ${detailParts.join(' · ')}`;
-                        }
-                      }
-                    } else if (step.type === 'tool_start') {
-                      text = `${step.display_label || step.display_name || step.tool}...`;
-                      statusClass = 'chat-progress-item-tool';
-                      iconClass = 'chat-progress-dot-tool';
-                    } else if (step.type === 'stage_start') {
-                      text = step.message || `Starting ${step.stage || 'stage'}...`;
-                      statusClass = 'chat-progress-item-thinking';
-                      iconClass = 'chat-progress-dot-thinking';
-                    } else if (step.type === 'stage_done') {
-                      const isSuccess = isStageDoneSuccessful(step.status);
-                      text = getStageDoneLabel(step);
-                      statusClass = isSuccess ? 'chat-progress-item-success' : 'chat-progress-item-danger';
-                      iconClass = isSuccess ? 'chat-progress-dot-success' : 'chat-progress-dot-danger';
-                    } else if (step.type === 'pipeline_budget_skipped') {
-                      text = getPipelineBudgetSkippedLabel(step);
-                      statusClass = 'chat-progress-item-muted';
-                      iconClass = 'chat-progress-dot-thinking';
-                    } else if (step.type === 'thinking') {
-                      text = step.message || `第 ${step.step} 步：思考`;
-                      statusClass = 'chat-progress-item-thinking';
-                      iconClass = 'chat-progress-dot-thinking';
-                    } else if (step.type === 'generating') {
-                      text = step.message || '生成分析';
-                      statusClass = 'chat-progress-item-generating';
-                      iconClass = 'chat-progress-dot-generating';
-                    } else {
-                      text = step.message || step.type;
-                    }
-                    
-                    return (
-                      <div key={idx} className={cn('chat-progress-item', statusClass)}>
-                        <span className={cn('chat-progress-dot', iconClass)} />
-                        <span className="leading-relaxed">{text}</span>
-                      </div>
-                    );
-                  })}
-                </div>
-              );
-            })}
-          </div>
-        )}
-      </div>
-    );
-  };
 
   const selectedSkillSummary = selectedSkillIds.length > 0
     ? getSkillNames(selectedSkillIds).join('、')
@@ -1201,95 +1002,28 @@ const ChatPage: React.FC = () => {
     : null;
 
   const sidebarContent = (
-    <>
-      <div className="chat-sessions-head">
-        <button type="button" className="chat-new-btn" onClick={handleStartNewChat}>
-          <Plus size={15} aria-hidden="true" />
-          <span>{t('chat.newChat')}</span>
-        </button>
-        <button
-          type="button"
-          className="chat-icon-btn chat-sidebar-collapse"
-          aria-label={t('chat.hideHistory')}
-          onClick={toggleSidebar}
-        >
-          <PanelLeftClose size={16} aria-hidden="true" />
-        </button>
-      </div>
-      <ScrollArea testId="chat-session-list-scroll" className="chat-sessions-scroll" viewportClassName="chat-sessions-viewport">
-        {sessionsLoading ? (
-          <DashboardStateBlock
-            loading
-            compact
-            title="加载对话中..."
-            className="chat-sessions-state"
-          />
-        ) : sessions.length === 0 ? (
-          <DashboardStateBlock
-            compact
-            title="暂无历史对话"
-            description="开始提问后，这里会保留会话记录。"
-            className="chat-sessions-state"
-          />
-        ) : (
-          sessionGroups.map((group) => (
-            <div key={group.key} className="chat-session-group">
-              <p className="chat-session-group-label">{group.label}</p>
-              <div className="chat-session-list">
-                {group.items.map((s) => (
-                  <div key={s.session_id} className="chat-session-row">
-                    {editingSessionId === s.session_id && titleEditorOrigin === 'sidebar' ? (
-                      <div className="chat-title-editor">
-                        <form onSubmit={(event) => { event.preventDefault(); void saveSessionTitle(); }}>
-                          <input
-                            aria-label={t('chat.editTitle')}
-                            value={sessionTitle}
-                            maxLength={60}
-                            autoFocus
-                            onChange={(event) => setSessionTitle(event.target.value)}
-                            onKeyDown={(event) => { if (event.key === 'Escape') closeTitleEditor(); }}
-                          />
-                          <button type="submit" disabled={titleSaving} aria-label={t('chat.saveTitle')}>
-                            <Check size={15} aria-hidden="true" />
-                          </button>
-                          <button type="button" disabled={titleSaving} onClick={closeTitleEditor} aria-label={t('common.cancel')}>
-                            <X size={15} aria-hidden="true" />
-                          </button>
-                        </form>
-                        {titleError && <p role="alert">{titleError}</p>}
-                      </div>
-                    ) : (
-                      <>
-                        <button
-                          type="button"
-                          onClick={() => handleSwitchSession(s.session_id)}
-                          className={cn('chat-session', s.session_id === sessionId && 'is-active')}
-                          aria-label={`切换到对话 ${s.title}`}
-                          aria-current={s.session_id === sessionId ? 'page' : undefined}
-                        >
-                          <span className="chat-session-title">{s.title}</span>
-                        </button>
-                        <button
-                          type="button"
-                          className="chat-session-more"
-                          aria-label={`${t('chat.moreActions')} ${s.title}`}
-                          aria-haspopup="menu"
-                          aria-expanded={sessionMenu?.sessionId === s.session_id}
-                          onClick={(event) => openSessionMenu(event, s.session_id)}
-                        >
-                          <MoreHorizontal size={15} aria-hidden="true" />
-                        </button>
-                      </>
-                    )}
-                  </div>
-                ))}
-              </div>
-            </div>
-          ))
-        )}
-      </ScrollArea>
-    </>
+    <ChatSessionSidebar
+      t={t}
+      sessionGroups={sessionGroups}
+      sessionsCount={sessions.length}
+      sessionsLoading={sessionsLoading}
+      sessionId={sessionId}
+      menuSessionId={sessionMenu?.sessionId ?? null}
+      editingSessionId={editingSessionId}
+      titleEditorOrigin={titleEditorOrigin}
+      sessionTitle={sessionTitle}
+      titleSaving={titleSaving}
+      titleError={titleError}
+      onStartNewChat={handleStartNewChat}
+      onToggleSidebar={toggleSidebar}
+      onSwitchSession={handleSwitchSession}
+      onChangeTitle={setSessionTitle}
+      onSaveTitle={() => { void saveSessionTitle(); }}
+      onCloseTitleEditor={closeTitleEditor}
+      onOpenMenu={openSessionMenu}
+    />
   );
+
 
   const objectStatusText = activeStockContext
     ? t('chat.currentObject', {
@@ -1527,31 +1261,15 @@ const ChatPage: React.FC = () => {
           >
             <div className="chat-thread">
               {messages.length === 0 && !loading && hasInitialLoad && !intakeDraft ? (
-                <section className="chat-empty" data-testid="chat-welcome" aria-labelledby="chat-welcome-title">
-                  <span className="chat-empty-icon" aria-hidden="true">
-                    <Sparkles size={20} />
-                  </span>
-                  <h3 id="chat-welcome-title" className="chat-empty-title">{t('chat.welcomeTitle')}</h3>
-                  <p className="chat-empty-description">{t('chat.emptyDescriptionDefault')}</p>
-                  <div className="chat-quick">
-                    <span className="chat-quick-label">{t('chat.quickQuestionLabel')}</span>
-                    <div className="chat-quick-grid">
-                      {quickQuestions.map((q, index) => (
-                        <button
-                          key={index}
-                          type="button"
-                          onClick={() => handleQuickQuestion(q)}
-                          disabled={!agentAvailable}
-                          aria-label={q.label}
-                          className="chat-quick-btn"
-                        >
-                          <span>{q.label}</span>
-                          <ArrowUpRight size={14} aria-hidden="true" />
-                        </button>
-                      ))}
-                    </div>
-                  </div>
-                </section>
+                <ChatGuideCards
+                  t={t}
+                  questions={quickQuestions}
+                  disabled={!agentAvailable}
+                  onSelect={(index) => {
+                    const question = quickQuestions[index];
+                    if (question) handleQuickQuestion(question);
+                  }}
+                />
               ) : (
                 <>
                   {intakeDraft && (
@@ -1615,111 +1333,41 @@ const ChatPage: React.FC = () => {
                   {messages.map((msg) => {
                   const skillLabel = getMessageSkillLabel(msg);
                   return (
-                    <div
+                    <ChatMessageItem
                       key={msg.id}
-                      className={cn('chat-msg', msg.role === 'user' ? 'chat-msg-user' : 'chat-msg-ai')}
-                    >
-                      {msg.role === 'assistant' && (skillLabel || msg.backend) && (
-                        <div className="chat-msg-meta">
-                          {skillLabel ? (
-                            <Badge variant="info" className="chat-skill-badge shadow-none" aria-label={`技能 ${skillLabel}`}>
-                              <Sparkles size={12} aria-hidden="true" />
-                              {skillLabel}
-                            </Badge>
-                          ) : null}
-                          {msg.backend ? (
-                            <Badge variant={msg.backend === 'codex_app_server' ? 'warning' : 'history'} size="sm">
-                              {t(msg.backend === 'codex_app_server' ? 'chat.historicalCodexBackendBadge' : 'chat.defaultBackendBadge')}
-                            </Badge>
-                          ) : null}
-                        </div>
-                      )}
-                      {msg.role === 'assistant' && renderThinkingBlock(msg)}
-                      {msg.role === 'assistant' ? (
-                        <>
-                          <div className="chat-prose">
-                            <ChatAnswer
-                              content={msg.content}
-                              answerMeta={msg.answerMeta}
-                              onFollowUp={(question) => { void handleSend(question); }}
-                            />
-                          </div>
-                          {msg.stockClarification && activeClarificationMessageId === msg.id && (
-                            <StockClarificationCard
-                              messageId={msg.id}
-                              clarification={msg.stockClarification}
-                              autoConfirmEnabled={clarificationAutoConfirmEnabled}
-                              language={language}
-                              onConfirm={(decision, target) => {
-                                handleStockClarificationDecision(msg, decision, target);
-                              }}
-                              onRequestInput={() => composerRef.current?.focus()}
-                            />
-                          )}
-                          <div className="chat-message-actions">
-                            <button
-                              type="button"
-                              onClick={() => copyMessageToClipboard(msg.id, msg.content)}
-                              className="chat-action-btn"
-                              aria-label={copiedMessages.has(msg.id) ? text.copied : text.copy}
-                            >
-                              {copiedMessages.has(msg.id)
-                                ? <Check size={14} aria-hidden="true" />
-                                : <Copy size={14} aria-hidden="true" />}
-                            </button>
-                            <button
-                              type="button"
-                              onClick={() => downloadMessageAsMarkdown(msg)}
-                              className="chat-action-btn"
-                              aria-label={t('chat.exportMessage')}
-                            >
-                              <Download size={14} aria-hidden="true" />
-                            </button>
-                          </div>
-                        </>
-                      ) : (
-                        <div className="chat-user-bubble">{msg.content}</div>
-                      )}
-                    </div>
+                      message={msg}
+                      skillLabel={skillLabel}
+                      backendBadgeLabel={msg.backend
+                        ? t(msg.backend === 'codex_app_server'
+                          ? 'chat.historicalCodexBackendBadge'
+                          : 'chat.defaultBackendBadge')
+                        : null}
+                      language={language}
+                      thinkingExpanded={expandedThinking.has(msg.id)}
+                      expandedCategories={expandedCategories}
+                      onToggleCategory={toggleCategory}
+                      onFollowUp={handleFollowUpQuestion}
+                      clarification={msg.id === activeClarificationMessageId ? msg.stockClarification ?? null : null}
+                      clarificationAutoConfirmEnabled={clarificationAutoConfirmEnabled}
+                      copied={copiedMessages.has(msg.id)}
+                      copyLabel={copiedMessages.has(msg.id) ? text.copied : text.copy}
+                      exportLabel={t('chat.exportMessage')}
+                      onCopy={(messageId, content) => { void copyMessageToClipboard(messageId, content); }}
+                      onExport={downloadMessageAsMarkdown}
+                      onRequestComposerFocus={focusComposer}
+                      onClarificationDecision={handleMessageClarificationDecision}
+                    />
                   );
                 })}
                 </>
               )}
 
               {loading && (
-                <div className="chat-msg chat-msg-ai">
-                  <div role="status" aria-live="polite" className="chat-live-progress">
-                    <div className="chat-live-head">
-                      <span className="chat-live-spinner" aria-hidden="true" />
-                      <span>{getCurrentStage(progressSteps)}</span>
-                    </div>
-                    {progressSteps.length > 0 && (
-                      <div className="chat-live-details">
-                        {progressSteps
-                          .filter((step) => ['stage_start', 'stage_done', 'tool_start', 'tool_done', 'generating'].includes(step.type))
-                          .slice(-6)
-                          .map((step, index) => (
-                            <div className="chat-live-step" key={`${index}-${step.type}-${step.stage || step.tool || ''}`}>
-                              <span
-                                className={cn(
-                                  'chat-live-step-dot',
-                                  step.type.endsWith('_done') && 'is-done',
-                                  ((step.type === 'stage_done' && !isStageDoneSuccessful(step.status))
-                                    || (step.type === 'tool_done' && step.success === false)) && 'is-error',
-                                )}
-                              />
-                              <span>{getCurrentStage([step])}</span>
-                            </div>
-                          ))}
-                      </div>
-                    )}
-                  </div>
-                  {streamingContent && (
-                    <div className="chat-prose chat-streaming-preview" aria-live="polite">
-                      <ChatAnswer content={streamingContent} />
-                    </div>
-                  )}
-                </div>
+                <ChatLiveProgress
+                  steps={progressSteps}
+                  streamingContent={streamingContent}
+                  language={language}
+                />
               )}
 
               <div ref={messagesEndRef} />
@@ -1743,8 +1391,39 @@ const ChatPage: React.FC = () => {
             </div>
           )}
 
-          <div className="chat-composer-area">
-            <div className="chat-composer-stack">
+        <ChatInputArea
+          t={t}
+          composerRef={composerRef}
+          input={input}
+          onInputChange={setInput}
+          onSend={() => { void handleSend(); }}
+          onStop={() => { void stopStream(); }}
+          placeholder={intakeDraft ? t('chat.intake.composerHint') : t('chat.composerPlaceholder')}
+          disabled={loading || !agentAvailable}
+          loading={loading}
+          advancedOptionsOpen={advancedOptionsOpen}
+          onToggleAdvancedOptions={() => setAdvancedOptionsOpen((open) => !open)}
+          selectedSkillSummary={selectedSkillSummary}
+          skills={skills}
+          selectedSkillIds={selectedSkillIds}
+          skillLimitReached={skillLimitReached}
+          showSkillDesc={showSkillDesc}
+          onShowSkillDesc={setShowSkillDesc}
+          onToggleSkill={toggleSkillSelection}
+          onClearSkills={() => setSelectedSkillIds([])}
+          contextCompressionEnabled={contextCompressionEnabled}
+          contextCompressionLoaded={contextCompressionLoaded}
+          contextCompressionSaving={contextCompressionSaving}
+          contextCompressionError={contextCompressionError}
+          onToggleContextCompression={(enabled) => { void updateContextCompressionEnabled(enabled); }}
+          activeStockCode={activeStockCode}
+          canToggleWatchlist={activeStockContext?.asset_type === 'stock'}
+          watchlistBusy={isWatchlistActioning}
+          inWatchlist={activeStockCode ? stockInWatchlist(activeStockCode) : false}
+          onToggleWatchlist={() => { if (activeStockCode) void handleToggleWatchlist(activeStockCode); }}
+          watchlistMessage={watchlistMessage}
+          objectStatusText={objectStatusText}
+        >
               {intakeDraft && (
                 <div className="chat-intake-composer-hint" role="status">
                   {t('chat.intake.composerHint')}
@@ -1832,182 +1511,7 @@ const ChatPage: React.FC = () => {
                 />
               ) : null}
 
-              {advancedOptionsOpen && (
-                <div id="chat-advanced-options-panel" className="chat-advanced-panel">
-                  {skills.length > 0 && (
-                    <div
-                      id="chat-skill-picker-panel"
-                      data-testid="chat-skill-picker-panel"
-                      className="chat-skill-picker"
-                    >
-                      <span className="chat-advanced-label">策略</span>
-                      <label className="chat-skill-option">
-                        <input
-                          type="checkbox"
-                          name="general-analysis"
-                          value=""
-                          checked={selectedSkillIds.length === 0}
-                          onChange={() => setSelectedSkillIds([])}
-                          className="chat-skill-checkbox"
-                        />
-                        <span className={cn(selectedSkillIds.length === 0 ? 'is-selected' : '')}>通用分析</span>
-                      </label>
-                      {skills.map((s) => {
-                        const checked = selectedSkillIdSet.has(s.id);
-                        const disabled = !checked && skillLimitReached;
-                        return (
-                          <label
-                            key={s.id}
-                            className={cn('chat-skill-option', disabled && 'is-disabled')}
-                            onMouseEnter={() => setShowSkillDesc(s.id)}
-                            onMouseLeave={() => setShowSkillDesc(null)}
-                          >
-                            <input
-                              type="checkbox"
-                              name="skills"
-                              value={s.id}
-                              checked={checked}
-                              disabled={disabled}
-                              onChange={() => toggleSkillSelection(s.id)}
-                              className="chat-skill-checkbox"
-                            />
-                            <span className={cn(checked ? 'is-selected' : '')}>{s.name}</span>
-                            {showSkillDesc === s.id && s.description && (
-                              <div className="skill-desc-tooltip">
-                                <p className="skill-title">{s.name}</p>
-                                <p>{s.description}</p>
-                              </div>
-                            )}
-                          </label>
-                        );
-                      })}
-                    </div>
-                  )}
-                  <div className="chat-compression-row">
-                    <label
-                      className={cn(
-                        'chat-skill-option',
-                        contextCompressionLoaded && !contextCompressionSaving ? '' : 'is-disabled',
-                      )}
-                    >
-                      <input
-                        type="checkbox"
-                        checked={contextCompressionEnabled}
-                        disabled={!contextCompressionLoaded || contextCompressionSaving}
-                        onChange={(event) => void updateContextCompressionEnabled(event.target.checked)}
-                        className="chat-skill-checkbox"
-                      />
-                      <span className="is-selected">上下文压缩</span>
-                      <span className="chat-advanced-hint">节省长会话 token</span>
-                    </label>
-                    <span className="chat-advanced-status">
-                      {contextCompressionSaving
-                        ? '保存中...'
-                        : contextCompressionEnabled
-                          ? '已启用'
-                          : '未启用'}
-                    </span>
-                  </div>
-                  {contextCompressionError ? (
-                    <InlineAlert
-                      variant="danger"
-                      title="上下文压缩设置未保存"
-                      message={contextCompressionError}
-                      className="chat-inline-notice"
-                    />
-                  ) : null}
-                </div>
-              )}
-
-              <div className="chat-composer">
-                <textarea
-                  ref={composerRef}
-                  value={input}
-                  onChange={(event) => setInput(event.target.value)}
-                  onKeyDown={handleKeyDown}
-                  placeholder={intakeDraft
-                    ? t('chat.intake.composerHint') : t('chat.composerPlaceholder')}
-                  disabled={loading || !agentAvailable}
-                  rows={1}
-                  className="chat-composer-input"
-                  style={{ height: 'auto' }}
-                  onInput={(event) => {
-                    const target = event.target as HTMLTextAreaElement;
-                    target.style.height = 'auto';
-                    target.style.height = `${Math.min(target.scrollHeight, 200)}px`;
-                  }}
-                />
-                <div className="chat-composer-bar">
-                  <button
-                    type="button"
-                    className={cn('chat-chip', advancedOptionsOpen && 'is-active')}
-                    onClick={() => setAdvancedOptionsOpen((open) => !open)}
-                    aria-label={t('chat.advancedOptions')}
-                    aria-expanded={advancedOptionsOpen}
-                    aria-controls="chat-advanced-options-panel"
-                  >
-                    <SlidersHorizontal size={13} aria-hidden="true" />
-                    <span className="chat-chip-label">{selectedSkillSummary}</span>
-                    <ChevronDown
-                      className={cn('chat-chip-chevron', advancedOptionsOpen && 'is-open')}
-                      size={13}
-                      aria-hidden="true"
-                    />
-                  </button>
-
-                  {activeStockCode && activeStockContext?.asset_type === 'stock' && (
-                    <button
-                      type="button"
-                      className="chat-chip"
-                      disabled={isWatchlistActioning}
-                      onClick={() => void handleToggleWatchlist(activeStockCode)}
-                    >
-                      <Star size={13} aria-hidden="true" />
-                      <span>{stockInWatchlist(activeStockCode) ? t('chat.watchlistRemove') : t('chat.watchlistAdd')}</span>
-                    </button>
-                  )}
-
-                  {watchlistMessage && (
-                    <span className="chat-watchlist-message">{watchlistMessage}</span>
-                  )}
-
-                  <span className="chat-composer-spacer" />
-
-                  {loading ? (
-                    <button
-                      type="button"
-                      className="chat-stop-btn"
-                      onClick={() => void stopStream()}
-                      aria-label={t('chat.stop')}
-                    >
-                      <Square size={12} fill="currentColor" aria-hidden="true" />
-                      {t('chat.stop')}
-                    </button>
-                  ) : (
-                    <button
-                      type="button"
-                      className="chat-send-btn"
-                      onClick={() => handleSend()}
-                      disabled={!input.trim() || loading || !agentAvailable}
-                      aria-label="发送"
-                    >
-                      <ArrowUp size={16} aria-hidden="true" />
-                    </button>
-                  )}
-                </div>
-              </div>
-              <div className="chat-composer-footer">
-                <span className="chat-object-status" aria-label={t('chat.currentObjectLabel')}>
-                  {objectStatusText}
-                </span>
-                <span className="chat-disclaimer">
-                  {t('chat.generatedDisclaimer')}
-                  <span className="chat-disclaimer-separator" aria-hidden="true">·</span>
-                  {t('chat.composerHint')}
-                </span>
-              </div>
-            </div>
-          </div>
+        </ChatInputArea>
         </div>
       </section>
     </div>
