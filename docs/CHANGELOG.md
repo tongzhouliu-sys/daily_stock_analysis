@@ -8,6 +8,7 @@ and this project adheres to [Semantic Versioning](https://semver.org/).
 > For user-friendly release highlights, see the [GitHub Releases](https://github.com/ZhuLinsen/daily_stock_analysis/releases) page.
 
 ## [Unreleased]
+- [修复] 回测报告改为从产物生成：`us_equity_rebound` 新增 `render_backtest_report()` 与 `render-report` 子命令，报告中的最终净值、平均亏损、单笔最大亏损（按收益率/金额）、年度收益、退出分布、ETF 数量全部从 `summary.json`、`trades.csv`、`equity.csv`、`annual_returns.csv`、`exit_breakdown.csv`、`run_manifest.json` 重新计算，不再依赖手工叙述；新增 `tests/test_rebound_reporting.py` 校验报告数字与产物一致。T37 报告已按该渲染器重新生成：最终净值 $80,159.39、平均亏损 $-571.14、单笔最大亏损（收益率）OMI -26.86%、股票池 ETF 2520 只（与 Nasdaq 当前 ETF 清单交集，已退市 ETF 未计入）。
 - [修复] 配置导入往返：`import_env` / `import_desktop_env` 在进入写入校验前，跳过值已与当前生效值一致的启动级键（`ADMIN_AUTH_ENABLED` 等），不再因为导出文件自带这些键而整包失败；值不同仍返回 400 并列出键（如 `ADMIN_AUTH_ENABLED=true→false`、`DATABASE_PATH` 不同）。设置页写入路径保持一律拒绝，导入路径的跳过不会写 `.env`。
 - [改进] 评估口径升级版本号：E10/E11/E14 改变评估口径后，`DECISION_SIGNAL_OUTCOME_ENGINE_VERSION` 从 `decision-signal-v1` 升到 `decision-signal-v2`，`BACKTEST_ENGINE_VERSION` 默认值从 `v1` 升到 `v2`（`config.py` / `config_registry.py` / `.env.example` 同步）。统计接口默认只按当前版本过滤，旧版本记录保留在库中但不参与统计；首次自动回测会重新评估所有符合条件的历史分析，单次批量上限仍生效但首轮更慢，可用 `force=true` 手动重算。`docs/decision-signals.md` 补充卖出类 / 持有类 / 买入类命中定义与 v2 说明，`docs/full-guide.md` 与英文版同步。相关测试改为引用版本常量而不是硬编码 `decision-signal-v1`。
 - [修复] 技术指标告警时区：`_drop_partial_today` 取当前时间从 `datetime.now()`（服务器本地、无时区）改为 `datetime.now(timezone.utc)`，`get_market_now` 不再把 UTC+8 服务器的本地时间当成美东时间；美股盘中（北京 03:00）能正确丢弃未收盘的当日 K 线，收盘后保留。

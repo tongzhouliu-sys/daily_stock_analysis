@@ -11,7 +11,7 @@ from typing import Dict, Any
 from .config import ReboundConfig
 from .engine import BacktestEngine
 from .sweep import run_sweep, generate_sensitivity_report
-from .reporting import generate_reports
+from .reporting import generate_reports, render_backtest_report
 from .data_loader import (
     load_market_data,
     load_spy_data,
@@ -71,6 +71,10 @@ Examples:
     sweep_parser.add_argument("--data-dir", required=True, help="Input data directory")
     sweep_parser.add_argument("--output", required=True, help="Output directory")
     sweep_parser.add_argument("--config", help="Base config JSON file")
+
+    report_parser = subparsers.add_parser("render-report", help="Regenerate report.md from artifacts")
+    report_parser.add_argument("--results", required=True, help="Backtest output directory")
+    report_parser.add_argument("--universe", help="Optional universe.json with ETF metadata")
     
     args = parser.parse_args()
     
@@ -81,10 +85,22 @@ Examples:
             return cmd_run(args)
         elif args.command == "sweep":
             return cmd_sweep(args)
+        elif args.command == "render-report":
+            return cmd_render_report(args)
     except Exception as e:
         print(f"Error: {e}", file=sys.stderr)
         return 1
     
+    return 0
+
+
+def cmd_render_report(args) -> int:
+    """Regenerate report.md strictly from the written artifacts."""
+    universe_metadata = None
+    if args.universe:
+        universe_metadata = load_universe_metadata(str(Path(args.universe).parent))
+    path = render_backtest_report(args.results, universe_metadata=universe_metadata)
+    print(f"Report written: {path}")
     return 0
 
 
