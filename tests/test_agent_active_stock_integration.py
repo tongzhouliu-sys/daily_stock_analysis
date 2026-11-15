@@ -2434,6 +2434,63 @@ def test_explicit_uncertain_switch_keeps_current_without_confirmation(chat_stock
     assert decision.kind == "maintain"
 
 
+@pytest.mark.parametrize("current_code,message,kind,code,participants", [
+    # R9: an established object is never replaced by a bare name mention.
+    ("600519", "平安夜快乐", "maintain", None, set()),
+    ("600519", "跟上证指数比怎么样", "compare", None, {"600519", "sh000001"}),
+    # R9: an explicit switch word still switches, and the shared A/H name is
+    # resolved onto the current object's market instead of clarifying.
+    ("600519", "换成宁德时代", "confirm", "300750", set()),
+    ("600519", "600519 和 300750 哪个好", "compare", None, {"600519", "300750"}),
+    # R9: a fresh session keeps the T6 auto-binding behavior.
+    (None, "平安夜快乐", "maintain", None, set()),
+    (None, "聊聊茅台", "confirm", "600519", set()),
+    (None, "茅台最近为什么跌", "confirm", "600519", set()),
+])
+def test_established_object_never_switches_without_explicit_intent(
+    bundled_chat_stock_index, current_code, message, kind, code, participants,
+):
+    from src.agent.chat_object_decision import decide_chat_object
+    from src.agent.stock_scope import StockIdentity
+    from src.services.agent_chat_session_service import _stock_lookup
+
+    registry, lookup = _stock_lookup()
+    current = StockIdentity.from_code(f"{current_code}.SH", registry) if current_code else None
+    decision = decide_chat_object(message, current, registry, lookup)
+    assert decision.kind == kind
+    if code is not None:
+        assert decision.target.identity.stock_code == code
+    if kind == "compare":
+        assert {identity.stock_code for identity in decision.participants} == participants
+
+
+def test_two_character_alias_needs_a_right_word_boundary(bundled_chat_stock_index):
+    from src.agent.chat_object_decision import (
+        SHORT_NAME_RIGHT_BOUNDARY_CHARS, object_mentions,
+    )
+    from src.services.agent_chat_session_service import _stock_lookup
+
+    registry, lookup = _stock_lookup()
+
+    def bound_codes(text):
+        return {
+            identity.stock_code
+            for mention in object_mentions(text, registry, lookup)
+            for identity in mention.identities
+        }
+
+    # "平安" in "平安夜快乐" is a substring of a longer word, not a stock.
+    assert "601318" not in bound_codes("平安夜快乐")
+    assert "夜" not in SHORT_NAME_RIGHT_BOUNDARY_CHARS
+    # A full-registered name is not subject to the 2-character boundary rule.
+    assert bound_codes("平安银行怎么样") == {"000001"}
+    # The whitelist itself is the source of truth; do not restate it here.
+    for particle in SHORT_NAME_RIGHT_BOUNDARY_CHARS:
+        assert "601318" in bound_codes(f"平安{particle}"), particle
+    # A non-Chinese right neighbor also ends the alias.
+    assert "601318" in bound_codes("平安，怎么样")
+
+
 @pytest.fixture
 def actual_bundled_chat_api(actual_chat_api, bundled_chat_stock_index):
     # Keep the real HTTP/session/executor chain; only the model boundary is

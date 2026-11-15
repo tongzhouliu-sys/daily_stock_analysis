@@ -52,6 +52,17 @@ def validate_chat_identity(token: str, registry: IndexRegistry, lookup: dict) ->
     return identity
 
 
+def _short_alias_word_boundary(text: str, end: int, name: str) -> bool:
+    """Reject a 2-character alias that is only a substring of a longer word (R9)."""
+    if len(name) != 2:
+        return True
+    following = text[end:end + 1]
+    if not following:
+        return True
+    return (not "\u4e00" <= following <= "\u9fff"
+            or following in SHORT_NAME_RIGHT_BOUNDARY_CHARS)
+
+
 def object_mentions(text: str, registry: IndexRegistry, lookup: dict) -> tuple[ObjectMention, ...]:
     """Retain failed/ambiguous evidence at its own location, not a global flag."""
     mentions = []
@@ -71,6 +82,8 @@ def object_mentions(text: str, registry: IndexRegistry, lookup: dict) -> tuple[O
     for name, rows in lookup["names"].items():
         for occurrence in re.finditer(re.escape(name), folded):
             start, end = positions[occurrence.start()], positions[occurrence.end() - 1] + 1
+            if not _short_alias_word_boundary(text, end, name):
+                continue
             if (not _has_ascii_token_boundaries(text, start, end)
                     and not any(code.end == start or code.start == end for code in codes)):
                 continue
@@ -116,6 +129,11 @@ def object_mentions(text: str, registry: IndexRegistry, lookup: dict) -> tuple[O
 
 _OPERATIONS = re.compile(r"换成|改看|切换到|分析|看看|研究|诊断|看")
 _SWITCHES = {"换成", "改看", "切换到"}
+# Two-character aliases are substring risks ("平安" inside "平安夜快乐"). When
+# such an alias is used, the character right after it must end the word: either
+# outside Chinese, or one of the particles users actually write after a stock
+# name. Tests import this constant instead of restating the whitelist.
+SHORT_NAME_RIGHT_BOUNDARY_CHARS = frozenset("的怎最近今现股走能还和跟与呢吗啊会是要也为有在跌涨")
 _CLAUSE = re.compile(r"[，。！？!?；;,\n]")
 _ASIDE = re.compile(r"[，。！？!?；;,\n]|顺带|顺便|另外|然后|并(?:且)?(?:比较|对比)")
 _OBJECT_QUESTION = re.compile(r"\s*(?:现在|目前|当前)?(?:还)?(?:(?:能|可以|适合|值得)(?:买|卖|持有|投资)|(?:有)?什么|怎么样|如何)")
@@ -148,8 +166,32 @@ def _qualification(text: str, operation) -> tuple[str, str]:
     return "affirmative", prefix
 
 
+def _market_key(identity: StockIdentity) -> str:
+    """Coarse market tag used only to disambiguate an explicit switch (R9)."""
+    token = identity.stock_code.upper()
+    canonical = identity.canonical_id.lower()
+    if token.startswith("HK") or canonical.startswith("hk"):
+        return "HK"
+    if token.startswith(("SH", "SZ", "BJ")) or canonical.startswith(("sh", "sz", "bj", "csi")):
+        return "CN"
+    return "US"
+
+
+def _same_market_target(
+    mention: ObjectMention, current: Optional[StockIdentity],
+) -> Optional[ObjectMention]:
+    """Pick the single candidate listed on the current object's market, if any."""
+    if current is None:
+        return None
+    current_market = _market_key(current)
+    matches = [item for item in mention.identities if _market_key(item) == current_market]
+    if len(matches) != 1:
+        return None
+    return ObjectMention(mention.start, mention.end, mention.raw, mention.kind, (matches[0],))
+
+
 def _target(
-    text: str, operation, mentions,
+    text: str, operation, mentions, current: Optional[StockIdentity] = None,
 ) -> tuple[Optional[ObjectMention], bool, tuple[StockIdentity, ...]]:
     start = operation.end()
     boundary = _ASIDE.search(text, start)
@@ -162,6 +204,14 @@ def _target(
         return None, False, ()
     identities = {item.identity for item in targets}
     if None in identities or len(identities) != 1 or re.search(r"或者|或|还是", text[start:end]):
+        # An explicit switch keeps one unambiguous reading when a shared name
+        # lists the same company on several markets; the current object's
+        # market is the tie-breaker. Anything else stays a clarification.
+        if (current is not None and operation.group() in _SWITCHES
+                and len(targets) == 1 and not re.search(r"或者|或|还是", text[start:end])):
+            preferred = _same_market_target(targets[0], current)
+            if preferred is not None:
+                return preferred, True, ()
         return None, True, tuple(dict.fromkeys(
             identity for item in targets for identity in item.identities
         ))
@@ -192,7 +242,7 @@ def decide_chat_object(message: str, current: Optional[StockIdentity], registry:
                 continue
         if qualification == "comparison":
             continue
-        target, has_evidence, evidence = _target(text, operation, mentions)
+        target, has_evidence, evidence = _target(text, operation, mentions, current)
         switch = operation.group() in _SWITCHES
         if switch or has_evidence:
             affirmative.append((target, switch, "继续" in prefix, evidence))
@@ -313,8 +363,16 @@ def decide_chat_object(message: str, current: Optional[StockIdentity], registry:
         ))
         if len(identities) == 1 and all(item.identity is not None for item in bound):
             target = next((item for item in bound if item.kind == "code"), bound[0])
-            if current is not None and target.identity == current:
-                return ObjectDecision("maintain")
+            if current is not None:
+                if target.identity == current:
+                    return ObjectDecision("maintain")
+                # R9: with an established object only an explicit switch word
+                # (handled above) or a stock code changes it. Any other name is
+                # a comparison reference, never an implicit switch.
+                if target.kind != "code":
+                    return ObjectDecision(
+                        "compare", participants=(current, target.identity),
+                    )
             return ObjectDecision("confirm", target=target, changes_target=True)
     if current is None and re.fullmatch(
         r"\s*(?:(?:分析|看看|研究|诊断)(?:一下子|一下|下)?\s*)?"
