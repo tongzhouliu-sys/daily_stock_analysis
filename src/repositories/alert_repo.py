@@ -15,6 +15,7 @@ from src.storage import (
     AlertCooldownRecord,
     AlertNotificationRecord,
     AlertRuleRecord,
+    AlertRuleStateRecord,
     AlertTriggerRecord,
     DatabaseManager,
 )
@@ -57,6 +58,11 @@ class AlertRepository:
     def delete_rule(self, rule_id: int) -> bool:
         with self.db.get_session() as session:
             result = session.execute(delete(AlertRuleRecord).where(AlertRuleRecord.id == rule_id))
+            # Edge-trigger state is keyed by rule_key, so it must be dropped
+            # alongside the rule to avoid leaking rows for deleted rules.
+            session.execute(
+                delete(AlertRuleStateRecord).where(AlertRuleStateRecord.rule_id == rule_id)
+            )
             session.commit()
             return bool(result.rowcount)
 
@@ -262,6 +268,67 @@ class AlertRepository:
                 .order_by(desc(AlertCooldownRecord.updated_at), desc(AlertCooldownRecord.id))
                 .limit(1)
             ).scalar_one_or_none()
+
+    def get_rule_state(self, rule_key: str) -> Optional[AlertRuleStateRecord]:
+        """Return the persisted edge-trigger state for a rule key."""
+        if not rule_key:
+            return None
+        with self.db.get_session() as session:
+            return session.execute(
+                select(AlertRuleStateRecord)
+                .where(AlertRuleStateRecord.rule_key == rule_key)
+                .limit(1)
+            ).scalar_one_or_none()
+
+    def upsert_rule_state(
+        self,
+        *,
+        rule_key: str,
+        rule_id: Optional[int],
+        target: str,
+        alert_type: str,
+        last_state: str,
+        last_observed_value: Optional[float] = None,
+        last_evaluated_at: Optional[datetime] = None,
+    ) -> AlertRuleStateRecord:
+        """Persist the last observed side so the next poll can detect a flip."""
+        if not rule_key:
+            raise ValueError("rule_key is required for alert rule state")
+        with self.db.get_session() as session:
+            row = session.execute(
+                select(AlertRuleStateRecord)
+                .where(AlertRuleStateRecord.rule_key == rule_key)
+                .limit(1)
+            ).scalar_one_or_none()
+            if row is None:
+                row = AlertRuleStateRecord(
+                    rule_key=rule_key,
+                    rule_id=rule_id,
+                    target=target,
+                    alert_type=alert_type,
+                )
+                session.add(row)
+            row.rule_id = rule_id
+            row.target = target
+            row.alert_type = alert_type
+            row.last_state = last_state or ""
+            row.last_observed_value = last_observed_value
+            row.last_evaluated_at = last_evaluated_at or datetime.now()
+            row.updated_at = datetime.now()
+            session.commit()
+            session.refresh(row)
+            return row
+
+    def delete_rule_state(self, rule_key: str) -> bool:
+        """Drop persisted state so the next evaluation re-arms the rule."""
+        if not rule_key:
+            return False
+        with self.db.get_session() as session:
+            result = session.execute(
+                delete(AlertRuleStateRecord).where(AlertRuleStateRecord.rule_key == rule_key)
+            )
+            session.commit()
+            return bool(result.rowcount)
 
     def list_triggers(
         self,

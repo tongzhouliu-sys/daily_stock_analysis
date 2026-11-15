@@ -1136,6 +1136,28 @@ class AlertCooldownRecord(Base):
     )
 
 
+class AlertRuleStateRecord(Base):
+    """Last observed side state for edge-triggered price alerts.
+
+    `price_cross` rules must only fire when the watched price actually crosses
+    the configured level. Without persisted state the worker re-notifies on
+    every poll while the price simply stays above (or below) the threshold.
+    """
+
+    __tablename__ = 'alert_rule_states'
+
+    id = Column(Integer, primary_key=True, autoincrement=True)
+    rule_key = Column(String(255), nullable=False, unique=True, index=True)
+    rule_id = Column(Integer, index=True)
+    target = Column(String(64), nullable=False, index=True)
+    alert_type = Column(String(32), nullable=False, index=True)
+    # 'above' / 'below' for price_cross; empty when not tracked.
+    last_state = Column(String(24), nullable=False, default='')
+    last_observed_value = Column(Float)
+    last_evaluated_at = Column(DateTime, index=True)
+    updated_at = Column(DateTime, default=datetime.now, onupdate=datetime.now, index=True)
+
+
 class DecisionSignalRecord(Base):
     """Persisted AI decision signal asset for Issue #1390 P1."""
 

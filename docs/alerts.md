@@ -15,9 +15,9 @@
 
 | `alert_type` | 方向字段 | 阈值字段 | 当前语义 |
 | --- | --- | --- | --- |
-| `price_cross` | `direction`: `above` / `below` | `price` | 实时价格上破或下破固定价格 |
+| `price_cross` | `direction`: `above` / `below` | `price` | 实时价格上破或下破固定价格；仅在“上/下”状态翻转时触发 |
 | `price_change_percent` | `direction`: `up` / `down` | `change_pct` | 实时涨跌幅达到指定百分比 |
-| `volume_spike` | - | `multiplier` | 最新成交量超过近 20 日均量的指定倍数 |
+| `volume_spike` | - | `multiplier` | 最新成交量超过当日之前 20 日均量的指定倍数 |
 
 `sentiment_shift`、`risk_flag`、`custom` 等类型只作为未来扩展占位；当前运行时不接受这些类型作为可执行规则。
 
@@ -454,6 +454,33 @@ worker 会把 `triggered`、`skipped`、`degraded`、`failed` 写入 `alert_trig
 - P7：大盘红绿灯与市场联动。
 - P8：文档、迁移与收口。
 
+## 触发语义（穿越、交易时段与均量口径）
+
+告警 worker 在评估结果写入 `alert_triggers` 前统一应用以下语义，dry-run 试运行同样走评估链路，但不写触发历史、也不更新价格状态。
+
+### `price_cross`：只在状态翻转时触发
+
+- 每条规则按 `rule_id + target`（legacy JSON 规则按语义 key）在 `alert_rule_states` 记录最近一次观测的价格位置：`above` 或 `below`。
+- 只有从 `below` 翻到 `above`（或反向）才算一次穿越；价格连续多轮停在阈值同侧时，评估结果被降级为 `not_triggered`，不写触发历史、不进入通知与冷却流程。
+- 状态落库而不是只放进程内存，因此 worker 重启、调度进程切换后不会把“价格一直在阈值上方”当成新穿越反复推送。
+- 规则删除时同步清理对应 `alert_rule_states` 行；修改阈值或方向会生成新的规则 key，等价于重新武装该规则。
+
+### 非交易时段跳过
+
+- 价格类规则评估前先按标的所属市场推断当日阶段；周末、交易所节假日（`MarketPhase.NON_TRADING`）直接记为 `skipped`，不发送通知，也不改写价格状态，避免用一份隔夜/周末的静态报价伪造穿越。
+- 交易日内的盘前、盘后与盘中仍照常评估：盘前/盘后报价可能已经反映跳空，穿越判定本身由状态翻转控制，不会重复推送。
+- 交易所日历不可用或标的市场无法识别时 fail-open（继续照常评估），避免因为日历缺失去静默关闭用户告警。
+
+### 技术指标：按市场交易日历判断 K 线是否收盘
+
+- `ma_price_cross`、`rsi_threshold`、`macd_cross`、`kdj_cross`、`cci_threshold` 只使用已收盘日线。是否丢弃最后一根 K 线不再依赖服务器本地 16:00，而是用标的所属市场的交易时段判断：盘中/盘前丢弃当日未完成 K 线，收盘后（`postmarket`）保留。
+- 交易日历不可用时回退到原有本地时间兜底，行为与历史版本一致。
+
+### `volume_spike`：均量不含当日
+
+- 均量基线只取当日之前的日线成交量；当日成交量只作为被比较值。这样真实放量不会把自己的基线抬高，也不会因为当日 bar 尚未收盘而稀释倍数。
+- 当日之前没有有效成交量样本时记为 `degraded`，不触发通知。
+
 ## P0 不做
 
 - P0 阶段不新增 `api/v1/schemas/alerts.py` 或 Alert API。
@@ -473,6 +500,7 @@ worker 会把 `triggered`、`skipped`、`degraded`、`failed` 写入 `alert_trig
 - P5 新增 Alert API/Web 支持的技术指标规则。最小回滚方式是 revert P5 PR；已创建的 P5 `alert_rules` 记录不会自动删除，旧代码会在 worker 加载阶段 skip unsupported `alert_type`，不影响 legacy 三类规则执行。如需清理，需要维护者确认后手动删除相关规则记录。
 - P6 新增 Alert API/Web 支持的 watchlist、portfolio holdings 与 portfolio account 规则。最小回滚方式是 revert P6 PR；没有新表或迁移，已创建的 P6 `alert_rules` 会保留。回滚前建议 disable/delete 非 `single_symbol` 的 P6 规则；否则旧 worker 可能把 `watchlist` / `portfolio_holdings` 的父级 `target` 当作股票代码评估并产生 failed/skipped 噪声，portfolio 专用 `alert_type` 会在 worker 加载阶段被 skip。
 - P7 新增 Alert API/Web 支持的 `market` 规则和大盘复盘 `market_light_snapshots` 历史快照。最小回滚方式是 revert P7 PR；没有新表或迁移，已创建的 P7 `alert_rules` 会保留。回滚前建议 disable/delete `target_scope=market` 规则；旧 worker 会 skip unsupported `market_light_*` 类型或因 scope/type 不识别产生配置噪声。
+- T31 新增 `alert_rule_states` SQLite 表用于记录 `price_cross` 的价格位置。最小回滚方式是 revert 对应 PR；旧代码不会读取该表，已写入的状态行不影响评估，如需清理需要维护者确认后手动删除。
 
 ### 页面来源提示的视觉验证
 

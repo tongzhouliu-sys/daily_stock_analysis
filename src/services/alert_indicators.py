@@ -10,6 +10,13 @@ from typing import Any, Dict, Optional
 
 import pandas as pd
 
+from src.core.trading_calendar import (
+    MarketPhase,
+    get_market_for_stock,
+    get_market_now,
+    infer_market_phase,
+)
+
 
 TECHNICAL_ALERT_TYPES = frozenset({
     "ma_price_cross",
@@ -22,6 +29,8 @@ TECHNICAL_ALERT_TYPES = frozenset({
 ABOVE_BELOW_DIRECTIONS = frozenset({"above", "below"})
 CROSS_DIRECTIONS = frozenset({"bullish_cross", "bearish_cross"})
 MAX_REQUESTED_DAYS = 365
+# Phases where today's daily bar is already final (no session still running).
+_SESSION_CLOSED_PHASES = frozenset({MarketPhase.POSTMARKET, MarketPhase.NON_TRADING})
 
 
 @dataclass
@@ -128,7 +137,7 @@ def evaluate_indicator_alert(
         columns = ("high", "low", "close")
 
     try:
-        normalized = normalize_ohlcv(df, required_columns=columns, now=now)
+        normalized = normalize_ohlcv(df, required_columns=columns, now=now, stock_code=stock_code)
     except ValueError as exc:
         return IndicatorEvaluation(
             status="degraded",
@@ -180,6 +189,7 @@ def normalize_ohlcv(
     *,
     required_columns: tuple[str, ...],
     now: Optional[datetime] = None,
+    stock_code: Optional[str] = None,
 ) -> pd.DataFrame:
     if df is None or getattr(df, "empty", True):
         return pd.DataFrame()
@@ -203,7 +213,7 @@ def normalize_ohlcv(
     output = output.dropna(subset=list(required_columns)).copy()
     if output.empty:
         return output
-    output = _drop_partial_today(output, now=now)
+    output = _drop_partial_today(output, now=now, stock_code=stock_code)
     if output.empty:
         return output.reset_index(drop=True)
     output = output.sort_values(by="date", kind="stable", na_position="first").reset_index(drop=True)
@@ -485,9 +495,35 @@ def _date_series(df: pd.DataFrame) -> pd.Series:
     return pd.Series([pd.NaT] * len(df), index=df.index)
 
 
-def _drop_partial_today(df: pd.DataFrame, *, now: Optional[datetime] = None) -> pd.DataFrame:
+def _drop_partial_today(
+    df: pd.DataFrame,
+    *,
+    now: Optional[datetime] = None,
+    stock_code: Optional[str] = None,
+) -> pd.DataFrame:
+    """Drop the latest bar when it belongs to a session that has not closed.
+
+    Uses the exchange calendar of the stock's market instead of assuming a
+    fixed server-local 16:00 close. The old heuristic kept a still-forming US
+    bar (and dropped a legitimately closed HK/CN bar) whenever the server clock
+    did not match the exchange's session close.
+    """
     current = now or datetime.now()
-    if current.time() >= time(16, 0):
+    market = get_market_for_stock(stock_code) if stock_code else None
+    closed_today: Optional[bool] = None
+    reference_date = current.date()
+    if market:
+        phase = infer_market_phase(market, current_time=current)
+        if phase is not MarketPhase.UNKNOWN:
+            closed_today = phase in _SESSION_CLOSED_PHASES
+            market_now = get_market_now(market, current_time=current)
+            if market_now is not None:
+                reference_date = market_now.date()
+    if closed_today is None:
+        # No calendar available: keep the legacy local-clock heuristic.
+        closed_today = current.time() >= time(16, 0)
+        reference_date = current.date()
+    if closed_today:
         return df
     try:
         parsed = pd.to_datetime(df["date"].iloc[-1], errors="coerce")
@@ -496,7 +532,7 @@ def _drop_partial_today(df: pd.DataFrame, *, now: Optional[datetime] = None) -> 
     if pd.isna(parsed):
         return df.iloc[:-1].copy()
     last_date = parsed.date()
-    if last_date == current.date():
+    if last_date == reference_date:
         return df.iloc[:-1].copy()
     return df
 

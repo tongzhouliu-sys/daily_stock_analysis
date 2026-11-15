@@ -26,7 +26,12 @@ from src.analysis_context_pack_overview import (
     ANALYSIS_CONTEXT_PACK_OVERVIEW_KEY,
     extract_analysis_context_pack_overview,
 )
-from src.core.trading_calendar import build_market_phase_context, get_market_for_stock
+from src.core.trading_calendar import (
+    MarketPhase,
+    build_market_phase_context,
+    get_market_for_stock,
+    infer_market_phase,
+)
 from src.market_phase_summary import (
     format_public_phase_pack_excerpt,
     render_market_phase_summary,
@@ -49,6 +54,9 @@ ALERT_WORKER_FINGERPRINT_TTL_SECONDS = 24 * 60 * 60
 DEFAULT_DB_ALERT_COOLDOWN_SECONDS = 24 * 60 * 60
 ALERT_WORKER_RULE_LIMIT = 1000
 WRITABLE_TRIGGER_STATUSES = frozenset({"triggered", "skipped", "degraded", "failed"})
+# Price-position sides persisted for edge-triggered price alerts.
+PRICE_SIDE_ABOVE = "above"
+PRICE_SIDE_BELOW = "below"
 
 
 @dataclass
@@ -159,6 +167,8 @@ class AlertWorker:
                     "reason": self.service._sanitize_text(str(exc) or "Alert evaluation failed"),
                     "message": self.service._sanitize_text(str(exc) or "Alert evaluation failed"),
                 }
+
+            result = self._apply_price_cross_guards(runtime_rule, result)
 
             record_status = result.get("record_status")
             if record_status == "triggered":
@@ -361,6 +371,124 @@ class AlertWorker:
             return float(value)
         except (TypeError, ValueError):
             return None
+
+    @staticmethod
+    def _is_non_trading_session(stock_code: str) -> bool:
+        """Whether the stock's exchange is closed today (weekend/holiday).
+
+        Fail-open: unknown markets or unavailable calendars must not silently
+        disable price alerts.
+        """
+        market = get_market_for_stock(stock_code)
+        if not market:
+            return False
+        try:
+            return infer_market_phase(market) is MarketPhase.NON_TRADING
+        except Exception as exc:
+            logger.debug("[AlertWorker] Market phase unavailable for %s: %s", stock_code, exc)
+            return False
+
+    def _price_state_key(self, runtime_rule: RuntimeAlertRule) -> str:
+        """Stable identity for persisted price-position state.
+
+        DB rules are keyed by rule id plus the expanded target so re-created
+        rules start fresh, while portfolio-scope expansions keep independent
+        state per holding. Legacy env rules fall back to their semantic key.
+        """
+        rule_id = self.service._runtime_rule_id(runtime_rule.rule)
+        if runtime_rule.source == "db" and rule_id:
+            target = runtime_rule.effective_target or str(
+                getattr(runtime_rule.rule, "stock_code", "") or ""
+            )
+            return f"rule:{rule_id}:{target}"
+        return runtime_rule.key
+
+    def _load_last_price_side(self, rule_key: str) -> Optional[str]:
+        try:
+            row = self.service.repo.get_rule_state(rule_key)
+        except Exception as exc:
+            logger.warning("[AlertWorker] Failed to read price alert state for %s: %s", rule_key, exc)
+            return None
+        state = str(getattr(row, "last_state", "") or "").strip().lower()
+        if state in (PRICE_SIDE_ABOVE, PRICE_SIDE_BELOW):
+            return state
+        return None
+
+    def _persist_last_price_side(
+        self,
+        runtime_rule: RuntimeAlertRule,
+        state_key: str,
+        side: str,
+        observed: Optional[float],
+    ) -> None:
+        try:
+            self.service.repo.upsert_rule_state(
+                rule_key=state_key,
+                rule_id=self.service._runtime_rule_id(runtime_rule.rule),
+                target=str(getattr(runtime_rule.rule, "stock_code", "") or ""),
+                alert_type="price_cross",
+                last_state=side,
+                last_observed_value=observed,
+                last_evaluated_at=datetime.now(),
+            )
+        except Exception as exc:
+            logger.warning(
+                "[AlertWorker] Failed to persist price alert state for %s: %s",
+                state_key,
+                exc,
+            )
+
+    def _apply_price_cross_guards(
+        self,
+        runtime_rule: RuntimeAlertRule,
+        result: Dict[str, Any],
+    ) -> Dict[str, Any]:
+        """Apply trading-session and edge-trigger semantics to price alerts.
+
+        ``price_cross`` describes a crossing event, not a resting condition:
+
+        1. Non-trading sessions (weekends, exchange holidays) are skipped so a
+           stale quote cannot fire a "price crossed" alert.
+        2. A trigger only survives when the observed price flips side versus the
+           persisted last state. Staying above (or below) the level is
+           downgraded to ``not_triggered`` instead of re-notifying each poll.
+        """
+        rule = runtime_rule.rule
+        if not isinstance(rule, PriceAlert):
+            return result
+
+        stock_code = str(getattr(rule, "stock_code", "") or "")
+        if self._is_non_trading_session(stock_code):
+            return self.service._not_triggered(
+                rule,
+                result.get("observed_value"),
+                f"{stock_code} price alert skipped: market is not in a trading session",
+                record_status="skipped",
+                threshold=self._optional_float(result.get("threshold")),
+                data_source=result.get("data_source"),
+                data_timestamp=result.get("data_timestamp"),
+            )
+
+        observed = self._optional_float(result.get("observed_value"))
+        threshold = self._optional_float(result.get("threshold"))
+        if observed is None or threshold is None:
+            return result
+
+        side = PRICE_SIDE_ABOVE if observed >= threshold else PRICE_SIDE_BELOW
+        state_key = self._price_state_key(runtime_rule)
+        previous_side = self._load_last_price_side(state_key)
+        if result.get("record_status") == "triggered" and previous_side == side:
+            result = self.service._not_triggered(
+                rule,
+                observed,
+                f"{stock_code} price still {side} {threshold:g}: no edge crossing, alert suppressed",
+                record_status="not_triggered",
+                threshold=threshold,
+                data_source=result.get("data_source"),
+                data_timestamp=result.get("data_timestamp"),
+            )
+        self._persist_last_price_side(runtime_rule, state_key, side, observed)
+        return result
 
     def _diagnostics_for_status(
         self,

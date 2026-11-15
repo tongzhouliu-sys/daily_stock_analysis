@@ -29,6 +29,15 @@ from src.services.decision_signal_service import DecisionSignalService
 from src.storage import DatabaseManager
 
 
+def _quote_prices(*prices: float) -> AsyncMock:
+    """Realtime quote mock whose price changes per poll.
+
+    `price_cross` rules only fire on an edge flip, so tests that expect
+    repeated triggers must alternate between above and below the threshold.
+    """
+    return AsyncMock(side_effect=[SimpleNamespace(price=value) for value in prices])
+
+
 class AlertIndicatorHelperTestCase(unittest.TestCase):
     def test_required_bars_and_requested_days_are_stable(self) -> None:
         cases = {
@@ -244,8 +253,15 @@ class AlertWorkerTestCase(unittest.TestCase):
         Config.reset_instance()
         DatabaseManager.reset_instance()
         self.service = AlertService()
+        # Price alerts skip non-trading sessions; pin the session gate so
+        # results do not depend on which weekday CI happens to run.
+        self._session_patch = patch.object(
+            AlertWorker, "_is_non_trading_session", staticmethod(lambda _code: False)
+        )
+        self._session_patch.start()
 
     def tearDown(self) -> None:
+        self._session_patch.stop()
         DatabaseManager.reset_instance()
         Config.reset_instance()
         os.environ.pop("ENV_FILE", None)
@@ -407,10 +423,11 @@ class AlertWorkerTestCase(unittest.TestCase):
 
         with patch(
             "src.agent.events.EventMonitor._get_realtime_quote",
-            new=AsyncMock(return_value=SimpleNamespace(price=1810.0)),
+            new=_quote_prices(1810.0, 1790.0, 1810.0),
         ):
-            worker.run_once()
-            worker.run_once()
+            worker.run_once()   # first cross
+            worker.run_once()   # dip below
+            worker.run_once()   # second cross reuses the same signal
 
         signals = signal_service.list_signals(source_type="alert", stock_code="600519", market="cn", page_size=10)[
             "items"
@@ -628,8 +645,10 @@ class AlertWorkerTestCase(unittest.TestCase):
         )
         notifier = self._notifier()
 
+        prices = [1810.0, 1790.0, 1810.0]
+
         async def _quote(_monitor, _stock_code):
-            return SimpleNamespace(price=1810.0)
+            return SimpleNamespace(price=prices.pop(0))
 
         worker = AlertWorker(
             config_provider=lambda: self._config(legacy_rules),
@@ -637,8 +656,9 @@ class AlertWorkerTestCase(unittest.TestCase):
             notifier=notifier,
         )
         with patch("src.agent.events.EventMonitor._get_realtime_quote", new=_quote):
-            first = worker.run_once()
-            second = worker.run_once()
+            first = worker.run_once()   # cross up
+            worker.run_once()           # dip below
+            second = worker.run_once()  # cross up again
 
         self.assertEqual(first["triggered"], 1)
         self.assertEqual(first["recorded"], 1)
@@ -847,7 +867,8 @@ class AlertWorkerTestCase(unittest.TestCase):
         self.assertEqual(len(triggers), 1)
         self.assertEqual(triggers[0]["target"], "000858")
         self.assertEqual(triggers[0]["observed_value"], 5000.0)
-        self.assertAlmostEqual(triggers[0]["threshold"], 4666.666666666667)
+        # Baseline excludes the spike bar itself: mean(1000, 1000) * 2.0.
+        self.assertAlmostEqual(triggers[0]["threshold"], 2000.0)
         self.assertEqual(triggers[0]["data_source"], "daily_data")
         self.assertEqual(triggers[0]["data_timestamp"], "2026-05-15T00:00:00")
         notifier.send_with_results.assert_called_once()
@@ -1422,13 +1443,15 @@ class AlertWorkerTestCase(unittest.TestCase):
         worker = AlertWorker(config_provider=lambda: self._config(), service=self.service, notifier=FakeNotifier())
         with patch(
             "src.agent.events.EventMonitor._get_realtime_quote",
-            new=AsyncMock(return_value=SimpleNamespace(price=1810.0)),
+            new=_quote_prices(1810.0, 1790.0, 1810.0),
         ):
             first = worker.run_once()
             second = worker.run_once()
+            third = worker.run_once()
 
         self.assertEqual(first["notified"], 0)
         self.assertEqual(second["notified"], 0)
+        self.assertEqual(third["notified"], 0)
         channels = {item["channel"] for item in self._notifications()}
         self.assertEqual(channels, {"__no_channel__", "wechat"})
         cooldown = self.service.repo.get_rule_cooldown_summary(
@@ -1483,15 +1506,19 @@ class AlertWorkerTestCase(unittest.TestCase):
             now_provider=lambda: now["value"],
             fingerprint_ttl_seconds=60,
         )
+        # A price cross only fires on an edge flip, so each poll alternates
+        # between below and above the 1800 threshold.
         with patch(
             "src.agent.events.EventMonitor._get_realtime_quote",
-            new=AsyncMock(return_value=SimpleNamespace(price=1810.0)),
+            new=_quote_prices(1810.0, 1790.0, 1810.0, 1790.0, 1810.0),
         ):
-            worker.run_once()
+            worker.run_once()          # cross up -> notify #1
             now["value"] += 30
-            worker.run_once()
+            worker.run_once()          # dip below -> no trigger
+            worker.run_once()          # cross up inside cooldown -> suppressed
             now["value"] += 61
-            worker.run_once()
+            worker.run_once()          # dip below -> no trigger
+            worker.run_once()          # cross up after cooldown -> notify #2
 
         self.assertEqual(notifier.send_with_results.call_count, 2)
         self.assertEqual(len(self._triggers(status="triggered")), 3)
@@ -1517,13 +1544,15 @@ class AlertWorkerTestCase(unittest.TestCase):
             side_effect=RuntimeError("database locked token=secret-token"),
         ), patch(
             "src.agent.events.EventMonitor._get_realtime_quote",
-            new=AsyncMock(return_value=SimpleNamespace(price=1810.0)),
+            new=_quote_prices(1810.0, 1790.0, 1810.0, 1790.0, 1810.0),
         ):
-            first = worker.run_once()
+            first = worker.run_once()   # cross up -> notify #1
             now["value"] += 10
-            second = worker.run_once()
+            worker.run_once()           # dip below
+            second = worker.run_once()  # cross up inside fallback window
+            worker.run_once()           # dip below
             now["value"] += 61
-            third = worker.run_once()
+            third = worker.run_once()   # cross up after fallback expiry
 
         self.assertEqual(first["notified"], 1)
         self.assertEqual(second["cooldown_suppressed"], 1)
@@ -1553,13 +1582,15 @@ class AlertWorkerTestCase(unittest.TestCase):
             side_effect=RuntimeError("database locked"),
         ), patch(
             "src.agent.events.EventMonitor._get_realtime_quote",
-            new=AsyncMock(return_value=SimpleNamespace(price=1810.0)),
+            new=_quote_prices(1810.0, 1790.0, 1810.0, 1790.0, 1810.0),
         ):
-            first = worker.run_once()
+            first = worker.run_once()   # dispatch fails, fallback not armed
             now["value"] += 10
-            second = worker.run_once()
+            worker.run_once()           # dip below
+            second = worker.run_once()  # dispatch succeeds, fallback armed
             now["value"] += 10
-            third = worker.run_once()
+            worker.run_once()           # dip below
+            third = worker.run_once()   # cross up inside fallback window
 
         self.assertEqual(first["notified"], 0)
         self.assertEqual(second["notified"], 1)
@@ -1581,10 +1612,11 @@ class AlertWorkerTestCase(unittest.TestCase):
         )
         with patch(
             "src.agent.events.EventMonitor._get_realtime_quote",
-            new=AsyncMock(return_value=SimpleNamespace(price=1810.0)),
+            new=_quote_prices(1810.0, 1790.0, 1810.0),
         ):
             worker.run_once()
             now["value"] += 10
+            worker.run_once()
             worker.run_once()
 
         self.assertEqual(notifier.send_with_results.call_count, 2)
@@ -1605,16 +1637,16 @@ class AlertWorkerTestCase(unittest.TestCase):
         )
         with patch(
             "src.agent.events.EventMonitor._get_realtime_quote",
-            new=AsyncMock(return_value=SimpleNamespace(price=1810.0)),
+            new=_quote_prices(1810.0, 1790.0, 1810.0),
         ):
-            worker.run_once()
+            worker.run_once()           # cross up -> notify #1
             now["value"] += 10
-            worker.run_once()
+            worker.run_once()           # dip below -> no trigger
             now["value"] += 61
-            worker.run_once()
+            worker.run_once()           # cross up after TTL -> notify #2
 
         self.assertEqual(notifier.send_with_results.call_count, 2)
-        self.assertEqual(len(self._triggers(status="triggered")), 3)
+        self.assertEqual(len(self._triggers(status="triggered")), 2)
 
     def test_failed_db_notification_attempts_do_not_start_cooldown_window(self) -> None:
         self._create_rule(target="600519")
@@ -1634,22 +1666,21 @@ class AlertWorkerTestCase(unittest.TestCase):
         )
         with patch(
             "src.agent.events.EventMonitor._get_realtime_quote",
-            new=AsyncMock(return_value=SimpleNamespace(price=1810.0)),
+            new=_quote_prices(1810.0, 1790.0, 1810.0, 1790.0, 1810.0),
         ):
-            first = worker.run_once()
+            first = worker.run_once()   # dispatch fails, cooldown not armed
             now["value"] += 10
-            second = worker.run_once()
+            worker.run_once()           # dip below
+            second = worker.run_once()  # dispatch raises, cooldown not armed
             now["value"] += 10
-            third = worker.run_once()
-            now["value"] += 10
-            fourth = worker.run_once()
+            worker.run_once()           # dip below
+            third = worker.run_once()   # dispatch succeeds
 
         self.assertEqual(first["notified"], 0)
         self.assertEqual(second["notified"], 0)
         self.assertEqual(third["notified"], 1)
-        self.assertEqual(fourth["notified"], 0)
         self.assertEqual(notifier.send_with_results.call_count, 3)
-        self.assertEqual(len(self._triggers(status="triggered")), 4)
+        self.assertEqual(len(self._triggers(status="triggered")), 3)
 
     def test_p6_watchlist_expands_to_child_keys_for_db_cooldown_fallback(self) -> None:
         self._create_rule(
@@ -1665,8 +1696,10 @@ class AlertWorkerTestCase(unittest.TestCase):
         config.stock_list = ["600519", "000001"]
         now = {"value": 1000.0}
 
-        async def _quote(_monitor, _stock_code):
-            return SimpleNamespace(price=11.0)
+        prices = {"600519": [11.0, 9.5, 11.0], "000001": [11.0, 9.5, 11.0]}
+
+        async def _quote(_monitor, stock_code):
+            return SimpleNamespace(price=prices[stock_code].pop(0))
 
         worker = AlertWorker(
             config_provider=lambda: config,
@@ -1680,9 +1713,10 @@ class AlertWorkerTestCase(unittest.TestCase):
             "get_active_cooldown",
             side_effect=RuntimeError("database locked"),
         ), patch("src.agent.events.EventMonitor._get_realtime_quote", new=_quote):
-            first = worker.run_once()
+            first = worker.run_once()   # both cross up -> notify
             now["value"] += 10
-            second = worker.run_once()
+            worker.run_once()           # both dip below
+            second = worker.run_once()  # both cross up inside fallback window
 
         self.assertEqual(first["loaded"], 2)
         self.assertEqual(first["notified"], 2)

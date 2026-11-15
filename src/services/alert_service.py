@@ -6,6 +6,7 @@ from __future__ import annotations
 import asyncio
 import json
 import logging
+import math
 import re
 from datetime import date, datetime
 from typing import Any, Dict, List, Optional
@@ -482,7 +483,6 @@ class AlertService:
             )
 
         try:
-            avg_vol = float(df["volume"].mean())
             latest_vol = float(df["volume"].iloc[-1])
         except (TypeError, ValueError, IndexError) as exc:
             return self._evaluation_error(
@@ -491,6 +491,26 @@ class AlertService:
                 data_source="daily_data",
                 data_timestamp=self._extract_daily_timestamp(df),
             )
+        # Baseline must exclude the bar being tested, otherwise a real spike
+        # inflates its own average and the alert under-triggers.
+        prior_volumes = []
+        for raw_value in df["volume"].iloc[:-1].tolist():
+            try:
+                value = float(raw_value)
+            except (TypeError, ValueError):
+                continue
+            if math.isfinite(value):
+                prior_volumes.append(value)
+        if not prior_volumes:
+            return self._not_triggered(
+                rule,
+                latest_vol,
+                "No prior daily volume history for baseline average",
+                record_status="degraded",
+                data_source="daily_data",
+                data_timestamp=self._extract_daily_timestamp(df),
+            )
+        avg_vol = sum(prior_volumes) / len(prior_volumes)
         if avg_vol <= 0:
             return self._not_triggered(
                 rule,
