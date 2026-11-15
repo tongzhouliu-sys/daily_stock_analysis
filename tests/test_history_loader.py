@@ -46,15 +46,38 @@ class HistoryLoaderTestCase(unittest.TestCase):
             "volume": 100,
         }
         mock_db = MagicMock()
-        mock_db.get_data_range.return_value = [fake_bar] * 40
+        # T29: 命中门槛是请求根数的八成（days=60 → 48 根）
+        mock_db.get_data_range.return_value = [fake_bar] * 50
         mock_get_db.return_value = mock_db
 
         df, source = load_history_df("600519", days=60, target_date=date(2026, 4, 18))
 
         self.assertIsNotNone(df)
         self.assertEqual(source, "db_cache")
-        self.assertEqual(len(df), 40)
+        self.assertEqual(len(df), 50)
         mock_db.get_data_range.assert_called_once()
+
+    @patch("src.services.history_loader._get_fetcher_manager")
+    @patch("src.storage.get_db")
+    def test_db_hit_requires_eighty_percent_of_requested(self, mock_get_db, mock_get_fm):
+        """T29: 库内不足请求根数的八成时视为未命中，不再把 30 根当作 120 根。"""
+        from src.services.history_loader import _network_cache, load_history_df
+
+        _network_cache.clear()
+        fake_bar = MagicMock()
+        fake_bar.to_dict.return_value = {"date": "2026-04-18", "close": 10}
+        mock_db = MagicMock()
+        mock_db.get_data_range.return_value = [fake_bar] * 30
+        mock_get_db.return_value = mock_db
+
+        mock_fm = MagicMock()
+        mock_fm.get_daily_data.return_value = (None, "none")
+        mock_get_fm.return_value = mock_fm
+
+        _df, source = load_history_df("600519", days=120, target_date=date(2026, 4, 18))
+
+        self.assertNotEqual(source, "db_cache")
+        mock_fm.get_daily_data.assert_called_once()
 
     # ------------------------------------------------------------------
     # DB miss → DFM fallback
@@ -62,7 +85,9 @@ class HistoryLoaderTestCase(unittest.TestCase):
     @patch("src.services.history_loader._get_fetcher_manager")
     @patch("src.storage.get_db")
     def test_falls_back_to_dfm_when_db_empty(self, mock_get_db, mock_get_fm):
-        from src.services.history_loader import load_history_df
+        from src.services.history_loader import _network_cache, load_history_df
+
+        _network_cache.clear()
 
         mock_db = MagicMock()
         mock_db.get_data_range.return_value = []
@@ -77,7 +102,8 @@ class HistoryLoaderTestCase(unittest.TestCase):
 
         self.assertIsNotNone(df)
         self.assertEqual(source, "eastmoney")
-        mock_fm.get_daily_data.assert_called_once_with("600519", days=60)
+        # 网络取数按窗口桶取整（60 → 120），并发请求可共享同一次拉取
+        mock_fm.get_daily_data.assert_called_once_with("600519", days=120)
 
     # ------------------------------------------------------------------
     # ContextVar integration
@@ -139,7 +165,9 @@ class HistoryLoaderTestCase(unittest.TestCase):
     @patch("src.services.history_loader._get_fetcher_manager")
     @patch("src.storage.get_db")
     def test_graceful_when_both_fail(self, mock_get_db, mock_get_fm):
-        from src.services.history_loader import load_history_df
+        from src.services.history_loader import _network_cache, load_history_df
+
+        _network_cache.clear()
 
         mock_db = MagicMock()
         mock_db.get_data_range.side_effect = Exception("DB down")

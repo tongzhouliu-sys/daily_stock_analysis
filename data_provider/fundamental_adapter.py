@@ -176,6 +176,48 @@ _DIVIDEND_KEYWORD_MAP: Dict[str, List[str]] = {
 }
 
 
+def _sum_recent_net_inflow(
+    stock_df: "pd.DataFrame",
+    dates: "pd.Series",
+    latest_net_inflow: float,
+) -> Tuple[Optional[float], Optional[float]]:
+    """T29: 用同一份资金流历史求近 5/10 个交易日主力净流入之和。
+
+    返回 ``(inflow_5d, inflow_10d)``；样本不足对应窗口时返回 None，
+    不用部分样本冒充完整窗口。单位与接口一致（元）。
+    """
+    if "主力净流入-净额" not in stock_df.columns:
+        return None, None
+    try:
+        work = pd.DataFrame(
+            {
+                "date": dates,
+                "net": pd.to_numeric(stock_df["主力净流入-净额"], errors="coerce"),
+            }
+        )
+        work = work.loc[work["date"].notna()].drop_duplicates(subset="date")
+        work = work.sort_values("date", ascending=False)
+    except Exception:
+        return None, None
+    if work.empty:
+        return None, None
+    # 最新一行若净额缺失，用调用方已解析好的值补齐；不能先删掉这一行再覆盖下一行。
+    if math.isfinite(latest_net_inflow) and pd.isna(work.iloc[0]["net"]):
+        work.iloc[0, work.columns.get_loc("net")] = latest_net_inflow
+
+    def _window_sum(days: int) -> Optional[float]:
+        window = work.head(days)
+        if len(window) < days:
+            return None
+        # 窗口内缺任何一天的净额都不算完整窗口，避免用部分样本冒充
+        if window["net"].isna().any():
+            return None
+        total = float(window["net"].sum())
+        return total if math.isfinite(total) else None
+
+    return _window_sum(5), _window_sum(10)
+
+
 def _safe_float(value: Any) -> Optional[float]:
     """Best-effort float conversion."""
     if value is None:
@@ -705,10 +747,15 @@ class AkshareFundamentalAdapter:
                 row = stock_df.loc[dates.idxmax()]
                 net_inflow = _safe_float(row.get("主力净流入-净额"))
                 if net_inflow is not None and math.isfinite(net_inflow):
+                    # T29: 同一份历史数据里已含近 5/10 个交易日的主力净额，
+                    # 直接求和，不再把两个窗口写死为 None。
+                    inflow_5d, inflow_10d = _sum_recent_net_inflow(
+                        stock_df, dates, net_inflow
+                    )
                     result["stock_flow"] = {
                         "main_net_inflow": net_inflow,
-                        "inflow_5d": None,
-                        "inflow_10d": None,
+                        "inflow_5d": inflow_5d,
+                        "inflow_10d": inflow_10d,
                     }
                     result["source_chain"].append(f"capital_stock:{stock_source}")
 

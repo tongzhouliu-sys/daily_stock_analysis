@@ -162,7 +162,7 @@ class EnglishStockPromptTemplateTestCase(unittest.TestCase):
                     self.assertIn("### Output language requirements (highest priority)", prompt)
                     self.assertIn("123.46M shares", prompt)
                     if news:
-                        self.assertIn("Ignore all news older than the last 5 days", prompt)
+                        self.assertIn("must stay inside the last 5 days", prompt)
 
     def test_english_user_prompt_replaces_chinese_stock_name_placeholder(self) -> None:
         analyzer = _make_analyzer(legacy=True)

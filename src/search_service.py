@@ -35,6 +35,7 @@ from tenacity import (
 
 from data_provider.us_index_mapping import is_us_index_code
 from src.config import (
+    ANALYTICAL_INTEL_LOOKBACK_DAYS as _ANALYTICAL_INTEL_LOOKBACK_DAYS,
     NEWS_STRATEGY_WINDOWS,
     normalize_news_strategy_profile,
     resolve_news_window_days,
@@ -2273,7 +2274,7 @@ class SearchService:
     NEWS_OVERSAMPLE_FACTOR = 2
     NEWS_OVERSAMPLE_MAX = 10
     FUTURE_TOLERANCE_DAYS = 1
-    ANALYTICAL_INTEL_LOOKBACK_DAYS = 180
+    ANALYTICAL_INTEL_LOOKBACK_DAYS = _ANALYTICAL_INTEL_LOOKBACK_DAYS
     ANALYTICAL_INTEL_DIMENSIONS = {"market_analysis", "earnings"}
     _CHINESE_TEXT_RE = re.compile(r"[\u3400-\u4dbf\u4e00-\u9fff]")
     _US_STOCK_RE = re.compile(r"^[A-Za-z]{1,5}(\.[A-Za-z])?$")

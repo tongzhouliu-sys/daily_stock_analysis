@@ -195,6 +195,11 @@ NEWS_STRATEGY_WINDOWS: Dict[str, int] = {
     "medium": 7,
     "long": 30,
 }
+# T29: 机构持仓/业绩等长期情报维度的搜索窗口。新闻窗口（NEWS_STRATEGY_WINDOWS）
+# 只有 1~30 天，而财报、机构增减持天然在 1~6 个月尺度上，此前搜索端已放宽到
+# 180 天，但提示词仍按短新闻窗口要求"超期一律忽略"，导致抓到的长周期情报被丢弃。
+# 统一在 config 里声明，搜索端与提示词端共用同一口径。
+ANALYTICAL_INTEL_LOOKBACK_DAYS = 180
 
 
 @dataclass(frozen=True)

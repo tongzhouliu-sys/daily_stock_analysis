@@ -30,6 +30,7 @@ from src.agent.llm_adapter import (
 from src.agent.provider_trace import resolved_model_provider_identity
 from src.agent.skills.defaults import CORE_TRADING_SKILL_POLICY_EN, CORE_TRADING_SKILL_POLICY_ZH
 from src.config import (
+    ANALYTICAL_INTEL_LOOKBACK_DAYS,
     Config,
     extra_litellm_params,
     get_api_keys_for_model,
@@ -1331,6 +1332,103 @@ def _first_numeric_value(*values: Any) -> Optional[float]:
         if numeric is not None:
             return numeric
     return None
+
+
+def _build_earnings_and_chip_event_rows(
+    fundamental_context: Optional[Dict[str, Any]],
+) -> List[Tuple[str, str, Any, str, str]]:
+    """T29: 把已抓取的业绩与筹码事件整理成提示词小表行。
+
+    返回 ``[(label_en, label_zh, value, meaning_en, meaning_zh), ...]``，
+    只包含确实有数据的项；没有数据的项不产生占位行。
+    """
+    if not isinstance(fundamental_context, dict):
+        return []
+
+    def _block(name: str) -> Dict[str, Any]:
+        block = fundamental_context.get(name)
+        if not isinstance(block, dict):
+            return {}
+        data = block.get("data")
+        return data if isinstance(data, dict) else {}
+
+    growth = _block("growth")
+    earnings = _block("earnings")
+    institution = _block("institution")
+    dragon_tiger = _block("dragon_tiger")
+
+    def _present(value: Any) -> bool:
+        if value is None:
+            return False
+        if isinstance(value, str):
+            return bool(value.strip())
+        try:
+            return not (isinstance(value, float) and value != value)
+        except Exception:
+            return True
+
+    rows: List[Tuple[str, str, Any, str, str]] = []
+
+    def _add(label_en: str, label_zh: str, value: Any, meaning_en: str, meaning_zh: str) -> None:
+        if _present(value):
+            rows.append((label_en, label_zh, value, meaning_en, meaning_zh))
+
+    _add(
+        "Revenue YoY %", "营收同比%", growth.get("revenue_yoy"),
+        "Latest report growth; sustained positive growth supports trend continuation",
+        "最新报告期增速；持续为正支持趋势延续",
+    )
+    _add(
+        "Net Profit YoY %", "净利润同比%", growth.get("net_profit_yoy"),
+        "Profit growth vs revenue growth shows margin direction",
+        "利润增速与营收增速的差异反映利润率方向",
+    )
+    _add(
+        "ROE %", "净资产收益率%", growth.get("roe"),
+        "Profitability level; lower ROE weakens a value-style holding case",
+        "盈利能力水平；ROE 偏低削弱价值型持有逻辑",
+    )
+    _add(
+        "Gross Margin %", "毛利率%", growth.get("gross_margin"),
+        "Margin trend is the pricing-power check",
+        "毛利率趋势用于校验定价能力",
+    )
+    _add(
+        "Earnings Forecast", "业绩预告", earnings.get("forecast_summary"),
+        "Company guidance; treat as expectation, not realized results",
+        "公司业绩指引；属于预期而非已实现业绩",
+    )
+    _add(
+        "Earnings Express", "业绩快报", earnings.get("quick_report_summary"),
+        "Pre-audit results; closer to actuals than guidance",
+        "审计前的快报数据；比预告更接近实际",
+    )
+    _add(
+        "Institutional Holding Change", "机构持仓变动", institution.get("institution_holding_change"),
+        "Institutional accumulation signals medium-term interest",
+        "机构增持反映中期关注度",
+    )
+    _add(
+        "Top-10 Holder Change", "十大股东变动", institution.get("top10_holder_change"),
+        "Large-holder change hints at chip concentration shifts",
+        "大股东变动提示筹码集中度变化",
+    )
+
+    if _present(dragon_tiger.get("latest_date")) or _present(dragon_tiger.get("recent_count")):
+        latest_date = dragon_tiger.get("latest_date")
+        count = dragon_tiger.get("recent_count")
+        on_list = bool(dragon_tiger.get("is_on_list"))
+        if on_list or (isinstance(count, (int, float)) and count and count > 0):
+            value = f"{count if count is not None else 'N/A'} / {latest_date or 'N/A'}"
+            rows.append((
+                "Dragon-Tiger List (count / latest)",
+                "龙虎榜（次数/最近日期）",
+                value,
+                "Frequent appearances imply speculative capital activity and larger swings",
+                "频繁上榜意味着游资活跃、波动加大",
+            ))
+
+    return rows
 
 
 def _capital_flow_bias(fundamental_context: Optional[Dict[str, Any]]) -> str:
@@ -4698,6 +4796,37 @@ Output strictly in the following JSON format. This is a complete Decision Dashbo
 > 资金流向只能作为价格位置的过滤器：接近压力且主力流出时不得追买；接近支撑且未放量跌破时，优先判断为持有观察、震荡或洗盘观察。
 """
 
+        # T29: 业绩与筹码事件小表。业绩预告/快报、机构与十大股东变动、龙虎榜已经
+        # 抓取并进入上下文，但此前从未进提示词，模型只能猜；这里只列有数据的行。
+        event_rows = _build_earnings_and_chip_event_rows(fundamental_context)
+        if event_rows:
+            if english:
+                table_lines = chr(10).join(
+                    f"| {label_en} | {value} | {meaning_en} |"
+                    for label_en, _label_zh, value, meaning_en, _meaning_zh in event_rows
+                )
+                prompt += f"""
+### Earnings and Chip Events (event-driven reference)
+| Event | Value | How to read it |
+|------|------|----------|
+{table_lines}
+
+> Only events with data are listed; absent rows mean the source returned nothing, not zero. Treat these events as timing/risk context for the technical setup, and never let an event row override a price-structure-based decision by itself.
+"""
+            else:
+                table_lines = chr(10).join(
+                    f"| {label_zh} | {value} | {meaning_zh} |"
+                    for _label_en, label_zh, value, _meaning_en, meaning_zh in event_rows
+                )
+                prompt += f"""
+### 业绩与筹码事件（事件驱动参考）
+| 事件 | 数值 | 解读方式 |
+|------|------|----------|
+{table_lines}
+
+> 只列出有数据的事件；未出现的行代表数据源没有返回，不代表数值为零。这些事件只作为形态择时与风险提示的参考，不能单独推翻基于价格结构的结论。
+"""
+
         # 添加三大法人动向（台股筹码过滤器）— tw-only；仅当 institution 区块 status='ok'
         # 且有净额时注入，其他市场 status='not_supported' 会跳过，严格 additive。
         institution_block = (
@@ -4952,6 +5081,9 @@ Output strictly in the following JSON format. This is a complete Decision Dashbo
                 news_max_age_days=getattr(prompt_config, "news_max_age_days", 3),
                 news_strategy_profile=getattr(prompt_config, "news_strategy_profile", "short"),
             )
+        # T29: 基本面/机构/业绩维度是按更长的情报窗口单独检索的，提示词必须与
+        # 搜索侧同一口径，否则抓到的长周期情报会在提示词这一层被要求丢弃。
+        analytical_intel_days = max(int(news_window_days or 0), int(ANALYTICAL_INTEL_LOOKBACK_DAYS))
         if english:
             prompt += """
 ---
@@ -4966,14 +5098,14 @@ Output strictly in the following JSON format. This is a complete Decision Dashbo
 """
         if news_context and english:
             prompt += f"""
-Below are the news search results for **{stock_name}({code})** from the last {news_window_days} days. Focus on extracting:
+Below are the news search results for **{stock_name}({code})**. The fast news window is the last {news_window_days} days; fundamental and institutional dimensions were intentionally searched over the last {analytical_intel_days} days. Focus on extracting:
 1. 🚨 **Risk alerts**: shareholder reductions, penalties, negative news
 2. 🎯 **Positive catalysts**: earnings, contracts, policy
 3. 📊 **Earnings expectations**: annual report previews, earnings flash reports
 4. 🕒 **Time rules (mandatory)**:
    - Every item written to `risk_alerts` / `positive_catalysts` / `latest_news` must include a specific date (YYYY-MM-DD)
-   - Ignore all news older than the last {news_window_days} days
-   - Ignore all news whose publication date is unknown or cannot be determined
+   - `risk_alerts` / `positive_catalysts` / `latest_news` must stay inside the last {news_window_days} days; older items belong in the fundamental/earnings commentary, not in the news fields
+   - Fundamental, institutional and earnings background may use items up to {analytical_intel_days} days old, but you must state the date; if the date is unknown, say the date is unmarked and do not present it as a fresh catalyst
 
 ```
 {news_context}
@@ -4981,14 +5113,14 @@ Below are the news search results for **{stock_name}({code})** from the last {ne
 """
         elif news_context:
             prompt += f"""
-以下是 **{stock_name}({code})** 近{news_window_days}日的新闻搜索结果，请重点提取：
+以下是 **{stock_name}({code})** 的新闻搜索结果。快讯窗口为近{news_window_days}日；基本面/机构维度是按近{analytical_intel_days}日单独检索的，请重点提取：
 1. 🚨 **风险警报**：减持、处罚、利空
 2. 🎯 **利好催化**：业绩、合同、政策
 3. 📊 **业绩预期**：年报预告、业绩快报
 4. 🕒 **时间规则（强制）**：
    - 输出到 `risk_alerts` / `positive_catalysts` / `latest_news` 的每一条都必须带具体日期（YYYY-MM-DD）
-   - 超出近{news_window_days}日窗口的新闻一律忽略
-   - 时间未知、无法确定发布日期的新闻一律忽略
+   - `risk_alerts` / `positive_catalysts` / `latest_news` 只取近{news_window_days}日内的内容，更早的只能写进基本面/业绩点评
+   - 基本面、机构与业绩背景可以引用近{analytical_intel_days}日内的信息，但必须写出日期；日期未标注的要明确说明“时间未标注”，不得当作今日新增催化
 
 ```
 {news_context}
@@ -5115,7 +5247,7 @@ If the stock name shown above is "Stock {code}" or incorrect, **state the correc
 - **Position-specific advice**: what to do without a position vs. what to do as a holder
 - **Concrete sniper levels**: buy price, stop-loss price, target price (to two decimals)
 - **Checklist**: mark each item with ✅/⚠️/❌
-- **News time compliance**: `latest_news`, `risk_alerts` and `positive_catalysts` must not contain information older than the last {news_window_days} days or with an unknown date
+- **News time compliance**: `latest_news`, `risk_alerts` and `positive_catalysts` must not contain information older than the last {news_window_days} days or with an unknown date; older fundamental/institutional background (up to {analytical_intel_days} days) may only appear in the fundamental commentary with its date
 - **Technical consistency**: never use mutually exclusive conclusions such as "bearish alignment" and "bullish alignment" as valid evidence at the same time; if fundamentals/events conflict with technicals, state explicitly "event-led, technicals not yet confirmed" or "fundamentals lean positive, but technicals are not yet confirmed"
 
 Output the complete Decision Dashboard in JSON format."""
@@ -5128,7 +5260,7 @@ Output the complete Decision Dashboard in JSON format."""
 - **持仓分类建议**：空仓者怎么做 vs 持仓者怎么做
 - **具体狙击点位**：买入价、止损价、目标价（精确到分）
 - **检查清单**：每项用 ✅/⚠️/❌ 标记
-- **消息面时间合规**：`latest_news`、`risk_alerts`、`positive_catalysts` 不得包含超出近{news_window_days}日或时间未知的信息
+- **消息面时间合规**：`latest_news`、`risk_alerts`、`positive_catalysts` 不得包含超出近{news_window_days}日或时间未知的信息；更早（最多近{analytical_intel_days}日）的基本面/机构信息只能写进基本面点评并注明日期
 - **技术面一致性**：严禁把“空头排列”和“多头排列”等互斥结论同时当作有效依据；若基本面/事件面与技术面冲突，必须明确写“事件先行、技术待确认”或“基本面偏多，但技术面尚未确认”
  
 请输出完整的 JSON 格式决策仪表盘。"""

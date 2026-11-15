@@ -238,6 +238,11 @@ def _symbol_scope_lookup_values(code: str, market: str) -> List[str]:
     return values
 
 
+# T29: 单股分析的主取数窗口。MA60 至少需要 60 根，多取一些才能算均线变化；
+# Agent 工具默认请求 120 根，这里一次取足，避免工具层再触发第二次网络请求。
+PRIMARY_HISTORY_DAYS = 130
+
+
 @contextmanager
 def _measure_fetch_step(sink: Dict[str, float], label: str):
     """T28: 记录单股取数各步骤耗时，便于定位慢在哪个接口。
@@ -455,7 +460,9 @@ class StockAnalysisPipeline:
 
             # 从数据源获取数据
             logger.info(f"{stock_name}({code}) 开始从数据源获取数据...")
-            df, source_name = self.fetcher_manager.get_daily_data(code, days=30)
+            df, source_name = self.fetcher_manager.get_daily_data(
+                code, days=PRIMARY_HISTORY_DAYS
+            )
 
             if df is None or df.empty:
                 return False, "获取数据为空"
@@ -691,7 +698,8 @@ class StockAnalysisPipeline:
                 _mkt = get_market_for_stock(normalize_stock_code(code))
                 frozen = get_frozen_target_date()
                 end_date = frozen if frozen else get_market_now(_mkt).date()
-                start_date = end_date - timedelta(days=89)  # ~60 trading days for MA60
+                # T29: 约 100 个交易日，足够 MA60 及均线变化，不再卡在 60 根边缘
+                start_date = end_date - timedelta(days=150)
                 historical_bars = self.db.get_data_range(code, start_date, end_date)
                 if historical_bars:
                     df = pd.DataFrame([bar.to_dict() for bar in historical_bars])
@@ -3621,7 +3629,9 @@ class StockAnalysisPipeline:
         # === 批量预取实时行情（优化：避免每只股票都触发全量拉取）===
         # 只有股票数量 >= 5 时才进行预取，少量股票直接逐个查询更高效
         if len(stock_codes) >= 5:
-            daily_prefetch_count = self.fetcher_manager.prefetch_daily_klines(stock_codes, days=30)
+            daily_prefetch_count = self.fetcher_manager.prefetch_daily_klines(
+                stock_codes, days=PRIMARY_HISTORY_DAYS
+            )
             if daily_prefetch_count > 0:
                 logger.info(
                     "[prefetch] component=daily_kline_prefetch action=complete "

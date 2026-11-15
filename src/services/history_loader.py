@@ -13,6 +13,7 @@ from __future__ import annotations
 
 import contextvars
 import logging
+import math
 import threading
 import time
 from collections import OrderedDict
@@ -24,7 +25,9 @@ import pandas as pd
 
 logger = logging.getLogger(__name__)
 
-_CACHE_MIN_RECORDS = 30
+# T29: 库内命中门槛。请求 120/240 根时，只要库里有请求量的八成即可命中，
+# 避免「库里有 30 根」被当成满足任意请求长度、也不再整段重取。
+_CACHE_HIT_RATIO = 0.8
 # In-memory cache TTL for network-fetched DataFrames (seconds).
 _MEM_CACHE_TTL_SECONDS = 60
 # Maximum number of entries in the in-memory cache.
@@ -399,7 +402,7 @@ def load_history_df(
     try:
         db = get_db()
         _code, bars = _select_best_bars(db, stock_code, start, end, identity)
-        required_records = max(min(days, _CACHE_MIN_RECORDS), 1)
+        required_records = max(math.ceil(max(int(days or 0), 1) * _CACHE_HIT_RATIO), 1)
         latest_date = max((_bar_date(bar) for bar in bars), default=date.min)
         if bars and latest_date >= end and len(bars) >= required_records:
             df = pd.DataFrame([b.to_dict() for b in bars])

@@ -18,7 +18,7 @@
 
 import logging
 from dataclasses import dataclass, field
-from typing import Dict, Any, List
+from typing import Any, Dict, List, Optional
 from enum import Enum
 
 import pandas as pd
@@ -94,7 +94,8 @@ class TrendAnalysisResult:
     ma5: float = 0.0
     ma10: float = 0.0
     ma20: float = 0.0
-    ma60: float = 0.0
+    # T29: 历史不足 60 根时 MA60 缺失，用 None 表示不做替代
+    ma60: Optional[float] = None
     current_price: float = 0.0
     
     # 乖离率（与 MA5 的偏离度）
@@ -241,7 +242,12 @@ class StockTrendAnalyzer:
         result.ma5 = float(latest['MA5'])
         result.ma10 = float(latest['MA10'])
         result.ma20 = float(latest['MA20'])
-        result.ma60 = float(latest.get('MA60', 0))
+        ma60_value = latest.get('MA60')
+        result.ma60 = (
+            float(ma60_value)
+            if ma60_value is not None and not pd.isna(ma60_value)
+            else None
+        )
 
         # 1. 趋势判断
         self._analyze_trend(df, result)
@@ -272,10 +278,11 @@ class StockTrendAnalyzer:
         df['MA5'] = df['close'].rolling(window=5).mean()
         df['MA10'] = df['close'].rolling(window=10).mean()
         df['MA20'] = df['close'].rolling(window=20).mean()
+        # T29: 历史不足 60 根时不再用 MA20 冒充 MA60，缺失就留空由下游按缺失处理
         if len(df) >= 60:
             df['MA60'] = df['close'].rolling(window=60).mean()
         else:
-            df['MA60'] = df['MA20']  # 数据不足时使用 MA20 替代
+            df['MA60'] = float('nan')
         return df
 
     def _calculate_macd(self, df: pd.DataFrame) -> pd.DataFrame:
