@@ -26,7 +26,8 @@ from unittest.mock import MagicMock, patch
 
 from src.analyzer import AnalysisResult
 from src.config import Config
-from src.core.pipeline import StockAnalysisPipeline, INDEX_SKIP_MODULES
+from src.core.pipeline import INDEX_SKIP_MODULES, PRIMARY_HISTORY_DAYS, StockAnalysisPipeline
+from tests.support import make_pipeline
 from src.enums import ReportType
 from src.notification import NotificationService
 from src.search_service import SearchResponse, SearchService
@@ -74,7 +75,7 @@ def _render_aggregate_report(
         return_value=Config(stock_list=[], report_renderer_enabled=False),
     ):
         service = NotificationService()
-        pipeline = StockAnalysisPipeline.__new__(StockAnalysisPipeline)
+        pipeline = make_pipeline()
         pipeline.notifier = service
         return pipeline._generate_aggregate_report([result], report_type)
 
@@ -86,7 +87,7 @@ def _analysis_pipeline(
     enable_search: bool = False,
     realtime_name: str | None = None,
 ) -> StockAnalysisPipeline:
-    pipeline = StockAnalysisPipeline.__new__(StockAnalysisPipeline)
+    pipeline = make_pipeline()
     pipeline.fetcher_manager = MagicMock()
     pipeline.fetcher_manager.build_not_supported_fundamental_context.return_value = {
         "status": "not_supported",
@@ -198,7 +199,7 @@ class PipelineIndexTargetsTestCase(unittest.TestCase):
         self.assertEqual(a.canonical_id, b.canonical_id)
         self.assertEqual(a.canonical_id, "sh000300")
 
-        pipeline = StockAnalysisPipeline.__new__(StockAnalysisPipeline)
+        pipeline = make_pipeline()
         pipeline.config = MagicMock()
         pipeline.config.single_stock_notify = False
         pipeline.config.report_type = "simple"
@@ -236,7 +237,7 @@ class PipelineMarketDatePropagationTestCase(unittest.TestCase):
     """V4 — SH/SZ/CSI indices all use cn for market/date semantics."""
 
     def _pipeline(self) -> StockAnalysisPipeline:
-        pipeline = StockAnalysisPipeline.__new__(StockAnalysisPipeline)
+        pipeline = make_pipeline()
         pipeline.fetcher_manager = MagicMock()
         pipeline.db = MagicMock()
         return pipeline
@@ -363,7 +364,7 @@ class PipelineCapabilityMatrixTestCase(unittest.TestCase):
 
         executor = MagicMock()
         executor.tool_registry = registry
-        pipeline = StockAnalysisPipeline.__new__(StockAnalysisPipeline)
+        pipeline = make_pipeline()
         filtered = pipeline._filter_agent_tools_for_index(executor)
 
         names = set(filtered.tool_registry.list_names())
@@ -378,7 +379,7 @@ class PipelineCapabilityMatrixTestCase(unittest.TestCase):
     def test_v6_agent_branch_applies_filter_and_target_aware_history(
         self, mock_build_executor: MagicMock
     ) -> None:
-        pipeline = StockAnalysisPipeline.__new__(StockAnalysisPipeline)
+        pipeline = make_pipeline()
         pipeline.config = MagicMock()
         pipeline.config.report_language = "zh"
         pipeline.config.agent_skills = []
@@ -685,7 +686,7 @@ class PipelineBatchFailureIsolationTestCase(unittest.TestCase):
     """V2/V10 — unsupported targets rejected before provider calls; batch continues."""
 
     def test_v2_run_filters_unsupported_before_prefetch(self) -> None:
-        pipeline = StockAnalysisPipeline.__new__(StockAnalysisPipeline)
+        pipeline = make_pipeline()
         pipeline.config = MagicMock()
         pipeline.config.refresh_stock_list = MagicMock()
         pipeline.config.stock_list = []
@@ -730,7 +731,7 @@ class PipelineBatchFailureIsolationTestCase(unittest.TestCase):
         # unsupported target was removed from every provider request first.
         supported_codes = codes[1:]
         pipeline.fetcher_manager.prefetch_daily_klines.assert_called_once_with(
-            supported_codes, days=30
+            supported_codes, days=PRIMARY_HISTORY_DAYS
         )
         pipeline.fetcher_manager.prefetch_realtime_quotes.assert_called_once_with(
             supported_codes
@@ -750,7 +751,7 @@ class PipelineDryRunTestCase(unittest.TestCase):
     """V11 — dry-run preserves target identity through resume checks."""
 
     def test_v11_dry_run_uses_target_aware_resume_date(self) -> None:
-        pipeline = StockAnalysisPipeline.__new__(StockAnalysisPipeline)
+        pipeline = make_pipeline()
         pipeline.config = MagicMock()
         pipeline.config.refresh_stock_list = MagicMock()
         pipeline.config.stock_list = []

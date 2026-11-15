@@ -8,11 +8,11 @@ from unittest.mock import patch
 
 import pandas as pd
 
-from src.core.pipeline import StockAnalysisPipeline
+from tests.support import make_pipeline
 
 
 def _make_pipeline():
-    p = StockAnalysisPipeline.__new__(StockAnalysisPipeline)
+    p = make_pipeline()
     p.config = SimpleNamespace(enable_realtime_technical_indicators=True)
     return p
 

@@ -12,6 +12,7 @@ from unittest.mock import MagicMock, patch
 
 from src.analyzer import GeminiAnalyzer
 from src.core.pipeline import StockAnalysisPipeline
+from tests.support import make_pipeline
 from src.enums import ReportType
 from src.services.daily_market_context import DailyMarketContext
 
@@ -94,7 +95,7 @@ def test_pipeline_constructor_explicit_flag_overrides_config() -> None:
 
 
 def test_pipeline_loads_daily_market_context_when_market_review_enabled() -> None:
-    pipeline = StockAnalysisPipeline.__new__(StockAnalysisPipeline)
+    pipeline = make_pipeline()
     pipeline.config = SimpleNamespace(
         market_review_enabled=True,
         daily_market_context_enabled=True,
@@ -131,7 +132,7 @@ def test_pipeline_loads_daily_market_context_when_market_review_enabled() -> Non
 
 
 def test_pipeline_can_load_daily_market_context_without_runtime_generation() -> None:
-    pipeline = StockAnalysisPipeline.__new__(StockAnalysisPipeline)
+    pipeline = make_pipeline()
     pipeline.config = SimpleNamespace(
         market_review_enabled=True,
         daily_market_context_enabled=True,
@@ -159,7 +160,7 @@ def test_pipeline_can_load_daily_market_context_without_runtime_generation() -> 
 
 
 def test_pipeline_skips_daily_market_context_when_context_is_disabled() -> None:
-    pipeline = StockAnalysisPipeline.__new__(StockAnalysisPipeline)
+    pipeline = make_pipeline()
     pipeline.config = SimpleNamespace(
         market_review_enabled=True,
         daily_market_context_enabled=True,
@@ -178,7 +179,7 @@ def test_pipeline_skips_daily_market_context_when_context_is_disabled() -> None:
 
 
 def test_pipeline_skips_daily_market_context_when_config_is_disabled() -> None:
-    pipeline = StockAnalysisPipeline.__new__(StockAnalysisPipeline)
+    pipeline = make_pipeline()
     pipeline.config = SimpleNamespace(
         market_review_enabled=True,
         daily_market_context_enabled=False,
@@ -197,7 +198,7 @@ def test_pipeline_skips_daily_market_context_when_config_is_disabled() -> None:
 
 
 def test_pipeline_initializes_daily_market_context_service_once_across_threads() -> None:
-    pipeline = StockAnalysisPipeline.__new__(StockAnalysisPipeline)
+    pipeline = make_pipeline()
     pipeline.config = SimpleNamespace(
         market_review_enabled=True,
         daily_market_context_enabled=True,
@@ -242,7 +243,7 @@ def test_pipeline_initializes_daily_market_context_service_once_across_threads()
 
 
 def test_pipeline_uses_market_phase_effective_date_for_daily_market_context() -> None:
-    pipeline = StockAnalysisPipeline.__new__(StockAnalysisPipeline)
+    pipeline = make_pipeline()
     phase_context = SimpleNamespace(
         effective_daily_bar_date=date(2026, 3, 26),
         to_dict=MagicMock(
@@ -311,7 +312,7 @@ def test_pipeline_uses_market_phase_effective_date_for_daily_market_context() ->
 
 
 def test_pipeline_attaches_low_sensitive_market_context_to_enhanced_context() -> None:
-    pipeline = StockAnalysisPipeline.__new__(StockAnalysisPipeline)
+    pipeline = make_pipeline()
     enhanced_context = {"code": "600519"}
 
     pipeline._attach_daily_market_context(

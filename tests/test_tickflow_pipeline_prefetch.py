@@ -14,7 +14,8 @@ from tests.litellm_stub import ensure_litellm_stub
 ensure_litellm_stub()
 
 from src.analyzer import AnalysisResult
-from src.core.pipeline import StockAnalysisPipeline
+from src.core.pipeline import PRIMARY_HISTORY_DAYS
+from tests.support import make_pipeline
 
 
 def _make_result(code: str) -> AnalysisResult:
@@ -49,7 +50,7 @@ class _TrackingFetcherManager:
 class TestTickFlowPipelinePrefetch(unittest.TestCase):
     def test_run_prefetches_daily_klines_before_realtime_and_stock_processing(self):
         events = []
-        pipeline = StockAnalysisPipeline.__new__(StockAnalysisPipeline)
+        pipeline = make_pipeline()
         pipeline.max_workers = 1
         pipeline.fetcher_manager = _TrackingFetcherManager(events)
         pipeline._save_local_report = MagicMock()
@@ -76,7 +77,7 @@ class TestTickFlowPipelinePrefetch(unittest.TestCase):
 
         self.assertEqual(len(results), 5)
         self.assertEqual(events[0][0], "daily_prefetch")
-        self.assertEqual(events[0][2], 30)
+        self.assertEqual(events[0][2], PRIMARY_HISTORY_DAYS)
         self.assertEqual(events[1][0], "realtime_prefetch")
         self.assertEqual(events[2][0], "name_prefetch")
         self.assertTrue(all(event[0] != "process" for event in events[:3]))

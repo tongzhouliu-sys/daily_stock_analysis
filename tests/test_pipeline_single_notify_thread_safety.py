@@ -17,7 +17,7 @@ from tests.litellm_stub import ensure_litellm_stub
 ensure_litellm_stub()
 
 from src.analyzer import AnalysisResult
-from src.core.pipeline import StockAnalysisPipeline
+from tests.support import make_pipeline
 
 
 def _make_result(code: str) -> AnalysisResult:
@@ -74,7 +74,7 @@ class _CriticalSectionTrackingNotifier:
 
 class TestPipelineSingleNotifyThreadSafety(unittest.TestCase):
     def test_process_single_stock_serializes_direct_notification_path(self):
-        pipeline = StockAnalysisPipeline.__new__(StockAnalysisPipeline)
+        pipeline = make_pipeline()
         pipeline.fetch_and_save_stock_data = MagicMock(return_value=(True, None))
         pipeline.notifier = _CriticalSectionTrackingNotifier()
 

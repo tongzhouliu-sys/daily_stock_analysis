@@ -9,7 +9,7 @@ from unittest.mock import MagicMock
 
 from api.v1.schemas.history import ReportDetails
 from data_provider.base import DataFetcherManager
-from src.core.pipeline import StockAnalysisPipeline
+from tests.support import make_pipeline
 from src.services.market_hotspot_service import MarketHotspotService
 from src.services.market_structure_service import MarketStructureService
 from src.utils.data_processing import (
@@ -54,7 +54,7 @@ class PipelineRelatedBoardsTestCase(unittest.TestCase):
         DataFetcherManager.clear_concept_rankings_cache_for_tests()
 
     def test_attach_belong_boards_shallow_copies_context_before_injecting(self) -> None:
-        pipeline = StockAnalysisPipeline.__new__(StockAnalysisPipeline)
+        pipeline = make_pipeline()
         pipeline.fetcher_manager = MagicMock()
         pipeline.fetcher_manager.get_belong_boards.return_value = [{"name": "白酒", "type": "行业"}]
 
@@ -72,7 +72,7 @@ class PipelineRelatedBoardsTestCase(unittest.TestCase):
         self.assertEqual(enriched["belong_boards"], [{"name": "白酒", "type": "行业"}])
 
     def test_attach_belong_boards_adds_concept_rankings_for_cn(self) -> None:
-        pipeline = StockAnalysisPipeline.__new__(StockAnalysisPipeline)
+        pipeline = make_pipeline()
         pipeline.fetcher_manager = MagicMock()
         pipeline.fetcher_manager.get_belong_boards.return_value = [{"name": "机器人概念", "type": "概念"}]
         pipeline.fetcher_manager.get_concept_rankings.return_value = (
@@ -93,7 +93,7 @@ class PipelineRelatedBoardsTestCase(unittest.TestCase):
         self.assertEqual(enriched["concept_boards"]["data"]["bottom"][0]["change_pct"], -2.05)
 
     def test_attach_belong_boards_reuses_concept_rankings_per_pipeline_run(self) -> None:
-        pipeline = StockAnalysisPipeline.__new__(StockAnalysisPipeline)
+        pipeline = make_pipeline()
         pipeline.fetcher_manager = MagicMock()
         pipeline.fetcher_manager.get_belong_boards.side_effect = [
             [{"name": "Robot Theme", "type": "concept"}],
@@ -119,7 +119,7 @@ class PipelineRelatedBoardsTestCase(unittest.TestCase):
         self.assertEqual(second["concept_boards"]["data"]["top"][0]["name"], "Robot Theme")
 
     def test_empty_concept_rankings_are_reused_by_market_structure_builds(self) -> None:
-        pipeline = StockAnalysisPipeline.__new__(StockAnalysisPipeline)
+        pipeline = make_pipeline()
         pipeline.fetcher_manager = MagicMock()
         pipeline.fetcher_manager.get_belong_boards.side_effect = [
             [{"name": "Robot Theme", "type": "concept"}],
@@ -173,7 +173,7 @@ class PipelineRelatedBoardsTestCase(unittest.TestCase):
 
     def test_get_concept_rankings_for_market_no_long_block_with_hanging_fetcher(self) -> None:
         fetcher = _HangingConceptRankingFetcher()
-        pipeline = StockAnalysisPipeline.__new__(StockAnalysisPipeline)
+        pipeline = make_pipeline()
         pipeline.fetcher_manager = fetcher
         pipeline.market_hotspot_service = MarketHotspotService(
             fetcher_manager=fetcher,
@@ -301,7 +301,7 @@ class PipelineRelatedBoardsTestCase(unittest.TestCase):
         self.assertEqual(details.market_structure["market_theme_context"]["active_themes"][0]["name"], "机器人概念")
 
     def test_attach_belong_boards_copies_existing_board_list(self) -> None:
-        pipeline = StockAnalysisPipeline.__new__(StockAnalysisPipeline)
+        pipeline = make_pipeline()
         pipeline.fetcher_manager = MagicMock()
 
         existing_boards = [{"name": "白酒", "type": "行业"}]
@@ -321,7 +321,7 @@ class PipelineRelatedBoardsTestCase(unittest.TestCase):
         pipeline.fetcher_manager.get_belong_boards.assert_not_called()
 
     def test_attach_belong_boards_refetches_empty_cn_board_list(self) -> None:
-        pipeline = StockAnalysisPipeline.__new__(StockAnalysisPipeline)
+        pipeline = make_pipeline()
         pipeline.fetcher_manager = MagicMock()
         pipeline.fetcher_manager.get_belong_boards.return_value = [{"name": "白酒", "type": "行业"}]
 
@@ -339,7 +339,7 @@ class PipelineRelatedBoardsTestCase(unittest.TestCase):
         pipeline.fetcher_manager.get_belong_boards.assert_called_once_with("600519")
 
     def test_attach_belong_boards_skips_provider_for_non_cn(self) -> None:
-        pipeline = StockAnalysisPipeline.__new__(StockAnalysisPipeline)
+        pipeline = make_pipeline()
         pipeline.fetcher_manager = MagicMock()
 
         context = {"market": "us", "status": "not_supported"}
@@ -350,7 +350,7 @@ class PipelineRelatedBoardsTestCase(unittest.TestCase):
 
     def test_attach_belong_boards_preserves_adapter_boards_for_offshore(self) -> None:
         """HK/US adapters populate belong_boards from yfinance; pipeline must not clobber."""
-        pipeline = StockAnalysisPipeline.__new__(StockAnalysisPipeline)
+        pipeline = make_pipeline()
         pipeline.fetcher_manager = MagicMock()
 
         existing_boards = [
@@ -364,7 +364,7 @@ class PipelineRelatedBoardsTestCase(unittest.TestCase):
         pipeline.fetcher_manager.get_belong_boards.assert_not_called()
 
     def test_attach_belong_boards_skips_provider_when_board_block_not_supported(self) -> None:
-        pipeline = StockAnalysisPipeline.__new__(StockAnalysisPipeline)
+        pipeline = make_pipeline()
         pipeline.fetcher_manager = MagicMock()
 
         context = {
@@ -381,7 +381,7 @@ class PipelineRelatedBoardsTestCase(unittest.TestCase):
         pipeline.fetcher_manager.get_belong_boards.assert_not_called()
 
     def test_attach_belong_boards_skips_provider_when_pipeline_disabled_payload(self) -> None:
-        pipeline = StockAnalysisPipeline.__new__(StockAnalysisPipeline)
+        pipeline = make_pipeline()
         pipeline.fetcher_manager = MagicMock()
 
         context = {
@@ -398,7 +398,7 @@ class PipelineRelatedBoardsTestCase(unittest.TestCase):
         pipeline.fetcher_manager.get_belong_boards.assert_not_called()
 
     def test_attach_belong_boards_uses_normalized_a_share_code_when_market_missing(self) -> None:
-        pipeline = StockAnalysisPipeline.__new__(StockAnalysisPipeline)
+        pipeline = make_pipeline()
         pipeline.fetcher_manager = MagicMock()
         pipeline.fetcher_manager.get_belong_boards.return_value = [{"name": "白酒"}]
 

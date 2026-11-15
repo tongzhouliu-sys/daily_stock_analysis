@@ -25,7 +25,7 @@ from data_provider.akshare_fetcher import _to_sina_tx_symbol
 from data_provider.base import DataFetcherManager
 from data_provider.efinance_fetcher import EfinanceFetcher
 from data_provider.realtime_types import RealtimeSource, UnifiedRealtimeQuote
-from src.core.pipeline import StockAnalysisPipeline
+from tests.support import make_pipeline
 
 
 def _quote(code: str, price: float = 3000.0) -> UnifiedRealtimeQuote:
@@ -290,7 +290,7 @@ class EfinanceIndexQuoteTestCase(unittest.TestCase):
 
 class AugmentRealtimeIndexMarketTestCase(unittest.TestCase):
     def test_index_market_passed_avoids_market_for_stock(self):
-        pipeline = StockAnalysisPipeline.__new__(StockAnalysisPipeline)
+        pipeline = make_pipeline()
         pipeline.config = SimpleNamespace(enable_realtime_technical_indicators=True)
         df = pd.DataFrame(
             [

@@ -18,11 +18,13 @@ ensure_litellm_stub()
 
 from src.core.pipeline import StockAnalysisPipeline
 
+from tests.support import make_pipeline
+
 
 class TestPipelinePrefetchBehavior(unittest.TestCase):
     @staticmethod
     def _build_pipeline(process_result):
-        pipeline = StockAnalysisPipeline.__new__(StockAnalysisPipeline)
+        pipeline = make_pipeline()
         pipeline.max_workers = 1
         pipeline.fetcher_manager = MagicMock()
         pipeline.db = MagicMock()

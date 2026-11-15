@@ -24,7 +24,7 @@
 | `apps/dsa-desktop/` | Electron 桌面端壳与打包配置 | 8 | 8469 |
 | `scripts/` | 本地与 CI 脚本 | 53 | 10825 |
 | `.github/scripts/` | GitHub Actions 专用脚本 | 2 | 652 |
-| `tests/` | pytest 测试 | 363 | 185999 |
+| `tests/` | pytest 测试 | 365 | 186112 |
 
 ## 大文件（Python，≥400 行）
 
@@ -39,7 +39,7 @@
 | `data_provider/base.py` | 5164 | `interactive_mode`:52, `unwrap_exception`:69, `summarize_exception`:86, `normalize_stock_code`:96, `_is_us_market`:181, `_is_hk_market`:189 | 236 |
 | `src/search_service.py` | 4962 | `_terminate_search_process`:56, `_search_topic_news_process_worker`:67, `_call_topic_news_in_subprocess`:95, `_post_with_retry`:186, `_get_with_retry`:198, `fetch_url_content`:205 | 72 |
 | `src/services/screening_service.py` | 4384 | `_safe_float`:97, `_utc_now_iso`:109, `_resolve_screening_data_dir`:113, `_screening_hotspot_cache_path`:120, `_screening_hotspot_history_path`:126, `_screening_hotspot_detail_cache_dir`:132 | 23 |
-| `src/core/pipeline.py` | 4240 | `_share_image_payload`:131, `_coerce_context_date`:145, `_supports_explicit_keyword`:159, `_symbol_scope_lookup_values`:174, `_measure_fetch_step`:245, `_format_fetch_timings`:260 | 76 |
+| `src/core/pipeline.py` | 4240 | `_share_image_payload`:131, `_coerce_context_date`:145, `_supports_explicit_keyword`:159, `_symbol_scope_lookup_values`:174, `_measure_fetch_step`:245, `_format_fetch_timings`:260 | 67 |
 | `src/config.py` | 3973 | `ConfigIssue`:81, `_has_ntfy_topic_endpoint`:141, `_has_gotify_base_url`:152, `normalize_tickflow_kline_adjust`:166, `parse_prompt_cache_diagnostics_level`:178, `AgentContextCompressionPreset`:206 | 347 |
 | `src/notification.py` | 3308 | `_share_image_payload`:94, `_structured_payload_for`:108, `_safe_float`:116, `_format_strategy_skill_items`:136, `_append_strategy_synthesis_block`:156, `NotificationChannel`:207 | 85 |
 | `src/llm/local_cli_backend.py` | 2966 | `_diagnostic_field_name_pattern`:256, `_diagnostic_field_assignment_pattern`:286, `_diagnostic_json_assignment_pattern`:301, `_diagnostic_line_field_pattern`:315, `_diagnostic_double_quoted_yaml_line_pattern`:337, `_diagnostic_yaml_explicit_key_pattern`:357 | 25 |
@@ -84,7 +84,7 @@
 ## 规模快照
 
 - Python 源码（不含测试）：497 个文件，229357 行
-- Python 测试：357 个文件，185820 行
+- Python 测试：359 个文件，185933 行
 - 前端 TS/TSX：327 个文件，100850 行
 - ≥400 行的 Python 文件：154 个
 

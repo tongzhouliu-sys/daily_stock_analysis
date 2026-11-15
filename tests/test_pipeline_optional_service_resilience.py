@@ -7,6 +7,8 @@ from unittest.mock import MagicMock, patch
 
 from src.core.pipeline import StockAnalysisPipeline
 
+from tests.support import make_pipeline
+
 
 def _make_config() -> SimpleNamespace:
     return SimpleNamespace(
@@ -79,7 +81,7 @@ def test_social_sentiment_init_failure_logs_traceback(caplog):
 
 
 def test_emit_progress_logs_context_when_callback_fails(caplog):
-    pipeline = StockAnalysisPipeline.__new__(StockAnalysisPipeline)
+    pipeline = make_pipeline()
     pipeline.query_id = "query-123"
 
     def _fail_callback(progress, message):

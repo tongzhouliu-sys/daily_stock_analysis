@@ -18,6 +18,7 @@ sys.path.insert(0, os.path.abspath(os.path.join(os.path.dirname(__file__), "..")
 from data_provider.base import DataFetcherManager
 from data_provider.pytdx_fetcher import PytdxFetcher
 from src.core.pipeline import StockAnalysisPipeline
+from tests.support import make_pipeline
 
 
 class _DummyFetcher:
@@ -163,7 +164,7 @@ class TestPrefetchStockNames(unittest.TestCase):
         manager.get_realtime_quote.assert_called_once_with("000001.SZ", log_final_failure=False)
 
     def test_fetch_and_save_stock_data_uses_lightweight_name_lookup(self):
-        pipeline = StockAnalysisPipeline.__new__(StockAnalysisPipeline)
+        pipeline = make_pipeline()
         pipeline.fetcher_manager = MagicMock()
         pipeline.db = MagicMock()
         pipeline.fetcher_manager.get_stock_name.return_value = "贵州茅台"

@@ -8,6 +8,7 @@ and this project adheres to [Semantic Versioning](https://semver.org/).
 > For user-friendly release highlights, see the [GitHub Releases](https://github.com/ZhuLinsen/daily_stock_analysis/releases) page.
 
 ## [Unreleased]
+- [测试] 单测构造收敛：新增 `tests/support/pipeline_factory.py` 的 `make_pipeline()`，为 `StockAnalysisPipeline` 提供一份与 `__init__` 对齐的惰性基线（协作者用 `MagicMock`、市场热点/结构/搜索/情绪服务保持 `None` 走生产惰性构造），17 个测试文件里直接 `StockAnalysisPipeline.__new__` 的手工拼装全部改走该入口；同时清理三处写死旧常量的失效断言（`PRIMARY_HISTORY_DAYS`、日线新鲜度依赖硬编码日期），`AGENTS.md` 1.2 补上「新能力必须有真实生产调用方」与「测试不得给现状拍照」两条底线。
 - [新功能] 新增 `docs/ai/` 五份常青文档：`CODEMAP.md`（脚本生成）、`FLOWS.md`（单股分析 / 问股一次提问 / 配置保存三条链路）、`DATA-FLOW.md`（抓取到页面）、`PITFALLS.md`、`STATUS.md`；配套 `scripts/gen_ai_codemap.py` 与 `--check` 模式，CI 的 `ai-governance` 步骤校验 `CODEMAP.md` 是否与源码同步。`AGENTS.md` 要求开始任务前先读 `CODEMAP.md` 与 `STATUS.md`。
 - [改进] `DESIGN.md` 的机器可读头部改为产品实际使用的变量（铜色 `hsl(15 69% 37%)`、暖纸画布、2–3px 圆角、系统字体栈、等宽数字），删除与上线界面不一致的 IBM Carbon 参考副本，改为指向官方文档。
 - [文档] 新增 [配置单一声明源方案](config-single-source.md)：量化 `config.py` / `config_registry.py` / `system_config_service.py` 三处共 101 个键需要手工同步的现状，给出声明表驱动的目标设计与分阶段迁移路径；按 Q1「继续跟上游」的决策，本项以提给上游的方案交付，本地只保留 `tests/test_config_env_loading.py` 作为过渡保护，不落地结构性拆除。

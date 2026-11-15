@@ -18,6 +18,7 @@ ensure_litellm_stub()
 
 from src.analyzer import AnalysisResult
 from src.core.pipeline import StockAnalysisPipeline
+from tests.support import make_pipeline
 from src.enums import ReportType
 from src.services.run_diagnostics import activate_run_diagnostic_context, current_diagnostic_snapshot, reset_run_diagnostic_context
 
@@ -52,7 +53,7 @@ def _phase_payload() -> dict:
 
 
 def _make_pipeline(*, agent_mode: bool = False, save_context_snapshot: bool = True) -> StockAnalysisPipeline:
-    pipeline = StockAnalysisPipeline.__new__(StockAnalysisPipeline)
+    pipeline = make_pipeline()
     pipeline.config = SimpleNamespace(
         enable_realtime_quote=False,
         enable_chip_distribution=False,
@@ -164,7 +165,7 @@ class PipelineMarketPhaseContextTestCase(unittest.TestCase):
         pipeline.db.save_daily_data.assert_called_once_with(daily_df, "7203.T", "YfinanceFetcher")
 
     def test_process_single_stock_propagates_current_time_to_analyze_stock(self):
-        pipeline = StockAnalysisPipeline.__new__(StockAnalysisPipeline)
+        pipeline = make_pipeline()
         pipeline.query_id = None
         pipeline._emit_progress = MagicMock()
         pipeline._resolve_resume_target_date = MagicMock(return_value=date(2026, 3, 26))
@@ -561,12 +562,16 @@ class PipelineMarketPhaseContextTestCase(unittest.TestCase):
     def test_agent_pack_summary_uses_db_daily_context_after_history_prefetch(self):
         pipeline = _make_pipeline(agent_mode=True, save_context_snapshot=True)
         pipeline._ensure_agent_history = MagicMock()
+        # Use a fresh date: daily-bar freshness is judged against the real
+        # latest trading session, so a hard-coded past date would be reported
+        # as stale and the block would not be "available".
+        daily_date = date.today().isoformat()
         pipeline.db.get_analysis_context.return_value = {
             "code": "600519",
             "stock_name": "贵州茅台",
-            "date": "2026-06-02",
-            "today": {"date": "2026-06-02", "close": 6.67, "volume": 1000.0},
-            "yesterday": {"date": "2026-06-01", "close": 6.78, "volume": 900.0},
+            "date": daily_date,
+            "today": {"date": daily_date, "close": 6.67, "volume": 1000.0},
+            "yesterday": {"date": daily_date, "close": 6.78, "volume": 900.0},
         }
 
         from src.agent.executor import AgentResult

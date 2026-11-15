@@ -11,7 +11,7 @@ from datetime import datetime, timedelta
 from unittest.mock import patch
 
 from src.config import Config, get_config
-from src.core.pipeline import StockAnalysisPipeline
+from tests.support import make_pipeline
 from src.market_analyzer import MarketAnalyzer, MarketIndex, MarketOverview
 from src.repositories.intelligence_repo import IntelligenceRepository
 from src.storage import DatabaseManager
@@ -62,7 +62,7 @@ class PersistedIntelligenceAnalysisIntegrationTestCase(unittest.TestCase):
         self._temp_dir.cleanup()
 
     def test_pipeline_loads_persisted_symbol_and_market_intelligence(self) -> None:
-        pipeline = StockAnalysisPipeline.__new__(StockAnalysisPipeline)
+        pipeline = make_pipeline()
         pipeline.config = self.config
         context = pipeline._load_persisted_intelligence_context(
             code="600519",
@@ -77,7 +77,7 @@ class PersistedIntelligenceAnalysisIntegrationTestCase(unittest.TestCase):
 
     def test_pipeline_refreshes_auto_sources_before_loading_local_intelligence(self) -> None:
         self.config.news_intel_auto_fetch_enabled = True
-        pipeline = StockAnalysisPipeline.__new__(StockAnalysisPipeline)
+        pipeline = make_pipeline()
         pipeline.config = self.config
 
         with patch("src.core.pipeline.IntelligenceService.refresh_auto_sources", return_value={"ok": True}) as refresh:
@@ -92,7 +92,7 @@ class PersistedIntelligenceAnalysisIntegrationTestCase(unittest.TestCase):
 
     def test_pipeline_refreshes_auto_sources_with_pipeline_config(self) -> None:
         self.config.news_intel_auto_fetch_enabled = True
-        pipeline = StockAnalysisPipeline.__new__(StockAnalysisPipeline)
+        pipeline = make_pipeline()
         pipeline.config = replace(self.config, news_intel_auto_fetch_enabled=False)
 
         with patch("src.core.pipeline.IntelligenceService") as service_cls:
@@ -140,7 +140,7 @@ class PersistedIntelligenceAnalysisIntegrationTestCase(unittest.TestCase):
             },
         ])
 
-        pipeline = StockAnalysisPipeline.__new__(StockAnalysisPipeline)
+        pipeline = make_pipeline()
         pipeline.config = self.config
         context = pipeline._load_persisted_intelligence_context(
             code="600519",
@@ -185,7 +185,7 @@ class PersistedIntelligenceAnalysisIntegrationTestCase(unittest.TestCase):
             },
         ])
 
-        pipeline = StockAnalysisPipeline.__new__(StockAnalysisPipeline)
+        pipeline = make_pipeline()
         pipeline.config = self.config
         for code in ("HK00700", "00700.HK"):
             with self.subTest(code=code):
@@ -393,7 +393,7 @@ class PersistedIntelligenceAnalysisIntegrationTestCase(unittest.TestCase):
             },
         ])
 
-        pipeline = StockAnalysisPipeline.__new__(StockAnalysisPipeline)
+        pipeline = make_pipeline()
         pipeline.config = self.config
         context = pipeline._load_persisted_intelligence_context(
             code="600519",

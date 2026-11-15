@@ -23,8 +23,9 @@ from tests.litellm_stub import ensure_litellm_stub
 
 ensure_litellm_stub()
 
-from src.core.pipeline import StockAnalysisPipeline, NotificationChannel
-from src.notification import NotificationService
+from src.core.pipeline import StockAnalysisPipeline
+from src.notification import NotificationChannel, NotificationService
+from tests.support import make_pipeline
 from src.services.run_diagnostics import (
     activate_run_diagnostic_context,
     build_run_diagnostic_summary,
@@ -100,7 +101,7 @@ def _build_service(
 
 
 def _build_pipeline(service, stock_email_groups=None):
-    pipeline = StockAnalysisPipeline.__new__(StockAnalysisPipeline)
+    pipeline = make_pipeline()
     pipeline.notifier = service
     pipeline.config = SimpleNamespace(stock_email_groups=stock_email_groups or [])
     # Email grouping now lives in NotificationService, so mirror the config.

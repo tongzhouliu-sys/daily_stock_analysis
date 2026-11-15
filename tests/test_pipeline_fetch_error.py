@@ -7,12 +7,14 @@ from unittest.mock import MagicMock, patch
 
 from src.core.pipeline import StockAnalysisPipeline
 
+from tests.support import make_pipeline
+
 
 class PipelineFetchErrorTestCase(unittest.TestCase):
     """`fetch_and_save_stock_data` should preserve the original exception."""
 
     def test_fetch_and_save_handles_stock_name_lookup_failure(self):
-        pipeline = StockAnalysisPipeline.__new__(StockAnalysisPipeline)
+        pipeline = make_pipeline()
         pipeline.fetcher_manager = MagicMock()
         pipeline.db = MagicMock()
         pipeline.fetcher_manager.get_stock_name.side_effect = RuntimeError("name lookup failed")
@@ -28,7 +30,7 @@ class PipelineFetchErrorTestCase(unittest.TestCase):
         return_value=date(2026, 3, 27),
     )
     def test_fetch_and_save_uses_effective_trading_date_for_resume_check(self, _mock_target):
-        pipeline = StockAnalysisPipeline.__new__(StockAnalysisPipeline)
+        pipeline = make_pipeline()
         pipeline.fetcher_manager = MagicMock()
         pipeline.db = MagicMock()
         pipeline.fetcher_manager.get_stock_name.return_value = "贵州茅台"

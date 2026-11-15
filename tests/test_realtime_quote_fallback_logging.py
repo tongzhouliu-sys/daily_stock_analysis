@@ -24,6 +24,7 @@ if not json_repair_available and "json_repair" not in sys.modules:
 from data_provider.base import DataFetcherManager
 from data_provider.realtime_types import RealtimeSource, UnifiedRealtimeQuote
 from src.core.pipeline import StockAnalysisPipeline
+from tests.support import make_pipeline
 from src.enums import ReportType
 
 
@@ -57,7 +58,7 @@ def _make_quote(
 
 
 def _make_pipeline(enable_realtime_quote: bool, realtime_quote=None) -> StockAnalysisPipeline:
-    pipeline = StockAnalysisPipeline.__new__(StockAnalysisPipeline)
+    pipeline = make_pipeline()
     pipeline.config = SimpleNamespace(
         enable_realtime_quote=enable_realtime_quote,
         enable_chip_distribution=True,

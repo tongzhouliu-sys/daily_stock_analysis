@@ -23,6 +23,7 @@ ensure_litellm_stub()
 import src.notification as notification_module
 from src.analyzer import AnalysisResult
 from src.core.pipeline import StockAnalysisPipeline
+from tests.support import make_pipeline
 from src.enums import ReportType
 
 
@@ -94,7 +95,7 @@ class TestPipelineSingleStockNotify(unittest.TestCase):
 
     @staticmethod
     def _build_batch_pipeline() -> StockAnalysisPipeline:
-        pipeline = StockAnalysisPipeline.__new__(StockAnalysisPipeline)
+        pipeline = make_pipeline()
         pipeline.max_workers = 2
         pipeline.fetcher_manager = MagicMock()
         pipeline.db = MagicMock()
@@ -144,7 +145,7 @@ class TestPipelineSingleStockNotify(unittest.TestCase):
         self.assertTrue(kwargs["skip_push"])
 
     def test_process_single_stock_direct_path_keeps_notify_compatibility(self):
-        pipeline = StockAnalysisPipeline.__new__(StockAnalysisPipeline)
+        pipeline = make_pipeline()
         pipeline.fetch_and_save_stock_data = MagicMock(return_value=(True, None))
         pipeline.analyze_stock = MagicMock(return_value=_make_result("600519"))
         pipeline.notifier = _TrackingNotifier()
@@ -174,7 +175,7 @@ class TestPipelineSingleStockNotify(unittest.TestCase):
         )
 
     def test_process_single_stock_saves_report_even_when_notifier_is_unavailable(self):
-        pipeline = StockAnalysisPipeline.__new__(StockAnalysisPipeline)
+        pipeline = make_pipeline()
         pipeline.fetch_and_save_stock_data = MagicMock(return_value=(True, None))
         pipeline.analyze_stock = MagicMock(return_value=_make_result("600519"))
         pipeline.notifier = _TrackingNotifier()
@@ -197,7 +198,7 @@ class TestPipelineSingleStockNotify(unittest.TestCase):
         pipeline.notifier.send.assert_not_called()
 
     def test_process_single_stock_updates_saved_diagnostics_after_notification(self):
-        pipeline = StockAnalysisPipeline.__new__(StockAnalysisPipeline)
+        pipeline = make_pipeline()
         pipeline.fetch_and_save_stock_data = MagicMock(return_value=(True, None))
         pipeline.analyze_stock = MagicMock(return_value=_make_result("600519"))
         pipeline.notifier = _TrackingNotifier()
@@ -220,7 +221,7 @@ class TestPipelineSingleStockNotify(unittest.TestCase):
         self.assertEqual(kwargs["diagnostics"]["notification_runs"][-1]["status"], "success")
 
     def test_send_notifications_patches_saved_diagnostics_when_push_is_skipped(self):
-        pipeline = StockAnalysisPipeline.__new__(StockAnalysisPipeline)
+        pipeline = make_pipeline()
         pipeline.save_context_snapshot = True
         pipeline.db = MagicMock()
         pipeline.config = SimpleNamespace(stock_email_groups=[])
@@ -241,7 +242,7 @@ class TestPipelineSingleStockNotify(unittest.TestCase):
         self.assertEqual(calls[1].kwargs["code"], "600519")
 
     def test_process_single_stock_direct_path_does_not_notify_when_failed(self):
-        pipeline = StockAnalysisPipeline.__new__(StockAnalysisPipeline)
+        pipeline = make_pipeline()
         pipeline.fetch_and_save_stock_data = MagicMock(return_value=(True, None))
         pipeline.analyze_stock = MagicMock(return_value=_make_result("600519", success=False))
         pipeline.notifier = _TrackingNotifier()
@@ -262,7 +263,7 @@ class TestPipelineSingleStockNotify(unittest.TestCase):
 
     def test_save_local_report_falls_back_when_notifier_save_fails(self):
         with tempfile.TemporaryDirectory() as temp_dir:
-            pipeline = StockAnalysisPipeline.__new__(StockAnalysisPipeline)
+            pipeline = make_pipeline()
             pipeline.notifier = MagicMock()
             pipeline.notifier.save_report_to_file = MagicMock(side_effect=OSError("permission denied"))
             pipeline.notifier.generate_aggregate_report = MagicMock(return_value="dashboard")
@@ -283,7 +284,7 @@ class TestPipelineSingleStockNotify(unittest.TestCase):
             self.assertTrue(Path(result_path).exists())
 
     def test_save_local_report_records_explicit_error_when_notifier_returns_empty_path(self):
-        pipeline = StockAnalysisPipeline.__new__(StockAnalysisPipeline)
+        pipeline = make_pipeline()
         pipeline.notifier = MagicMock()
         pipeline.notifier.save_report_to_file = MagicMock(return_value=None)
         pipeline.notifier.generate_aggregate_report = MagicMock(return_value="dashboard")

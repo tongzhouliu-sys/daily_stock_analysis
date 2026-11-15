@@ -193,8 +193,9 @@ class PipelinePersistenceTestCase(unittest.TestCase):
 
     def test_fetch_and_save_drops_partial_bar(self):
         from src.core.pipeline import StockAnalysisPipeline
+        from tests.support import make_pipeline
 
-        pipeline = StockAnalysisPipeline.__new__(StockAnalysisPipeline)
+        pipeline = make_pipeline()
         pipeline.config = MagicMock()
         pipeline.fetcher_manager = MagicMock()
         pipeline.fetcher_manager.get_stock_name.return_value = "贵州茅台"
