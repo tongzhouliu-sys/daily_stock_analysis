@@ -345,7 +345,7 @@ describe('LLMChannelEditor', () => {
     expect(onDraftItemsChange.mock.calls.flatMap((call) => call[0]).some((item) => item.key.startsWith('LLM__'))).toBe(false);
   });
 
-  it('renders API Key input with controlled visibility', async () => {
+  it('never reveals a stored API key', async () => {
     render(
       <LLMChannelEditor
         items={[
@@ -366,9 +366,33 @@ describe('LLMChannelEditor', () => {
 
     const input = await screen.findByLabelText('API Key');
     expect(input).toHaveAttribute('type', 'password');
+    // R3: sensitive inputs no longer expose a reveal toggle.
+    expect(screen.queryByRole('button', { name: '显示内容' })).not.toBeInTheDocument();
+    expect(input).toHaveValue('secret-key');
+  });
 
-    fireEvent.click(screen.getByRole('button', { name: '显示内容' }));
-    expect(input).toHaveAttribute('type', 'text');
+  it('shows a configured placeholder instead of a masked API key', async () => {
+    render(
+      <LLMChannelEditor
+        items={[
+          { key: 'LLM_CHANNELS', value: 'openai' },
+          { key: 'LLM_OPENAI_PROTOCOL', value: 'openai' },
+          { key: 'LLM_OPENAI_BASE_URL', value: 'https://api.openai.com/v1' },
+          { key: 'LLM_OPENAI_ENABLED', value: 'true' },
+          { key: 'LLM_OPENAI_API_KEY', value: '******' },
+          { key: 'LLM_OPENAI_MODELS', value: 'gpt-4o-mini' },
+        ]}
+        configVersion="v1"
+        maskToken="******"
+        onSaved={() => {}}
+      />
+    );
+
+    fireEvent.click(screen.getByRole('button', { name: /OpenAI 官方/i }));
+
+    const input = await screen.findByLabelText('API Key');
+    expect(input).toHaveValue('');
+    expect(input).toHaveAttribute('placeholder', '已设置');
   });
 
   it('shows help dialogs for channel editor fields', async () => {

@@ -87,20 +87,29 @@ function getRouteProvenance(
   return undefined;
 }
 
-const shouldUseSavedHermesSecret = (
+const channelSecretFieldKeys = (channel: Pick<ChannelConfig, 'name'>): string[] => {
+  const upperName = channel.name.trim().toUpperCase();
+  const keys = [`LLM_${upperName}_API_KEY`, `LLM_${upperName}_API_KEYS`];
+  if (upperName === 'MODELFLARE') {
+    keys.push('MODELFLARE_KEY');
+  }
+  return keys;
+};
+
+const shouldUseSavedChannelSecret = (
   channel: Pick<ChannelConfig, 'name' | 'apiKey'>,
   maskToken: string,
   hasPersistedSecret: boolean,
 ): boolean => (
-  isHermesChannel(channel) && channel.apiKey === maskToken && hasPersistedSecret
+  channel.apiKey === maskToken && hasPersistedSecret
 );
 
-const hasRuntimeOnlyMaskedHermesSecret = (
+const hasRuntimeOnlyMaskedChannelSecret = (
   channel: Pick<ChannelConfig, 'name' | 'apiKey'>,
   maskToken: string,
   hasPersistedSecret: boolean,
 ): boolean => (
-  isHermesChannel(channel) && channel.apiKey === maskToken && !hasPersistedSecret
+  channel.apiKey === maskToken && !hasPersistedSecret
 );
 
 interface ChannelConfig {
@@ -160,7 +169,7 @@ interface ChannelRowProps {
   channel: ChannelConfig;
   index: number;
   busy: boolean;
-  visibleKey: boolean;
+  maskToken: string;
   expanded: boolean;
   testState?: ChannelTestState;
   discoveryState?: ChannelDiscoveryState;
@@ -169,7 +178,6 @@ interface ChannelRowProps {
   onUpdate: (index: number, field: keyof ChannelConfig, value: string | boolean) => void;
   onRemove: (index: number) => void;
   onToggleExpand: (index: number) => void;
-  onToggleKeyVisibility: (index: number, nextVisible: boolean) => void;
   onTest: (channel: ChannelConfig, index: number) => void;
   onDiscoverModels: (channel: ChannelConfig) => void;
   onToggleCapability: (channel: ChannelConfig, capability: LLMCapabilityCheck) => void;
@@ -406,7 +414,7 @@ const ChannelRow: React.FC<ChannelRowProps> = ({
   channel,
   index,
   busy,
-  visibleKey,
+  maskToken,
   expanded,
   testState,
   discoveryState,
@@ -415,7 +423,6 @@ const ChannelRow: React.FC<ChannelRowProps> = ({
   onUpdate,
   onRemove,
   onToggleExpand,
-  onToggleKeyVisibility,
   onTest,
   onDiscoverModels,
   onToggleCapability,
@@ -688,16 +695,15 @@ const ChannelRow: React.FC<ChannelRowProps> = ({
           <Input
             id={apiKeyInputId}
             type="password"
-            allowTogglePassword
             iconType="key"
-            passwordVisible={visibleKey}
-            onPasswordVisibleChange={(nextVisible) => onToggleKeyVisibility(index, nextVisible)}
-            value={channel.apiKey}
+            value={channel.apiKey === maskToken ? '' : channel.apiKey}
             disabled={busy}
             onChange={(e) => onUpdate(index, 'apiKey', e.target.value)}
-            placeholder={channel.protocol === 'ollama'
-              ? t('llmChannel.field.apiKeyPlaceholderOllama')
-              : t('llmChannel.field.apiKeyPlaceholder')}
+            placeholder={channel.apiKey === maskToken
+              ? t('settings.fieldSecretConfigured')
+              : channel.protocol === 'ollama'
+                ? t('llmChannel.field.apiKeyPlaceholderOllama')
+                : t('llmChannel.field.apiKeyPlaceholder')}
           />
           </div>
 
@@ -1850,8 +1856,8 @@ export const LLMChannelEditor: React.FC<LLMChannelEditorProps> = ({
   const initialNames = useMemo(() => initialChannels.map((channel) => channel.name), [initialChannels]);
   const initialRuntimeConfig = useMemo(() => parseRuntimeConfigFromItems(items), [items]);
   const savedItemMap = useMemo(() => new Map(items.map((item) => [item.key.toUpperCase(), item.value])), [items]);
-  const hasPersistedHermesSecret = (channel: ChannelConfig): boolean => (
-    isHermesChannel(channel) && initialItemSourceByKey.get('LLM_HERMES_API_KEY') === true
+  const hasPersistedChannelSecret = (channel: ChannelConfig): boolean => (
+    channelSecretFieldKeys(channel).some((key) => initialItemSourceByKey.get(key) === true)
   );
   const hasLitellmConfig = useMemo(
     () => items.some((item) => item.key === 'LITELLM_CONFIG' && item.value.trim().length > 0),
@@ -1876,7 +1882,6 @@ export const LLMChannelEditor: React.FC<LLMChannelEditorProps> = ({
     | null
   >(null);
   const [saveWarnings, setSaveWarnings] = useState<string[]>([]);
-  const [visibleKeys, setVisibleKeys] = useState<Record<number, boolean>>({});
   const [testStates, setTestStates] = useState<Record<number, ChannelTestState>>({});
   const [discoveryStates, setDiscoveryStates] = useState<Record<string, ChannelDiscoveryState>>({});
   const [capabilityStates, setCapabilityStates] = useState<Record<string, ChannelCapabilityState>>({});
@@ -1910,7 +1915,6 @@ export const LLMChannelEditor: React.FC<LLMChannelEditorProps> = ({
     pendingSaveFeedbackFingerprintRef.current = null;
     setChannels(initialChannels);
     setRuntimeConfig(initialRuntimeConfig);
-    setVisibleKeys({});
     setTestStates({});
     setDiscoveryStates({});
     setCapabilityStates({});
@@ -2101,7 +2105,6 @@ export const LLMChannelEditor: React.FC<LLMChannelEditorProps> = ({
   const removeChannel = (index: number) => {
     const removedChannelId = channels[index]?.id || '';
     setChannels((previous) => previous.filter((_, rowIndex) => rowIndex !== index));
-    setVisibleKeys({});
     setTestStates({});
     setDiscoveryStates((previous) => {
       if (!removedChannelId) {
@@ -2277,7 +2280,7 @@ export const LLMChannelEditor: React.FC<LLMChannelEditorProps> = ({
   };
 
   const handleTest = async (channel: ChannelConfig, index: number) => {
-    if (hasRuntimeOnlyMaskedHermesSecret(channel, maskToken, hasPersistedHermesSecret(channel))) {
+    if (hasRuntimeOnlyMaskedChannelSecret(channel, maskToken, hasPersistedChannelSecret(channel))) {
       setTestStates((previous) => ({
         ...previous,
         [index]: { status: 'error', text: t('llmChannel.runtimeOnlySecret') },
@@ -2299,7 +2302,7 @@ export const LLMChannelEditor: React.FC<LLMChannelEditorProps> = ({
         apiKey: channel.apiKey,
         models: splitModels(channel.models),
         enabled: channel.enabled,
-        useSavedSecret: shouldUseSavedHermesSecret(channel, maskToken, hasPersistedHermesSecret(channel)),
+        useSavedSecret: shouldUseSavedChannelSecret(channel, maskToken, hasPersistedChannelSecret(channel)),
       });
 
       const latencySuffix = result.latencyMs ? t('llmChannel.test.latency', { ms: result.latencyMs }) : '';
@@ -2326,7 +2329,7 @@ export const LLMChannelEditor: React.FC<LLMChannelEditorProps> = ({
   };
 
   const handleDiscoverModels = async (channel: ChannelConfig) => {
-    if (hasRuntimeOnlyMaskedHermesSecret(channel, maskToken, hasPersistedHermesSecret(channel))) {
+    if (hasRuntimeOnlyMaskedChannelSecret(channel, maskToken, hasPersistedChannelSecret(channel))) {
       setDiscoveryStates((previous) => ({
         ...previous,
         [channel.id]: {
@@ -2361,7 +2364,7 @@ export const LLMChannelEditor: React.FC<LLMChannelEditorProps> = ({
         baseUrl: channel.baseUrl,
         apiKey: channel.apiKey,
         models: splitModels(channel.models),
-        useSavedSecret: shouldUseSavedHermesSecret(channel, maskToken, hasPersistedHermesSecret(channel)),
+        useSavedSecret: shouldUseSavedChannelSecret(channel, maskToken, hasPersistedChannelSecret(channel)),
       });
 
       if (discoveryNonceRef.current[channel.id] !== nonce) return;
@@ -2423,7 +2426,7 @@ export const LLMChannelEditor: React.FC<LLMChannelEditorProps> = ({
     );
     if (selected.length === 0) return;
 
-    if (hasRuntimeOnlyMaskedHermesSecret(channel, maskToken, hasPersistedHermesSecret(channel))) {
+    if (hasRuntimeOnlyMaskedChannelSecret(channel, maskToken, hasPersistedChannelSecret(channel))) {
       setCapabilityStates((previous) => ({
         ...previous,
         [channel.id]: {
@@ -2463,7 +2466,7 @@ export const LLMChannelEditor: React.FC<LLMChannelEditorProps> = ({
         models: splitModels(channel.models),
         enabled: channel.enabled,
         capabilityChecks: selected,
-        useSavedSecret: shouldUseSavedHermesSecret(channel, maskToken, hasPersistedHermesSecret(channel)),
+        useSavedSecret: shouldUseSavedChannelSecret(channel, maskToken, hasPersistedChannelSecret(channel)),
       });
 
       if (capabilityNonceRef.current[channel.id] !== nonce) return;
@@ -2501,10 +2504,6 @@ export const LLMChannelEditor: React.FC<LLMChannelEditorProps> = ({
         },
       }));
     }
-  };
-
-  const toggleKeyVisibility = (index: number, nextVisible: boolean) => {
-    setVisibleKeys((previous) => ({ ...previous, [index]: nextVisible }));
   };
 
   const toggleExpand = (index: number) => {
@@ -2616,7 +2615,7 @@ export const LLMChannelEditor: React.FC<LLMChannelEditorProps> = ({
                 channel={channel}
                 index={index}
                 busy={busy}
-                visibleKey={Boolean(visibleKeys[index])}
+                maskToken={maskToken}
                 expanded={Boolean(expandedRows[index])}
                 testState={testStates[index]}
                 discoveryState={discoveryStates[channel.id]}
@@ -2625,7 +2624,6 @@ export const LLMChannelEditor: React.FC<LLMChannelEditorProps> = ({
                 onUpdate={updateChannel}
                 onRemove={removeChannel}
                 onToggleExpand={toggleExpand}
-                onToggleKeyVisibility={toggleKeyVisibility}
                 onTest={(ch, idx) => void handleTest(ch, idx)}
                 onDiscoverModels={(channel) => void handleDiscoverModels(channel)}
                 onToggleCapability={toggleCapability}

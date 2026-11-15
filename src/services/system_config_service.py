@@ -230,6 +230,12 @@ class SystemConfigService:
         "LLM_HERMES_EXTRA_HEADERS",
         "LLM_USAGE_HMAC_SECRET",
     }
+    # R3: channels and notification cards outside the registry follow the same
+    # suffix convention, so their secrets are masked even without field
+    # metadata.
+    _SENSITIVE_CONFIG_KEY_RE = re.compile(
+        r"(?:^|_)(?:API_KEY|API_KEYS|TOKEN|SECRET|PASSWORD|EXTRA_HEADERS)$"
+    )
     _NOTIFICATION_TEST_CHANNELS: Tuple[str, ...] = (
         "wechat",
         "dingtalk",
@@ -475,6 +481,25 @@ class SystemConfigService:
 
         return cls._build_display_config_map(runtime_map)
 
+    @classmethod
+    def _is_sensitive_config_key(
+        cls,
+        key: str,
+        field_schema: Optional[Dict[str, Any]] = None,
+    ) -> bool:
+        """Return True when ``key`` holds a secret that must be masked.
+
+        Registry metadata wins; otherwise the ``_API_KEY`` / ``_API_KEYS`` /
+        ``_TOKEN`` / ``_SECRET`` / ``_PASSWORD`` / ``_EXTRA_HEADERS`` suffix
+        convention covers LLM channel detail keys and deployment-only keys.
+        """
+        normalized = str(key or "").strip().upper()
+        if field_schema is None:
+            field_schema = get_field_definition(normalized, "")
+        if bool(field_schema.get("is_sensitive", False)):
+            return True
+        return bool(cls._SENSITIVE_CONFIG_KEY_RE.search(normalized))
+
     def get_config(self, include_schema: bool = True, mask_token: str = "******") -> Dict[str, Any]:
         """Return display config values with mask metadata for server-masked fields."""
         saved_config_map = self._build_display_config_map(self._manager.read_config_map())
@@ -505,7 +530,13 @@ class SystemConfigService:
             field_schema = schema_by_key[key]
             display_value = self._resolve_display_value(raw_value, field_schema, raw_value_exists)
             is_masked = False
-            if key in self._SERVER_MASKED_CONFIG_KEYS and display_value:
+            if (
+                display_value
+                and (
+                    key in self._SERVER_MASKED_CONFIG_KEYS
+                    or self._is_sensitive_config_key(key, field_schema)
+                )
+            ):
                 display_value = mask_token
                 is_masked = True
             item: Dict[str, Any] = {
@@ -890,6 +921,130 @@ class SystemConfigService:
 
         return saved_key, {}, redaction_values
 
+    @staticmethod
+    def _saved_secret_keys_for_channel(channel_name: str) -> Tuple[str, ...]:
+        """Return the `.env` keys that can hold a channel's API secret."""
+        name = str(channel_name or "").strip().upper()
+        if not name:
+            return ()
+        if is_reserved_hermes_name(channel_name):
+            return ("LLM_HERMES_API_KEY",)
+        keys = [f"LLM_{name}_API_KEY", f"LLM_{name}_API_KEYS"]
+        if name == "MODELFLARE":
+            keys.append("MODELFLARE_KEY")
+        return tuple(keys)
+
+    @staticmethod
+    def _normalize_endpoint_for_scope(value: str) -> str:
+        return str(value or "").strip().rstrip("/").lower()
+
+    def _resolve_channel_saved_secret(
+        self,
+        *,
+        channel_name: str,
+        protocol: str,
+        base_url: str,
+        submitted_api_key: str,
+        use_saved_secret: bool,
+        stage: str,
+    ) -> Tuple[Optional[str], Dict[str, Any], Set[str]]:
+        """Reuse a stored channel key only when the submitted endpoint matches.
+
+        The endpoint consistency check is what stops a caller from pointing the
+        channel at their own server and harvesting the saved key through the
+        connectivity or model-discovery probe.
+        """
+        masked_request = is_masked_secret_placeholder(submitted_api_key)
+        if is_reserved_hermes_name(channel_name):
+            # Hermes keeps its own contract: the client must opt in explicitly
+            # and the submitted secret is validated separately.
+            return self._resolve_hermes_saved_secret(
+                channel_name=channel_name,
+                protocol=protocol,
+                base_url=base_url,
+                submitted_api_key=submitted_api_key,
+                use_saved_secret=use_saved_secret,
+                stage=stage,
+            )
+
+        redaction_values = self._build_redaction_values(submitted_api_key)
+        if not (use_saved_secret or masked_request):
+            return submitted_api_key, {}, redaction_values
+
+        saved_map = self._manager.read_config_map()
+        saved_key = ""
+        for candidate in self._saved_secret_keys_for_channel(channel_name):
+            candidate_value = (saved_map.get(candidate) or "").strip()
+            if candidate_value:
+                saved_key = candidate_value
+                break
+
+        if not saved_key:
+            return None, self._build_llm_channel_result(
+                success=False,
+                message="Missing saved API key",
+                error="No saved API key is available for this channel",
+                stage=stage,
+                error_code="missing_saved_secret",
+                retryable=False,
+                details={"reason": "missing_saved_secret"},
+                resolved_protocol=None,
+                models=[] if stage == "model_discovery" else None,
+                latency_ms=None,
+                redaction_values=redaction_values,
+            ), redaction_values
+
+        if is_masked_secret_placeholder(saved_key):
+            return None, self._build_llm_channel_result(
+                success=False,
+                message="Runtime API key is not reusable",
+                error="A runtime-injected API key cannot be reused from the settings test flow",
+                stage=stage,
+                error_code="runtime_secret_not_reusable",
+                retryable=False,
+                details={"reason": "runtime_secret_not_reusable"},
+                resolved_protocol=None,
+                models=[] if stage == "model_discovery" else None,
+                latency_ms=None,
+                redaction_values=redaction_values,
+            ), redaction_values
+
+        redaction_values.update(self._build_redaction_values(saved_key))
+        name_upper = str(channel_name or "").strip().upper()
+        saved_base_url = saved_map.get(f"LLM_{name_upper}_BASE_URL") or ""
+        saved_protocol = saved_map.get(f"LLM_{name_upper}_PROTOCOL") or ""
+        submitted_base = self._normalize_endpoint_for_scope(
+            resolve_llm_channel_base_url(channel_name, base_url)
+        )
+        saved_base = self._normalize_endpoint_for_scope(
+            resolve_llm_channel_base_url(channel_name, saved_base_url)
+        )
+        submitted_protocol = (protocol or "").strip().lower()
+        saved_protocol_normalized = (saved_protocol or "").strip().lower()
+        if (
+            submitted_base != saved_base
+            or (saved_protocol_normalized and submitted_protocol and submitted_protocol != saved_protocol_normalized)
+        ):
+            return None, self._build_llm_channel_result(
+                success=False,
+                message="Saved API key scope mismatch",
+                error="Channel endpoint changed; re-enter the API key before testing",
+                stage=stage,
+                error_code="saved_secret_scope_mismatch",
+                retryable=False,
+                details={
+                    "reason": "endpoint_mismatch",
+                    "submitted_base_url": submitted_base,
+                    "saved_base_url": saved_base,
+                },
+                resolved_protocol=submitted_protocol or None,
+                models=[] if stage == "model_discovery" else None,
+                latency_ms=None,
+                redaction_values=redaction_values,
+            ), redaction_values
+
+        return saved_key, {}, redaction_values
+
     def _validate_hermes_submitted_secret(
         self,
         *,
@@ -976,7 +1131,7 @@ class SystemConfigService:
         """Discover available models from an OpenAI-compatible `/models` endpoint."""
         channel_name = name.strip() or "channel"
         base_url = resolve_llm_channel_base_url(channel_name, base_url)
-        resolved_secret, secret_error, redaction_values = self._resolve_hermes_saved_secret(
+        resolved_secret, secret_error, redaction_values = self._resolve_channel_saved_secret(
             channel_name=channel_name,
             protocol=protocol,
             base_url=base_url,
@@ -1260,7 +1415,7 @@ class SystemConfigService:
             )
         resolved_api_surface = normalize_llm_channel_api_surface(api_surface)
         generation_stage = "responses" if resolved_api_surface == "responses" else "chat_completion"
-        resolved_secret, secret_error, redaction_values = self._resolve_hermes_saved_secret(
+        resolved_secret, secret_error, redaction_values = self._resolve_channel_saved_secret(
             channel_name=channel_name,
             protocol=protocol,
             base_url=base_url,
@@ -2107,7 +2262,7 @@ class SystemConfigService:
             normalized_value = self._normalize_value_for_storage(value, field_schema)
             submitted_keys.add(key)
             updates.append((key, normalized_value))
-            if bool(field_schema.get("is_sensitive", False)):
+            if self._is_sensitive_config_key(key, field_schema):
                 sensitive_keys.add(key)
 
         updated_keys, skipped_masked_keys, new_version = self._manager.apply_updates(
@@ -2497,7 +2652,7 @@ class SystemConfigService:
             key = self._normalize_write_key(item["key"])
             value = item["value"]
             field_schema = get_field_definition(key, value)
-            is_sensitive = bool(field_schema.get("is_sensitive", False))
+            is_sensitive = self._is_sensitive_config_key(key, field_schema)
 
             if is_sensitive and value == mask_token and saved_config_map.get(key):
                 continue
@@ -3556,7 +3711,7 @@ class SystemConfigService:
                 continue
             value = "" if item.get("value") is None else str(item.get("value"))
             field_schema = get_field_definition(key, value)
-            if bool(field_schema.get("is_sensitive", False)) and value == mask_token:
+            if self._is_sensitive_config_key(key, field_schema) and value == mask_token:
                 if key in saved_map:
                     continue
             effective_map[key] = value
@@ -3592,7 +3747,7 @@ class SystemConfigService:
             key = item["key"]
             value = item["value"]
             field_schema = get_field_definition(key, value)
-            if bool(field_schema.get("is_sensitive", False)) and value == mask_token and key in saved_map:
+            if self._is_sensitive_config_key(key, field_schema) and value == mask_token and key in saved_map:
                 continue
             effective_map[key] = value
         return self._build_display_config_map(effective_map)

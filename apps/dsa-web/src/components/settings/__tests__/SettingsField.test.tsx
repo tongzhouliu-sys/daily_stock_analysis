@@ -222,7 +222,8 @@ describe('SettingsField', () => {
       />
     );
 
-    expect(screen.getAllByRole('button', { name: '显示内容' })).toHaveLength(2);
+    // R3: sensitive inputs no longer expose a reveal toggle.
+    expect(screen.queryAllByRole('button', { name: '显示内容' })).toHaveLength(0);
     expect(screen.getAllByRole('button', { name: '删除' })).toHaveLength(2);
   });
 

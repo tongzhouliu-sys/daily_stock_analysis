@@ -139,9 +139,17 @@ function renderFieldControl(
 
   if (controlType === 'password') {
     const iconType = inferPasswordIconType(item.key);
+    // R3: the server masks every sensitive field, so the value is a
+    // placeholder. Show an empty box with a "configured" hint instead of the
+    // mask token, and never offer a reveal toggle.
+    const showsSavedSecretPlaceholder = Boolean(item.isMasked);
+    const visibleValue = showsSavedSecretPlaceholder ? '' : value;
+    const secretPlaceholder = showsSavedSecretPlaceholder
+      ? t('settings.fieldSecretConfigured')
+      : undefined;
 
     if (isMultiValue) {
-      const values = parseMultiValues(value);
+      const values = parseMultiValues(visibleValue);
 
       return (
         <div className="space-y-2">
@@ -150,12 +158,12 @@ function renderFieldControl(
               <div className="flex-1">
                 <Input
                   type="password"
-                  allowTogglePassword
                   iconType={iconType}
                   id={index === 0 ? controlId : `${controlId}-${index}`}
-                  readOnly={!isPasswordEditable}
+                  readOnly={!isPasswordEditable && !showsSavedSecretPlaceholder}
                   onFocus={onPasswordFocus}
                   value={entry}
+                  placeholder={secretPlaceholder}
                   disabled={disabled || !schema?.isEditable}
                   onChange={(event) => {
                     const nextValues = [...values];
@@ -199,12 +207,12 @@ function renderFieldControl(
     return (
       <Input
         type="password"
-        allowTogglePassword
         iconType={iconType}
         id={controlId}
-        readOnly={!isPasswordEditable}
+        readOnly={!isPasswordEditable && !showsSavedSecretPlaceholder}
         onFocus={onPasswordFocus}
-        value={value}
+        value={visibleValue}
+        placeholder={secretPlaceholder}
         disabled={disabled || !schema?.isEditable}
         onChange={(event) => onChange(event.target.value)}
       />
