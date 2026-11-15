@@ -39,10 +39,12 @@ def _results() -> dict:
             "security_id": "CCC",
             "entry_date": "2021-03-01",
             "exit_date": "2021-03-05",
-            "shares": 10,
+            # Worst by amount but not by percentage: the report must not
+            # conflate the two (the old report showed one as the other).
+            "shares": 100,
             "entry_price": 100.0,
             "exit_price": 95.0,
-            "pnl": -50.0,
+            "pnl": -500.0,
             "return_pct": -5.0,
             "exit_reason": "TIME_STOP",
             "holding_days": 4,
@@ -53,7 +55,7 @@ def _results() -> dict:
         "daily_records": [
             {"date": "2021-01-04", "equity": 100_000.0, "cash": 100_000.0, "positions_value": 0.0,
              "num_positions": 0, "pending_buys": 0, "pending_sells": 0},
-            {"date": "2021-03-05", "equity": 99_710.0, "cash": 99_710.0, "positions_value": 0.0,
+            {"date": "2021-03-05", "equity": 99_260.0, "cash": 99_260.0, "positions_value": 0.0,
              "num_positions": 0, "pending_buys": 0, "pending_sells": 0},
         ],
         "data_info": {
@@ -66,8 +68,8 @@ def _results() -> dict:
             "etf_source": "unit test metadata",
         },
         "performance": {
-            "final_equity": 99_710.0,
-            "total_return_pct": -0.29,
+            "final_equity": 99_260.0,
+            "total_return_pct": -0.74,
             "cagr_pct": -0.1,
             "sharpe_ratio": -0.123,
             "max_drawdown": {
@@ -82,16 +84,16 @@ def _results() -> dict:
                 "winning_trades": 1,
                 "losing_trades": 2,
                 "avg_win": 10.0,
-                "avg_loss": -150.0,
+                "avg_loss": -375.0,
                 "profit_factor": 0.033,
             },
             "exit_breakdown": {
                 "SMA20_EXIT": {"count": 1, "total_pnl": 10.0, "avg_pnl": 10.0},
                 "HARD_STOP": {"count": 1, "total_pnl": -250.0, "avg_pnl": -250.0},
-                "TIME_STOP": {"count": 1, "total_pnl": -50.0, "avg_pnl": -50.0},
+                "TIME_STOP": {"count": 1, "total_pnl": -500.0, "avg_pnl": -500.0},
             },
             "annual_returns": [
-                {"year": 2021, "start_equity": 100_000.0, "end_equity": 99_710.0, "return_pct": -0.29},
+                {"year": 2021, "start_equity": 100_000.0, "end_equity": 99_260.0, "return_pct": -0.74},
             ],
         },
     }
@@ -120,9 +122,9 @@ def test_report_numbers_match_summary_and_trades(tmp_path: Path) -> None:
 
     assert f"${summary['final_equity']:,.2f}" in report
     assert f"{summary['total_return_pct']:.2f}%" in report
-    # Average loss is recomputed from trades.csv: (-250 + -50) / 2.
-    assert "| 平均亏损 | $-150.00 |" in report
+    # Average loss is recomputed from trades.csv: (-250 + -500) / 2.
+    assert "| 平均亏损 | $-375.00 |" in report
     assert "单笔最大亏损（按收益率）**: BBB -25.00%" in report
-    assert "单笔最大亏损（按金额）**: BBB $-250.00" in report
+    assert "单笔最大亏损（按金额）**: CCC $-500.00" in report
     assert "共 7 只" in report
     assert "AAA" in report and "BBB" in report and "CCC" in report
