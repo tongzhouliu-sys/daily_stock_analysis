@@ -109,6 +109,8 @@ class RunLoopResult:
     models_used: List[str] = field(default_factory=list)
     error: Optional[str] = None
     failure_reason: Optional[StageFailureReason] = None
+    # T26: 本轮被用户停止（区别于超时/失败）
+    cancelled: bool = False
     # Raw messages list at the end of the loop (callers may want to persist)
     messages: List[Dict[str, Any]] = field(default_factory=list)
 
@@ -344,6 +346,7 @@ def run_agent_loop(
     stock_scope: Optional[StockScope] = None,
     emit_stage_events: bool = True,
     content_callback: Optional[Callable[[str], None]] = None,
+    cancel_event: Optional[threading.Event] = None,
 ) -> RunLoopResult:
     """Execute the ReAct LLM ↔ tool loop.
 
@@ -369,6 +372,10 @@ def run_agent_loop(
             ``stage_start`` / ``stage_done`` only describe real stages.
         content_callback: Optional callback for streaming content deltas (T5).
                   When provided, the final LLM call will stream content incrementally.
+        cancel_event: Optional run-level cancellation event (T26).  Polled
+                  before every model call and around every tool batch; when
+                  set, the loop stops without billing further model calls and
+                  the in-flight tool batch is asked to cancel cooperatively.
 
     Returns:
         A :class:`RunLoopResult` with the final content, stats, and the
@@ -388,6 +395,25 @@ def run_agent_loop(
     models_used: List[str] = []
     _cumulative_llm_seconds = 0.0
     _cumulative_tool_seconds = 0.0
+
+    def _cancelled() -> bool:
+        return cancel_event is not None and cancel_event.is_set()
+
+    def _build_cancelled_result(step: int) -> RunLoopResult:
+        logger.info("Agent loop cancelled by user at step %d", step)
+        return RunLoopResult(
+            success=False,
+            content="",
+            tool_calls_log=tool_calls_log,
+            total_steps=step,
+            total_tokens=total_tokens,
+            provider=provider_used,
+            models_used=models_used,
+            error="本轮分析已由用户停止。",
+            failure_reason=StageFailureReason.STAGE_FAILURE,
+            cancelled=True,
+            messages=messages,
+        )
 
     # Minimum seconds needed for a meaningful LLM round-trip.  If the
     # remaining budget is positive but below this threshold, the step will
@@ -461,6 +487,10 @@ def run_agent_loop(
 
         logger.info("Agent step %d/%d", step + 1, max_steps)
 
+        # T26: 每个模型调用前检查运行级取消，避免停止后继续计费
+        if _cancelled():
+            return _finish(_build_cancelled_result(step))
+
         # --- progress: thinking ---
         if progress_callback:
             if not tool_calls_log:
@@ -513,6 +543,7 @@ def run_agent_loop(
             timeout=remaining_timeout,
             stream_callback=_stream_cb,
             stream_reset_callback=_stream_reset_cb,
+            cancel_event=cancel_event,
         )
         _llm_elapsed = time.monotonic() - _llm_t0
         _cumulative_llm_seconds += _llm_elapsed
@@ -550,6 +581,10 @@ def run_agent_loop(
                 models_used=models_used,
                 messages=messages,
             ))
+
+        # T26: 模型返回后立即检查取消；被停止的一轮不执行工具、不再进入下一轮
+        if _cancelled():
+            return _finish(_build_cancelled_result(step + 1))
 
         if response.tool_calls:
             # ---- tool execution branch ----
@@ -602,6 +637,7 @@ def run_agent_loop(
                 tool_call_timeout_seconds=tool_call_timeout_seconds,
                 tool_wait_timeout_seconds=remaining_timeout,
                 stock_scope=stock_scope,
+                run_cancel_event=cancel_event,
             )
             _cumulative_tool_seconds += time.monotonic() - _tool_t0
 
@@ -631,6 +667,10 @@ def run_agent_loop(
                     models_used=models_used,
                     messages=messages,
                 ))
+
+            # T26: 工具批次结束后检查取消，避免停止后仍发起下一轮模型调用
+            if _cancelled():
+                return _finish(_build_cancelled_result(step + 1))
 
         else:
             # ---- final answer branch ----
@@ -798,6 +838,7 @@ def _execute_tools(
     tool_call_timeout_seconds: Optional[float] = None,
     tool_wait_timeout_seconds: Optional[float] = None,
     stock_scope: Optional[StockScope] = None,
+    run_cancel_event: Optional[threading.Event] = None,
 ) -> List[Dict[str, Any]]:
     """Execute one or more tool calls, returning ordered result dicts.
 
@@ -994,6 +1035,10 @@ def _execute_tools(
                 call_id=call_id,
             ))
 
+    # T26: 运行已被取消时不再启动新的工具调用
+    if run_cancel_event is not None and run_cancel_event.is_set():
+        return results
+
     # Fast path: a single tool with no resolved timeout runs inline (no thread).
     if len(plan) == 1 and not (plan[0][1] and plan[0][1] > 0):
         _record(plan[0][0], timed_out=False, out=_exec_single(plan[0][0]))
@@ -1009,6 +1054,7 @@ def _execute_tools(
     deadline_of: Dict[Any, List[Optional[float]]] = {}
     timeout_of: Dict[Any, float] = {}
     timeout_triggered = False
+    run_cancelled = False
     try:
         # One executor for the whole batch.  Each future gets its own cancel
         # event (keyed by Future, not by tool name, so two parallel calls to the
@@ -1034,6 +1080,14 @@ def _execute_tools(
         pending = set(futures)
 
         while pending:
+            # T26: 运行级取消置位时，把工具级取消事件一并置位并停止等待。
+            # 这里不记录工具错误结果——被停止的一轮不会落库完整回答。
+            if run_cancel_event is not None and run_cancel_event.is_set():
+                for fut in list(pending):
+                    cancel_of[fut].set()
+                pending.clear()
+                run_cancelled = True
+                break
             now = time.monotonic()
             deadlines = []
             for f in pending:
@@ -1082,6 +1136,7 @@ def _execute_tools(
     finally:
         # Do not wait when a timeout fired — the timed-out handler may still be
         # running in a worker and would otherwise block this call indefinitely.
-        pool.shutdown(wait=not timeout_triggered, cancel_futures=True)
+        # T26: 运行级取消同理，不等待仍在执行的工具。
+        pool.shutdown(wait=not (timeout_triggered or run_cancelled), cancel_futures=True)
 
     return results

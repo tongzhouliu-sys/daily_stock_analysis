@@ -67,6 +67,7 @@ class AgentRunRequest:
     max_wall_clock_seconds: Optional[float]
     progress_callback: Optional[Callable[[Dict[str, Any]], None]] = None
     content_callback: Optional[Callable[[str], None]] = None  # T5: 流式内容回调
+    cancel_event: Optional[Any] = None  # T26: 运行级取消事件
 
 
 @dataclass
@@ -82,6 +83,7 @@ class AgentRunResult:
     error_message: Optional[str] = None
     messages: List[Dict[str, Any]] = field(default_factory=list)
     total_steps: int = 0
+    cancelled: bool = False  # T26: 本轮被用户停止
 
 
 class AgentBackend(ABC):
@@ -120,6 +122,7 @@ class LiteLLMAgentBackend(AgentBackend):
             max_wall_clock_seconds=request.max_wall_clock_seconds,
             stock_scope=request.stock_scope,
             content_callback=request.content_callback,  # T5: 传递流式内容回调
+            cancel_event=request.cancel_event,  # T26: 传递运行级取消事件
         )
         usage = {"total_tokens": loop_result.total_tokens} if loop_result.total_tokens > 0 else None
         error_code = None
@@ -127,6 +130,8 @@ class LiteLLMAgentBackend(AgentBackend):
             error_code = "timeout"
         elif not loop_result.success:
             error_code = "unknown_backend_error"
+        if loop_result.cancelled:
+            error_code = "cancelled"
         return AgentRunResult(
             success=loop_result.success,
             final_answer=loop_result.content,
@@ -139,4 +144,5 @@ class LiteLLMAgentBackend(AgentBackend):
             error_message=loop_result.error,
             messages=loop_result.messages,
             total_steps=loop_result.total_steps,
+            cancelled=loop_result.cancelled,
         )

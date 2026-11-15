@@ -638,6 +638,19 @@ export const useAgentChatStore = create<AgentChatState & AgentChatActions>((set,
     streamEpoch += 1;
     recoveryDeadline = null;
     const controller = get().abortController;
+    // T26: 先让后端真正取消这一轮，再断开 SSE 连接。
+    // 后端会在下一个检查点退出，不再继续模型调用或落库完整回答。
+    const { activeRequestId, sessionId } = get();
+    if (activeRequestId || sessionId) {
+      try {
+        await agentApi.stopChat({
+          ...(activeRequestId ? { request_id: activeRequestId } : {}),
+          ...(sessionId ? { session_id: sessionId } : {}),
+        });
+      } catch {
+        // 停止接口失败不应阻塞本地清理；断开连接仍会让后端感知到取消。
+      }
+    }
     // Immediately clear transient state so the UI is responsive even if the
     // stream reader does not react to abort() right away. Bumping the stream
     // and detail-read tokens makes every in-flight callback stale, so none of

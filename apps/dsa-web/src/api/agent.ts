@@ -242,6 +242,19 @@ export const agentApi = {
     }
     return { success: true };
   },
+  /** T26: 让后端真正取消当前运行中的一轮（而不只是断开 SSE 连接）。 */
+  async stopChat(payload: { session_id?: string; request_id?: string }): Promise<{
+    success: boolean;
+    cancelled: boolean;
+    message?: string;
+  }> {
+    const response = await apiClient.post<{
+      success: boolean;
+      cancelled: boolean;
+      message?: string;
+    }>('/api/v1/agent/chat/stop', payload, { timeout: 10000 });
+    return response.data;
+  },
   async chatStream(
     payload: ChatStreamRequest,
     options?: ChatStreamOptions,

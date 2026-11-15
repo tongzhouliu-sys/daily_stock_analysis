@@ -29,7 +29,8 @@ from src.schemas.agent_intake import (
     IntakeCreateRequest, IntakeCreateResponse, IntakeStatus,
     IntakeUpdateRequest, IntakeUpdateResponse,
 )
-from src.storage import ChatSessionStateConflict
+from src.agent.cancellation import register_run, release_run, request_cancel
+from src.storage import ChatSessionStateConflict, ChatTurnInProgress
 
 # Tool name -> Chinese display name mapping
 TOOL_DISPLAY_NAMES: Dict[str, str] = {
@@ -54,6 +55,11 @@ TOOL_DISPLAY_NAMES: Dict[str, str] = {
 logger = logging.getLogger(__name__)
 
 router = APIRouter()
+
+# T26: SSE 心跳间隔；同时用于刷新会话运行心跳，避免 90 秒误判中断
+HEARTBEAT_INTERVAL_SECONDS = 15.0
+# T26: 超过该时长没有任何事件视为整轮超时
+STREAM_IDLE_TIMEOUT_SECONDS = 300.0
 
 
 
@@ -262,6 +268,10 @@ def _prepare_chat_request(request, config, session_id, session_service,
         # the reminder below.
         return None, None, None, None, None, domain_guard_result
 
+    # T26: 会话仍在运行（或正在停止）时拒绝新一轮，避免两轮并发
+    if _is_session_turn_in_progress(session_service, session_id):
+        raise ChatTurnInProgress()
+
     brief_payload = None
     if request.interaction_version >= 1:
         if request.intake_id:
@@ -334,6 +344,35 @@ def _accepted_state_payload(accepted):
         selected_skill_ids=accepted["selected_skill_ids"],
         active_report_context=accepted.get("active_report_context"),
     )
+
+
+def _is_session_turn_in_progress(session_service, session_id: str) -> bool:
+    """T26: 会话是否仍有运行中的一轮。
+
+    读不到状态时按“未运行”处理（fail-open），避免存储抖动把所有提问都挡掉。
+    """
+    try:
+        snapshot = session_service.db.read_chat_session_snapshot(session_id)
+    except Exception:
+        return False
+    return bool(snapshot.get("is_running"))
+
+
+async def _touch_running_heartbeat(session_service, session_id: str, turn) -> None:
+    """T26: 刷新会话运行心跳。
+
+    SSE 每 15 秒发一行注释心跳的同时刷新 ``running_heartbeat_at``，
+    避免长回答期间被 ``_CHAT_RUNNING_STALE_AFTER``（90 秒）误判为中断。
+    """
+    turn_id = getattr(turn, "run_id", None)
+    try:
+        await asyncio.to_thread(
+            session_service.db.touch_session_running_heartbeat,
+            session_id,
+            turn_id=turn_id,
+        )
+    except Exception:
+        logger.debug("running heartbeat refresh failed for session %s", session_id, exc_info=True)
 
 
 class SkillInfo(BaseModel):
@@ -507,6 +546,11 @@ async def agent_chat(
                             detail={"error": exc.code, "message": exc.message}) from exc
     except ChatSessionStateConflict as exc:
         raise HTTPException(status_code=409, detail={"error": exc.code, "message": str(exc)}) from exc
+    except ChatTurnInProgress as exc:
+        raise HTTPException(
+            status_code=exc.status_code,
+            detail={"error": exc.code, "message": str(exc)},
+        ) from exc
     except AgentReportContextError as exc:
         raise HTTPException(
             status_code=exc.status_code,
@@ -838,6 +882,9 @@ async def agent_chat_stream(
             event["display_name"] = TOOL_DISPLAY_NAMES.get(tool, tool)
         asyncio.run_coroutine_threadsafe(queue.put(event), loop)
 
+    # T26: 运行级取消事件，按客户端 request_id 注册，供停止接口置位
+    cancel_event = register_run(request_id)
+
     def run_sync(executor, turn):
         try:
             # T5: 启用流式内容输出（当请求和服务端配置都开启时）
@@ -849,6 +896,7 @@ async def agent_chat_stream(
                 turn, 
                 progress_callback=progress_callback,
                 stream_content=stream_content,
+                cancel_event=cancel_event,
             )
             event = {
                 "type": "done",
@@ -858,6 +906,8 @@ async def agent_chat_stream(
                 "total_steps": result.total_steps,
                 "session_id": session_id,
             }
+            if getattr(result, "cancelled", False):
+                event["cancelled"] = True
             event.update({
                 "backend": getattr(result, "backend", "") or backend_id,
                 "error_code": getattr(result, "error_code", None),
@@ -882,6 +932,7 @@ async def agent_chat_stream(
 
     async def event_generator():
         fut = None
+        turn_started_at = loop.time()
         try:
             try:
                 executor, turn, accepted, clarification, clarification_payload, domain_guard_result = await asyncio.to_thread(
@@ -893,7 +944,8 @@ async def agent_chat_stream(
             except Exception as exc:
                 logger.error("Agent request preparation failed: %s", exc, exc_info=True)
                 recoverable = isinstance(
-                    exc, (AgentReportContextError, IntakeServiceError, ChatSessionStateConflict))
+                    exc, (AgentReportContextError, IntakeServiceError,
+                          ChatSessionStateConflict, ChatTurnInProgress))
                 event = {
                     "type": "error",
                     "message": (exc.message if isinstance(exc, IntakeServiceError) else str(exc))
@@ -966,16 +1018,32 @@ async def agent_chat_stream(
                 yield "data: " + json.dumps(event, ensure_ascii=False) + "\n\n"
                 return
             fut = loop.run_in_executor(None, run_sync, executor, turn)
+            # T26: 每 15 秒发一行注释心跳，并同步刷新会话运行心跳，
+            # 避免长回答被 90 秒的运行态判定误认为已中断（审计 A9）。
+            heartbeat_at = loop.time()
             while True:
                 try:
-                    event = await asyncio.wait_for(queue.get(), timeout=300.0)
+                    event = await asyncio.wait_for(queue.get(), timeout=HEARTBEAT_INTERVAL_SECONDS)
                 except asyncio.TimeoutError:
-                    event = {"type": "error", "message": "分析超时"}
-                    yield "data: " + json.dumps(event, ensure_ascii=False) + "\n\n"
-                    break
+                    now = loop.time()
+                    if now - heartbeat_at >= HEARTBEAT_INTERVAL_SECONDS:
+                        heartbeat_at = now
+                        await _touch_running_heartbeat(session_service, session_id, turn)
+                        yield ": heartbeat\n\n"
+                    if now - turn_started_at >= STREAM_IDLE_TIMEOUT_SECONDS:
+                        event = {"type": "error", "message": "分析超时"}
+                        yield "data: " + json.dumps(event, ensure_ascii=False) + "\n\n"
+                        break
+                    continue
+                heartbeat_at = loop.time()
                 yield "data: " + json.dumps(event, ensure_ascii=False) + "\n\n"
                 if event.get("type") in ("done", "error"):
                     break
+        except (asyncio.CancelledError, GeneratorExit):
+            # T26: 客户端断开（关页面/断网/点停止）时置位运行级取消，
+            # 让后端在下一个检查点退出，而不是继续烧 token 并落库。
+            request_cancel(request_id)
+            raise
         finally:
             try:
                 if fut is not None:
@@ -987,6 +1055,8 @@ async def agent_chat_stream(
                 logger.debug("agent executor cleanup timed out after 5s for session %s", session_id)
             except Exception as exc:
                 logger.warning("agent executor cleanup error (ignored): %s", exc, exc_info=True)
+            finally:
+                release_run(request_id)
 
     return StreamingResponse(
         event_generator(),
@@ -996,6 +1066,50 @@ async def agent_chat_stream(
             "X-Accel-Buffering": "no",
             "Connection": "keep-alive",
         },
+    )
+
+
+class ChatStopRequest(BaseModel):
+    """T26: 停止一轮正在运行的问股请求。"""
+
+    session_id: Optional[str] = Field(default=None, min_length=1, max_length=64)
+    request_id: Optional[str] = Field(default=None, min_length=1, max_length=64)
+
+
+class ChatStopResponse(BaseModel):
+    success: bool
+    cancelled: bool
+    session_id: Optional[str] = None
+    request_id: Optional[str] = None
+    message: str = ""
+
+
+@router.post("/chat/stop", response_model=ChatStopResponse)
+async def agent_chat_stop(
+    request: ChatStopRequest,
+    session_service: AgentChatSessionService = Depends(get_agent_chat_session_service),
+):
+    """T26: 置位运行级取消事件，让后端在下一个检查点退出。
+
+    前端在 ``stopStream`` 里先调用本接口，再断开 SSE 连接。事件未注册
+    （例如该轮已经结束）时返回 ``cancelled=False``，前端据此直接断开即可。
+    """
+    request_id = (request.request_id or "").strip()
+    cancelled = bool(request_id) and request_cancel(request_id)
+    if not cancelled and request.session_id:
+        # 没有 request_id 时保守清理会话运行态，避免 UI 卡在“分析中”。
+        try:
+            await asyncio.to_thread(
+                session_service.db.set_session_running, request.session_id, False,
+            )
+        except Exception:
+            logger.debug("session running clear failed for %s", request.session_id, exc_info=True)
+    return ChatStopResponse(
+        success=True,
+        cancelled=cancelled,
+        session_id=request.session_id,
+        request_id=request_id or None,
+        message="已请求停止" if cancelled else "该轮已结束",
     )
 
 

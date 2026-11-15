@@ -146,6 +146,7 @@ class AgentChatExecutor:
         *,
         progress_callback: Optional[Callable[[Dict[str, Any]], None]] = None,
         stream_content: bool = False,
+        cancel_event: Optional[Any] = None,
     ) -> AgentResult:
         """Execute a previously accepted turn and persist its terminal result."""
         # Collect progress steps for persistence
@@ -241,6 +242,7 @@ class AgentChatExecutor:
                         max_wall_clock_seconds=self.timeout_seconds,
                         progress_callback=_persisting_progress_callback,
                         content_callback=_content_callback,
+                        cancel_event=cancel_event,
                     )
                 )
             
@@ -272,6 +274,7 @@ class AgentChatExecutor:
                 backend=backend_result.backend,
                 error_code=backend_result.error_code,
                 usage=backend_result.usage,
+                cancelled=bool(getattr(backend_result, "cancelled", False)),
             )
 
             # Build thinking_steps from collected progress (filter to displayable steps)
@@ -357,7 +360,11 @@ class AgentChatExecutor:
                            if turn.accepted_snapshot is not None else {}),
                     )
             else:
-                failure_note = f"[分析失败] {result.error or '未知错误'}"
+                # T26: 被用户停止的一轮落“已停止”终态标记，不落库完整回答
+                if result.cancelled:
+                    failure_note = "[已停止] 本轮分析已由用户停止。"
+                else:
+                    failure_note = f"[分析失败] {result.error or '未知错误'}"
                 if turn.accepted_snapshot is not None:
                     conversation_manager.add_message(
                         turn.session_id, "assistant", failure_note,

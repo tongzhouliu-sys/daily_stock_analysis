@@ -150,6 +150,8 @@ class OrchestratorResult:
     stats: Optional[AgentRunStats] = None
     runtime_facts: Optional[AgentRuntimeFacts] = None
     stage_trajectories: List[Dict[str, Any]] = field(default_factory=list)
+    # T26: 本轮被用户停止
+    cancelled: bool = False
 
 
 @dataclass(frozen=True)
@@ -541,6 +543,7 @@ class AgentOrchestrator:
         *,
         progress_callback: Optional[Callable] = None,
         stream_content: bool = False,
+        cancel_event: Optional[Any] = None,
     ) -> "AgentResult":
         """Execute an accepted multi-agent Chat turn and persist its result.
 
@@ -607,6 +610,7 @@ class AgentOrchestrator:
                 turn.context,
                 parse_dashboard=False,
                 progress_callback=_persisting_progress_callback,
+                cancel_event=cancel_event,
             )
 
             # Build thinking_steps from collected progress (filter to displayable steps)
@@ -662,9 +666,14 @@ class AgentOrchestrator:
                     answer_meta=answer_meta_payload,
                 )
             else:
+                cancelled = bool(getattr(orch_result, "cancelled", False))
+                marker = (
+                    "[已停止] 本轮分析已由用户停止。"
+                    if cancelled else f"[分析失败] {orch_result.error or '未知错误'}"
+                )
                 conversation_manager.add_message(
                     turn.session_id, "assistant",
-                    f"[分析失败] {orch_result.error or '未知错误'}",
+                    marker,
                     thinking_steps=thinking_steps,
                 )
 
@@ -680,6 +689,7 @@ class AgentOrchestrator:
                 error=orch_result.error,
                 stage_trajectories=orch_result.stage_trajectories,
                 runtime_facts=orch_result.runtime_facts,
+                cancelled=bool(getattr(orch_result, "cancelled", False)),
             )
 
             # Set thinking_steps and assistant_message_id in result for T2
@@ -712,6 +722,7 @@ class AgentOrchestrator:
         ctx: AgentContext,
         parse_dashboard: bool = True,
         progress_callback: Optional[Callable] = None,
+        cancel_event: Optional[Any] = None,
     ) -> OrchestratorResult:
         """Run the agent pipeline according to ``self.mode``."""
         stats = AgentRunStats()
@@ -733,6 +744,20 @@ class AgentOrchestrator:
         _MIN_STAGE_BUDGET_S = 15
 
         while index < len(agents):
+            # T26: 阶段之间检查运行级取消，避免停止后继续烧模型调用
+            if cancel_event is not None and cancel_event.is_set():
+                logger.info("[Orchestrator] pipeline cancelled by user before stage %d", index + 1)
+                return OrchestratorResult(
+                    success=False,
+                    error="本轮分析已由用户停止。",
+                    stats=stats,
+                    total_steps=stats.total_stages,
+                    total_tokens=stats.total_tokens,
+                    tool_calls_log=all_tool_calls,
+                    stage_trajectories=stage_trajectories,
+                    runtime_facts=build_agent_runtime_facts(ctx),
+                    cancelled=True,
+                )
             agent = agents[index]
             elapsed_s = time.time() - t0
             remaining_budget = timeout_s - elapsed_s if timeout_s else None

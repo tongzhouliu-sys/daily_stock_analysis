@@ -70,6 +70,8 @@ class AgentResult:
     assistant_message_id: Optional[int] = None
     thinking_steps: List[Dict[str, Any]] = field(default_factory=list)
     answer_meta: Optional[Any] = None
+    # T26: 本轮被用户停止（终态标记，不落库完整回答）
+    cancelled: bool = False
 
 
 # ============================================================

@@ -634,7 +634,9 @@ def test_litellm_stream_keeps_existing_execution_signature(tmp_path: Path) -> No
     assert [event["type"] for event in events] == ["accepted", "done"]
     assert events[0]["backend"] == "litellm"
     assert executor.prepare_turn.call_args.kwargs["context"]["report_language"] == "ko"
-    assert "cancel_event" not in executor.execute_turn.call_args.kwargs
+    # T26: 每轮都注册运行级取消事件，因此 execute_turn 现在必须收到 cancel_event
+    assert "cancel_event" in executor.execute_turn.call_args.kwargs
+    assert executor.execute_turn.call_args.kwargs["cancel_event"] is not None
 
 
 def test_multi_agent_stream_accepts_stream_content_and_finishes_with_done() -> None:

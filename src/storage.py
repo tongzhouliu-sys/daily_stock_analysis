@@ -840,6 +840,16 @@ class ChatSessionStateConflict(Exception):
         super().__init__("Conversation changed; refresh the session before retrying.")
 
 
+class ChatTurnInProgress(Exception):
+    """T26: 上一轮仍在运行（或正在停止），本轮拒绝受理。"""
+
+    code = "session_turn_in_progress"
+    status_code = 409
+
+    def __init__(self):
+        super().__init__("上一轮仍在停止中，请稍后再试。")
+
+
 _KEEP_REPORT_REFERENCE = object()
 
 
@@ -4444,6 +4454,29 @@ class DatabaseManager(metaclass=_DatabaseManagerMeta):
             return True
 
         return self._run_write_transaction("set_session_running", write)
+
+    def touch_session_running_heartbeat(
+        self,
+        session_id: str,
+        *,
+        turn_id: Optional[str] = None,
+    ) -> bool:
+        """T26: Refresh only the running heartbeat for the owning running turn.
+
+        Used by the SSE heartbeat so a long answer is not mistaken for an
+        interrupted turn by the 90-second staleness check.
+        """
+        def write(session: Session) -> bool:
+            state = session.get(ConversationSessionState, session_id)
+            if state is None or not state.is_running:
+                return False
+            if turn_id is not None and state.running_turn_id not in (None, turn_id):
+                return False
+            state.running_heartbeat_at = utc_naive_now()
+            session.flush()
+            return True
+
+        return self._run_write_transaction("touch_session_running_heartbeat", write)
 
     def update_session_running_progress(
         self,

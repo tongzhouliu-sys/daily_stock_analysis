@@ -573,6 +573,7 @@ class LLMToolAdapter:
         timeout: Optional[float] = None,
         stream_callback: Optional[Callable[[str], None]] = None,
         stream_reset_callback: Optional[Callable[[str], None]] = None,
+        cancel_event: Optional[Any] = None,
     ) -> LLMResponse:
         """Send messages + tool declarations to LLM, return normalized response.
 
@@ -596,6 +597,7 @@ class LLMToolAdapter:
             timeout=timeout,
             stream_callback=stream_callback,
             stream_reset_callback=stream_reset_callback,
+            cancel_event=cancel_event,
         )
 
     def call_text(
@@ -628,6 +630,7 @@ class LLMToolAdapter:
         timeout: Optional[float] = None,
         stream_callback: Optional[Callable[[str], None]] = None,
         stream_reset_callback: Optional[Callable[[str], None]] = None,
+        cancel_event: Optional[Any] = None,
     ) -> LLMResponse:
         """Shared completion path for both tool and text-only calls.
         
@@ -695,6 +698,7 @@ class LLMToolAdapter:
                     timeout=effective_timeout,
                     stream_callback=stream_callback,
                     stream_reset_callback=stream_reset_callback,
+                    cancel_event=cancel_event,
                 )
             except Exception as e:
                 # T4: 超时异常时尝试下一个备用模型
@@ -754,6 +758,7 @@ class LLMToolAdapter:
         timeout: Optional[float] = None,
         stream_callback: Optional[Callable[[str], None]] = None,
         stream_reset_callback: Optional[Callable[[str], None]] = None,
+        cancel_event: Optional[Any] = None,
     ) -> LLMResponse:
         """Call a specific litellm model with OpenAI-format messages and tools.
         
@@ -845,6 +850,7 @@ class LLMToolAdapter:
                 openai_messages=openai_messages,
                 stream_callback=stream_callback,
                 stream_reset_callback=stream_reset_callback,
+                cancel_event=cancel_event,
             )
 
         # 非流式路径
@@ -896,6 +902,7 @@ class LLMToolAdapter:
         openai_messages: List[Dict[str, Any]],
         stream_callback: Callable[[str], None],
         stream_reset_callback: Optional[Callable[[str], None]] = None,
+        cancel_event: Optional[Any] = None,
     ) -> LLMResponse:
         """T25: 流式调用 LiteLLM，正文增量实时下发，工具调用增量按索引累积。
 
@@ -949,6 +956,16 @@ class LLMToolAdapter:
 
         def _consume() -> None:
             for chunk in _get_stream():
+                # T26: 停止后立即在片段之间退出，不再继续消费（也不再计费）
+                if cancel_event is not None and cancel_event.is_set():
+                    logger.info("Streaming consumption stopped by user request")
+                    if not state["reset_sent"] and state["emitted_text"] and stream_reset_callback is not None:
+                        try:
+                            stream_reset_callback("cancelled")
+                        except Exception:
+                            logger.debug("stream_reset_callback failed", exc_info=True)
+                        state["reset_sent"] = True
+                    return
                 chunks.append(chunk)
                 choices = getattr(chunk, "choices", None)
                 if not choices:
