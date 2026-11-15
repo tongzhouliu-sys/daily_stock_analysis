@@ -210,19 +210,25 @@ def _compile_patterns(keywords: List[str]) -> re.Pattern:
     return re.compile("|".join(escaped), re.IGNORECASE)
 
 
-def _compile_word_patterns(keywords: List[str]) -> re.Pattern:
+def _compile_word_patterns(keywords: List[str], *, allow_plural: bool = False) -> re.Pattern:
     """Compile keywords with word boundaries.
 
     T4: English keywords are matched with ``\\b`` boundaries so that short
     words (e.g. ``game``, ``travel``) do not fire on unrelated substrings.
     Keywords that already start/end with a non-word character fall back to a
     plain alternation for that entry.
+
+    ``allow_plural`` also accepts an ``s``/``es`` suffix before the closing
+    boundary, so ``stock`` matches ``stocks`` and ``share`` matches ``shares``.
+    Without it a plural investment word went unnoticed and an off-topic word in
+    the same sentence ("travel stocks") redirected a real investment question.
     """
+    suffix = r"(?:e?s)?" if allow_plural else ""
     parts = []
     for kw in keywords:
         esc = re.escape(kw)
         if kw[:1].isalnum() and kw[-1:].isalnum():
-            parts.append(r"\b" + esc + r"\b")
+            parts.append(r"\b" + esc + suffix + r"\b")
         else:
             parts.append(esc)
     return re.compile("|".join(parts), re.IGNORECASE)
@@ -254,7 +260,7 @@ _PATTERNS_ZH = {
 
 _PATTERNS_EN = {
     # R8: 英文投资关键词全部加词边界，避免 "recipe" 里的 "pe" 被当成市盈率。
-    "investment": _compile_word_patterns(_INVESTMENT_KEYWORDS_EN),
+    "investment": _compile_word_patterns(_INVESTMENT_KEYWORDS_EN, allow_plural=True),
     "system_help": _compile_word_patterns(_SYSTEM_HELP_KEYWORDS_EN),
     "social": _compile_word_patterns(_SOCIAL_KEYWORDS_EN),
     "off_topic": _compile_word_patterns(_OFF_TOPIC_KEYWORDS_EN),

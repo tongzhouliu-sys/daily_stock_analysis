@@ -734,6 +734,19 @@ class TestR8RuleOrderAndBoundaries:
     @pytest.mark.parametrize(
         "message",
         [
+            "How did travel stocks perform this year",
+            "Weather impact on airline shares",
+            "Which movie studio stocks look cheap",
+        ],
+    )
+    def test_english_plural_investment_words_win_over_off_topic(self, service, message):
+        # \bstock\b used to miss "stocks"/"shares"; the off-topic word then won.
+        d, m = service.classify(message)
+        assert d.action == DomainAction.ALLOW
+
+    @pytest.mark.parametrize(
+        "message",
+        [
             "What is the PE of AAPL",
             "PE 是多少",
             "这个 ETF 的费率怎么样",
@@ -755,6 +768,10 @@ class TestR8RuleOrderAndBoundaries:
 
         assert _PATTERNS_ZH["investment"].search(word) is None
 
-    def test_policy_version_bumped(self):
-        """规则顺序与词表变了，policy_version 必须跟着走。"""
-        assert POLICY_VERSION == "1.2.0"
+    def test_decisions_carry_the_current_policy_version(self, service):
+        """判定元数据带出当前规则版本，便于按版本对比误判率。
+
+        版本号本身在改规则时手动升级（见 CHANGELOG），测试不写死它的取值。
+        """
+        _decision, meta = service.classify("How did travel stocks perform this year")
+        assert meta.policy_version == POLICY_VERSION
