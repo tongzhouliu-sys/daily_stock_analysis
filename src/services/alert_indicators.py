@@ -4,7 +4,7 @@
 from __future__ import annotations
 
 from dataclasses import dataclass, field
-from datetime import datetime, time
+from datetime import datetime, time, timezone
 from math import isfinite
 from typing import Any, Dict, Optional
 
@@ -508,7 +508,10 @@ def _drop_partial_today(
     bar (and dropped a legitimately closed HK/CN bar) whenever the server clock
     did not match the exchange's session close.
     """
-    current = now or datetime.now()
+    # R20: always pass an aware UTC time. A naive local time would be read by
+    # ``get_market_now`` as exchange-local, which marks the US session closed
+    # for a UTC+8 server and keeps the still-forming bar.
+    current = now or datetime.now(timezone.utc)
     market = get_market_for_stock(stock_code) if stock_code else None
     closed_today: Optional[bool] = None
     reference_date = current.date()

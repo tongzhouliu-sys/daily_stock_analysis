@@ -10,6 +10,7 @@ from datetime import date, datetime
 from pathlib import Path
 from types import SimpleNamespace
 from unittest.mock import AsyncMock, MagicMock, patch
+from zoneinfo import ZoneInfo
 
 import pandas as pd
 
@@ -242,6 +243,28 @@ class PartialBarSessionGateTestCase(unittest.TestCase):
             result = _drop_partial_today(self._frame(date(2026, 5, 15)), now=now, stock_code="AAPL")
 
         self.assertEqual(len(result), 1)
+
+    def _two_day_frame(self) -> pd.DataFrame:
+        return pd.DataFrame(
+            {"date": [date(2026, 5, 14), date(2026, 5, 15)], "close": [9.8, 10.0]}
+        )
+
+    def test_aware_utc_time_drops_forming_us_bar(self) -> None:
+        # 2026-05-16 03:00 北京 == 2026-05-15 15:00 美东（周五盘中）
+        now = datetime(2026, 5, 16, 3, 0, tzinfo=ZoneInfo("Asia/Shanghai"))
+
+        result = _drop_partial_today(self._two_day_frame(), now=now, stock_code="AAPL")
+
+        self.assertEqual(len(result), 1)
+        self.assertEqual(result["date"].iloc[-1], date(2026, 5, 14))
+
+    def test_aware_utc_time_keeps_bar_after_us_close(self) -> None:
+        # 2026-05-16 08:00 北京 == 2026-05-15 20:00 美东（已收盘）
+        now = datetime(2026, 5, 16, 8, 0, tzinfo=ZoneInfo("Asia/Shanghai"))
+
+        result = _drop_partial_today(self._two_day_frame(), now=now, stock_code="AAPL")
+
+        self.assertEqual(len(result), 2)
 
 
 if __name__ == "__main__":
