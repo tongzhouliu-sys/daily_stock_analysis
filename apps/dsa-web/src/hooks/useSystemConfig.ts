@@ -91,10 +91,18 @@ export function useSystemConfig() {
 
   const mergedItems = useMemo(() => {
     return sortItemsByOrder(
-      serverItems.map((item) => ({
-        ...item,
-        value: draftValues[item.key] ?? item.value,
-      })),
+      serverItems.map((item) => {
+        const draft = draftValues[item.key];
+        return {
+          ...item,
+          value: draft ?? item.value,
+          // Drafts start as the server values. Once the user edits a masked
+          // secret the field holds their own text, not the saved placeholder;
+          // keeping isMasked would render an empty box on every keystroke and
+          // drop all but the last character.
+          isMasked: item.isMasked && (draft === undefined || draft === item.value),
+        };
+      }),
     );
   }, [draftValues, serverItems]);
 

@@ -196,6 +196,57 @@ describe('useSystemConfig', () => {
     });
   });
 
+  it('treats a masked secret as editable plain text once the user starts typing', async () => {
+    const maskedConfig = {
+      ...sampleConfig,
+      items: [
+        ...sampleConfig.items,
+        {
+          key: 'GEMINI_API_KEY',
+          value: '******',
+          rawValueExists: true,
+          isMasked: true,
+          schema: {
+            key: 'GEMINI_API_KEY',
+            category: 'base',
+            dataType: 'string',
+            uiControl: 'password',
+            isSensitive: true,
+            isRequired: false,
+            isEditable: true,
+            options: [],
+            validation: {},
+            displayOrder: 2,
+          },
+        },
+      ],
+    };
+    getConfig.mockResolvedValueOnce(maskedConfig);
+
+    const { result } = renderHook(() => useSystemConfig());
+    await act(async () => {
+      await result.current.load();
+    });
+    await waitFor(() => {
+      expect(result.current.isLoading).toBe(false);
+    });
+
+    const findSecret = () => Object.values(result.current.itemsByCategory)
+      .flat()
+      .find((item) => item.key === 'GEMINI_API_KEY');
+
+    expect(findSecret()?.isMasked).toBe(true);
+
+    // Typing a new key character by character must accumulate the value.
+    for (const next of ['s', 'sk', 'sk-', 'sk-n']) {
+      act(() => {
+        result.current.setDraftValue('GEMINI_API_KEY', next);
+      });
+      expect(findSecret()?.isMasked).toBe(false);
+      expect(findSecret()?.value).toBe(next);
+    }
+  });
+
   it('keeps legacy LLM provider fields in save payload without hidden-field migration', async () => {
     const savedConfig = {
       ...sampleLlmConfig,
