@@ -510,6 +510,39 @@ class PortfolioRepository:
         ).scalars().all()
         return list(rows)
 
+    def list_cash_ledger_window(
+        self,
+        *,
+        start_date: date,
+        end_date: date,
+        account_id: Optional[int] = None,
+    ) -> List[PortfolioCashLedger]:
+        """Load external cash flows inside a date window (inclusive)."""
+        with self.db.get_session() as session:
+            query = (
+                select(PortfolioCashLedger)
+                .join(
+                    PortfolioAccount,
+                    PortfolioAccount.id == PortfolioCashLedger.account_id,
+                )
+                .where(
+                    and_(
+                        PortfolioCashLedger.event_date >= start_date,
+                        PortfolioCashLedger.event_date <= end_date,
+                        PortfolioAccount.is_active.is_(True),
+                    )
+                )
+            )
+            if account_id is not None:
+                query = query.where(PortfolioCashLedger.account_id == account_id)
+            rows = session.execute(
+                query.order_by(
+                    PortfolioCashLedger.event_date.asc(),
+                    PortfolioCashLedger.id.asc(),
+                )
+            ).scalars().all()
+            return list(rows)
+
     def list_corporate_actions(self, account_id: int, as_of: date) -> List[PortfolioCorporateAction]:
         with self.db.get_session() as session:
             return self.list_corporate_actions_in_session(session=session, account_id=account_id, as_of=as_of)

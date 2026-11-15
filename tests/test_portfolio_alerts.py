@@ -127,14 +127,16 @@ class PortfolioAlertsTestCase(unittest.TestCase):
         self.assertEqual(result["observed_value"], 42.5)
         self.assertEqual(result["threshold"], 35.0)
 
-    def test_drawdown_uses_risk_report_alert_and_max_drawdown(self) -> None:
+    def test_drawdown_uses_risk_report_alert_and_current_drawdown(self) -> None:
         result = evaluate_portfolio_risk_alert(
             _risk_rule("portfolio_drawdown"),
             risk_service=FakeRiskService(_risk_report()),
         )
 
         self.assertTrue(result["triggered"])
-        self.assertEqual(result["observed_value"], 20.0)
+        # Observed value is the live drawdown; the historical peak-to-trough
+        # value stays in diagnostics for context only.
+        self.assertEqual(result["observed_value"], 5.0)
         diagnostics = json.loads(result["diagnostics"])
         self.assertEqual(diagnostics["current_drawdown_pct"], 5.0)
         self.assertEqual(diagnostics["max_drawdown_pct"], 20.0)

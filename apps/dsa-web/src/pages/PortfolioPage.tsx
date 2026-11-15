@@ -97,6 +97,14 @@ const PORTFOLIO_LIMITATION_LABELS: Record<string, Record<PortfolioPageLanguage, 
     zh: '行业与风险指标覆盖有限',
     en: 'Sector and risk metrics are limited',
   },
+  price_missing: {
+    zh: '部分持仓缺少价格，已按成本价估值，且不计入止损与集中度',
+    en: 'Some positions have no price: valued at cost and excluded from stop-loss and concentration',
+  },
+  fx_missing: {
+    zh: '部分持仓缺少汇率，相关金额未计入合计',
+    en: 'Some amounts lack an FX rate and are excluded from totals',
+  },
 };
 
 type PendingDelete =

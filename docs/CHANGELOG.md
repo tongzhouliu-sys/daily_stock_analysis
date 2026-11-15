@@ -9,6 +9,9 @@ and this project adheres to [Semantic Versioning](https://semver.org/).
 
 ## [Unreleased]
 
+- [修复] 组合回撤改按外部现金流调整：日收益以「前一日权益 + 当日净入金/出金」为分母连乘，提现 300k 不再被算成 30% 回撤；回撤告警改用 `current_drawdown_pct`，历史峰值回撤只做展示，回撤修复后不再重复推送。
+- [修复] 缺价持仓改为按成本估值并显式标记：`valuation_basis="cost"`、`price_missing=true`、`PRICE_MISSING` limitation，未实现盈亏率返回 `null` 而不是 0%；止损与个股/行业集中度跳过缺价持仓并披露 `excluded_missing_price_count`，不再把成本估值读成 −100% 止损或拉偏权重。
+- [修复] 缺汇率不再静默 1:1 折算：查不到直接/反向汇率时返回 `0.0 / missing_rate`，该部分从账户与快照汇总中剔除，并通过 `fx_missing`、`FX_MISSING` limitation 与前端提示显式披露。
 - [修复] 告警触发语义修正：`price_cross` 不再“高于即触发”，改为按 `alert_rule_states` 记录每条规则最近价格位置，只在 `above`/`below` 状态翻转时触发，价格连续停在阈值同侧不再每个冷却期重复推送，worker 重启也不会重复；非交易日（周末/交易所节假日）的价格类规则直接记 `skipped`，不再用静态报价伪造穿越；技术指标规则改用标的所属市场交易日历判断日线是否收盘，不再写死服务器本地 16:00；`volume_spike` 均量基线只取当日之前的日线，放量 bar 不再抬高自己的基线。
 - [修复] 评估闭环口径修正：回测去重只跳过 `completed` 记录，`insufficient_data` / `unable` / `error` 在补齐 K 线后会被重新评估；卖出类信号补齐中性区（涨跌幅在 ±`BACKTEST_NEUTRAL_BAND_PCT` 内记 `neutral`，不进胜率分母），与买入类对称，历史卖出命中率会因此下降；止损成交价取「当日开盘价」与「止损价」中更差的一个，跳空低开不再按止损价记账，买入止损价不低于入场价的计划标记为 `invalid_stop`；盘中（含午间、临近收盘）分析改以当日收盘为评估起点，盘前仍以昨收为起点。
 - [修复] 决策信号事后表现接入主流程：每日分析在自动回测后自动调用一次 `run_outcomes`（失败只记日志，不影响分析结果），不再依赖手动 API；盘中信号按 1 日周期评估，有效期改为按交易日历推进；同一只股票累计 ≥ 3 条已完成评估时，分析提示词附带「近 N 次建议与事后表现」小表用于校准置信度。`INTRADAY_PHASES` 与回测状态取值收敛到单一来源。

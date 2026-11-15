@@ -384,7 +384,7 @@ class PortfolioServiceTestCase(unittest.TestCase):
         self.assertTrue(all(position["price_source"] == "realtime_quote" for position in positions))
         self.assertTrue(all(position["price_provider"] == "unit-test" for position in positions))
 
-    def test_historical_snapshot_marks_missing_price_without_cost_fallback(self) -> None:
+    def test_historical_snapshot_values_missing_price_at_cost(self) -> None:
         account = self.service.create_account(name="Main", broker="Demo", market="cn", base_currency="CNY")
         aid = account["id"]
         self.service.record_trade(
@@ -411,12 +411,18 @@ class PortfolioServiceTestCase(unittest.TestCase):
 
         pos = snapshot["accounts"][0]["positions"][0]
         self.assertEqual(pos["last_price"], 0.0)
-        self.assertEqual(pos["market_value_base"], 0.0)
+        # Missing price is valued at cost instead of zero, and flagged so risk
+        # metrics can skip it.
+        self.assertEqual(pos["market_value_base"], 1000.0)
         self.assertEqual(pos["unrealized_pnl_base"], 0.0)
         self.assertEqual(pos["price_source"], "missing")
         self.assertFalse(pos["price_available"])
+        self.assertTrue(pos["price_missing"])
+        self.assertEqual(pos["valuation_basis"], "cost")
         self.assertTrue(pos["price_stale"])
-        self.assertEqual(snapshot["accounts"][0]["total_market_value"], 0.0)
+        self.assertIn("price_missing", pos["limitations"])
+        self.assertEqual(snapshot["accounts"][0]["total_market_value"], 1000.0)
+        self.assertEqual(snapshot["accounts"][0]["missing_price_count"], 1)
         self.assertEqual(snapshot["accounts"][0]["unrealized_pnl"], 0.0)
 
     def test_snapshot_fifo_vs_avg_on_partial_sell(self) -> None:
@@ -564,12 +570,16 @@ class PortfolioServiceTestCase(unittest.TestCase):
 
         self.assertEqual(snapshot["account_count"], 2)
         self.assertEqual(snapshot["data_quality"], "partial")
+        self.assertTrue(snapshot["fx_missing"])
         self.assertEqual(
             snapshot["limitations"],
             [
                 "realtime_quote_best_effort",
                 "fx_and_cost_basis_partial",
                 "sector_and_risk_metrics_limited",
+                # JPY has no FX rate in this fixture; the account is excluded
+                # from the CNY aggregate instead of being booked at par.
+                "fx_missing",
             ],
         )
 
@@ -609,26 +619,31 @@ class PortfolioServiceTestCase(unittest.TestCase):
         self.assertIsNone(missing["price_date"])
         self.assertTrue(missing["price_stale"])
         self.assertFalse(missing["price_available"])
+        self.assertTrue(missing["price_missing"])
+        self.assertEqual(missing["valuation_basis"], "cost")
+        # 5 shares bought at 20 with no price: cost-valued, not zero.
         self.assertAlmostEqual(missing["last_price"], 0.0, places=6)
-        self.assertAlmostEqual(missing["market_value_base"], 0.0, places=6)
+        self.assertAlmostEqual(missing["market_value_base"], 100.0, places=6)
         self.assertAlmostEqual(missing["unrealized_pnl_base"], 0.0, places=6)
         self.assertIsNone(missing["unrealized_pnl_pct"])
 
     def test_build_positions_handles_zero_cost_without_division(self) -> None:
         account = SimpleNamespace(base_currency="CNY")
 
-        positions, _, _, _, _ = self.service._build_positions(
+        valuation = self.service._build_positions(
             account=account,
             as_of_date=date(2026, 1, 3),
             cost_method="avg",
             fifo_lots={},
             avg_state={("AAPL", "us", "USD"): _AvgState(quantity=10.0, total_cost=0.0)},
         )
+        positions = valuation.positions
 
         self.assertEqual(len(positions), 1)
         self.assertEqual(positions[0]["price_source"], "missing")
         self.assertIsNone(positions[0]["unrealized_pnl_pct"])
         self.assertAlmostEqual(positions[0]["last_price"], 0.0, places=6)
+        self.assertEqual(valuation.missing_price_count, 1)
 
     def test_symbol_filter_matches_legacy_prefix_suffix_variants(self) -> None:
         account = self.service.create_account(name="Legacy", broker="Demo", market="cn", base_currency="CNY")

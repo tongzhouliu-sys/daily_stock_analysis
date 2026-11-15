@@ -41,11 +41,14 @@ export interface PortfolioPositionItem {
   unrealizedPnlBase: number;
   unrealizedPnlPct?: number | null;
   valuationCurrency: string;
+  valuationBasis?: 'market' | 'cost' | string;
   priceSource?: 'realtime_quote' | 'history_close' | 'missing' | string;
   priceProvider?: string | null;
   priceDate?: string | null;
   priceStale?: boolean;
   priceAvailable?: boolean;
+  priceMissing?: boolean;
+  fxMissing?: boolean;
   dataQuality?: 'ok' | 'partial' | string;
   limitations?: string[];
 }
@@ -75,6 +78,8 @@ export interface PortfolioAccountSnapshot {
   feeTotal: number;
   taxTotal: number;
   fxStale: boolean;
+  fxMissing?: boolean;
+  missingPriceCount?: number;
   dataQuality?: 'ok' | 'partial' | string;
   limitations?: string[];
   positions: PortfolioPositionItem[];
@@ -93,6 +98,7 @@ export interface PortfolioSnapshotResponse {
   feeTotal: number;
   taxTotal: number;
   fxStale: boolean;
+  fxMissing?: boolean;
   dataQuality?: 'ok' | 'partial' | string;
   limitations?: string[];
   accounts: PortfolioAccountSnapshot[];
@@ -119,6 +125,8 @@ export interface PortfolioDrawdownBlock {
   currentDrawdownPct: number;
   alert: boolean;
   fxStale: boolean;
+  fxMissing?: boolean;
+  cashFlowAdjusted?: boolean;
 }
 
 export interface PortfolioStopLossItem {

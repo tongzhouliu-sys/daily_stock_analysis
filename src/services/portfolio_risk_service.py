@@ -106,6 +106,8 @@ class PortfolioRiskService:
             "sector_concentration": sector_concentration,
             "drawdown": drawdown,
             "stop_loss": stop_loss,
+            "fx_missing": bool(snapshot.get("fx_missing")) or bool(drawdown.get("fx_missing")),
+            "missing_price_count": int(snapshot.get("missing_price_count") or 0),
             "decision_signal_risk": decision_signal_risk,
         }
 
@@ -291,10 +293,17 @@ class PortfolioRiskService:
     def _build_concentration(self, snapshot: Dict[str, Any], threshold_pct: float, *, as_of_date: date) -> Dict[str, Any]:
         total_mv = float(snapshot.get("total_market_value", 0.0) or 0.0)
         exposure_by_symbol: Dict[str, float] = {}
+        excluded_mv = 0.0
+        excluded_count = 0
         for account in snapshot.get("accounts", []):
             for pos in account.get("positions", []):
                 symbol = str(pos.get("symbol") or "").strip().upper()
                 if not symbol:
+                    continue
+                if not bool(pos.get("price_available", True)):
+                    # Cost-valued fallback stock must not distort weights.
+                    excluded_mv += float(pos.get("market_value_base") or 0.0)
+                    excluded_count += 1
                     continue
                 market_value = float(pos.get("market_value_base") or 0.0)
                 valuation_currency = str(pos.get("valuation_currency") or account.get("base_currency") or "CNY")
@@ -306,9 +315,10 @@ class PortfolioRiskService:
                 )
                 exposure_by_symbol[symbol] = exposure_by_symbol.get(symbol, 0.0) + converted
 
+        effective_total_mv = max(0.0, total_mv - excluded_mv)
         rows = []
         for symbol, exposure in exposure_by_symbol.items():
-            weight = (exposure / total_mv * 100.0) if total_mv > 0 else 0.0
+            weight = (exposure / effective_total_mv * 100.0) if effective_total_mv > 0 else 0.0
             rows.append(
                 {
                     "symbol": symbol,
@@ -321,10 +331,11 @@ class PortfolioRiskService:
 
         top_weight = rows[0]["weight_pct"] if rows else 0.0
         return {
-            "total_market_value": round(total_mv, 6),
+            "total_market_value": round(effective_total_mv, 6),
             "top_weight_pct": round(float(top_weight), 4),
             "alert": bool(top_weight >= threshold_pct),
             "top_positions": rows[:10],
+            "excluded_missing_price_count": excluded_count,
         }
 
     def _build_sector_concentration(
@@ -337,6 +348,8 @@ class PortfolioRiskService:
         total_mv = float(snapshot.get("total_market_value", 0.0) or 0.0)
         sector_exposure: Dict[str, float] = {}
         sector_symbols: Dict[str, set] = {}
+        excluded_mv = 0.0
+        excluded_count = 0
         coverage = {
             "classified_count": 0,
             "unclassified_count": 0,
@@ -350,6 +363,10 @@ class PortfolioRiskService:
                 symbol = str(pos.get("symbol") or "").strip().upper()
                 market = str(pos.get("market") or account.get("market") or "").strip().lower()
                 if not symbol:
+                    continue
+                if not bool(pos.get("price_available", True)):
+                    excluded_mv += float(pos.get("market_value_base") or 0.0)
+                    excluded_count += 1
                     continue
 
                 market_value = float(pos.get("market_value_base") or 0.0)
@@ -372,8 +389,9 @@ class PortfolioRiskService:
                 sector_symbols.setdefault(sector, set()).add(symbol)
 
         rows = []
+        effective_total_mv = max(0.0, total_mv - excluded_mv)
         for sector, exposure in sector_exposure.items():
-            weight = (exposure / total_mv * 100.0) if total_mv > 0 else 0.0
+            weight = (exposure / effective_total_mv * 100.0) if effective_total_mv > 0 else 0.0
             rows.append(
                 {
                     "sector": sector,
@@ -387,11 +405,12 @@ class PortfolioRiskService:
         top_weight = rows[0]["weight_pct"] if rows else 0.0
 
         return {
-            "total_market_value": round(total_mv, 6),
+            "total_market_value": round(effective_total_mv, 6),
             "top_weight_pct": round(float(top_weight), 4),
             "alert": bool(top_weight >= threshold_pct),
             "top_sectors": rows[:10],
             "coverage": coverage,
+            "excluded_missing_price_count": excluded_count,
             "errors": errors[:20],
         }
 
@@ -516,31 +535,56 @@ class PortfolioRiskService:
                 "current_drawdown_pct": 0.0,
                 "alert": False,
                 "fx_stale": False,
+                "fx_missing": False,
+                "cash_flow_adjusted": True,
             }
 
         grouped: Dict[str, float] = {}
         stale_flag = False
+        fx_missing_flag = False
+        snapshot_dates: List[date] = []
         for row in rows:
             key = row.snapshot_date.isoformat()
-            converted, stale, _ = self.portfolio_service.convert_amount(
+            converted, stale, source = self.portfolio_service.convert_amount(
                 amount=float(row.total_equity or 0.0),
                 from_currency=str(row.base_currency or "CNY"),
                 to_currency="CNY",
                 as_of_date=row.snapshot_date,
             )
-            grouped[key] = grouped.get(key, 0.0) + converted
             stale_flag = stale_flag or stale or bool(row.fx_stale)
+            if source == "missing_rate":
+                # Excluded from totals instead of being converted at par.
+                fx_missing_flag = True
+                continue
+            grouped[key] = grouped.get(key, 0.0) + converted
+            snapshot_dates.append(row.snapshot_date)
 
         series: List[Tuple[str, float]] = sorted(grouped.items(), key=lambda item: item[0])
+        flows_by_date = self._load_cash_flow_series(
+            account_id=account_id,
+            as_of_date=as_of_date,
+            lookback_days=lookback_days,
+        )
+        # External deposits/withdrawals are not performance: chain daily returns
+        # against "previous equity + today's net flow" so moving cash in or out
+        # cannot manufacture a drawdown.
+        index_value = 1.0
         peak = 0.0
         max_drawdown = 0.0
         current_drawdown = 0.0
-        for _, equity in series:
-            peak = max(peak, equity)
+        previous_equity: Optional[float] = None
+        for key, equity in series:
+            net_flow = float(flows_by_date.get(key, 0.0))
+            if previous_equity is not None and previous_equity > 0:
+                base = previous_equity + net_flow
+                if base > 0:
+                    index_value *= equity / base
+            previous_equity = equity
+            peak = max(peak, index_value)
             if peak <= 0:
                 drawdown = 0.0
             else:
-                drawdown = (peak - equity) / peak * 100.0
+                drawdown = (peak - index_value) / peak * 100.0
             max_drawdown = max(max_drawdown, drawdown)
             current_drawdown = drawdown
 
@@ -548,9 +592,49 @@ class PortfolioRiskService:
             "series_points": len(series),
             "max_drawdown_pct": round(max_drawdown, 4),
             "current_drawdown_pct": round(current_drawdown, 4),
-            "alert": bool(max_drawdown >= threshold_pct),
+            # Alert on the live drawdown so a recovered portfolio stops alerting
+            # instead of repeating the historical peak-to-trough value.
+            "alert": bool(current_drawdown >= threshold_pct),
             "fx_stale": stale_flag,
+            "fx_missing": fx_missing_flag,
+            "cash_flow_adjusted": True,
         }
+
+    def _load_cash_flow_series(
+        self,
+        *,
+        account_id: Optional[int],
+        as_of_date: date,
+        lookback_days: int,
+    ) -> Dict[str, float]:
+        """Net external cash flow per snapshot date, expressed in CNY."""
+        start_date = as_of_date - timedelta(days=max(0, int(lookback_days)))
+        try:
+            rows = self.repo.list_cash_ledger_window(
+                start_date=start_date,
+                end_date=as_of_date,
+                account_id=account_id,
+            )
+        except Exception as exc:
+            logger.warning("Failed to load portfolio cash flow window: %s", exc)
+            return {}
+        flows: Dict[str, float] = {}
+        for row in rows:
+            direction = str(row.direction or "").strip().lower()
+            if direction not in {"in", "out"}:
+                continue
+            amount = float(row.amount or 0.0)
+            converted, _, source = self.portfolio_service.convert_amount(
+                amount=amount if direction == "in" else -amount,
+                from_currency=str(row.currency or "CNY"),
+                to_currency="CNY",
+                as_of_date=row.event_date,
+            )
+            if source == "missing_rate":
+                continue
+            key = row.event_date.isoformat()
+            flows[key] = flows.get(key, 0.0) + converted
+        return flows
 
     @staticmethod
     def _build_stop_loss(snapshot: Dict[str, Any], thresholds: Dict[str, Any]) -> Dict[str, Any]:
@@ -559,11 +643,22 @@ class PortfolioRiskService:
         near_threshold = stop_loss_pct * near_ratio
 
         warnings: List[Dict[str, Any]] = []
+        excluded_missing_price: List[Dict[str, Any]] = []
         for account in snapshot.get("accounts", []):
             for pos in account.get("positions", []):
                 avg_cost = float(pos.get("avg_cost", 0.0) or 0.0)
+                # Missing prices are cost-valued for the totals, but they must
+                # never be read as a -100% stop-loss trigger.
+                if not bool(pos.get("price_available", True)):
+                    excluded_missing_price.append(
+                        {
+                            "account_id": account.get("account_id"),
+                            "symbol": pos.get("symbol"),
+                        }
+                    )
+                    continue
                 last_price = float(pos.get("last_price", 0.0) or 0.0)
-                if avg_cost <= 0:
+                if avg_cost <= 0 or last_price <= 0:
                     continue
                 loss_pct = max(0.0, (avg_cost - last_price) / avg_cost * 100.0)
                 if loss_pct < near_threshold:
@@ -585,5 +680,7 @@ class PortfolioRiskService:
             "near_alert": len(warnings) > 0,
             "triggered_count": sum(1 for item in warnings if item["is_triggered"]),
             "near_count": len(warnings),
+            "excluded_missing_price_count": len(excluded_missing_price),
+            "excluded_missing_price": excluded_missing_price[:10],
             "items": warnings[:20],
         }

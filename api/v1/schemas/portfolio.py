@@ -161,11 +161,14 @@ class PortfolioPositionItem(BaseModel):
     unrealized_pnl_base: float
     unrealized_pnl_pct: Optional[float] = None
     valuation_currency: str
+    valuation_basis: str = Field("market", description="market when a price is available, otherwise cost")
     price_source: str = "unknown"
     price_provider: Optional[str] = None
     price_date: Optional[str] = None
     price_stale: bool = False
     price_available: bool = True
+    price_missing: bool = Field(False, description="No usable price; valued at cost and excluded from risk metrics")
+    fx_missing: bool = Field(False, description="FX rate missing; this position is excluded from totals")
     data_quality: str = "ok"
     limitations: List[str] = Field(default_factory=list)
 
@@ -196,6 +199,8 @@ class PortfolioAccountSnapshot(BaseModel):
     fee_total: float
     tax_total: float
     fx_stale: bool
+    fx_missing: bool = Field(False, description="Some amounts lacked an FX rate and are excluded from totals")
+    missing_price_count: int = Field(0, description="Positions valued at cost because no price was available")
     data_quality: str = "ok"
     limitations: List[str] = Field(default_factory=list)
     positions: List[PortfolioPositionItem] = Field(default_factory=list)
@@ -214,6 +219,7 @@ class PortfolioSnapshotResponse(BaseModel):
     fee_total: float
     tax_total: float
     fx_stale: bool
+    fx_missing: bool = Field(False, description="Some accounts lacked an FX rate and are excluded from the aggregate")
     data_quality: str = "ok"
     limitations: List[str] = Field(default_factory=list)
     accounts: List[PortfolioAccountSnapshot] = Field(default_factory=list)
@@ -296,4 +302,6 @@ class PortfolioRiskResponse(BaseModel):
     sector_concentration: Dict[str, Any] = Field(default_factory=dict)
     drawdown: Dict[str, Any] = Field(default_factory=dict)
     stop_loss: Dict[str, Any] = Field(default_factory=dict)
+    fx_missing: bool = False
+    missing_price_count: int = 0
     decision_signal_risk: PortfolioDecisionSignalRiskBlock = Field(default_factory=PortfolioDecisionSignalRiskBlock)

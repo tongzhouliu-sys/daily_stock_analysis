@@ -460,17 +460,18 @@ def _evaluate_concentration(rule: PortfolioRiskAlert, report: Dict[str, Any]) ->
 
 def _evaluate_drawdown(rule: PortfolioRiskAlert, report: Dict[str, Any]) -> Dict[str, Any]:
     drawdown = report.get("drawdown") or {}
-    observed = float(drawdown.get("max_drawdown_pct") or 0.0)
+    observed = float(drawdown.get("current_drawdown_pct") or 0.0)
     threshold = _threshold(report, "drawdown_alert_pct")
     triggered = bool(drawdown.get("alert"))
     diagnostics = _base_diagnostics(report)
     diagnostics.update({
         "series_points": drawdown.get("series_points"),
         "current_drawdown_pct": drawdown.get("current_drawdown_pct"),
-        "max_drawdown_pct": observed,
+        "max_drawdown_pct": drawdown.get("max_drawdown_pct"),
         "fx_stale": bool(drawdown.get("fx_stale")),
+        "fx_missing": bool(drawdown.get("fx_missing")),
     })
-    message = f"{_display_account(report)} max drawdown {observed:.2f}%"
+    message = f"{_display_account(report)} current drawdown {observed:.2f}%"
     return _portfolio_result(
         rule,
         triggered=triggered,
@@ -551,6 +552,7 @@ def _base_diagnostics(report: Dict[str, Any], *, top_items: Optional[List[Dict[s
         "as_of": report.get("as_of"),
         "price_stale": False,
         "fx_stale": bool((report.get("drawdown") or {}).get("fx_stale")),
+        "fx_missing": bool(report.get("fx_missing")),
         "data_available": True,
         "top_affected_symbols": _top_symbols(top_items or []),
     }
@@ -570,6 +572,7 @@ def _base_diagnostics_from_snapshot(
         "as_of": snapshot.get("as_of"),
         "price_stale": any(bool(item.get("price_stale")) for item in affected),
         "fx_stale": bool(snapshot.get("fx_stale")),
+        "fx_missing": bool(snapshot.get("fx_missing")),
         "data_available": all(bool(item.get("price_available")) for item in affected) if affected else True,
         "top_affected_symbols": _top_symbols(affected),
     }

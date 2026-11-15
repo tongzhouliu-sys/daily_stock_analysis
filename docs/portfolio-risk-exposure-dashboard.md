@@ -8,7 +8,7 @@ Web 持仓页新增“风险与暴露看板”，放在组合总览指标和持�
 | --- | --- | --- |
 | 个股集中 | `risk.concentration` | Top1 个股权重触发 concentration alert |
 | 行业集中 | `risk.sectorConcentration` | Top1 行业权重触发 sector alert |
-| 回撤 | `risk.drawdown` | 当前或最大回撤触发 drawdown alert |
+| 回撤 | `risk.drawdown` | 当前回撤（`currentDrawdownPct`）达到阈值，已止损反弹的历史峰值不再持续报 |
 | 止损 | `risk.stopLoss` | 存在接近或已触发止损标的 |
 | AI 信号 | `risk.decisionSignalRisk` | 存在 sell / reduce / alert 等防御型建议 |
 | 价格质量 | `snapshot.accounts[].positions[]` | 缺价或价格过期 |
@@ -30,11 +30,19 @@ Web 持仓页新增“风险与暴露看板”，放在组合总览指标和持�
 - 数据来自 snapshot 和 risk 响应。snapshot 追加可选字段 `accounts[].totalMarketValueAggregate`（API 原始字段 `total_market_value_aggregate`），复用现有汇率换算结果，表示该账户以顶层 `snapshot.currency` 计价的市值；原有账户与持仓本币金额保持不变，无数据库变更。
 - `/api/v1/portfolio/risk` 不可用或返回空风险块时，依赖服务端风险结果的旗标显示为“不可用”，不伪装成“正常”。
 - 个股集中度只有在 `topWeightPct`、block-level `alert`、数组 `topPositions` 以及完整有效的 `topPositions` 同时存在时才可用：每行必须有有效 symbol 和有限非负权重，首行权重必须为正；后台四位小数舍入后的零权重尾行仍有效（绘图时省略零面积扇区），权重不超过 100，按权重降序排列，首行权重必须与 `topWeightPct` 一致；不得过滤坏行后将另一只股票冒充 Top1；不得在显示 `Top1: --` 时宣称“正常”或“需处理”。`UNCLASSIFIED`、非数组 `topSectors`、无效行业标签、非 number/非有限/负数的 `weightPct`、`coverage.unclassifiedCount`、`coverage.failedCount` 或行业错误表示行业分类覆盖不完整，不作为完整行业风险展示；`coverage.classifiedCount` 必须为正数，`unclassifiedCount` 和 `failedCount` 必须为零，三个 coverage counter 与 `errors` 数组都必须显式存在，缺字段也按不可用处理。全未分类、无效行或部分覆盖时，仅在个股集中度块自身完整可用时回退到个股饼图；个股集中度也缺字段时显示空态，避免把局部 `topPositions` 伪装成有效图表。行业行同样必须按权重降序，首行权重与 `sectorConcentration.topWeightPct` 一致且每行权重不超过 100，允许有效分类的舍入零权重尾行；乱序或不一致时行业旗标/图表降级，并仅在个股证据完整时显示个股饼图。行业风险 badge 与详情统一使用已校验的 block-level `sectorConcentration.alert`，不依赖可能缺失或不一致的 top-row `isAlert`。
-- 市场与币种暴露在多账户基准币混合时，使用各账户 `totalMarketValueAggregate` 与持仓本币市值合计的比例，逐账户折算后聚合；单一估值币种兼容旧响应，使用快照总市值与持仓市值合计推算换算比例。仅在 `snapshot.fxStale=false`、每个 `snapshot.accounts[].fxStale=false`，并且所有持仓都显式满足 `priceAvailable=true`、`priceSource` 不是 `missing`、`lastPrice` 为有限正数时展示；多基准币账户的换算字段缺失（例如旧版后端）、持仓估值币种与账户基准币不一致，或任一持仓缺价时，暴露行降级为不可用；有效 CNY/USD 混合账户正常展示各市场和币种金额及权重。个股与行业集中度同样要求完整价格覆盖：后端会把缺价持仓用零市值占位，前端不能据此把剩余持仓误报为完整 Top1/行业风险。多基准币但 FX 和持仓价格证据完整时仍可展示；顶层或任一账户 FX stale 时均降级，避免 aggregate 未传播子账户质量时展示 fallback 1:1 产生的错误权重或告警。
+- 市场与币种暴露在多账户基准币混合时，使用各账户 `totalMarketValueAggregate` 与持仓本币市值合计的比例，逐账户折算后聚合；单一估值币种兼容旧响应，使用快照总市值与持仓市值合计推算换算比例。仅在 `snapshot.fxStale=false`、每个 `snapshot.accounts[].fxStale=false`，并且所有持仓都显式满足 `priceAvailable=true`、`priceSource` 不是 `missing`、`lastPrice` 为有限正数时展示；多基准币账户的换算字段缺失（例如旧版后端）、持仓估值币种与账户基准币不一致，或任一持仓缺价时，暴露行降级为不可用；有效 CNY/USD 混合账户正常展示各市场和币种金额及权重。个股与行业集中度同样要求完整价格覆盖：缺价持仓按成本估值但不参与权重计算，后端在 `excluded_missing_price_count` 披露剔除数量，前端不能把剩余持仓误报为完整 Top1/行业风险。多基准币但 FX 和持仓价格证据完整时仍可展示；顶层或任一账户 FX stale 时均降级，避免 aggregate 未传播子账户质量时展示 fallback 1:1 产生的错误权重或告警。
 - 原有持仓明细、集中度饼图、回撤、止损、AI 风险小卡继续保留。
 - 价格质量使用与集中度、暴露及止损一致的报价校验：`priceAvailable=true`、`priceSource` 不是 `missing`、`lastPrice` 为有限正数；不满足时计为缺价，可用但 `priceStale=true` 时计为过期价。同一持仓只按“缺价或过期”计数一次，不额外请求行情；快照不可用时价格质量也显示“不可用”，不以空持仓误报为零问题。
 - 止损计数只有在当前作用域内每个持仓都显式满足 `priceAvailable=true`、`priceSource` 不是 `missing`、`lastPrice` 为有限正数时展示；任一持仓缺价都会让止损旗标和详情降级为“不可用”，避免把占位价 `0` 误报为触发止损。历史收盘价仍属于可用但可能过期的证据，其时效性由独立价格质量旗标披露。
 - 回撤至少需要两个估值观测点且历史估值未使用 stale/fallback FX；零个、单个观测点或 `fxStale=true` 都无法形成可靠比较，统一显示“不可用”。
+
+## 估值与风险口径
+
+- 缺价持仓按成本估值：`last_price` 不可用时，持仓市值取 `avg_cost * quantity`，并在持仓上标记 `valuation_basis="cost"`、`price_missing=true`、`limitation=PRICE_MISSING`；此时未实现盈亏额按 0 计，未实现盈亏率返回 `null`（成本价不是市价，不能当作 0% 收益），账户与快照会带 `missing_price_count`。
+- 缺价持仓不参与止损与集中度：止损提醒和个股/行业集中度都会跳过 `price_available=false` 的持仓，并在 `excluded_missing_price_count` 中披露数量，避免成本估值被读成 −100% 止损或拉偏权重；集中度分母同时剔除这部分成本市值。
+- 回撤按现金流调整：日收益以「前一日权益 + 当日净入金/出金（`cash_ledger`，`in` 为正 `out` 为负）」为分母连乘，300k 提现造成的权益下降不再被算成 30% 回撤；买入/卖出等内部调仓不属于外部现金流，因此不影响该口径。
+- 回撤告警盯当前值：`drawdown.alert` 与回撤告警都使用 `current_drawdown_pct`，历史 `max_drawdown_pct` 只作为展示；回撤修复后不再重复推送旧的峰值回撤。
+- 缺汇率不再 1:1 折算：`convert_amount` 查不到直接或反向汇率时返回 `0.0 / stale=True / missing_rate`，该部分从账户与快照汇总中剔除，并在 `fx_missing`、`limitations`（`FX_MISSING`）与前端 limitation 标签中显式披露，避免 USD 100k 被静默当成 CNY 100k。
 
 ## 后续扩展
 
