@@ -291,4 +291,58 @@ describe('useDashboardLifecycle', () => {
 
     expect(refreshActiveTasks).toHaveBeenCalledTimes(2);
   });
+  it('refreshes the stock bar silently after a task completes', () => {
+    renderHook(() =>
+      useDashboardLifecycle({
+        loadInitialHistory: vi.fn().mockResolvedValue(undefined),
+        refreshHistory: vi.fn().mockResolvedValue(undefined),
+        refreshActiveTasks: vi.fn().mockResolvedValue(undefined),
+        syncTaskCreated: vi.fn(),
+        syncTaskUpdated: vi.fn(),
+        syncTaskFailed: vi.fn(),
+        removeTask: vi.fn(),
+        ...defaultMocks,
+      }),
+    );
+    const taskStreamOptions = vi.mocked(useTaskStream).mock.calls[0]?.[0];
+    defaultMocks.refreshStockBar.mockClear();
+
+    act(() => {
+      taskStreamOptions?.onTaskCompleted?.(createTask());
+    });
+
+    expect(defaultMocks.refreshStockBar).toHaveBeenCalledWith(true);
+  });
+
+  it('updates and then removes a cancelled task without waiting for polling', () => {
+    const syncTaskUpdated = vi.fn();
+    const removeTask = vi.fn();
+    renderHook(() =>
+      useDashboardLifecycle({
+        loadInitialHistory: vi.fn().mockResolvedValue(undefined),
+        refreshHistory: vi.fn().mockResolvedValue(undefined),
+        refreshActiveTasks: vi.fn().mockResolvedValue(undefined),
+        syncTaskCreated: vi.fn(),
+        syncTaskUpdated,
+        syncTaskFailed: vi.fn(),
+        removeTask,
+        ...defaultMocks,
+      }),
+    );
+    const taskStreamOptions = vi.mocked(useTaskStream).mock.calls[0]?.[0];
+    const requested = { ...createTask(), status: 'cancel_requested' as const };
+    const cancelled = { ...createTask(), status: 'cancelled' as const };
+
+    act(() => {
+      taskStreamOptions?.onTaskCancelRequested?.(requested as never);
+      taskStreamOptions?.onTaskCancelled?.(cancelled as never);
+    });
+    expect(syncTaskUpdated).toHaveBeenCalledWith(requested);
+    expect(syncTaskUpdated).toHaveBeenCalledWith(cancelled);
+
+    act(() => {
+      vi.advanceTimersByTime(2_000);
+    });
+    expect(removeTask).toHaveBeenCalledWith('task-1');
+  });
 });

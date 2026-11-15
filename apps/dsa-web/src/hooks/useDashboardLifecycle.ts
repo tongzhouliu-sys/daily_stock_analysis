@@ -121,7 +121,8 @@ export function useDashboardLifecycle({
       const historyRefresh = refreshHistoryForCompletedTask
         ? refreshHistoryForCompletedTask(task)
         : refreshHistory(true);
-      const stockBarRefresh = refreshStockBar();
+      // Silent: the panel keeps its rows while the completed task's data loads.
+      const stockBarRefresh = refreshStockBar(true);
       void Promise.allSettled([historyRefresh, stockBarRefresh]).then(() => {
         onCompletedTaskDataRefreshed?.(task);
       });
@@ -131,6 +132,11 @@ export function useDashboardLifecycle({
     onTaskFailed: (task) => {
       syncTaskFailed(task);
       scheduleTaskRemoval(task.taskId, 5_000);
+    },
+    onTaskCancelRequested: syncTaskUpdated,
+    onTaskCancelled: (task) => {
+      syncTaskUpdated(task);
+      scheduleTaskRemoval(task.taskId, 2_000);
     },
     onError: () => {
       console.warn('SSE connection disconnected, reconnecting...');
