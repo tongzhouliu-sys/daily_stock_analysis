@@ -12,6 +12,7 @@ interface ChatSmartSummaryCardProps {
   isLoading?: boolean;
   onConfirm: (answers: Answer[]) => void | Promise<boolean>;
   onSkip: () => void | Promise<boolean>;
+  onCancel?: () => void;
   onUpdateAnswer: (questionId: string, optionId: string) => void;
 }
 
@@ -88,7 +89,7 @@ interface ResolvedItem {
 
 export default function ChatSmartSummaryCard({
   questions, answers, originalMessage,
-  isLoading = false, onConfirm, onSkip, onUpdateAnswer,
+  isLoading = false, onConfirm, onSkip, onCancel, onUpdateAnswer,
 }: ChatSmartSummaryCardProps) {
   const { language } = useUiLanguage();
   const isZh = language !== 'en';
@@ -129,6 +130,7 @@ export default function ChatSmartSummaryCard({
     skip: isZh ? '跳过' : 'Skip',
     adjust: isZh ? '调整' : 'Adjust',
     yourQuestion: isZh ? '你的问题' : 'Your question',
+    cancel: isZh ? '返回修改问题' : 'Edit question',
   };
 
   return (
@@ -240,6 +242,16 @@ export default function ChatSmartSummaryCard({
         >
           {copy.skip}
         </button>
+        {onCancel && (
+          <button
+            type="button"
+            className="chat-smart-summary-cancel"
+            data-testid="chat-intake-cancel"
+            onClick={onCancel}
+          >
+            {copy.cancel}
+          </button>
+        )}
       </div>
     </section>
   );

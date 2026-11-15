@@ -977,6 +977,8 @@ const zh = {
   'chat.intake.generic': '按通用背景分析',
   'chat.intake.cancel': '返回修改问题',
   'chat.intake.retry': '重试引导',
+  'chat.intake.pending': '正在理解问题…',
+
   'chat.intake.direct': '直接提问',
   'chat.intake.yourQuestion': '你的问题',
   'chat.intake.notProvided': '未提供',
@@ -2494,6 +2496,7 @@ const en: Record<UiTextKey, string> = {
   'chat.intake.generic': 'Use general background',
   'chat.intake.cancel': 'Edit the question',
   'chat.intake.retry': 'Retry guidance',
+  'chat.intake.pending': 'Understanding your question…',
   'chat.intake.direct': 'Ask directly',
   'chat.intake.yourQuestion': 'Your question',
   'chat.intake.notProvided': 'Not provided',

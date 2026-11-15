@@ -2634,6 +2634,22 @@ a {
   cursor: not-allowed;
 }
 
+.chat-smart-summary-cancel {
+  margin-left: auto;
+  padding: 0.5rem 0.25rem;
+  border: none;
+  background: transparent;
+  color: hsl(var(--muted-foreground));
+  font-size: 0.8125rem;
+  text-decoration: underline;
+  text-underline-offset: 2px;
+  cursor: pointer;
+}
+
+.chat-smart-summary-cancel:hover {
+  color: hsl(var(--foreground));
+}
+
 .chat-answer { font-size: 1rem; line-height: 1.8; }
 .chat-answer-body > p:first-child { font-size: 1.0625rem; }
 .chat-answer-body p { margin: 0 0 0.875rem; }

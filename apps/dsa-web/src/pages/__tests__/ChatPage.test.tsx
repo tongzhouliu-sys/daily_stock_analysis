@@ -96,11 +96,12 @@ const mockStoreState = {
   stateContract: 'unbound' as 'unbound' | 'authoritative' | 'legacy',
   loading: false,
   hasInitialLoad: true,
-  intakeDraft: null,
+  intakeDraft: null as import('../../api/agentIntake').IntakeDraft | null,
   intakeStatus: null,
   analysisBrief: null,
   intakeBusy: false,
-  intakeError: null,
+  intakeError: null as string | null,
+  intakeSendPayload: null as unknown,
   createIntake: vi.fn(),
   updateIntakeAnswers: vi.fn().mockResolvedValue(true),
   refreshIntakeDraft: vi.fn(),
@@ -196,6 +197,8 @@ vi.mock('../../stores/agentChatStore', () => {
 
   useAgentChatStore.getState = () => ({
     startNewChat: mockStartNewChat,
+    intakeDraft: mockStoreState.intakeDraft,
+    intakeSendPayload: mockStoreState.intakeSendPayload,
   });
 
   return { useAgentChatStore };
@@ -257,6 +260,10 @@ beforeEach(() => {
       last_active: '2026-03-15T09:05:00Z',
     },
   ];
+  mockStoreState.intakeDraft = null;
+  mockStoreState.intakeStatus = null;
+  mockStoreState.intakeBusy = false;
+  mockStoreState.intakeError = null;
   mockGetSkills.mockResolvedValue({
     skills: [
       { id: 'bull_trend', name: '趋势分析', description: '测试技能' },
@@ -2257,5 +2264,94 @@ describe('watchlist button with code variants', () => {
     expect(screen.queryByRole('button', { name: '保持当前' })).not.toBeInTheDocument();
     expect(screen.queryByText('先确认要分析的对象')).not.toBeInTheDocument();
     expect(mockStartStream).not.toHaveBeenCalled();
+  });
+
+  it('shows a failed first question on the welcome page with a retry action', async () => {
+    mockStoreState.intakeError = '引导服务暂时不可用（500）';
+
+    render(
+      <MemoryRouter initialEntries={['/chat']}>
+        <ChatPage />
+      </MemoryRouter>,
+    );
+
+    expect(await screen.findByTestId('chat-welcome')).toBeInTheDocument();
+    const errorBlock = screen.getByTestId('chat-intake-error');
+    expect(errorBlock).toHaveTextContent('引导服务暂时不可用（500）');
+    expect(errorBlock).toHaveAttribute('role', 'alert');
+    expect(screen.getByRole('button', { name: '重试引导' })).toBeInTheDocument();
+    expect(screen.getByRole('button', { name: '直接提问' })).toBeInTheDocument();
+  });
+
+  it('keeps the first question in the composer when intake creation fails', async () => {
+    mockGetStatus.mockResolvedValueOnce({
+      backend: 'litellm',
+      available: true,
+      experimental: false,
+      guidedIntake: true,
+      errorCode: null,
+      message: null,
+    });
+    mockStoreState.createIntake.mockResolvedValueOnce(false);
+
+    render(
+      <MemoryRouter initialEntries={['/chat']}>
+        <ChatPage />
+      </MemoryRouter>,
+    );
+
+    const input = await screen.findByPlaceholderText(/分析 600519/);
+    fireEvent.change(input, { target: { value: '茅台最近为什么跌' } });
+    fireEvent.keyDown(input, { key: 'Enter' });
+
+    await waitFor(() => expect(mockStoreState.createIntake).toHaveBeenCalledTimes(1));
+    expect(input).toHaveValue('茅台最近为什么跌');
+  });
+
+  it('disables sending and shows a pending hint while the first question is understood', async () => {
+    mockStoreState.intakeBusy = true;
+
+    render(
+      <MemoryRouter initialEntries={['/chat']}>
+        <ChatPage />
+      </MemoryRouter>,
+    );
+
+    expect(await screen.findByTestId('chat-intake-pending')).toHaveTextContent('正在理解问题…');
+    const input = screen.getByPlaceholderText(/分析 600519/);
+    expect(input).toBeDisabled();
+    // The send button lives next to the composer and is disabled while the
+    // intake request is in flight.
+    const sendButton = document.querySelector('.chat-send-btn');
+    expect(sendButton).toBeDisabled();
+
+    fireEvent.keyDown(input, { key: 'Enter' });
+    expect(mockStoreState.createIntake).not.toHaveBeenCalled();
+  });
+
+  it('cancels the intake draft and restores the original question to the composer', async () => {
+    mockStoreState.intakeDraft = {
+      intake_id: 'intake-1',
+      schema_version: 1,
+      session_id: 'session-1',
+      session_generation: 'gen-1',
+      base_state_version: 0,
+      revision: 1,
+      original_message: '茅台最近为什么跌',
+      questions: [],
+      answers: [],
+      status: 'pending',
+    };
+
+    render(
+      <MemoryRouter initialEntries={['/chat']}>
+        <ChatPage />
+      </MemoryRouter>,
+    );
+
+    fireEvent.click(await screen.findByTestId('chat-intake-cancel'));
+
+    expect(mockStoreState.clearIntake).toHaveBeenCalledOnce();
+    expect(document.querySelector('.chat-composer-input')).toHaveValue('茅台最近为什么跌');
   });
 });

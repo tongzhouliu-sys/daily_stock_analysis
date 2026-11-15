@@ -16,10 +16,16 @@ vi.mock('../../api/agent', async (importOriginal) => {
       chatStream: vi.fn(),
       stopChat: vi.fn(async () => ({ success: true, cancelled: true })),
     },
+    intakeApi: {
+      create: vi.fn(),
+      update: vi.fn(),
+      get: vi.fn(),
+      skip: vi.fn(),
+    },
   };
 });
 
-const { agentApi } = await import('../../api/agent');
+const { agentApi, intakeApi } = await import('../../api/agent');
 const encoder = new TextEncoder();
 
 function createStreamResponse(lines: string[]) {
@@ -88,6 +94,12 @@ beforeEach(() => {
     abortController: null,
     activeRequestId: null,
     terminalStatus: null,
+    intakeDraft: null,
+    intakeStatus: null,
+    intakeBusy: false,
+    intakeError: null,
+    intakeSendPayload: null,
+    intakeSendMeta: null,
   });
   vi.clearAllMocks();
   vi.mocked(agentApi.getChatSessions).mockResolvedValue([]);
@@ -1257,5 +1269,83 @@ describe('agentChatStore session Skill state', () => {
     useAgentChatStore.getState().startNewChat();
 
     expect(useAgentChatStore.getState().selectedSkillIds).toBeNull();
+  });
+});
+
+describe('agentChatStore first-question intake failures', () => {
+  const payload = { message: '茅台最近为什么跌', session_id: 'session-test' };
+
+  it.each([
+    [422, { detail: '问题无法理解' }, '问题无法理解'],
+    [500, { detail: '引导服务内部错误' }, '引导服务内部错误'],
+  ])('surfaces an HTTP %s failure and keeps the send payload', async (status, data, expected) => {
+    vi.mocked(intakeApi.create).mockRejectedValueOnce({
+      response: { status, data },
+    });
+
+    const result = await useAgentChatStore.getState().createIntake(
+      payload.message,
+      payload,
+    );
+
+    const state = useAgentChatStore.getState();
+    expect(result).toBe(false);
+    expect(state.intakeBusy).toBe(false);
+    expect(state.intakeDraft).toBeNull();
+    expect(state.intakeError).toBe(expected);
+    expect(state.intakeSendPayload).toEqual(payload);
+    expect(agentApi.chatStream).not.toHaveBeenCalled();
+  });
+
+  it('surfaces an upstream 5xx failure without treating it as a missing capability', async () => {
+    vi.mocked(intakeApi.create).mockRejectedValueOnce({
+      response: { status: 503, data: { detail: '上游超时' } },
+    });
+
+    const result = await useAgentChatStore.getState().createIntake(
+      payload.message,
+      payload,
+    );
+
+    const state = useAgentChatStore.getState();
+    expect(result).toBe(false);
+    expect(state.intakeError).toBeTruthy();
+    expect(state.intakeError).not.toBe('intake_capability_missing');
+    expect(state.intakeBusy).toBe(false);
+    expect(agentApi.chatStream).not.toHaveBeenCalled();
+  });
+
+  it('surfaces a network failure as an intake error without starting a chat stream', async () => {    vi.mocked(intakeApi.create).mockRejectedValueOnce(new Error('Network Error'));
+
+    const result = await useAgentChatStore.getState().createIntake(
+      payload.message,
+      payload,
+    );
+
+    const state = useAgentChatStore.getState();
+    expect(result).toBe(false);
+    expect(state.intakeError).toBeTruthy();
+    expect(state.intakeBusy).toBe(false);
+    expect(state.intakeSendPayload).toEqual(payload);
+    expect(agentApi.chatStream).not.toHaveBeenCalled();
+  });
+
+  it('falls back to the direct chat path when the backend has no intake capability', async () => {
+    vi.mocked(intakeApi.create).mockRejectedValueOnce({
+      response: { status: 404, data: { detail: 'Not Found' } },
+    });
+    vi.mocked(agentApi.chatStream).mockResolvedValueOnce(
+      createStreamResponse([accepted('request-404')]),
+    );
+
+    const result = await useAgentChatStore.getState().createIntake(
+      payload.message,
+      payload,
+    );
+
+    const state = useAgentChatStore.getState();
+    expect(result).toBe(false);
+    expect(state.intakeError).toBe('intake_capability_missing');
+    expect(agentApi.chatStream).toHaveBeenCalledOnce();
   });
 });

@@ -1264,7 +1264,7 @@ const ChatPage: React.FC = () => {
                 <ChatGuideCards
                   t={t}
                   questions={quickQuestions}
-                  disabled={!agentAvailable}
+                  disabled={!agentAvailable || intakeBusy}
                   onSelect={(index) => {
                     const question = quickQuestions[index];
                     if (question) handleQuickQuestion(question);
@@ -1293,6 +1293,12 @@ const ChatPage: React.FC = () => {
                         await skipIntake();
                         return !useAgentChatStore.getState().intakeError;
                       }}
+                      onCancel={() => {
+                        const draft = useAgentChatStore.getState().intakeDraft;
+                        if (draft) setInput(draft.original_message);
+                        clearIntake();
+                        composerRef.current?.focus();
+                      }}
                       onUpdateAnswer={(questionId, optionId) => {
                         const currentAnswers = intakeDraft.answers || [];
                         const existingIndex = currentAnswers.findIndex(a => a.question_id === questionId);
@@ -1309,26 +1315,6 @@ const ChatPage: React.FC = () => {
                         updateIntakeAnswers(newAnswers, 'save');
                       }}
                     />
-                  )}
-                  {intakeError && !intakeDraft && (
-                    <div className="chat-intake chat-intake-error" role="alert">
-                      <span>{intakeError === 'intake_capability_missing'
-                        ? t('chat.intake.legacyApi') : intakeError}</span>
-                      <div className="chat-intake-error-actions">
-                        <button type="button" onClick={() => {
-                          const pending = useAgentChatStore.getState().intakeSendPayload;
-                          if (pending) {
-                            const hints = extractIntentHints(pending.message, stockIndex);
-                            void createIntake(pending.message, pending, undefined, hints);
-                          }
-                        }}>{t('chat.intake.retry')}</button>
-                        <button type="button" onClick={() => {
-                          const pending = useAgentChatStore.getState().intakeSendPayload;
-                          clearIntake();
-                          if (pending) void startStream(pending);
-                        }}>{t('chat.intake.direct')}</button>
-                      </div>
-                    </div>
                   )}
                   {messages.map((msg) => {
                   const skillLabel = getMessageSkillLabel(msg);
@@ -1360,6 +1346,27 @@ const ChatPage: React.FC = () => {
                   );
                 })}
                 </>
+              )}
+
+              {intakeError && !intakeDraft && (
+                <div className="chat-intake chat-intake-error" role="alert" data-testid="chat-intake-error">
+                  <span>{intakeError === 'intake_capability_missing'
+                    ? t('chat.intake.legacyApi') : intakeError}</span>
+                  <div className="chat-intake-error-actions">
+                    <button type="button" onClick={() => {
+                      const pending = useAgentChatStore.getState().intakeSendPayload;
+                      if (pending) {
+                        const hints = extractIntentHints(pending.message, stockIndex);
+                        void createIntake(pending.message, pending, undefined, hints);
+                      }
+                    }}>{t('chat.intake.retry')}</button>
+                    <button type="button" onClick={() => {
+                      const pending = useAgentChatStore.getState().intakeSendPayload;
+                      clearIntake();
+                      if (pending) void startStream(pending);
+                    }}>{t('chat.intake.direct')}</button>
+                  </div>
+                </div>
               )}
 
               {loading && (
@@ -1399,7 +1406,7 @@ const ChatPage: React.FC = () => {
           onSend={() => { void handleSend(); }}
           onStop={() => { void stopStream(); }}
           placeholder={intakeDraft ? t('chat.intake.composerHint') : t('chat.composerPlaceholder')}
-          disabled={loading || !agentAvailable}
+          disabled={loading || !agentAvailable || intakeBusy}
           loading={loading}
           advancedOptionsOpen={advancedOptionsOpen}
           onToggleAdvancedOptions={() => setAdvancedOptionsOpen((open) => !open)}
@@ -1424,6 +1431,11 @@ const ChatPage: React.FC = () => {
           watchlistMessage={watchlistMessage}
           objectStatusText={objectStatusText}
         >
+              {intakeBusy && (
+                <div className="chat-intake-composer-hint" role="status" data-testid="chat-intake-pending">
+                  {t('chat.intake.pending')}
+                </div>
+              )}
               {intakeDraft && (
                 <div className="chat-intake-composer-hint" role="status">
                   {t('chat.intake.composerHint')}
