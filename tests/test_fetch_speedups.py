@@ -47,7 +47,7 @@ def test_managed_call_defers_sleep_outside_lock():
     observed: dict[str, float] = {}
 
     def fake_method(**kwargs):
-        # 方法内部执行限速：托管模式下只记账，不睡眠
+        # 方法内部执行限速：管理器已预约槽位，这里不再睡眠
         started = time.monotonic()
         fetcher._enforce_rate_limit()
         observed["inside"] = time.monotonic() - started
@@ -72,7 +72,7 @@ def test_managed_call_defers_sleep_outside_lock():
     # 方法内部不睡眠（ReentrantLock 同线程可重入，用耗时判断更直观）
     assert observed["inside"] < 0.01
     assert observed["lock_free"] == 1.0
-    # 等待被推迟到调用锁释放之后
+    # T29: 等待发生在进入调用锁之前，方法内部直接消费已预约的槽位
     assert slept and slept[0] >= 0.01
     assert elapsed < 0.2
 
@@ -91,7 +91,7 @@ def test_managed_flag_is_cleared_after_call():
     manager._call_fetcher_method(fetcher, "fake_method")
 
     assert getattr(fetcher._rate_limit_tls, "managed", False) is False
-    assert getattr(fetcher._rate_limit_tls, "pending", 0.0) == 0.0
+    assert getattr(fetcher._rate_limit_tls, "slot_reserved", False) is False
 
 
 def test_managed_flag_cleared_when_method_raises():

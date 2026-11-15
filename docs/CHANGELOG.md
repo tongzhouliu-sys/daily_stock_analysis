@@ -8,6 +8,7 @@ and this project adheres to [Semantic Versioning](https://semver.org/).
 > For user-friendly release highlights, see the [GitHub Releases](https://github.com/ZhuLinsen/daily_stock_analysis/releases) page.
 
 ## [Unreleased]
+- [修复] 数据源限速改回“先等后发”：管理器在进入数据源调用锁**之前**先预约发送时间槽，在锁外等到该时间点再进锁发请求，方法内部第一次限速直接消费已预约的槽位、不再重复等待，同一次调用内的后续请求才在原地预约并等待；删除“请求完成后才补睡”的 `take_pending_rate_limit_delay` 与锁释放后的等待，并发 worker 的请求重新保持最小间隔（原先 4 个并发请求会在同一时刻全部发出）。新浪/腾讯单股直连接口仍只限最小间隔、不加随机抖动。基本面四个并行块改为共用按数据源划分的模块级限速器（最小间隔取 `AKSHARE_SLEEP_MIN`，在途请求上限常量 2），槽位等待不突破块预算，等不到槽位按预算耗尽跳过该接口，避免单只股票对同一上游的并发变成串行实现的 4 倍。
 - [改进] 设置页敏感字段全部服务端掩码：注册表 46 个 `is_sensitive` 字段与 `_API_KEY` / `_API_KEYS` / `_TOKEN` / `_SECRET` / `_PASSWORD` / `_EXTRA_HEADERS` 后缀键不再把原文返回给前端，统一返回掩码占位符与 `is_masked=true`；提交占位符仍表示“保持已保存的值”。渠道连通性测试与模型探测收到占位符时复用已保存密钥，并强制校验提交的 Base URL / 协议与已保存值一致，端点被改动时拒绝复用并要求重新输入密钥。前端敏感输入框显示“已设置”，移除“显示原文”开关，新增文案进 `uiText.ts`。
 - [修复] 配置写入不再允许夹带换行类字符：值校验改为 `splitlines()` 单行判断加控制字符白名单（仅放行制表符），覆盖 `\x0b`、`\x0c`、`\x1c`–`\x1e`、`\x85`、`\u2028`、`\u2029`，JSON 字段先规范成单行再校验；`ConfigManager` 读取改为只按 `\n` 切分（兼容 `\r\n`），写入时遇到非法值直接报错而不是静默删字符；启动时扫描 `.env` 并对含此类字符的行打印警告和行号。
 - [改进] 双语补齐（T44 第一批）：选股页与模型渠道编辑器全部用户可见文案迁入 `apps/dsa-web/src/i18n/uiText.ts` 单一入口（`screening.*` 约 250 条、`llmChannel.*` 约 190 条），英文模式下选股页与渠道编辑器不再输出硬编码中文；服务商预设的名称、能力标签、配置提示与来源链接同样按语言渲染，新增 `LLMChannelEditor.i18n.test.tsx` 断言英文模式渲染结果不含中文。

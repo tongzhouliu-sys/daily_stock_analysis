@@ -386,17 +386,23 @@ class BaseFetcher(ABC):
     priority: int = 99  # 优先级数字越小越优先
     allow_empty_daily_data: bool = False
 
-    # T28: 锁外限速。
-    # 数据源在 ``_enforce_rate_limit`` 里只登记本次请求槽位并算出应等待的时长，
-    # 由管理器在本方法的调用锁**释放之后**统一睡眠。这样并发 worker 不会因为
-    # 另一个 worker 正在做限速等待而排在锁上。
-    def begin_managed_call(self) -> None:
-        """标记本次调用由管理器托管限速（默认数据源无需处理）。"""
-        return None
+    # T29: 预约式限速（先等后发）。
+    # 管理器在**进入调用锁之前**先向数据源预约一个发送时间槽，在锁外睡到该时间点，
+    # 然后才进入调用锁执行方法。方法内部第一次 ``_enforce_rate_limit`` 直接消费
+    # 已预约的槽位，不再重复等待；同一次调用内的后续请求（例如数据源内部回退）
+    # 在原地预约并等待。这样并发 worker 既不会被别人的限速等待堵在锁上，请求
+    # 之间也仍然保持最小间隔。
+    def reserve_rate_limit_slot(self, method_name: str = "") -> float:
+        """预约下一次请求的时间槽，返回发送前还应等待的秒数（不睡眠）。
 
-    def take_pending_rate_limit_delay(self) -> float:
-        """取出本次调用累积的限速等待时长（秒），并清空标记。"""
+        Args:
+            method_name: 即将调用的数据源方法名，供数据源区分是否需要随机抖动。
+        """
         return 0.0
+
+    def end_managed_call(self) -> None:
+        """结束一次托管调用，清理本次取消/异常遗留的限速状态。"""
+        return None
 
     
     @abstractmethod
@@ -837,32 +843,32 @@ class DataFetcherManager:
     def _call_fetcher_method(self, fetcher: BaseFetcher, method_name: str, *args, **kwargs):
         """Serialize shared fetcher state access through manager-owned per-instance locks.
 
-        T28: 限速等待放在锁外完成。数据源在 ``_enforce_rate_limit`` 里只登记本次
-        请求槽位并算出应等待时长，真正的 ``sleep`` 由管理器在本方法的调用锁
-        **释放之后**执行，因此并发 worker 不会被另一个 worker 的限速等待连带阻塞。
+        T29: 限速改为"先等后发"。进入调用锁之前先向数据源预约一个发送时间槽，
+        在锁外睡到该时间点，再进锁执行；因此等待发生在锁外，且并发请求之间仍然
+        保持数据源的最小间隔。请求结束之后不再补睡。
         """
         method = getattr(fetcher, method_name)
-        pending = 0.0
-        begin = getattr(fetcher, "begin_managed_call", None)
-        take = getattr(fetcher, "take_pending_rate_limit_delay", None)
-        if callable(begin):
-            begin()
+        delay = 0.0
+        reserve = getattr(fetcher, "reserve_rate_limit_slot", None)
+        if callable(reserve):
+            try:
+                delay = float(reserve(method_name) or 0.0)
+            except Exception:  # noqa: BLE001 - 限速登记失败不应阻断取数
+                logger.debug("reserve_rate_limit_slot failed", exc_info=True)
+                delay = 0.0
+        if delay > 0:
+            # 槽位等待必须发生在调用锁之外，否则并发 worker 会排在同一条锁上。
+            time.sleep(delay)
+        end = getattr(fetcher, "end_managed_call", None)
         try:
             with self._get_fetcher_call_lock(fetcher):
-                try:
-                    return method(*args, **kwargs)
-                finally:
-                    if callable(take):
-                        try:
-                            pending = float(take() or 0.0)
-                        except Exception:
-                            logger.debug(
-                                "take_pending_rate_limit_delay failed", exc_info=True
-                            )
-                            pending = 0.0
+                return method(*args, **kwargs)
         finally:
-            if pending > 0:
-                time.sleep(pending)
+            if callable(end):
+                try:
+                    end()
+                except Exception:  # noqa: BLE001 - 清理失败不影响主流程
+                    logger.debug("end_managed_call failed", exc_info=True)
 
     @classmethod
     def _filter_daily_fetchers_for_market(

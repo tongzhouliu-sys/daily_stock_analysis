@@ -462,23 +462,28 @@ class AkshareFetcher(BaseFetcher):
         "_get_stock_realtime_quote_tencent",
     })
 
-    def begin_managed_call(self) -> None:
-        """T28: 标记本次调用由管理器托管限速。"""
-        self._rate_limit_tls.managed = True
-        self._rate_limit_tls.pending = 0.0
+    def reserve_rate_limit_slot(self, method_name: str = "") -> float:
+        """T29: 预约下一个发送时间槽，返回发送前还应等待的秒数。
 
-    def take_pending_rate_limit_delay(self) -> float:
-        """T28: 取出本次调用累积的限速等待时长，由管理器在锁外睡眠。"""
-        delay = float(getattr(self._rate_limit_tls, "pending", 0.0) or 0.0)
-        self._rate_limit_tls.pending = 0.0
+        方法内部第一次 ``_enforce_rate_limit`` 会消费该槽位、不再重复等待。
+        新浪/腾讯单股直连接口只按最小间隔，不加随机抖动。
+        """
+        jitter = method_name not in self.rate_limit_jitterless_methods
+        delay = self._reserve_rate_limit_delay(jitter=jitter)
+        self._rate_limit_tls.managed = True
+        self._rate_limit_tls.slot_reserved = True
+        return delay
+
+    def end_managed_call(self) -> None:
+        """T29: 结束托管调用，清理本次调用遗留的限速状态。"""
         self._rate_limit_tls.managed = False
-        return max(0.0, delay)
+        self._rate_limit_tls.slot_reserved = False
 
     def _reserve_rate_limit_delay(self, *, jitter: bool = True) -> float:
-        """T28: 登记本次请求槽位并返回应当等待的秒数（含 jitter，不睡眠）。
+        """T29: 登记本次请求槽位并返回应当等待的秒数（含 jitter，不睡眠）。
 
-        返回值只是“账”，由调用方决定在哪里睡眠：托管调用累积到 tls 由管理器
-        在锁外等待；直接调用则由 ``_enforce_rate_limit`` 原地等待。
+        返回值只是“账”，由调用方决定在哪里睡眠：管理器在调用锁外等待已预约的
+        槽位；直接调用则由 ``_enforce_rate_limit`` 原地等待。
         """
         acquired = self._rate_limit_lock.acquire(timeout=1.0)
         try:
@@ -499,19 +504,17 @@ class AkshareFetcher(BaseFetcher):
         强制执行速率限制
 
         策略：
-        1. 登记本次请求槽位，得到应等待时长（含 jitter）
-        2. 托管调用：不在此处睡眠，累积给管理器在调用锁外统一等待
-        3. 直接调用：原地睡眠，且不依赖任何共享锁
+        1. 托管调用：第一个请求直接消费管理器已预约的槽位，不再等待
+        2. 其它情况（直接调用、同一次调用内的后续请求）：预约槽位后原地睡眠
+        3. 不依赖任何共享锁进行睡眠
 
         T3: 交互模式下只保留最小间隔休眠，跳过随机休眠以减少延迟
-        T28: 托管调用把等待移出共享锁；腾讯/新浪单股直连接口传 jitter=False
+        T29: 等待发生在真正发请求之前；腾讯/新浪单股直连接口传 jitter=False
         """
-        delay = self._reserve_rate_limit_delay(jitter=jitter)
-        if getattr(self._rate_limit_tls, "managed", False):
-            self._rate_limit_tls.pending = (
-                float(getattr(self._rate_limit_tls, "pending", 0.0) or 0.0) + delay
-            )
+        if getattr(self._rate_limit_tls, "slot_reserved", False):
+            self._rate_limit_tls.slot_reserved = False
             return
+        delay = self._reserve_rate_limit_delay(jitter=jitter)
         if delay > 0:
             logger.debug(f"补充休眠 {delay:.2f} 秒")
             time.sleep(delay)

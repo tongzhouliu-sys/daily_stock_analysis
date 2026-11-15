@@ -28,6 +28,103 @@ _FUNDAMENTAL_MIN_CALL_TIMEOUT_SECONDS = 1.0
 _FUNDAMENTAL_CALL_TIMEOUT_RATIO = 0.35
 
 
+# T29: 基本面并行块共用的按数据源限速器。
+# 基本面 4 个块改并行之后会同时调用 akshare，而这些调用不经过
+# DataFetcherManager 的单实例调用锁，也不走 fetcher 的 ``_enforce_rate_limit``，
+# 单只股票对上游的并发量约为串行实现的 4 倍。这里按数据源共享一个模块级限速器：
+# 同一数据源的请求保持与 fetcher 一致的最小间隔（``akshare_sleep_min``），
+# 同时在途请求数不超过 ``_FUNDAMENTAL_SOURCE_MAX_CONCURRENCY``。
+_FUNDAMENTAL_SOURCE_MAX_CONCURRENCY = 2
+_FUNDAMENTAL_DEFAULT_SOURCE = "akshare"
+
+
+def _resolve_source_min_interval() -> float:
+    """读取与 fetcher 一致的最小请求间隔；读不到时按 0 处理（不额外限速）。"""
+    try:
+        from src.config import get_config
+
+        return max(0.0, float(getattr(get_config(), "akshare_sleep_min", 0.0) or 0.0))
+    except Exception:  # noqa: BLE001 - 配置不可用时不影响取数
+        return 0.0
+
+
+class _SourceRateLimiter:
+    """按数据源共享的最小间隔 + 并发上限限速器。
+
+    预约（记账）在短锁内完成，睡眠发生在限速器自己的信号量之外，
+    因此等待中的调用不会占住并发槽位。
+    """
+
+    def __init__(self, max_concurrency: int = _FUNDAMENTAL_SOURCE_MAX_CONCURRENCY) -> None:
+        self._max_concurrency = max(1, int(max_concurrency))
+        self._slots = threading.BoundedSemaphore(self._max_concurrency)
+        self._accounting_lock = threading.Lock()
+        self._last_request_time: Optional[float] = None
+        self._min_interval: Optional[float] = None
+
+    @property
+    def max_concurrency(self) -> int:
+        return self._max_concurrency
+
+    @property
+    def min_interval(self) -> float:
+        if self._min_interval is None:
+            self._min_interval = _resolve_source_min_interval()
+        return self._min_interval
+
+    @min_interval.setter
+    def min_interval(self, value: float) -> None:
+        self._min_interval = max(0.0, float(value))
+
+    def acquire(self, max_wait: Optional[float] = None) -> bool:
+        """预约并等待槽位。
+
+        Args:
+            max_wait: 允许等待的上限（秒）。``None`` 表示不限。超出上限时不预约、
+                不等待，返回 ``False``，由调用方按"预算耗尽"处理——块级预算仍然
+                是硬约束，限速不能把一次聚合拖过预算。
+
+        Returns:
+            ``True`` 表示已拿到槽位（调用方必须 ``release``）。
+        """
+        with self._accounting_lock:
+            now = time.time()
+            interval = self.min_interval
+            delay = 0.0
+            if interval > 0 and self._last_request_time is not None:
+                delay = max(0.0, interval - (now - self._last_request_time))
+            if max_wait is not None and delay > max_wait:
+                return False
+            if interval > 0:
+                self._last_request_time = now + delay
+        if delay > 0:
+            time.sleep(delay)
+        self._slots.acquire()
+        return True
+
+    def release(self) -> None:
+        self._slots.release()
+
+
+_SOURCE_RATE_LIMITERS: Dict[str, _SourceRateLimiter] = {}
+_SOURCE_RATE_LIMITERS_LOCK = threading.Lock()
+
+
+def _get_source_rate_limiter(source: str) -> _SourceRateLimiter:
+    with _SOURCE_RATE_LIMITERS_LOCK:
+        limiter = _SOURCE_RATE_LIMITERS.get(source)
+        if limiter is None:
+            limiter = _SourceRateLimiter()
+            _SOURCE_RATE_LIMITERS[source] = limiter
+        return limiter
+
+
+def _clear_source_rate_limiters_for_tests() -> None:
+    """测试用：清空模块级限速器，避免测试之间互相污染最小间隔。"""
+    with _SOURCE_RATE_LIMITERS_LOCK:
+        _SOURCE_RATE_LIMITERS.clear()
+
+
 # T28: 全市场表进程内按天缓存。
 # 板块资金流排名、龙虎榜、业绩预告/快报、机构持股这类整表接口在同一个交易日内
 # 内容稳定，但一次分析里可能在多个 block / 多只股票上被重复拉取。这里按
@@ -540,7 +637,21 @@ class AkshareFundamentalAdapter:
             if call_timeout is not None and call_timeout <= 0:
                 errors.append(f"{func_name}:budget_exhausted")
                 break
+            # T29: 同一数据源的 akshare 调用共用模块级限速器，
+            # 保证并行块之间的请求间隔与并发上限。槽位等待不能突破块级预算：
+            # 等不到槽位就按预算耗尽跳过，避免限速把一次聚合拖过预算。
+            limiter = _get_source_rate_limiter(_FUNDAMENTAL_DEFAULT_SOURCE)
+            remaining = (
+                None if deadline is None else max(0.0, deadline - time.monotonic())
+            )
+            if not limiter.acquire(max_wait=remaining):
+                errors.append(f"{func_name}:budget_exhausted")
+                break
             try:
+                call_timeout = _resolve_call_timeout(deadline, budget_seconds)
+                if call_timeout is not None and call_timeout <= 0:
+                    errors.append(f"{func_name}:budget_exhausted")
+                    break
                 df = _call_with_deadline(fn, dict(kwargs), call_timeout, func_name)
                 if isinstance(df, pd.Series):
                     df = df.to_frame().T
@@ -556,6 +667,8 @@ class AkshareFundamentalAdapter:
             except Exception as exc:
                 errors.append(f"{func_name}:{type(exc).__name__}")
                 continue
+            finally:
+                limiter.release()
         return None, None, errors
 
     def get_fundamental_bundle(
