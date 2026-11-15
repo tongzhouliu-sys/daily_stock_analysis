@@ -64,6 +64,10 @@ DEFAULT_INTRADAY_TTL_HOURS = {
     "hk": 5.5,
     "us": 6.5,
 }
+# 信号有效期口径：盘前发出的信号同样是当日日内信号，有效期按日内算（约 4 小时）。
+# 与 E10 的"分析评估起点"（INTRADAY_PHASES，只含开盘之后的价格阶段）是两个
+# 独立的语义，不能共用同一个常量。
+INTRADAY_SIGNAL_PHASES = frozenset({*INTRADAY_PHASES, "premarket"})
 
 logger = logging.getLogger(__name__)
 
@@ -879,7 +883,7 @@ class DecisionSignalService:
 
     @staticmethod
     def _default_horizon(*, action: str, market_phase: Optional[str]) -> str:
-        if action == "alert" or market_phase in INTRADAY_PHASES:
+        if action == "alert" or market_phase in INTRADAY_SIGNAL_PHASES:
             return "intraday"
         return "3d"
 

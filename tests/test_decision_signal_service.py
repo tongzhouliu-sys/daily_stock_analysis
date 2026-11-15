@@ -219,6 +219,19 @@ def test_service_canonicalizes_decision_profile_and_rejects_non_object_metadata(
     assert null_metadata["metadata"] == {"decision_profile": "balanced"}
 
 
+def test_premarket_signal_horizon_is_intraday_and_e10_phases_stay_narrow() -> None:
+    from src.core.trading_calendar import INTRADAY_PHASES
+    from src.services.decision_signal_service import INTRADAY_SIGNAL_PHASES
+
+    # R12：信号有效期把盘前也算日内，E10 的评估起点仍然只含开盘之后。
+    assert INTRADAY_SIGNAL_PHASES - INTRADAY_PHASES == {"premarket"}
+    assert INTRADAY_PHASES <= INTRADAY_SIGNAL_PHASES
+    for phase in INTRADAY_SIGNAL_PHASES:
+        assert DecisionSignalService._default_horizon(action="buy", market_phase=phase) == "intraday"
+    for phase in ("postmarket", "closed", "holiday", None):
+        assert DecisionSignalService._default_horizon(action="buy", market_phase=phase) == "3d"
+
+
 def test_service_defaults_lifecycle_and_preserves_explicit_values(isolated_db) -> None:
     service = DecisionSignalService(db_manager=isolated_db)
 
