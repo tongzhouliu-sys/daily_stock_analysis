@@ -248,7 +248,7 @@ export const StockHistoryTrendDrawer: React.FC<StockHistoryTrendDrawerProps> = (
         </Card>
       ) : (
         <>
-          <div className="grid grid-cols-1 gap-3 md:grid-cols-2 xl:grid-cols-4">
+          <div className="grid grid-cols-1 gap-3 @[30rem]:grid-cols-2 @[50rem]:grid-cols-4">
             <MetricCard
               label={t('stockTrend.records')}
               value={t('stockTrend.modelCountSuffix', { count: total || items.length })}
@@ -274,6 +274,7 @@ export const StockHistoryTrendDrawer: React.FC<StockHistoryTrendDrawerProps> = (
                 <h3 className="text-base font-semibold text-foreground">{t('stockTrend.records')}</h3>
                 <p className="mt-1 text-sm text-secondary-text">
                   {t('stockTrend.loadedSummary', { loaded: items.length, total: total || items.length })}
+                  <span className="@[48rem]:hidden"> · {t('stockTrend.scrollHint')}</span>
                 </p>
               </div>
               <div className="flex flex-wrap items-center gap-2">
@@ -292,35 +293,25 @@ export const StockHistoryTrendDrawer: React.FC<StockHistoryTrendDrawerProps> = (
               </div>
             </div>
 
-            <div className="mt-4 overflow-hidden rounded-xl border border-border/60 bg-card/30">
-              <table className="w-full table-fixed text-left text-sm">
-                <colgroup>
-                  <col className="w-[15%]" />
-                  <col className="w-[11%]" />
-                  <col className="w-[7%]" />
-                  <col className="w-[9%]" />
-                  <col className="w-[9%]" />
-                  <col className="w-[7%]" />
-                  <col className="w-[9%]" />
-                  <col className="w-[22%]" />
-                  <col className="w-[11%]" />
-                </colgroup>
+            <div className="mt-4 overflow-x-auto overscroll-x-contain rounded-xl border border-border/60 bg-card/30">
+              <table className="w-full min-w-[680px] text-left text-sm">
                 <thead className="border-b border-border/60 bg-background/35 text-xs text-secondary-text">
                   <tr>
-                    <th className="whitespace-nowrap px-4 py-3 font-medium">{t('stockTrend.time')}</th>
-                    <th className="whitespace-nowrap px-4 py-3 font-medium">{t('stockTrend.result')}</th>
-                    <th className="whitespace-nowrap px-4 py-3 font-medium">{t('stockTrend.score')}</th>
-                    <th className="whitespace-nowrap px-4 py-3 font-medium">{t('stockTrend.stockPrice')}</th>
-                    <th className="whitespace-nowrap px-4 py-3 font-medium">{t('stockTrend.changePct')}</th>
-                    <th className="whitespace-nowrap px-4 py-3 font-medium">{t('stockTrend.volumeRatio')}</th>
-                    <th className="whitespace-nowrap px-4 py-3 font-medium">{t('stockTrend.turnoverRate')}</th>
-                    <th className="whitespace-nowrap px-4 py-3 font-medium">{t('stockTrend.model')}</th>
-                    <th className="whitespace-nowrap px-4 py-3 font-medium">{t('stockTrend.table.action')}</th>
+                    <th className="whitespace-nowrap px-2.5 py-3 font-medium">{t('stockTrend.time')}</th>
+                    <th className="whitespace-nowrap px-2.5 py-3 font-medium">{t('stockTrend.result')}</th>
+                    <th className="whitespace-nowrap px-2.5 py-3 font-medium">{t('stockTrend.score')}</th>
+                    <th className="whitespace-nowrap px-2.5 py-3 font-medium">{t('stockTrend.stockPrice')}</th>
+                    <th className="whitespace-nowrap px-2.5 py-3 font-medium">{t('stockTrend.changePct')}</th>
+                    <th className="whitespace-nowrap px-2.5 py-3 font-medium">{t('stockTrend.volumeRatio')}</th>
+                    <th className="whitespace-nowrap px-2.5 py-3 font-medium">{t('stockTrend.turnoverRate')}</th>
+                    <th className="whitespace-nowrap px-2.5 py-3 font-medium">{t('stockTrend.model')}</th>
+                    <th className="whitespace-nowrap px-2.5 py-3 font-medium">{t('stockTrend.table.action')}</th>
                   </tr>
                 </thead>
                 <tbody className="divide-y divide-border/55">
                   {items.map((item) => {
                     const isSelected = item.id === selectedRecordId;
+                    const adviceText = formatAdvice(item, actionLabels);
                     return (
                       <tr
                         key={item.id}
@@ -329,44 +320,50 @@ export const StockHistoryTrendDrawer: React.FC<StockHistoryTrendDrawerProps> = (
                         }`}
                         onClick={() => setSelectedRecordId(item.id)}
                       >
-                        <td className="whitespace-nowrap px-3 py-3 font-mono text-sm text-secondary-text">
+                        <td className="whitespace-nowrap px-2.5 py-3 font-mono text-sm text-secondary-text">
                           {formatHistoryTime(item.createdAt)}
                         </td>
-                        <td className="whitespace-nowrap px-3 py-3">
+                        <td className="whitespace-nowrap px-2.5 py-3">
                           <Badge
                             variant={getDecisionActionTone(item.action, item.actionLabel, item.operationAdvice)}
                             size="sm"
-                            className="shadow-none"
+                            className="max-w-[6rem] shadow-none"
+                            title={adviceText}
                           >
-                            {formatAdvice(item, actionLabels)}
+                            <span className="min-w-0 truncate">{adviceText}</span>
                           </Badge>
                         </td>
-                        <td className="px-3 py-3 font-mono tabular-nums">
+                        <td className="px-2.5 py-3 font-mono tabular-nums">
                           {isPresent(item.sentimentScore) ? (
                             <Badge variant={getSentimentTone(item.sentimentScore)}>
                               {formatNumber(item.sentimentScore, 0)}
                             </Badge>
                           ) : formatNumber(item.sentimentScore, 0)}
                         </td>
-                        <td className="px-3 py-3 font-mono text-secondary-text">
+                        <td className="px-2.5 py-3 font-mono text-secondary-text">
                           {formatNumber(item.currentPrice, 2)}
                         </td>
-                        <td className="px-3 py-3 font-mono font-semibold" style={getPriceChangeStyle(item.changePct)}>
+                        <td className="px-2.5 py-3 font-mono font-semibold" style={getPriceChangeStyle(item.changePct)}>
                           {formatChangePct(item.changePct)}
                         </td>
-                        <td className="px-3 py-3 font-mono text-secondary-text">
+                        <td className="px-2.5 py-3 font-mono text-secondary-text">
                           {formatNumber(item.volumeRatio, 2)}
                         </td>
-                        <td className="px-3 py-3 font-mono text-secondary-text">
+                        <td className="px-2.5 py-3 font-mono text-secondary-text">
                           {formatNumber(item.turnoverRate, 2)}{isPresent(item.turnoverRate) ? '%' : ''}
                         </td>
-                        <td className="truncate px-3 py-3 text-secondary-text" title={item.modelUsed || t('stockTrend.noModelTitle')}>
-                          {formatModelName(item.modelUsed, t)}
+                        <td className="px-2.5 py-3 text-secondary-text">
+                          <div
+                            className="max-w-[7rem] truncate"
+                            title={item.modelUsed || t('stockTrend.noModelTitle')}
+                          >
+                            {formatModelName(item.modelUsed, t)}
+                          </div>
                         </td>
-                        <td className="px-3 py-3">
+                        <td className="px-2.5 py-3">
                           <button
                             type="button"
-                            className="rounded-lg border border-primary/35 bg-primary/8 px-2.5 py-1 text-xs font-medium text-primary transition-colors hover:bg-primary/14"
+                            className="whitespace-nowrap rounded-lg border border-primary/35 bg-primary/8 px-2.5 py-1 text-xs font-medium text-primary transition-colors hover:bg-primary/14"
                             onClick={(event) => {
                               event.stopPropagation();
                               onSelectRecord(item.id);
