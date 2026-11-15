@@ -33,6 +33,18 @@ from src.services.runtime_scheduler import (
 )
 
 
+def _wait_until_process_exits(pid: int, timeout: float = 5.0) -> bool:
+    """Wait for ``pid`` to disappear; macOS can keep a killed child as a zombie briefly."""
+    deadline = time.monotonic() + timeout
+    while time.monotonic() < deadline:
+        try:
+            os.kill(pid, 0)
+        except ProcessLookupError:
+            return True
+        time.sleep(0.05)
+    return False
+
+
 class _FakeJob:
     def __init__(self, schedule_module):
         self._schedule_module = schedule_module
@@ -513,8 +525,10 @@ class RuntimeSchedulerServiceTestCase(unittest.TestCase):
 
                 self.assertFalse(service.status()["running"])
                 self.assertIn("exited without a result", service.status()["last_error"])
-                with self.assertRaises(ProcessLookupError):
-                    os.kill(child_pid, 0)
+                self.assertTrue(
+                    _wait_until_process_exits(child_pid),
+                    f"child process {child_pid} still exists after stop",
+                )
             finally:
                 if process_group_id is not None:
                     try:
@@ -555,8 +569,10 @@ class RuntimeSchedulerServiceTestCase(unittest.TestCase):
                         time.sleep(0.05)
 
                 self.assertFalse(service.status()["running"])
-                with self.assertRaises(ProcessLookupError):
-                    os.kill(child_pid, 0)
+                self.assertTrue(
+                    _wait_until_process_exits(child_pid),
+                    f"child process {child_pid} still exists after stop",
+                )
             finally:
                 for group_id in (child_pid, process_group_id):
                     if group_id is None:

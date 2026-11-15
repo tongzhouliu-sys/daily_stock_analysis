@@ -177,16 +177,18 @@ def _get_market_label(market: str, exchange: Optional[str] = None) -> str:
 
 def _target_to_identity(target: AnalysisTarget) -> Optional[ObjectIdentity]:
     """Convert AnalysisTarget to ObjectIdentity."""
-    if not target or not target.code:
+    if not target or not target.display_code:
         return None
 
     market = _get_market_from_exchange(target.exchange)
     market_label = _get_market_label(market, target.exchange)
+    matched = getattr(target, "matched_index", None)
+    stock_name = getattr(matched, "display_name", None) or target.display_code
 
     return ObjectIdentity(
-        stock_code=target.code,
-        stock_name=target.name,
-        canonical_id=target.canonical_id or target.code,
+        stock_code=target.display_code,
+        stock_name=stock_name,
+        canonical_id=target.canonical_id or target.display_code,
         asset_type=target.asset_type or "stock",
         market=market,
         market_label=market_label,
@@ -371,10 +373,40 @@ def resolve_intake_object(
 
     names_map = lookup.get("names", {})
     aliases_map = lookup.get("aliases", {})
+    codes_map = lookup.get("codes", {})
+
+    # 代码查找不区分大小写（例：aapl → AAPL），优先于名称/别名。
+    for token, start, end in tokens:
+        entry = codes_map.get(token) or codes_map.get(token.upper())
+        if not entry:
+            continue
+        identity = _lookup_to_identity(entry, lookup)
+        if identity:
+            return IntakeObjectResolution(
+                status="resolved",
+                scope=identity.asset_type,
+                identity=identity,
+                evidence={
+                    "kind": "explicit_code",
+                    "text": token,
+                    "start": start,
+                    "end": end,
+                },
+                reason="unique_code",
+            )
 
     # Try exact name match
     for token, start, end in tokens:
         normalized_token = _normalize_text(token)
+        # 中文问法通常没有空格（“分析贵州茅台”），整段 token 里包含唯一名称时
+        # 按精确名称处理，避免落到 fuzzy_match 改变调用方看到的 reason。
+        if normalized_token not in names_map:
+            contained = [
+                name for name in names_map
+                if len(name) >= 2 and name in normalized_token
+            ]
+            if len(contained) == 1:
+                normalized_token = contained[0]
 
         # Check exact name match
         if normalized_token in names_map:
@@ -519,13 +551,13 @@ def resolve_intake_object(
 
         # Search in names
         for name, entries in names_map.items():
-            if normalized_token in name or name.startswith(normalized_token):
+            if normalized_token in name or name in normalized_token:
                 for entry in entries:
                     matches.append(entry)
 
         # Search in aliases
         for alias, entries in aliases_map.items():
-            if normalized_token in alias or alias.startswith(normalized_token):
+            if normalized_token in alias or alias in normalized_token:
                 for entry in entries:
                     if entry not in matches:
                         matches.append(entry)

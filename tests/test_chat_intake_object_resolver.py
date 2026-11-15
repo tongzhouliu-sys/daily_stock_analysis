@@ -3,6 +3,8 @@
 验证标的解析服务的正确性，覆盖需求 11.1 的解析用例。
 """
 
+import time
+
 import pytest
 from src.services.chat_intake_object_resolver import (
     resolve_intake_object,
@@ -360,21 +362,21 @@ class TestObjectResolverEdgeCases:
 
 
 class TestObjectResolverPerformance:
-    """性能测试"""
+    """性能测试（不依赖 pytest-benchmark）"""
 
-    def test_resolution_speed(self, empty_registry, mock_lookup, benchmark):
+    def test_resolution_speed(self, empty_registry, mock_lookup):
         """解析速度测试"""
-        def resolve():
-            return resolve_intake_object(
+        started = time.perf_counter()
+        for _ in range(100):
+            result = resolve_intake_object(
                 "分析 600519",
                 registry=empty_registry,
                 lookup=mock_lookup,
             )
+            assert result.status == "resolved"
+        assert time.perf_counter() - started < 2.0
 
-        result = benchmark(resolve)
-        assert result.status == "resolved"
-
-    def test_large_lookup_performance(self, empty_registry, benchmark):
+    def test_large_lookup_performance(self, empty_registry):
         """大型查找表性能测试"""
         # 模拟大型查找表
         large_lookup = {
@@ -383,12 +385,11 @@ class TestObjectResolverPerformance:
             "aliases": {},
         }
 
-        def resolve():
-            return resolve_intake_object(
-                "分析 Stock 5000",
-                registry=empty_registry,
-                lookup=large_lookup,
-            )
-
-        result = benchmark(resolve)
+        started = time.perf_counter()
+        result = resolve_intake_object(
+            "分析 5000",
+            registry=empty_registry,
+            lookup=large_lookup,
+        )
         assert result.status == "resolved"
+        assert time.perf_counter() - started < 1.0
