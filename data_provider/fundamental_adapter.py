@@ -154,7 +154,8 @@ _INTRADAY_MARKET_PHASES = {
     MarketPhase.CLOSING_AUCTION,
 }
 _DAILY_TABLE_CACHE_MAX_ENTRIES = 64
-_daily_table_cache: Dict[Tuple[str, str], Tuple[str, float, Any]] = {}
+# (trading day, stored at, frame, stored during the trading session)
+_daily_table_cache: Dict[Tuple[str, str], Tuple[str, float, Any, bool]] = {}
 _daily_table_cache_lock = threading.Lock()
 
 
@@ -217,13 +218,18 @@ def _load_daily_table(
         item = _daily_table_cache.get(key)
         if not item:
             return None
-        day, stored_at, cached = item
+        day, stored_at, cached, stored_intraday = item
         if day != day_key:
             _daily_table_cache.pop(key, None)
             return None
-        if _is_intraday_table(key[0], cache_now):
-            age = cache_now.timestamp() - stored_at
-            if age >= _INTRADAY_TABLE_CACHE_TTL_SECONDS:
+        if key[0] in _INTRADAY_VOLATILE_AKSHARE_INTERFACES:
+            if _is_intraday_table(key[0], cache_now):
+                age = cache_now.timestamp() - stored_at
+                if age >= _INTRADAY_TABLE_CACHE_TTL_SECONDS:
+                    return None
+            elif stored_intraday:
+                # A snapshot taken during the session is not the closing table:
+                # refetch once after the close, then reuse that copy.
                 return None
         try:
             return cached.copy()
@@ -242,7 +248,7 @@ def _store_daily_table(
     day_key = _trading_day_cache_key(cache_now)
     with _daily_table_cache_lock:
         if len(_daily_table_cache) >= _DAILY_TABLE_CACHE_MAX_ENTRIES:
-            stale = [k for k, (day, _, _) in _daily_table_cache.items() if day != day_key]
+            stale = [k for k, (day, *_rest) in _daily_table_cache.items() if day != day_key]
             for k in stale:
                 _daily_table_cache.pop(k, None)
             if len(_daily_table_cache) >= _DAILY_TABLE_CACHE_MAX_ENTRIES:
@@ -251,7 +257,12 @@ def _store_daily_table(
             value = df.copy()
         except Exception:
             value = df
-        _daily_table_cache[key] = (day_key, cache_now.timestamp(), value)
+        _daily_table_cache[key] = (
+            day_key,
+            cache_now.timestamp(),
+            value,
+            _is_intraday_table(key[0], cache_now),
+        )
 
 
 def _clear_daily_table_cache() -> None:

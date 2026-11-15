@@ -163,8 +163,8 @@ def test_daily_cache_expires_on_new_day(monkeypatch):
 
     key = fa._daily_cache_key("stock_sector_fund_flow_rank", {})
     with fa._daily_table_cache_lock:
-        _day, _stored_at, payload = fa._daily_table_cache[key]
-        fa._daily_table_cache[key] = ("1999-01-01", _stored_at, payload)
+        _day, *rest = fa._daily_table_cache[key]
+        fa._daily_table_cache[key] = ("1999-01-01", *rest)
 
     result = adapter._call_df_candidates([("stock_sector_fund_flow_rank", {})])
     assert len(calls) == 2
@@ -324,6 +324,32 @@ def test_after_close_market_table_reuses_trading_day_cache(monkeypatch):
     assert cached[1] == "stock_sector_fund_flow_rank:daily_cache"
     fa._clear_daily_table_cache()
 
+
+
+def test_intraday_snapshot_is_refetched_once_after_close(monkeypatch):
+    # A sector ranking cached at 10:00 must not feed the after-close report;
+    # the first read after the close refetches, later reads reuse that copy.
+    fa._clear_daily_table_cache()
+    clock = _fixed_cache_clock(monkeypatch, datetime(2026, 11, 16, 2, 0, tzinfo=timezone.utc))  # 10:00 北京
+    adapter = fa.AkshareFundamentalAdapter()
+    calls: list[int] = []
+
+    def fake_rank(**kwargs):
+        calls.append(1)
+        return pd.DataFrame({"板块": ["半导体"], "今日主力净流入-净额": [float(len(calls))]})
+
+    monkeypatch.setattr("akshare.stock_sector_fund_flow_rank", fake_rank, raising=False)
+
+    adapter._call_df_candidates([("stock_sector_fund_flow_rank", {})])
+    clock["now"] = datetime(2026, 11, 16, 8, 0, tzinfo=timezone.utc)  # 16:00 北京，已收盘
+    after_close = adapter._call_df_candidates([("stock_sector_fund_flow_rank", {})])
+    clock["now"] = datetime(2026, 11, 16, 12, 0, tzinfo=timezone.utc)  # 20:00 北京
+    evening = adapter._call_df_candidates([("stock_sector_fund_flow_rank", {})])
+
+    assert len(calls) == 2
+    assert after_close[1] == "stock_sector_fund_flow_rank"
+    assert evening[1] == "stock_sector_fund_flow_rank:daily_cache"
+    fa._clear_daily_table_cache()
 
 def test_cache_day_uses_market_timezone_not_server_timezone(monkeypatch):
     # 服务器在 UTC，北京时间 08:00（开盘前）仍应落在同一个 A 股交易日。
