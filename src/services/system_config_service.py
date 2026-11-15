@@ -795,6 +795,7 @@ class SystemConfigService:
             raise ConfigConflictError(current_version=current_version)
 
         updates = self._parse_imported_env_content(content)
+        updates = self._drop_matching_startup_import_items(updates)
         return self.update(
             config_version=config_version,
             items=updates,
@@ -2581,6 +2582,47 @@ class SystemConfigService:
     def _normalize_write_key(key: str) -> str:
         """Normalize a submitted key to the form stored in `.env`."""
         return str(key or "").strip().upper()
+
+    @staticmethod
+    def _normalized_config_value(value: Any) -> str:
+        text = "" if value is None else str(value).strip()
+        lowered = text.lower()
+        if lowered in {"true", "false"}:
+            return lowered
+        return text
+
+    def _effective_runtime_value(self, key: str) -> str:
+        """Best-effort effective value for a startup-level key (R22)."""
+        env_value = os.environ.get(key)
+        if env_value is not None:
+            return env_value
+        saved = self._manager.read_config_map()
+        if key in saved:
+            return saved[key]
+        schema = get_field_definition(key)
+        default_value = schema.get("default_value")
+        return "" if default_value is None else str(default_value)
+
+    def _drop_matching_startup_import_items(
+        self,
+        items: Sequence[Dict[str, str]],
+    ) -> List[Dict[str, str]]:
+        """Skip startup-level keys whose imported value already matches runtime.
+
+        Only the import path uses this: writing an identical startup key through
+        the settings form stays rejected, while a backup round-trip no longer
+        fails on the keys it exported itself.
+        """
+        kept: List[Dict[str, str]] = []
+        for item in items:
+            key = self._normalize_write_key(item.get("key", ""))
+            if key in _STARTUP_ONLY_CONFIG_KEYS:
+                current = self._normalized_config_value(self._effective_runtime_value(key))
+                imported = self._normalized_config_value(item.get("value"))
+                if current == imported:
+                    continue
+            kept.append(item)
+        return kept
 
     @classmethod
     def _collect_write_protection_issues(

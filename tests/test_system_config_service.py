@@ -1948,6 +1948,61 @@ class SystemConfigServiceTestCase(unittest.TestCase):
         self.assertNotIn("DATABASE_PATH", self.manager.read_config_map())
         self.assertNotIn("PROXY_HOST", self.manager.read_config_map())
 
+    def test_import_env_round_trips_matching_startup_keys(self) -> None:
+        os.environ.pop("ADMIN_AUTH_ENABLED", None)
+        self._rewrite_env(
+            "STOCK_LIST=600519",
+            "ADMIN_AUTH_ENABLED=true",
+            "GEMINI_API_KEY=secret-key-value",
+        )
+
+        exported = self.service.export_env()["content"]
+        self.assertIn("ADMIN_AUTH_ENABLED=true", exported)
+
+        self.service.import_env(
+            config_version=self.manager.get_config_version(),
+            content=exported,
+            reload_now=False,
+        )
+
+        self.assertEqual(self.manager.read_config_map()["STOCK_LIST"], "600519")
+
+    def test_import_env_rejects_changed_startup_key(self) -> None:
+        os.environ.pop("ADMIN_AUTH_ENABLED", None)
+        self._rewrite_env(
+            "STOCK_LIST=600519",
+            "ADMIN_AUTH_ENABLED=true",
+            "GEMINI_API_KEY=secret-key-value",
+        )
+
+        with self.assertRaises(ConfigValidationError) as context:
+            self.service.import_env(
+                config_version=self.manager.get_config_version(),
+                content="ADMIN_AUTH_ENABLED=false\n",
+                reload_now=False,
+            )
+
+        rejected_keys = {issue["key"] for issue in context.exception.issues}
+        self.assertEqual(rejected_keys, {"ADMIN_AUTH_ENABLED"})
+        self.assertEqual(self.manager.read_config_map()["ADMIN_AUTH_ENABLED"], "true")
+
+    def test_settings_update_still_rejects_matching_startup_key(self) -> None:
+        os.environ.pop("ADMIN_AUTH_ENABLED", None)
+        self._rewrite_env(
+            "STOCK_LIST=600519",
+            "ADMIN_AUTH_ENABLED=true",
+        )
+
+        with self.assertRaises(ConfigValidationError) as context:
+            self.service.update(
+                config_version=self.manager.get_config_version(),
+                items=[{"key": "ADMIN_AUTH_ENABLED", "value": "true"}],
+                reload_now=False,
+            )
+
+        rejected_keys = {issue["key"] for issue in context.exception.issues}
+        self.assertEqual(rejected_keys, {"ADMIN_AUTH_ENABLED"})
+
     def test_import_desktop_env_treats_mask_token_as_literal_value(self) -> None:
         current_version = self.manager.get_config_version()
 
