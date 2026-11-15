@@ -309,6 +309,7 @@ const ChatPage: React.FC = () => {
     startIntakeAnalysis,
     skipIntake,
     clearIntake,
+    cancelIntake,
     setSelectedSkillIds,
     loadSessions,
     loadInitialSession,
@@ -339,6 +340,7 @@ const ChatPage: React.FC = () => {
     startIntakeAnalysis: state.startIntakeAnalysis,
     skipIntake: state.skipIntake,
     clearIntake: state.clearIntake,
+    cancelIntake: state.cancelIntake,
     setSelectedSkillIds: state.setSelectedSkillIds,
     loadSessions: state.loadSessions,
     loadInitialSession: state.loadInitialSession,
@@ -1296,7 +1298,7 @@ const ChatPage: React.FC = () => {
                       onCancel={() => {
                         const draft = useAgentChatStore.getState().intakeDraft;
                         if (draft) setInput(draft.original_message);
-                        clearIntake();
+                        void cancelIntake();
                         composerRef.current?.focus();
                       }}
                       onUpdateAnswer={(questionId, optionId) => {

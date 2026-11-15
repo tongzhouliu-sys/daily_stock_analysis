@@ -237,6 +237,8 @@ interface AgentChatActions {
   startIntakeAnalysis: () => Promise<void>;
   skipIntake: () => Promise<void>;
   clearIntake: () => void;
+  /** Dismiss the intake card and retire its server draft so a refresh does not restore it. */
+  cancelIntake: () => Promise<void>;
 }
 
 const getInitialSessionId = (): string =>
@@ -1106,6 +1108,23 @@ export const useAgentChatStore = create<AgentChatState & AgentChatActions>((set,
       intakeBusy: false,
       intakeError: null,
     });
+  },
+
+  cancelIntake: async () => {
+    const { intakeDraft, sessionId } = get();
+    // The card disappears at once; the server call only retires the draft.
+    get().clearIntake();
+    if (!intakeDraft) return;
+    try {
+      await intakeApi.update(intakeDraft.intake_id, {
+        expected_revision: intakeDraft.revision,
+        answers: intakeDraft.answers || [],
+        action: 'cancel',
+        ...(sessionId ? { session_id: sessionId } : {}),
+      });
+    } catch {
+      // A stale or already-consumed draft is not restored either; nothing to do.
+    }
   },
   };
 });

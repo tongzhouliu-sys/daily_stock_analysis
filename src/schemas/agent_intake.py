@@ -425,13 +425,13 @@ class IntakeUpdateRequest(BaseModel):
 
     expected_revision: int = Field(..., description="Expected current revision")
     answers: List[Answer] = Field(..., description="Updated answers")
-    action: str = Field(default="save", description="Action: save | confirm | skip")
+    action: str = Field(default="save", description="Action: save | confirm | skip | cancel")
     session_id: Optional[str] = Field(default=None)
 
     @field_validator("action")
     @classmethod
     def validate_action(cls, v: str) -> str:
-        allowed = {"save", "confirm", "skip"}
+        allowed = {"save", "confirm", "skip", "cancel"}
         if v not in allowed:
             raise ValueError(f"action must be one of {allowed}")
         return v

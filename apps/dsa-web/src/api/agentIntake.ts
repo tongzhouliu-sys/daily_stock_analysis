@@ -100,7 +100,7 @@ export interface IntakeCreateResponse {
 export interface IntakeUpdateRequest {
   expected_revision: number;
   answers: Answer[];
-  action?: 'save' | 'confirm' | 'skip';
+  action?: 'save' | 'confirm' | 'skip' | 'cancel';
   session_id?: string | null;
 }
 

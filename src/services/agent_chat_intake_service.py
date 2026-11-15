@@ -192,6 +192,20 @@ class AgentChatIntakeService:
             raise IntakeNotConfirmed(intake_id)
         if draft.revision != expected_revision:
             raise IntakeRevisionConflict(expected_revision, draft.revision)
+        if action == "cancel":
+            # The user dismissed the card: retire the draft so a refresh does
+            # not restore it. Answers are irrelevant and kept as they were.
+            row = self.db.update_intake_draft(
+                intake_id=intake_id, expected_revision=expected_revision,
+                answers_json=json.dumps([a.model_dump(mode="json") for a in draft.answers], ensure_ascii=False),
+                questions_json=json.dumps([q.model_dump(mode="json") for q in draft.questions], ensure_ascii=False),
+                status=IntakeStatus.INVALIDATED.value,
+            )
+            if row is None:
+                raise IntakeRevisionConflict(expected_revision, None)
+            cancelled = self._to_draft(row)
+            assert cancelled is not None
+            return cancelled
         sanitized = self._sanitize_answers(answers)
         if len({a.question_id for a in sanitized}) != len(sanitized):
             raise IntakeServiceError("Duplicate answers", code="invalid_intake_answer")

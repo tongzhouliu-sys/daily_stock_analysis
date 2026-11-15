@@ -123,6 +123,7 @@ const mockStoreState = {
   startIntakeAnalysis: vi.fn(),
   skipIntake: vi.fn(),
   clearIntake: vi.fn(),
+  cancelIntake: vi.fn().mockResolvedValue(undefined),
   setSelectedSkillIds: vi.fn(),
   setCurrentRoute: vi.fn(),
   progressSteps: [] as ProgressStep[],
@@ -2366,7 +2367,8 @@ describe('watchlist button with code variants', () => {
 
     fireEvent.click(await screen.findByTestId('chat-intake-cancel'));
 
-    expect(mockStoreState.clearIntake).toHaveBeenCalledOnce();
+    // The card's cancel also retires the server draft (cancelIntake clears the card first).
+    expect(mockStoreState.cancelIntake).toHaveBeenCalledOnce();
     expect(document.querySelector('.chat-composer-input')).toHaveValue('茅台最近为什么跌');
   });
 

@@ -1030,6 +1030,35 @@ describe('agentChatStore stop and recovery races', () => {
   });
 });
 
+describe('agentChatStore.cancelIntake', () => {
+  it('clears the card at once and retires the server draft', async () => {
+    vi.mocked(intakeApi.update).mockReset();
+    vi.mocked(intakeApi.update).mockResolvedValue({} as never);
+    useAgentChatStore.setState({
+      sessionId: 'session-test',
+      intakeDraft: {
+        intake_id: 'intake-1',
+        revision: 3,
+        status: 'pending',
+        original_message: '帮我看看 AAPL',
+        questions: [],
+        answers: [],
+      } as never,
+      intakeStatus: 'pending' as never,
+    });
+
+    await useAgentChatStore.getState().cancelIntake();
+
+    expect(useAgentChatStore.getState().intakeDraft).toBeNull();
+    expect(intakeApi.update).toHaveBeenCalledWith('intake-1', {
+      expected_revision: 3,
+      answers: [],
+      action: 'cancel',
+      session_id: 'session-test',
+    });
+  });
+});
+
 describe('agentChatStore.switchSession', () => {
   it('clears transient loading state when switching sessions during a stream', async () => {
     const ac = new AbortController();

@@ -220,6 +220,18 @@ def test_skipped_draft_freezes_an_all_unknown_brief():
     assert set(brief.unknown_fields) >= {"object", "goal", "horizon", "position", "risk_focus"}
 
 
+
+def test_cancelled_draft_is_not_restored_after_refresh():
+    # The card's "cancel" must also retire the server draft; otherwise a page
+    # refresh restores the card the user dismissed.
+    service = _service()
+    intake_id = _create(service)
+    cancelled = service.update_intake(
+        intake_id=intake_id, expected_revision=1, answers=[], action="cancel",
+    )
+    assert cancelled.status == IntakeStatus.INVALIDATED
+    assert service.find_pending_intake(SESSION_ID, GENERATION) is None
+
 # ── One-shot acceptance ──────────────────────────────────────────────────────
 
 def _confirmed(service) -> str:
