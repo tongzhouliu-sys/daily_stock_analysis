@@ -12,10 +12,12 @@
 """
 
 import logging
-from typing import Optional
 import re
+import threading
+from typing import Optional
 
 from fastapi import APIRouter, File, HTTPException, Query, Request, UploadFile, Depends
+from starlette.concurrency import run_in_threadpool
 
 from api.deps import get_system_config_service
 
@@ -49,6 +51,11 @@ from data_provider.base import normalize_stock_code
 logger = logging.getLogger(__name__)
 
 router = APIRouter()
+
+# Watchlist add/remove is read-modify-write over a single config key. Two
+# concurrent requests would both read the same list and one addition would be
+# lost, so the whole cycle is serialized per process.
+_WATCHLIST_LOCK = threading.Lock()
 
 # 须在 /{stock_code} 路由之前定义
 ALLOWED_MIME_STR = ", ".join(ALLOWED_MIME)
@@ -238,7 +245,9 @@ async def parse_import(request: Request) -> ExtractFromImageResponse:
                 detail={"error": "bad_request", "message": "未提供 text，请使用 {\"text\": \"...\"}"},
             )
         try:
-            items = parse_import_from_text(text)
+            # Excel/CSV parsing and per-row name matching are CPU-bound; keep
+            # them off the event loop so one import cannot stall every request.
+            items = await run_in_threadpool(parse_import_from_text, text)
         except ValueError as e:
             text_bytes = len(text.encode("utf-8"))
             logger.warning(
@@ -291,7 +300,7 @@ async def parse_import(request: Request) -> ExtractFromImageResponse:
             )
         filename = getattr(file, "filename", None) or ""
         try:
-            items = parse_import_from_bytes(data, filename=filename)
+            items = await run_in_threadpool(parse_import_from_bytes, data, filename=filename)
         except ValueError as e:
             ext = "." + filename.rsplit(".", 1)[-1].lower() if "." in filename else ""
             logger.warning(
@@ -360,11 +369,12 @@ def add_to_watchlist(
 ) -> WatchlistResponse:
     try:
         validated = _validate_and_normalize_stock_code(request.stock_code)
-        codes = _read_watchlist_codes(service)
-        existing_keys = [_watchlist_match_key(c) for c in codes]
-        if _watchlist_match_key(validated) not in existing_keys:
-            codes.append(request.stock_code.strip())
-            _write_watchlist_codes(service, codes)
+        with _WATCHLIST_LOCK:
+            codes = _read_watchlist_codes(service)
+            existing_keys = [_watchlist_match_key(c) for c in codes]
+            if _watchlist_match_key(validated) not in existing_keys:
+                codes.append(request.stock_code.strip())
+                _write_watchlist_codes(service, codes)
         return WatchlistResponse(stock_codes=codes, message=f"已加入 {request.stock_code.strip()}")
     except HTTPException:
         raise
@@ -393,13 +403,14 @@ def remove_from_watchlist(
 ) -> WatchlistResponse:
     try:
         validated = _validate_and_normalize_stock_code(request.stock_code)
-        codes = _read_watchlist_codes(service)
-        existing_keys = [_watchlist_match_key(c) for c in codes]
-        requested_key = _watchlist_match_key(validated)
-        if requested_key in existing_keys:
-            idx = existing_keys.index(requested_key)
-            codes.pop(idx)
-            _write_watchlist_codes(service, codes)
+        with _WATCHLIST_LOCK:
+            codes = _read_watchlist_codes(service)
+            existing_keys = [_watchlist_match_key(c) for c in codes]
+            requested_key = _watchlist_match_key(validated)
+            if requested_key in existing_keys:
+                idx = existing_keys.index(requested_key)
+                codes.pop(idx)
+                _write_watchlist_codes(service, codes)
         return WatchlistResponse(stock_codes=codes, message=f"已移除 {request.stock_code.strip()}")
     except HTTPException:
         raise

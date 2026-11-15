@@ -60,6 +60,61 @@ class BuySignal(Enum):
     STRONG_SELL = "强烈卖出"      # 趋势破坏
 
 
+# Signal ordering used to clamp score-based signals by trend strength.
+# Higher rank = more bullish. Kept next to BuySignal so both stay in sync.
+_RANK_STRONG_SELL = 0
+_RANK_SELL = 1
+_RANK_WAIT = 2
+_RANK_BUY = 3
+_RANK_STRONG_BUY = 4
+
+_BUY_SIGNAL_BY_RANK = {
+    _RANK_STRONG_SELL: BuySignal.STRONG_SELL,
+    _RANK_SELL: BuySignal.SELL,
+    _RANK_WAIT: BuySignal.WAIT,
+    _RANK_BUY: BuySignal.BUY,
+    _RANK_STRONG_BUY: BuySignal.STRONG_BUY,
+}
+
+_SIGNAL_RANK_BY_TREND = {
+    TrendStatus.STRONG_BULL: _RANK_STRONG_BUY,
+    TrendStatus.BULL: _RANK_STRONG_BUY,
+    TrendStatus.WEAK_BULL: _RANK_BUY,
+    TrendStatus.CONSOLIDATION: _RANK_WAIT,
+    TrendStatus.WEAK_BEAR: _RANK_WAIT,
+    TrendStatus.BEAR: _RANK_SELL,
+    TrendStatus.STRONG_BEAR: _RANK_STRONG_SELL,
+}
+
+def signal_rank(signal: BuySignal) -> int:
+    """Return the bullish rank (0..4) of a BuySignal."""
+    for rank, candidate in _BUY_SIGNAL_BY_RANK.items():
+        if candidate is signal:
+            return rank
+    return _RANK_WAIT
+
+
+def map_signal_for_score(score: Any, trend_status: TrendStatus) -> BuySignal:
+    """Map a 0-100 score to a BuySignal, capped by the trend ceiling.
+
+    The mapping is monotonic: for a fixed trend, a higher score never yields a
+    less bullish signal. The trend only sets an upper bound, so bearish
+    alignment cannot make a high score worse than a medium score.
+    """
+    score_rank = _SIGNAL_RANK_BY_KEY.get(signal_key_for_score(score), _RANK_WAIT)
+    trend_ceiling = _SIGNAL_RANK_BY_TREND.get(trend_status, _RANK_STRONG_SELL)
+    return _BUY_SIGNAL_BY_RANK[min(score_rank, trend_ceiling)]
+
+
+_SIGNAL_RANK_BY_KEY = {
+    "sell": _RANK_STRONG_SELL,
+    "reduce": _RANK_SELL,
+    "watch": _RANK_WAIT,
+    "buy": _RANK_BUY,
+    "strong_buy": _RANK_STRONG_BUY,
+}
+
+
 class MACDStatus(Enum):
     """MACD状态枚举"""
     GOLDEN_CROSS_ZERO = "零轴上金叉"      # DIF上穿DEA，且在零轴上方
@@ -761,26 +816,12 @@ class StockTrendAnalyzer:
         result.risk_factors = risks
 
         # 生成买入信号（与 canonical decision scale 保持一致）
-        score_signal = signal_key_for_score(score)
-        if score_signal == "strong_buy" and result.trend_status in [TrendStatus.STRONG_BULL, TrendStatus.BULL]:
-            result.buy_signal = BuySignal.STRONG_BUY
-        elif score_signal in {"strong_buy", "buy"} and result.trend_status in [
-            TrendStatus.STRONG_BULL,
-            TrendStatus.BULL,
-            TrendStatus.WEAK_BULL,
-        ]:
-            result.buy_signal = BuySignal.BUY
-        elif score_signal in {"strong_buy", "buy"} and result.trend_status in [
-            TrendStatus.CONSOLIDATION,
-            TrendStatus.WEAK_BEAR,
-        ]:
-            result.buy_signal = BuySignal.WAIT
-        elif score_signal == "watch":
-            result.buy_signal = BuySignal.WAIT
-        elif score_signal == "sell" or result.trend_status in [TrendStatus.BEAR, TrendStatus.STRONG_BEAR]:
-            result.buy_signal = BuySignal.STRONG_SELL
-        else:
-            result.buy_signal = BuySignal.SELL
+        #
+        # 信号必须先按趋势封顶、再按分数落位，且在全序上单调：
+        # 同一趋势下，分数越高拿到的信号不能比分数更低的更差。
+        # 旧实现按分支顺序判断，导致空头排列里 watch(中分) 得到"观望"，
+        # 而 buy(高分) 反而被判成"强烈卖出"。
+        result.buy_signal = map_signal_for_score(score, result.trend_status)
     
     def format_analysis(self, result: TrendAnalysisResult) -> str:
         """

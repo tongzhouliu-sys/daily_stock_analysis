@@ -59,6 +59,26 @@ def _internal_error(message: str, exc: Exception) -> HTTPException:
     return api_error(500, "internal_error", f"{message}: {str(exc)}")
 
 
+CSV_IMPORT_MAX_BYTES = 5 * 1024 * 1024
+
+
+def _read_csv_upload(file: UploadFile) -> bytes:
+    """Read a broker CSV upload with an explicit size ceiling.
+
+    ``UploadFile.read()`` without a limit lets a client stream an arbitrarily
+    large body into memory. Read one byte past the ceiling so oversized files
+    are rejected deterministically instead of being silently truncated.
+    """
+    content = file.file.read(CSV_IMPORT_MAX_BYTES + 1)
+    if len(content) > CSV_IMPORT_MAX_BYTES:
+        raise api_error(
+            413,
+            "file_too_large",
+            f"CSV 文件超过 {CSV_IMPORT_MAX_BYTES // (1024 * 1024)}MB 上限，请拆分后再导入。",
+        )
+    return content
+
+
 def _conflict_error(*, error: str, message: str) -> HTTPException:
     return api_error(409, error, message)
 
@@ -567,7 +587,7 @@ def parse_csv_import(
 ) -> PortfolioImportParseResponse:
     importer = PortfolioImportService()
     try:
-        content = file.file.read()
+        content = _read_csv_upload(file)
         parsed = importer.parse_trade_csv(broker=broker, content=content)
         return PortfolioImportParseResponse(
             broker=parsed["broker"],
@@ -611,7 +631,7 @@ def commit_csv_import(
 ) -> PortfolioImportCommitResponse:
     importer = PortfolioImportService()
     try:
-        content = file.file.read()
+        content = _read_csv_upload(file)
         parsed = importer.parse_trade_csv(broker=broker, content=content)
         result = importer.commit_trade_records(
             account_id=account_id,

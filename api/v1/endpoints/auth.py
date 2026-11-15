@@ -438,8 +438,13 @@ async def auth_login(request: Request, body: LoginRequest):
     summary="Change password",
     description="Change password. Requires valid session.",
 )
-async def auth_change_password(body: ChangePasswordRequest):
-    """Change password. Requires login."""
+async def auth_change_password(request: Request, body: ChangePasswordRequest):
+    """Change password. Requires login.
+
+    A successful change rotates the session signing secret so every existing
+    session (including other devices) is invalidated, then issues a fresh
+    session for the caller so this browser stays signed in.
+    """
     if not is_password_changeable():
         return JSONResponse(
             status_code=400,
@@ -467,7 +472,15 @@ async def auth_change_password(body: ChangePasswordRequest):
             status_code=400,
             content={"error": "invalid_password", "message": err},
         )
-    return Response(status_code=204)
+
+    if is_auth_enabled() and not rotate_session_secret():
+        logger.warning("Password changed but session secret rotation failed")
+    session_val = create_session() if is_auth_enabled() else None
+    if not session_val:
+        return Response(status_code=204)
+    resp = JSONResponse(content={"ok": True, "sessions_invalidated": True})
+    _set_session_cookie(resp, session_val, request)
+    return resp
 
 
 @router.post(

@@ -43,6 +43,7 @@ from api.v1.schemas.analysis import (
     TaskStatus,
     TaskInfo,
     TaskListResponse,
+    TaskCancelResponse,
     DuplicateTaskErrorResponse,
     MarketReviewRequest,
     MarketReviewAccepted,
@@ -904,6 +905,28 @@ def _load_history_run_flow_by_query_id(
             )
             return None
         raise
+
+
+@router.post(
+    "/tasks/{task_id}/cancel",
+    response_model=TaskCancelResponse,
+    responses={
+        200: {"description": "已取消或已请求取消"},
+        404: {"description": "任务不存在", "model": ErrorResponse},
+        500: {"description": "服务器错误", "model": ErrorResponse},
+    },
+    summary="取消分析任务",
+    description="排队中的任务立即取消；正在运行的任务标记为 cancel_requested，并在下一个步骤检查点中止。",
+)
+def cancel_analysis_task(task_id: str) -> TaskCancelResponse:
+    task = get_task_queue().cancel_task(task_id)
+    if task is None:
+        raise api_error(404, "not_found", f"任务 {task_id} 不存在或已过期")
+    return TaskCancelResponse(
+        task_id=task.task_id,
+        status=task.status.value,
+        message=task.message or "已请求取消",
+    )
 
 
 @router.get(

@@ -3,6 +3,7 @@
 
 from __future__ import annotations
 
+import threading
 import uuid
 from typing import Any, Dict, List, Literal, Optional
 
@@ -21,6 +22,24 @@ from src.services.task_queue import get_task_queue
 from src.storage import DatabaseManager
 
 router = APIRouter()
+
+# Screening is heavy (full-market fetch + scoring). Serialize submission so a
+# double click or two tabs cannot run two full-market passes at once.
+_SCREENING_SUBMIT_LOCK = threading.Lock()
+SCREENING_TASK_REPORT_TYPE = "screening_screen"
+_ACTIVE_SCREENING_STATUSES = (
+    QueueTaskStatus.PENDING,
+    QueueTaskStatus.PROCESSING,
+    QueueTaskStatus.CANCEL_REQUESTED,
+)
+
+
+def _has_active_screening_task() -> bool:
+    queue = get_task_queue()
+    return any(
+        task.report_type == SCREENING_TASK_REPORT_TYPE and task.status in _ACTIVE_SCREENING_STATUSES
+        for task in queue.list_pending_tasks()
+    )
 
 
 class ScreeningScreenRequest(BaseModel):
@@ -225,15 +244,22 @@ def screening_start_screen_task(
         )
         return result
 
-    task = task_queue.submit_background_task(
-        run_screen,
-        stock_code="screening_screen",
-        stock_name=f"{request.strategy} / {request.market}",
-        report_type="screening_screen",
-        message="选股任务已提交",
-        task_id=task_id,
-        trace_id=task_id,
-    )
+    with _SCREENING_SUBMIT_LOCK:
+        if _has_active_screening_task():
+            raise api_error(
+                409,
+                "screening_task_in_progress",
+                "已有选股任务在运行，请等待其完成或取消后再提交。",
+            )
+        task = task_queue.submit_background_task(
+            run_screen,
+            stock_code="screening_screen",
+            stock_name=f"{request.strategy} / {request.market}",
+            report_type=SCREENING_TASK_REPORT_TYPE,
+            message="选股任务已提交",
+            task_id=task_id,
+            trace_id=task_id,
+        )
     return ScreeningScreenAccepted(
         task_id=task.task_id,
         trace_id=task.trace_id or task.task_id,
@@ -248,7 +274,7 @@ def screening_start_screen_task(
 @router.get("/screen/tasks/{task_id}", response_model=ScreeningScreenTaskStatus)
 def screening_screen_task_status(task_id: str) -> ScreeningScreenTaskStatus:
     task = get_task_queue().get_task(task_id)
-    if task is None or task.report_type != "screening_screen":
+    if task is None or task.report_type != SCREENING_TASK_REPORT_TYPE:
         raise _screening_task_not_found(task_id)
 
     result = task.result if task.status == QueueTaskStatus.COMPLETED and isinstance(task.result, dict) else None

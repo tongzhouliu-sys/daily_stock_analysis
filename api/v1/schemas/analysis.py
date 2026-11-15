@@ -451,6 +451,14 @@ class TaskListResponse(BaseModel):
     })
 
 
+class TaskCancelResponse(BaseModel):
+    """任务取消响应模型"""
+
+    task_id: str = Field(..., description="任务 ID")
+    status: TaskStatusEnum = Field(..., description="取消后的任务状态")
+    message: str = Field(..., description="结果说明")
+
+
 class DuplicateTaskErrorResponse(BaseModel):
     """重复任务错误响应模型"""
     

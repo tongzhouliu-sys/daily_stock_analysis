@@ -705,7 +705,16 @@ class RuntimeSchedulerService:
                 self.stop()
                 return
             background_tasks = self._current_background_tasks(config)
-            self.stop()
+            # Restarting the scheduler must not kill an analysis that is already
+            # running: saving schedule config used to terminate the child process.
+            self.stop(terminate_analysis=False)
+            with self._analysis_process_lock:
+                running_process = self._analysis_process
+            if running_process is not None and getattr(running_process, "poll", lambda: None)() is None:
+                logger.info(
+                    "[RuntimeScheduler] 调度配置已更新，正在运行的分析任务继续执行: pid=%s",
+                    getattr(running_process, "pid", None),
+                )
             with self._analysis_process_lock:
                 generation = self._analysis_generation
             scheduled_analysis = partial(
@@ -749,11 +758,18 @@ class RuntimeSchedulerService:
             self._enabled = True
             thread.start()
 
-    def stop(self) -> None:
+    def stop(self, *, terminate_analysis: bool = True) -> None:
+        """Stop the scheduler thread; optionally terminate the running analysis.
+
+        ``terminate_analysis=False`` is used when only the schedule definition
+        changes (config save/restart) so an in-flight analysis is not killed.
+        """
         with self._lock:
-            with self._analysis_process_lock:
-                self._analysis_generation += 1
-                process = self._analysis_process
+            process = None
+            if terminate_analysis:
+                with self._analysis_process_lock:
+                    self._analysis_generation += 1
+                    process = self._analysis_process
             scheduler = self._scheduler
             if scheduler is not None:
                 scheduler.stop()

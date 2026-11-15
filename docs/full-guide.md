@@ -1745,9 +1745,10 @@ FastAPI 提供 RESTful API 服务，支持配置管理和触发分析。
 | `/api/v1/analysis/market-review` | POST | 后台触发大盘复盘；请求体可传 `{"send_notification": true, "region": "cn,us"}`；`region` 仅覆盖本次请求，与 `main.py --market-review` 与 `bot` 复用同一套 `GeminiAnalyzer/SearchService/NotificationService` 组装语义 |
 | `/api/v1/analysis/tasks` | GET | 查询任务列表 |
 | `/api/v1/analysis/tasks/stream` | GET (SSE) | 订阅任务实时状态流；`task_progress` 可选携带 `flow_event` 增量运行流事件 |
+| `/api/v1/analysis/tasks/{task_id}/cancel` | POST | 取消分析任务；排队中立即转 `cancelled`，运行中先转 `cancel_requested` 并在下一个步骤检查点中止 |
 | `/api/v1/analysis/tasks/{task_id}/flow` | GET | 查询 active task 的运行流快照 |
 | `/api/v1/analysis/status/{task_id}` | GET | 查询任务状态 |
-| `/api/v1/screening/screen/tasks` | POST | 后台提交选股任务（需先开启 `SCREENING_ENABLED`） |
+| `/api/v1/screening/screen/tasks` | POST | 后台提交选股任务（需先开启 `SCREENING_ENABLED`）；同一时间只允许一个选股任务处于 `pending/processing/cancel_requested`，重复提交返回 `409 screening_task_in_progress` |
 | `/api/v1/screening/screen/tasks/{task_id}` | GET | 查询选股任务状态与完成结果 |
 | `/api/v1/history` | GET | 查询分析历史 |
 | `/api/v1/history/{record_id}/share-image` | GET | 生成浏览器版历史报告 PNG 分享图，需要可用的 `MD2IMG_ENGINE` |
