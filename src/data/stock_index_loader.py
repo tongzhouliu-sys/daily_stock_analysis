@@ -713,6 +713,12 @@ def clear_stock_index_cache() -> None:
         _CHAT_INDEX_PAYLOAD_CACHE = None
         _CHAT_STOCK_LOOKUP_CACHE = None
         _REMOTE_INDEX_VALIDITY_CACHE = None
+    try:
+        from src.services.agent_domain_guard_service import clear_known_stock_name_cache
+
+        clear_known_stock_name_cache()
+    except Exception:  # pragma: no cover - optional module during partial imports
+        pass
 
 
 def _clear_stock_index_cache_for_tests() -> None:

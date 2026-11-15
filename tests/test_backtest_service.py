@@ -15,7 +15,7 @@ from unittest.mock import patch
 
 import pandas as pd
 
-from src.config import Config
+from src.config import Config, DEFAULT_BACKTEST_ENGINE_VERSION, DEFAULT_BACKTEST_ENGINE_VERSION
 from src.core.backtest_engine import BACKTEST_STATUS_COMPLETED, OVERALL_SENTINEL_CODE
 from src.repositories.backtest_repo import BacktestRepository
 from src.services.backtest_service import BacktestService
@@ -239,7 +239,7 @@ class BacktestServiceTestCase(unittest.TestCase):
         analysis_history_id: int,
         analysis_date: date,
         eval_window_days: int = 1,
-        engine_version: str = "v1",
+        engine_version: str = DEFAULT_BACKTEST_ENGINE_VERSION,
     ) -> BacktestResult:
         return BacktestResult(
             analysis_history_id=analysis_history_id,
@@ -1790,7 +1790,7 @@ class BacktestServiceTestCase(unittest.TestCase):
                         code="AAPL",
                         analysis_date=date(2024, 1, 10),
                         eval_window_days=1,
-                        engine_version="v1",
+                        engine_version=DEFAULT_BACKTEST_ENGINE_VERSION,
                         eval_status="completed",
                         evaluated_at=datetime(2024, 1, 20, 0, 0, 0),
                         operation_advice="买入",
@@ -1808,7 +1808,7 @@ class BacktestServiceTestCase(unittest.TestCase):
                         code="AAPL.US",
                         analysis_date=date(2024, 1, 11),
                         eval_window_days=1,
-                        engine_version="v1",
+                        engine_version=DEFAULT_BACKTEST_ENGINE_VERSION,
                         eval_status="completed",
                         evaluated_at=datetime(2024, 1, 21, 0, 0, 0),
                         operation_advice="买入",
@@ -2244,7 +2244,7 @@ class BacktestServiceTestCase(unittest.TestCase):
                     code="000005",
                     analysis_date=date(2024, 1, 5),
                     eval_window_days=1,
-                    engine_version="v1",
+                    engine_version=DEFAULT_BACKTEST_ENGINE_VERSION,
                     eval_status="completed",
                     evaluated_at=datetime(2024, 1, 8, 0, 0, 0),
                     operation_advice="买入",
@@ -2329,7 +2329,7 @@ class BacktestServiceTestCase(unittest.TestCase):
                     code="000006",
                     analysis_date=date(2024, 1, 5),
                     eval_window_days=1,
-                    engine_version="v1",
+                    engine_version=DEFAULT_BACKTEST_ENGINE_VERSION,
                     eval_status="completed",
                     evaluated_at=datetime(2024, 1, 8, 0, 0, 0),
                     operation_advice="买入",
@@ -2858,7 +2858,7 @@ class BacktestServiceTestCase(unittest.TestCase):
             base_result = session.query(BacktestResult).filter(
                 BacktestResult.code == "600519",
                 BacktestResult.eval_window_days == 3,
-                BacktestResult.engine_version == "v1",
+                BacktestResult.engine_version == DEFAULT_BACKTEST_ENGINE_VERSION,
             ).one()
             session.add_all([
                 BacktestResult(
@@ -2866,7 +2866,7 @@ class BacktestServiceTestCase(unittest.TestCase):
                     code=base_result.code,
                     analysis_date=base_result.analysis_date,
                     eval_window_days=1,
-                    engine_version="v1",
+                    engine_version=DEFAULT_BACKTEST_ENGINE_VERSION,
                     eval_status="completed",
                     evaluated_at=datetime(2024, 1, 5, 0, 0, 0),
                     operation_advice="买入",
@@ -2884,7 +2884,7 @@ class BacktestServiceTestCase(unittest.TestCase):
                     code=base_result.code,
                     analysis_date=base_result.analysis_date,
                     eval_window_days=3,
-                    engine_version="v2",
+                    engine_version="v1",
                     eval_status="completed",
                     evaluated_at=datetime(2024, 1, 6, 0, 0, 0),
                     operation_advice="买入",
@@ -2903,7 +2903,7 @@ class BacktestServiceTestCase(unittest.TestCase):
         rows = service.repo.list_results(
             code="600519",
             eval_window_days=3,
-            engine_version="v1",
+            engine_version=DEFAULT_BACKTEST_ENGINE_VERSION,
             analysis_date_from=date(2024, 1, 1),
             analysis_date_to=date(2024, 1, 1),
         )
@@ -2919,7 +2919,7 @@ class BacktestServiceTestCase(unittest.TestCase):
         )
         self.assertEqual(evaluations["total"], 1)
         self.assertEqual(len(evaluations["items"]), 1)
-        self.assertEqual(evaluations["items"][0]["engine_version"], "v1")
+        self.assertEqual(evaluations["items"][0]["engine_version"], DEFAULT_BACKTEST_ENGINE_VERSION)
         self.assertEqual(evaluations["items"][0]["operation_advice"], "买入")
         self.assertEqual(evaluations["items"][0]["action"], "buy")
         self.assertEqual(evaluations["items"][0]["action_label"], "买入")
@@ -2937,7 +2937,7 @@ class BacktestServiceTestCase(unittest.TestCase):
         self.assertIsNotNone(summary_inferred)
         assert summary_inferred is not None
         self.assertEqual(summary_inferred["eval_window_days"], 1)
-        self.assertEqual(summary_inferred["engine_version"], "v1")
+        self.assertEqual(summary_inferred["engine_version"], DEFAULT_BACKTEST_ENGINE_VERSION)
         self.assertEqual(summary_inferred["total_evaluations"], 1)
         self.assertEqual(summary_inferred["completed_count"], 1)
         self.assertEqual(summary_inferred["win_count"], 0)
@@ -2955,7 +2955,7 @@ class BacktestServiceTestCase(unittest.TestCase):
         self.assertIsNotNone(summary_explicit)
         assert summary_explicit is not None
         self.assertEqual(summary_explicit["eval_window_days"], 3)
-        self.assertEqual(summary_explicit["engine_version"], "v1")
+        self.assertEqual(summary_explicit["engine_version"], DEFAULT_BACKTEST_ENGINE_VERSION)
         self.assertEqual(summary_explicit["total_evaluations"], 1)
         self.assertEqual(summary_explicit["completed_count"], 1)
         self.assertEqual(summary_explicit["win_count"], 1)
@@ -3043,7 +3043,7 @@ class BacktestServiceTestCase(unittest.TestCase):
             base_result = session.query(BacktestResult).filter(
                 BacktestResult.code == "600519",
                 BacktestResult.eval_window_days == 3,
-                BacktestResult.engine_version == "v1",
+                BacktestResult.engine_version == DEFAULT_BACKTEST_ENGINE_VERSION,
             ).one()
             session.add(
                 BacktestResult(
@@ -3051,7 +3051,7 @@ class BacktestServiceTestCase(unittest.TestCase):
                     code=base_result.code,
                     analysis_date=base_result.analysis_date,
                     eval_window_days=1,
-                    engine_version="v1",
+                    engine_version=DEFAULT_BACKTEST_ENGINE_VERSION,
                     eval_status="completed",
                     evaluated_at=datetime(2024, 1, 5, 0, 0, 0),
                     operation_advice="买入",

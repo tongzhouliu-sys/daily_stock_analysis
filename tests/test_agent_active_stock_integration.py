@@ -446,7 +446,7 @@ def test_convergence_analysis_family_reads_only_bound_index_cache(db, chat_stock
             {"date": target_date - timedelta(days=i), "close": base + i, "open": base + i,
              "high": base + i + 1, "low": base + i - 1, "volume": 1000 + i,
              "ma5": base + i, "ma10": base + i, "ma20": base + i}
-            for i in range(90)
+            for i in range(120)
         ]), code, "fixture")
     reads = []
     original = db.get_data_range
@@ -1428,7 +1428,13 @@ def test_chat_schema_failure_does_not_publish_half_initialized_manager_and_can_r
     snapshot = recovered.read_chat_session_snapshot("existing")
     assert recovered._initialized and snapshot["session_generation"]
     assert snapshot["selected_skill_ids"] == ["technical"] and snapshot["session_state_version"] == 0
-    assert len(inspect(recovered._engine).get_columns("conversation_session_states")) == 13
+    from src.storage import ConversationSessionState
+
+    recovered_columns = {
+        column["name"]
+        for column in inspect(recovered._engine).get_columns("conversation_session_states")
+    }
+    assert recovered_columns == set(ConversationSessionState.__table__.columns.keys())
     with recovered._engine.connect() as connection:
         assert connection.execute(text(
             "SELECT created_at, updated_at FROM conversation_session_states WHERE session_id='existing'"

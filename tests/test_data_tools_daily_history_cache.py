@@ -10,7 +10,12 @@ from unittest.mock import MagicMock, patch
 import pandas as pd
 
 from src.agent.tools.data_tools import _handle_get_daily_history
-from src.services.history_loader import reset_frozen_target_date, set_frozen_target_date
+from src.services.history_loader import (
+    _round_fetch_window,
+    clear_history_cache_for_tests,
+    reset_frozen_target_date,
+    set_frozen_target_date,
+)
 
 
 class _DailyRow:
@@ -77,6 +82,9 @@ class _FakeDb:
 
 
 class DailyHistoryCacheToolTest(unittest.TestCase):
+    def setUp(self) -> None:
+        clear_history_cache_for_tests()
+
     def _run_with_frozen_date(self, target: date, stock_code: str, days: int):
         token = set_frozen_target_date(target)
         try:
@@ -86,7 +94,7 @@ class DailyHistoryCacheToolTest(unittest.TestCase):
 
     def test_uses_fresh_partial_db_cache_without_fetching(self) -> None:
         target = date(2026, 4, 24)
-        db = _FakeDb({"600519": _rows("600519", target, 30)})
+        db = _FakeDb({"600519": _rows("600519", target, 50)})
         manager = SimpleNamespace(get_daily_data=MagicMock())
 
         with patch("src.storage.get_db", return_value=db), \
@@ -96,9 +104,9 @@ class DailyHistoryCacheToolTest(unittest.TestCase):
         self.assertEqual(result["source"], "db_cache")
         self.assertTrue(result["cache_hit"])
         self.assertTrue(result["partial_cache"])
-        self.assertEqual(result["actual_records"], 30)
+        self.assertEqual(result["actual_records"], 50)
         self.assertEqual(result["requested_days"], 60)
-        self.assertEqual(result["data"][0]["date"], str(target - timedelta(days=29)))
+        self.assertEqual(result["data"][0]["date"], str(target - timedelta(days=49)))
         self.assertEqual(result["data"][-1]["date"], str(target))
         manager.get_daily_data.assert_not_called()
 
@@ -114,7 +122,7 @@ class DailyHistoryCacheToolTest(unittest.TestCase):
 
         with patch("src.storage.get_db", return_value=db), \
              patch("src.services.history_loader._get_fetcher_manager", return_value=manager):
-            result = self._run_with_frozen_date(target, "1810.HK", days=60)
+            result = self._run_with_frozen_date(target, "1810.HK", days=40)
 
         self.assertEqual(result["code"], "1810.HK")
         self.assertEqual(result["actual_records"], 40)
@@ -132,7 +140,7 @@ class DailyHistoryCacheToolTest(unittest.TestCase):
 
         with patch("src.storage.get_db", return_value=db), \
              patch("src.services.history_loader._get_fetcher_manager", return_value=manager):
-            result = self._run_with_frozen_date(target, "1810.HK", days=60)
+            result = self._run_with_frozen_date(target, "1810.HK", days=30)
 
         self.assertEqual(result["code"], "HK01810")
         self.assertEqual(result["actual_records"], 30)
@@ -153,8 +161,12 @@ class DailyHistoryCacheToolTest(unittest.TestCase):
              patch("src.services.history_loader._get_fetcher_manager", return_value=manager):
             result = self._run_with_frozen_date(target, "600519", days=60)
 
-        manager.get_daily_data.assert_called_once_with("600519", days=60)
-        db.save_daily_data.assert_called_once_with(df, "600519", "Fetcher")
+        manager.get_daily_data.assert_called_once_with("600519", days=_round_fetch_window(60))
+        db.save_daily_data.assert_called_once()
+        saved_df, saved_code, saved_source = db.save_daily_data.call_args.args
+        self.assertEqual(saved_code, "600519")
+        self.assertEqual(saved_source, "Fetcher")
+        self.assertEqual(list(saved_df["date"]), list(df["date"]))
         self.assertFalse(result["cache_hit"])
         self.assertEqual(result["source"], "Fetcher")
 
@@ -191,7 +203,7 @@ class DailyHistoryCacheToolTest(unittest.TestCase):
              patch("src.services.history_loader._get_fetcher_manager", return_value=manager):
             result = self._run_with_frozen_date(target, "600519", days=60)
 
-        manager.get_daily_data.assert_called_once_with("600519", days=60)
+        manager.get_daily_data.assert_called_once_with("600519", days=_round_fetch_window(60))
         self.assertFalse(result["cache_hit"])
         self.assertEqual(result["source"], "Fetcher")
 

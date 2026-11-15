@@ -14,7 +14,7 @@ from src.services.stock_list_parser import IndexRegistry
 @pytest.fixture
 def empty_registry():
     """空的指数注册表"""
-    return IndexRegistry(rows=[], validated=True)
+    return IndexRegistry()
 
 
 @pytest.fixture

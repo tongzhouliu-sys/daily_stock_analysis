@@ -7400,6 +7400,16 @@
           },
           "decision_signal_risk": {
             "$ref": "#/components/schemas/PortfolioDecisionSignalRiskBlock"
+          },
+          "fx_missing": {
+            "default": false,
+            "title": "Fx Missing",
+            "type": "boolean"
+          },
+          "missing_price_count": {
+            "default": 0,
+            "title": "Missing Price Count",
+            "type": "integer"
           }
         },
         "type": "object",

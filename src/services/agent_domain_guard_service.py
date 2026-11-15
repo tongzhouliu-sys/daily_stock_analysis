@@ -284,6 +284,12 @@ def _has_strong_investment_keyword(text: str) -> bool:
     return False
 
 
+def clear_known_stock_name_cache() -> None:
+    """Drop the cached name/alias keys after the stock index is refreshed."""
+    global _NAME_KEYS
+    _NAME_KEYS = None
+
+
 def _known_stock_name_keys() -> Tuple[str, ...]:
     """Return the local name/alias index keys used for subject detection."""
     global _NAME_KEYS

@@ -128,6 +128,8 @@ AGENT_BACKEND_REMOVED_MESSAGE = (
 )
 TICKFLOW_KLINE_ADJUST_VALUES = {"none", "forward", "backward", "forward_additive", "backward_additive"}
 # 沪深300 / 中证500 / 创业板 / 红利低波 / 纳指 / 黄金；防守资产为货币 ETF
+DEFAULT_BACKTEST_ENGINE_VERSION = "v2"
+DEFAULT_BACKTEST_ENGINE_VERSION = "v2"
 DEFAULT_ETF_ROTATION_POOL = ("510300", "510500", "159915", "512890", "513100", "518880")
 DEFAULT_ETF_ROTATION_SAFE_ASSET = "511880"
 # Fallback defaults used when ANSPIRE_API_KEYS is reused as legacy OpenAI-compatible source.
@@ -1312,7 +1314,7 @@ class Config:
     backtest_enabled: bool = True
     backtest_eval_window_days: int = 10
     backtest_min_age_days: int = 14
-    backtest_engine_version: str = "v1"
+    backtest_engine_version: str = DEFAULT_BACKTEST_ENGINE_VERSION
     backtest_neutral_band_pct: float = 2.0
 
     # === ETF 轮动配置（仅 --etf-rotation 使用）===
@@ -2332,7 +2334,7 @@ class Config:
             backtest_enabled=os.getenv('BACKTEST_ENABLED', 'true').lower() == 'true',
             backtest_eval_window_days=parse_env_int(os.getenv('BACKTEST_EVAL_WINDOW_DAYS'), 10, field_name='BACKTEST_EVAL_WINDOW_DAYS', minimum=1),
             backtest_min_age_days=parse_env_int(os.getenv('BACKTEST_MIN_AGE_DAYS'), 14, field_name='BACKTEST_MIN_AGE_DAYS', minimum=1),
-            backtest_engine_version=os.getenv('BACKTEST_ENGINE_VERSION', 'v2'),
+            backtest_engine_version=os.getenv('BACKTEST_ENGINE_VERSION', DEFAULT_BACKTEST_ENGINE_VERSION),
             backtest_neutral_band_pct=parse_env_float(
                 os.getenv('BACKTEST_NEUTRAL_BAND_PCT'),
                 2.0,
