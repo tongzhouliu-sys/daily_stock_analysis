@@ -24,7 +24,7 @@
 | `apps/dsa-desktop/` | Electron 桌面端壳与打包配置 | 8 | 8469 |
 | `scripts/` | 本地与 CI 脚本 | 52 | 10786 |
 | `.github/scripts/` | GitHub Actions 专用脚本 | 2 | 652 |
-| `tests/` | pytest 测试 | 374 | 189339 |
+| `tests/` | pytest 测试 | 374 | 189345 |
 
 ## 大文件（Python，≥400 行）
 
@@ -84,7 +84,7 @@
 ## 规模快照
 
 - Python 源码（不含测试）：498 个文件，231023 行
-- Python 测试：368 个文件，189160 行
+- Python 测试：368 个文件，189166 行
 - 前端 TS/TSX：326 个文件，102411 行
 - ≥400 行的 Python 文件：156 个
 
