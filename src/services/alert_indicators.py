@@ -523,9 +523,12 @@ def _drop_partial_today(
             if market_now is not None:
                 reference_date = market_now.date()
     if closed_today is None:
-        # No calendar available: keep the legacy local-clock heuristic.
-        closed_today = current.time() >= time(16, 0)
-        reference_date = current.date()
+        # No calendar available: keep the legacy server-local 16:00 heuristic.
+        # ``current`` is aware UTC now, so convert it back to the server's
+        # local clock; reading UTC here would close a UTC+8 market at 00:00.
+        local_now = current.astimezone() if current.tzinfo is not None else current
+        closed_today = local_now.time() >= time(16, 0)
+        reference_date = local_now.date()
     if closed_today:
         return df
     try:

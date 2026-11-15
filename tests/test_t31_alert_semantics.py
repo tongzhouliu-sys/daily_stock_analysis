@@ -6,7 +6,8 @@ from __future__ import annotations
 import os
 import tempfile
 import unittest
-from datetime import date, datetime
+import time as time_module
+from datetime import date, datetime, timezone
 from pathlib import Path
 from types import SimpleNamespace
 from unittest.mock import AsyncMock, MagicMock, patch
@@ -265,6 +266,43 @@ class PartialBarSessionGateTestCase(unittest.TestCase):
         result = _drop_partial_today(self._two_day_frame(), now=now, stock_code="AAPL")
 
         self.assertEqual(len(result), 2)
+
+    def test_default_clock_drops_forming_us_bar(self) -> None:
+        # Production callers pass no ``now``; the gate must still read the
+        # exchange clock correctly. 2026-05-15 19:00 UTC == 15:00 US Eastern.
+        import src.services.alert_indicators as indicators
+
+        fixed = datetime(2026, 5, 15, 19, 0, tzinfo=timezone.utc)
+
+        class _FixedDatetime(datetime):
+            @classmethod
+            def now(cls, tz=None):
+                return fixed if tz is not None else fixed.replace(tzinfo=None)
+
+        with patch.object(indicators, "datetime", _FixedDatetime):
+            result = _drop_partial_today(self._two_day_frame(), stock_code="AAPL")
+
+        self.assertEqual(len(result), 1)
+        self.assertEqual(result["date"].iloc[-1], date(2026, 5, 14))
+
+    @unittest.skipUnless(hasattr(time_module, "tzset"), "needs POSIX time.tzset")
+    def test_unknown_market_fallback_uses_server_local_clock(self) -> None:
+        # Without a calendar the legacy rule is "server-local 16:00". For a
+        # UTC+8 server, 09:30 UTC is 17:30 local: the session is closed.
+        previous_tz = os.environ.get("TZ")
+        os.environ["TZ"] = "Asia/Shanghai"
+        time_module.tzset()
+        try:
+            now = datetime(2026, 5, 15, 9, 30, tzinfo=timezone.utc)
+            result = _drop_partial_today(self._frame(date(2026, 5, 15)), now=now, stock_code=None)
+        finally:
+            if previous_tz is None:
+                os.environ.pop("TZ", None)
+            else:
+                os.environ["TZ"] = previous_tz
+            time_module.tzset()
+
+        self.assertEqual(len(result), 1)
 
 
 if __name__ == "__main__":
