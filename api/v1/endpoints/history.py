@@ -24,10 +24,6 @@ from api.v1.schemas.history import (
     NewsIntelItem,
     NewsIntelResponse,
     AnalysisReport,
-    ReportMeta,
-    ReportSummary,
-    ReportStrategy,
-    ReportDetails,
     MarkdownReportResponse,
     RunDiagnosticSummaryResponse,
     StockBarItem,
@@ -37,27 +33,12 @@ from api.v1.schemas.common import ErrorResponse
 from api.v1.schemas.run_flow import RunFlowSnapshot
 from src.storage import DatabaseManager
 from src.report_language import (
-    get_sentiment_label,
-    get_localized_stock_name,
-    localize_operation_advice,
-    localize_trend_prediction,
     normalize_report_language,
 )
 from src.services.history_service import HistoryService, MarkdownReportGenerationError
 from src.services.analysis_service import asset_type_from_canonical_code
 from src.schemas.decision_action import build_action_fields
-from src.utils.data_processing import (
-    normalize_model_used,
-    extract_fundamental_detail_fields,
-    extract_board_detail_fields,
-    extract_market_structure_detail_field,
-    extract_realtime_detail_fields,
-)
-from src.analysis_context_pack_overview import (
-    extract_analysis_context_pack_overview,
-    sanitize_context_snapshot_for_api,
-)
-from src.market_phase_summary import extract_market_phase_summary
+from src.utils.data_processing import normalize_model_used
 from src.config import get_config
 from src.md2img import markdown_to_image
 from src.share_image import (
@@ -564,118 +545,46 @@ def get_history_detail(
                 }
             )
         
-        # 从 context_snapshot 中提取价格信息
-        # 注意：使用 `is None` 而非 `or`，避免把 0.0（平盘）误判为缺失值；
-        # 同时不混用 `change_60d`（60 日累计涨跌幅）作为日内 change_pct 的兜底。
         context_snapshot = result.get("context_snapshot")
-        analysis_context_pack_overview = extract_analysis_context_pack_overview(context_snapshot)
-        market_phase_summary = result.get("market_phase_summary")
-        if market_phase_summary is None:
-            market_phase_summary = extract_market_phase_summary(context_snapshot)
-        api_context_snapshot = sanitize_context_snapshot_for_api(context_snapshot)
-        realtime_fields = extract_realtime_detail_fields(context_snapshot)
-        current_price = realtime_fields.get("current_price")
-        change_pct = realtime_fields.get("change_pct")
-        
-        raw_result = result.get("raw_result")
-        if not isinstance(raw_result, dict):
-            raw_result = {}
-        report_language = normalize_report_language(
-            result.get("report_language")
-            or raw_result.get("report_language")
-            or (
-                context_snapshot.get("report_language")
-                if isinstance(context_snapshot, dict)
-                else None
-            )
-        )
-        stock_name = get_localized_stock_name(
-            result.get("stock_name"),
-            result.get("stock_code", ""),
-            report_language,
-        )
-
-        # 构建响应模型
-        meta = ReportMeta(
-            id=result.get("id"),
-            query_id=result.get("query_id", ""),
-            stock_code=result.get("stock_code", ""),
-            stock_name=stock_name,
-            report_type=result.get("report_type"),
-            report_language=report_language,
-            created_at=result.get("created_at"),
-            current_price=current_price,
-            change_pct=change_pct,
-            model_used=normalize_model_used(result.get("model_used")),
-            market_phase_summary=market_phase_summary,
-            asset_type=asset_type_from_canonical_code(
-                result.get("storage_stock_code") or result.get("stock_code")
-            ),
-        )
-        
-        summary = ReportSummary(
-            analysis_summary=result.get("analysis_summary"),
-            operation_advice=localize_operation_advice(
-                result.get("operation_advice"),
-                report_language,
-            ),
-            action=result.get("action"),
-            action_label=result.get("action_label"),
-            trend_prediction=localize_trend_prediction(
-                result.get("trend_prediction"),
-                report_language,
-            ),
-            sentiment_score=result.get("sentiment_score"),
-            sentiment_label=(
-                get_sentiment_label(result.get("sentiment_score"), report_language)
-                if result.get("sentiment_score") is not None
-                else result.get("sentiment_label")
-            )
-        )
-        
-        strategy = ReportStrategy(
-            ideal_buy=result.get("ideal_buy"),
-            secondary_buy=result.get("secondary_buy"),
-            stop_loss=result.get("stop_loss"),
-            take_profit=result.get("take_profit")
-        )
-        
         fallback_fundamental = db_manager.get_latest_fundamental_snapshot(
             query_id=result.get("query_id", ""),
             code=result.get("storage_stock_code") or result.get("stock_code", ""),
         )
-        extracted_fundamental = extract_fundamental_detail_fields(
-            context_snapshot=result.get("context_snapshot"),
-            fallback_fundamental_payload=fallback_fundamental,
-        )
-        extracted_boards = extract_board_detail_fields(
-            context_snapshot=result.get("context_snapshot"),
-            fallback_fundamental_payload=fallback_fundamental,
-        )
-        market_structure = extract_market_structure_detail_field(
-            result.get("context_snapshot"),
-            result.get("raw_result"),
-        )
 
-        details = ReportDetails(
-            news_content=result.get("news_content"),
-            empty_news_disclosure=result.get("empty_news_disclosure"),
-            raw_result=result.get("raw_result"),
-            context_snapshot=api_context_snapshot,
-            analysis_context_pack_overview=analysis_context_pack_overview,
-            financial_report=extracted_fundamental.get("financial_report"),
-            dividend_metrics=extracted_fundamental.get("dividend_metrics"),
-            belong_boards=extracted_boards.get("belong_boards"),
-            sector_rankings=extracted_boards.get("sector_rankings"),
-            concept_rankings=extracted_boards.get("concept_rankings"),
-            market_structure=market_structure,
-        )
-        
-        return AnalysisReport(
-            meta=meta,
-            summary=summary,
-            strategy=strategy,
-            details=details
+        # T39: /history、/analysis/status 与同步分析共用同一份报告构造函数
+        from api.v1.report_builder import build_analysis_report
+
+        return build_analysis_report(
+            {
+                "id": result.get("id"),
+                "query_id": result.get("query_id", ""),
+                "stock_code": result.get("stock_code", ""),
+                "stock_name": result.get("stock_name"),
+                "storage_stock_code": result.get("storage_stock_code"),
+                "report_type": result.get("report_type"),
+                "report_language": result.get("report_language"),
+                "created_at": result.get("created_at"),
+                "model_used": result.get("model_used"),
+                "sentiment_score": result.get("sentiment_score"),
+                "operation_advice": result.get("operation_advice"),
+                "trend_prediction": result.get("trend_prediction"),
+                "analysis_summary": result.get("analysis_summary"),
+                "ideal_buy": result.get("ideal_buy"),
+                "secondary_buy": result.get("secondary_buy"),
+                "stop_loss": result.get("stop_loss"),
+                "take_profit": result.get("take_profit"),
+                "raw_result": result.get("raw_result"),
+                "news_content": result.get("news_content"),
+                "empty_news_disclosure": result.get("empty_news_disclosure"),
+            },
+            query_id=result.get("query_id", ""),
+            stock_code=result.get("stock_code", ""),
+            stock_name=result.get("stock_name"),
+            context_snapshot=context_snapshot,
+            fallback_fundamental_payload=fallback_fundamental,
+            default_report_type=None,
+            localize_summary=True,
+            always_include_strategy=True,
         )
         
     except HTTPException:

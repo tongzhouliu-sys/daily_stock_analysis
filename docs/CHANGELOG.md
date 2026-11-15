@@ -8,6 +8,8 @@ and this project adheres to [Semantic Versioning](https://semver.org/).
 > For user-friendly release highlights, see the [GitHub Releases](https://github.com/ZhuLinsen/daily_stock_analysis/releases) page.
 
 ## [Unreleased]
+- [改进] 报告对象构造收敛为 `api/v1/report_builder.build_analysis_report()` 单一入口：同步分析、任务状态数据库回退与历史详情三个接口对同一条记录返回一致的 `meta`/`summary`/`strategy`/`details`，重复的 `_extract_guardrail_reason` 等辅助逻辑合并。
+
 - [改进] 通知分发收敛为 `NotificationService.send_with_results()` 单一实现，pipeline 不再维护按渠道分支，新增逐渠道诊断回调、邮件分组与微信仪表盘内容处理。
 
 
