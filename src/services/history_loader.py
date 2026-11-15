@@ -109,6 +109,35 @@ def _resolve_cache_end_date(
 # ---------------------------------------------------------------------------
 # In-memory dedup cache for network fetches
 # ---------------------------------------------------------------------------
+class _InflightFetch:
+    """Shared state for one in-flight network fetch.
+
+    Waiters keep a reference to the object and read ``df`` / ``source`` /
+    ``error`` after ``event`` is set.  The owner writes the result and removes
+    the key from the registry; nobody pops the object out from under another
+    waiter (R10).
+    """
+
+    __slots__ = ("event", "df", "source", "error")
+
+    def __init__(self) -> None:
+        self.event = threading.Event()
+        self.df: Optional[pd.DataFrame] = None
+        self.source: Optional[str] = None
+        self.error: Optional[BaseException] = None
+
+    def complete(
+        self,
+        df: Optional[pd.DataFrame],
+        source: Optional[str],
+        error: Optional[BaseException],
+    ) -> None:
+        self.df = df
+        self.source = source
+        self.error = error
+        self.event.set()
+
+
 class _NetworkCache:
     """Thread-safe, time-bounded in-memory cache for network-fetched DataFrames.
 
@@ -120,7 +149,7 @@ class _NetworkCache:
     def __init__(self) -> None:
         self._lock = RLock()
         self._entries: OrderedDict[str, Tuple[float, pd.DataFrame, str]] = OrderedDict()
-        self._inflight: Dict[str, Tuple[threading.Event, Optional[pd.DataFrame], Optional[str], Optional[Exception]]] = {}
+        self._inflight: Dict[str, _InflightFetch] = {}
 
     def _evict_expired_locked(self) -> None:
         now = time.monotonic()
@@ -145,42 +174,52 @@ class _NetworkCache:
             self._evict_expired_locked()
             self._entries[key] = (time.monotonic(), df.copy(), source)
 
-    def get_inflight(self, key: str) -> Optional[Tuple[threading.Event, Optional[pd.DataFrame], Optional[str], Optional[Exception]]]:
+    def get_inflight(self, key: str) -> Optional[_InflightFetch]:
         with self._lock:
             return self._inflight.get(key)
 
-    def start_inflight(self, key: str) -> Tuple[threading.Event, bool]:
-        """Register an in-flight fetch. Returns (event, is_owner).
+    def start_inflight(self, key: str) -> Tuple[_InflightFetch, bool]:
+        """Register an in-flight fetch. Returns (record, is_owner).
 
         ``is_owner`` is True when the caller should perform the fetch;
         False when another caller is already fetching and this caller should
-        wait on the returned event.
+        wait on ``record.event`` and then read the record fields.
         """
         with self._lock:
             existing = self._inflight.get(key)
             if existing is not None:
-                return existing[0], False
-            event = threading.Event()
-            self._inflight[key] = (event, None, None, None)
-            return event, True
+                return existing, False
+            record = _InflightFetch()
+            self._inflight[key] = record
+            return record, True
 
-    def finish_inflight(self, key: str, df: Optional[pd.DataFrame], source: Optional[str], error: Optional[Exception]) -> None:
-        with self._lock:
-            record = self._inflight.get(key)
-            if record is None:
-                return
-            event, _, _, _ = record
-            self._inflight[key] = (event, df, source, error)
-            event.set()
+    def finish_inflight(
+        self,
+        key: str,
+        record: _InflightFetch,
+        df: Optional[pd.DataFrame],
+        source: Optional[str],
+        error: Optional[BaseException],
+    ) -> None:
+        """Publish the result and drop the key so later callers refetch.
 
-    def wait_inflight(self, key: str, event: threading.Event, timeout: float = 120.0) -> Tuple[Optional[pd.DataFrame], Optional[str], Optional[Exception]]:
-        event.wait(timeout=timeout)
+        The record object stays alive for existing waiters; only the registry
+        entry is removed.
+        """
+        record.complete(df, source, error)
         with self._lock:
-            record = self._inflight.pop(key, None)
-            if record is None:
-                return None, None, Exception("inflight record vanished")
-            _, df, source, error = record
-            return df, source, error
+            if self._inflight.get(key) is record:
+                del self._inflight[key]
+
+    def wait_inflight(
+        self,
+        record: _InflightFetch,
+        timeout: float = 120.0,
+    ) -> Tuple[Optional[pd.DataFrame], Optional[str], Optional[BaseException]]:
+        record.event.wait(timeout=timeout)
+        if not record.event.is_set():
+            return None, None, TimeoutError("inflight fetch timed out")
+        return record.df, record.source, record.error
 
     def clear(self) -> None:
         with self._lock:
@@ -189,6 +228,11 @@ class _NetworkCache:
 
 
 _network_cache = _NetworkCache()
+
+
+def clear_history_cache_for_tests() -> None:
+    """Reset the module-level network cache (test fixture hook only)."""
+    _network_cache.clear()
 
 
 def _network_cache_key(normalized_code: str, end: date, window: int) -> str:
@@ -359,9 +403,9 @@ def _fetch_from_network(
         return df_cached, src_cached
 
     # 2. Concurrent dedup: if another thread is already fetching, wait.
-    event, is_owner = _network_cache.start_inflight(cache_key)
+    record, is_owner = _network_cache.start_inflight(cache_key)
     if not is_owner:
-        df_wait, src_wait, err_wait = _network_cache.wait_inflight(cache_key, event)
+        df_wait, src_wait, err_wait = _network_cache.wait_inflight(record)
         if err_wait is not None:
             logger.warning("load_history_df(%s): inflight fetch failed: %s", stock_code, err_wait)
             return None, "none"
@@ -370,7 +414,12 @@ def _fetch_from_network(
             return result, src_wait or "network"
         return None, "none"
 
-    # 3. We are the owner — perform the actual fetch.
+    # 3. We are the owner — perform the actual fetch.  The result is always
+    #    published from ``finally`` (including BaseException) so waiters are
+    #    never stranded for the full timeout.
+    df: Optional[pd.DataFrame] = None
+    source: Optional[str] = None
+    error: Optional[BaseException] = None
     try:
         fallback_kwargs: Dict[str, Any] = {}
         if identity is not None:
@@ -384,15 +433,21 @@ def _fetch_from_network(
             _network_cache.put(cache_key, df, source)
             if write_back:
                 _write_back_to_db(df, stock_code, source, end)
-            _network_cache.finish_inflight(cache_key, df, source, None)
-            result = df.tail(days).copy() if len(df) > days else df.copy()
-            return result, source
-        _network_cache.finish_inflight(cache_key, None, None, None)
-        return None, "none"
     except Exception as exc:
         logger.warning("load_history_df(%s): DataFetcherManager failed: %s", stock_code, exc)
-        _network_cache.finish_inflight(cache_key, None, None, exc)
+        error = exc
+    finally:
+        # ``finally`` also covers BaseException (KeyboardInterrupt, pytest
+        # failure in a patched fetcher, ...).  Failed results are published to
+        # waiters but never enter the in-memory cache above.
+        _network_cache.finish_inflight(cache_key, record, df, source, error)
+
+    if error is not None:
         return None, "none"
+    if df is not None and not df.empty:
+        result = df.tail(days).copy() if len(df) > days else df.copy()
+        return result, source or "network"
+    return None, "none"
 
 
 def load_history_df(
