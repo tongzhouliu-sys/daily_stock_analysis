@@ -468,7 +468,6 @@ class AkshareFetcher(BaseFetcher):
         # T28: 只保护限速状态的短锁；等待本身发生在锁外
         self._rate_limit_lock = threading.Lock()
         # T28: 标记「管理器已代为限速」，避免方法内部再次睡眠（尤其在锁内）
-        self._rate_limit_tls = threading.local()
         self._history_call_timeout = _AKSHARE_HISTORY_CALL_TIMEOUT
         self._market_stats_call_timeout = _AKSHARE_MARKET_STATS_CALL_TIMEOUT
         # 东财补丁开启才执行打补丁操作
@@ -492,29 +491,6 @@ class AkshareFetcher(BaseFetcher):
             logger.debug(f"设置 User-Agent 失败: {e}")
     
     # T28: 这些方法走单股直连接口（新浪/腾讯），只需要最小间隔，不需要随机 jitter
-    rate_limit_jitterless_methods = frozenset({
-        "_fetch_stock_data_sina",
-        "_fetch_stock_data_tx",
-        "_get_stock_realtime_quote_sina",
-        "_get_stock_realtime_quote_tencent",
-    })
-
-    def reserve_rate_limit_slot(self, method_name: str = "") -> float:
-        """T29: 预约下一个发送时间槽，返回发送前还应等待的秒数。
-
-        方法内部第一次 ``_enforce_rate_limit`` 会消费该槽位、不再重复等待。
-        新浪/腾讯单股直连接口只按最小间隔，不加随机抖动。
-        """
-        jitter = method_name not in self.rate_limit_jitterless_methods
-        delay = self._reserve_rate_limit_delay(jitter=jitter)
-        self._rate_limit_tls.managed = True
-        self._rate_limit_tls.slot_reserved = True
-        return delay
-
-    def end_managed_call(self) -> None:
-        """T29: 结束托管调用，清理本次调用遗留的限速状态。"""
-        self._rate_limit_tls.managed = False
-        self._rate_limit_tls.slot_reserved = False
 
     def _reserve_rate_limit_delay(self, *, jitter: bool = True) -> float:
         """T29: 登记本次请求槽位并返回应当等待的秒数（含 jitter，不睡眠）。
@@ -537,20 +513,14 @@ class AkshareFetcher(BaseFetcher):
                 self._rate_limit_lock.release()
 
     def _enforce_rate_limit(self, *, jitter: bool = True) -> None:
-        """
-        强制执行速率限制
+        """Wait for this source's next request slot, right before sending.
 
-        策略：
-        1. 托管调用：第一个请求直接消费管理器已预约的槽位，不再等待
-        2. 其它情况（直接调用、同一次调用内的后续请求）：预约槽位后原地睡眠
-        3. 不依赖任何共享锁进行睡眠
-
-        T3: 交互模式下只保留最小间隔休眠，跳过随机休眠以减少延迟
-        T29: 等待发生在真正发请求之前；腾讯/新浪单股直连接口传 jitter=False
+        The slot is reserved atomically and waited for in place, so requests to
+        the same source stay at least ``sleep_min`` apart from their actual send
+        times, whichever thread or call path they come from. Single-stock direct
+        endpoints (Tencent/Sina) pass ``jitter=False``; interactive mode (Ask
+        Stock) also skips the random jitter.
         """
-        if getattr(self._rate_limit_tls, "slot_reserved", False):
-            self._rate_limit_tls.slot_reserved = False
-            return
         delay = self._reserve_rate_limit_delay(jitter=jitter)
         if delay > 0:
             logger.debug(f"补充休眠 {delay:.2f} 秒")

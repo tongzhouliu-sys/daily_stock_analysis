@@ -66,16 +66,13 @@ def isolated_application_environment():
         auth._rate_limit = {}
         # T28: 全市场表按天缓存是进程级的，测试之间必须清空，
         # 否则前一个用例伪造的 akshare 结果会泄漏到后续用例。
-        # T29: 基本面模块级限速器同样是进程级的，且默认间隔来自配置（秒级）。
-        # 这里统一关掉间隔，让非限速用例保持原有的耗时契约；
-        # 限速行为本身由 tests/test_rate_limit_slot.py 显式覆盖。
+        # 基本面模块级并发限制器同样是进程级的。测试使用生产默认值（不覆盖），
+        # 这样并发饿死这类问题能在测试里暴露；限制器本身由
+        # tests/test_rate_limit_slot.py 显式覆盖。
         from data_provider import fundamental_adapter as _fundamental_adapter
 
         _fundamental_adapter._clear_daily_table_cache()
         _fundamental_adapter._clear_source_rate_limiters_for_tests()
-        _fundamental_adapter._get_source_rate_limiter(
-            _fundamental_adapter._FUNDAMENTAL_DEFAULT_SOURCE
-        ).min_interval = 0.0
         yield
         _fundamental_adapter._clear_daily_table_cache()
         _fundamental_adapter._clear_source_rate_limiters_for_tests()

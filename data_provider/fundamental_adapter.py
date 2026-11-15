@@ -35,31 +35,22 @@ _abandoned_call_threads = 0
 _abandoned_call_threads_lock = threading.Lock()
 
 
-# T29: 基本面并行块共用的按数据源限速器。
-# 基本面 4 个块改并行之后会同时调用 akshare，而这些调用不经过
-# DataFetcherManager 的单实例调用锁，也不走 fetcher 的 ``_enforce_rate_limit``，
-# 单只股票对上游的并发量约为串行实现的 4 倍。这里按数据源共享一个模块级限速器：
-# 同一数据源的请求保持与 fetcher 一致的最小间隔（``akshare_sleep_min``），
-# 同时在途请求数不超过 ``_FUNDAMENTAL_SOURCE_MAX_CONCURRENCY``。
-_FUNDAMENTAL_SOURCE_MAX_CONCURRENCY = 2
+# 基本面并行块共用的按数据源并发限制器。
+# 基本面各块并行调用 akshare，这些调用不经过 DataFetcherManager 的单实例调用锁。
+# 这里按数据源限制同时在途的请求数；不再额外施加最小间隔：审计基线里这些
+# 基本面接口本来就没有间隔，而复用日线抓取的 2 秒间隔会让并发分析的多只股票
+# 在 8 秒的阶段预算内排不上队，资金流因此"预算耗尽"，买入被系统性降级。
+# 上限 4 约等于原先 3 个 worker 串行抓取时的上游并发量。
+_FUNDAMENTAL_SOURCE_MAX_CONCURRENCY = 4
 _FUNDAMENTAL_DEFAULT_SOURCE = "akshare"
 
 
-def _resolve_source_min_interval() -> float:
-    """读取与 fetcher 一致的最小请求间隔；读不到时按 0 处理（不额外限速）。"""
-    try:
-        from src.config import get_config
-
-        return max(0.0, float(getattr(get_config(), "akshare_sleep_min", 0.0) or 0.0))
-    except Exception:  # noqa: BLE001 - 配置不可用时不影响取数
-        return 0.0
-
-
 class _SourceRateLimiter:
-    """按数据源共享的最小间隔 + 并发上限限速器。
+    """按数据源共享的并发上限（可选最小间隔）限制器。
 
-    预约（记账）在短锁内完成，睡眠发生在限速器自己的信号量之外，
-    因此等待中的调用不会占住并发槽位。
+    预约（记账）在短锁内完成；等待并发槽位受调用方预算约束。槽位由实际执行
+    调用的线程在调用结束时归还（见 ``_call_with_deadline``），超时被放弃的调用
+    在真正返回之前一直占着槽位，在途请求数因此不会超过上限。
     """
 
     def __init__(self, max_concurrency: int = _FUNDAMENTAL_SOURCE_MAX_CONCURRENCY) -> None:
@@ -67,7 +58,7 @@ class _SourceRateLimiter:
         self._slots = threading.BoundedSemaphore(self._max_concurrency)
         self._accounting_lock = threading.Lock()
         self._last_request_time: Optional[float] = None
-        self._min_interval: Optional[float] = None
+        self._min_interval = 0.0
 
     @property
     def max_concurrency(self) -> int:
@@ -75,8 +66,6 @@ class _SourceRateLimiter:
 
     @property
     def min_interval(self) -> float:
-        if self._min_interval is None:
-            self._min_interval = _resolve_source_min_interval()
         return self._min_interval
 
     @min_interval.setter
@@ -84,19 +73,19 @@ class _SourceRateLimiter:
         self._min_interval = max(0.0, float(value))
 
     def acquire(self, max_wait: Optional[float] = None) -> bool:
-        """预约并等待槽位。
+        """等待间隔与并发槽位。
 
         Args:
-            max_wait: 允许等待的上限（秒）。``None`` 表示不限。超出上限时不预约、
-                不等待，返回 ``False``，由调用方按"预算耗尽"处理——块级预算仍然
-                是硬约束，限速不能把一次聚合拖过预算。
+            max_wait: 允许等待的总上限（秒），``None`` 表示不限。间隔等待加槽位
+                等待超过上限时返回 ``False``，由调用方按"预算耗尽"处理。
 
         Returns:
-            ``True`` 表示已拿到槽位（调用方必须 ``release``）。
+            ``True`` 表示已拿到槽位，调用方必须保证恰好归还一次。
         """
+        started = time.monotonic()
         with self._accounting_lock:
             now = time.time()
-            interval = self.min_interval
+            interval = self._min_interval
             delay = 0.0
             if interval > 0 and self._last_request_time is not None:
                 delay = max(0.0, interval - (now - self._last_request_time))
@@ -106,8 +95,11 @@ class _SourceRateLimiter:
                 self._last_request_time = now + delay
         if delay > 0:
             time.sleep(delay)
-        self._slots.acquire()
-        return True
+        if max_wait is None:
+            self._slots.acquire()
+            return True
+        remaining = max(0.0, max_wait - (time.monotonic() - started))
+        return self._slots.acquire(timeout=remaining)
 
     def release(self) -> None:
         self._slots.release()
@@ -290,16 +282,38 @@ def _call_with_deadline(
     kwargs: Dict[str, Any],
     timeout: Optional[float],
     label: str,
+    on_done: Optional[Callable[[], None]] = None,
 ) -> Any:
-    """在独立线程里执行一次接口调用，超过 timeout 即放弃等待。"""
+    """在独立线程里执行一次接口调用，超过 timeout 即放弃等待。
+
+    ``on_done`` 恰好调用一次，时机是底层调用真正结束时：超时被放弃的调用会在
+    后台线程返回后才触发，用于归还并发槽位。
+    """
+    done_lock = threading.Lock()
+    done = {"called": False}
+
+    def _finish() -> None:
+        if on_done is None:
+            return
+        with done_lock:
+            if done["called"]:
+                return
+            done["called"] = True
+        on_done()
+
     if timeout is None:
-        return func(**kwargs)
+        try:
+            return func(**kwargs)
+        finally:
+            _finish()
     if timeout <= 0:
+        _finish()
         raise TimeoutError(f"{label} 无剩余预算")
 
     global _abandoned_call_threads
     with _abandoned_call_threads_lock:
         if _abandoned_call_threads >= _FUNDAMENTAL_MAX_ABANDONED_CALL_THREADS:
+            _finish()
             raise TimeoutError(f"{label} 弃置调用过多，跳过本次请求")
         _abandoned_call_threads += 1
 
@@ -315,6 +329,7 @@ def _call_with_deadline(
         finally:
             with _abandoned_call_threads_lock:
                 _abandoned_call_threads -= 1
+            _finish()
 
     worker = threading.Thread(
         target=_runner,
@@ -721,9 +736,8 @@ class AkshareFundamentalAdapter:
             if call_timeout is not None and call_timeout <= 0:
                 errors.append(f"{func_name}:budget_exhausted")
                 break
-            # T29: 同一数据源的 akshare 调用共用模块级限速器，
-            # 保证并行块之间的请求间隔与并发上限。槽位等待不能突破块级预算：
-            # 等不到槽位就按预算耗尽跳过，避免限速把一次聚合拖过预算。
+            # 同一数据源的 akshare 调用共用模块级并发限制器。等不到槽位按预算
+            # 耗尽跳过；槽位由 _call_with_deadline 在底层调用真正结束时归还。
             limiter = _get_source_rate_limiter(_FUNDAMENTAL_DEFAULT_SOURCE)
             remaining = (
                 None if deadline is None else max(0.0, deadline - time.monotonic())
@@ -731,12 +745,15 @@ class AkshareFundamentalAdapter:
             if not limiter.acquire(max_wait=remaining):
                 errors.append(f"{func_name}:budget_exhausted")
                 break
+            call_timeout = _resolve_call_timeout(deadline, budget_seconds)
+            if call_timeout is not None and call_timeout <= 0:
+                limiter.release()
+                errors.append(f"{func_name}:budget_exhausted")
+                break
             try:
-                call_timeout = _resolve_call_timeout(deadline, budget_seconds)
-                if call_timeout is not None and call_timeout <= 0:
-                    errors.append(f"{func_name}:budget_exhausted")
-                    break
-                df = _call_with_deadline(fn, dict(kwargs), call_timeout, func_name)
+                df = _call_with_deadline(
+                    fn, dict(kwargs), call_timeout, func_name, on_done=limiter.release,
+                )
                 if isinstance(df, pd.Series):
                     df = df.to_frame().T
                 if isinstance(df, pd.DataFrame) and not df.empty:
@@ -751,8 +768,6 @@ class AkshareFundamentalAdapter:
             except Exception as exc:
                 errors.append(f"{func_name}:{type(exc).__name__}")
                 continue
-            finally:
-                limiter.release()
         return None, None, errors
 
     def get_fundamental_bundle(

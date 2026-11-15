@@ -2,7 +2,7 @@
 """T28 取数提速回归测试。
 
 覆盖三条真实风险路径：
-1. 限速等待发生在数据源调用锁之外（并发 worker 不会被一个慢限速连带阻塞）
+1. 限速在真正发请求时生效：慢请求之后的请求仍保持间隔，免抖动接口不被加抖动，缓存命中不占用槽位
 2. 全市场表进程内按天缓存命中 / 跨日失效 / 不缓存逐股接口
 3. 基本面单接口限时，慢接口不会把已取到的块一起作废
 """
@@ -39,79 +39,74 @@ def test_reserve_rate_limit_delay_is_pure_accounting():
     assert elapsed < 0.2
 
 
-def test_managed_call_defers_sleep_outside_lock():
+def _manager_and_fetcher(sleep_min: float, sleep_max: float):
     manager = DataFetcherManager(fetchers=[])
     fetcher = AkshareFetcher()
-    fetcher.sleep_min = 0.01
-    fetcher.sleep_max = 0.02
+    fetcher.sleep_min = sleep_min
+    fetcher.sleep_max = sleep_max
     fetcher._last_request_time = None
-    observed: dict[str, float] = {}
+    return manager, fetcher
 
-    def fake_method(**kwargs):
-        # 方法内部执行限速：管理器已预约槽位，这里不再睡眠
+
+def test_requests_stay_spaced_when_an_earlier_request_is_slow():
+    # A slot reserved before waiting for the call lock used to expire while a
+    # slow request held the lock; the queued requests then went out back to back.
+    manager, fetcher = _manager_and_fetcher(0.3, 0.3)
+    sent_at: list[float] = []
+    sent_lock = threading.Lock()
+
+    def fetch(slow: bool):
+        fetcher._enforce_rate_limit(jitter=False)
+        with sent_lock:
+            sent_at.append(time.monotonic())
+        time.sleep(1.0 if slow else 0.01)
+        return "ok"
+
+    fetcher.__dict__["fetch"] = fetch
+    threads = [
+        threading.Thread(target=manager._call_fetcher_method, args=(fetcher, "fetch", index == 0))
+        for index in range(4)
+    ]
+    threads[0].start()
+    time.sleep(0.05)  # the slow request goes first
+    for thread in threads[1:]:
+        thread.start()
+    for thread in threads:
+        thread.join(timeout=10)
+
+    sent_at.sort()
+    gaps = [later - earlier for earlier, later in zip(sent_at, sent_at[1:])]
+    assert len(sent_at) == 4
+    assert min(gaps) >= 0.27, gaps
+
+
+def test_jitterless_endpoint_gets_no_jitter_through_the_manager():
+    manager, fetcher = _manager_and_fetcher(0.0, 0.5)
+
+    def tencent_quote():
+        fetcher._enforce_rate_limit(jitter=False)
+        return "quote"
+
+    fetcher.__dict__["get_realtime_quote"] = tencent_quote
+    with patch.object(fetcher, "random_sleep_seconds", return_value=0.4):
         started = time.monotonic()
-        fetcher._enforce_rate_limit()
-        observed["inside"] = time.monotonic() - started
-        lock = manager._get_fetcher_call_lock(fetcher)
-        observed["lock_free"] = 1.0 if lock.acquire(blocking=False) else 0.0
-        if observed["lock_free"]:
-            lock.release()
-        return "done"
+        assert manager._call_fetcher_method(fetcher, "get_realtime_quote") == "quote"
+        elapsed = time.monotonic() - started
 
-    fetcher.__dict__["fake_method"] = fake_method  # 绑定实例，method 调用无需 self
-    slept: list[float] = []
-
-    def fake_sleep(seconds):
-        slept.append(seconds)
-
-    started = time.monotonic()
-    with patch("data_provider.base.time.sleep", side_effect=fake_sleep):
-        result = manager._call_fetcher_method(fetcher, "fake_method")
-    elapsed = time.monotonic() - started
-
-    assert result == "done"
-    # 方法内部不睡眠（ReentrantLock 同线程可重入，用耗时判断更直观）
-    assert observed["inside"] < 0.01
-    assert observed["lock_free"] == 1.0
-    # T29: 等待发生在进入调用锁之前，方法内部直接消费已预约的槽位
-    assert slept and slept[0] >= 0.01
     assert elapsed < 0.2
 
 
-def test_managed_flag_is_cleared_after_call():
-    manager = DataFetcherManager(fetchers=[])
-    fetcher = AkshareFetcher()
-    fetcher.sleep_min = 0.0
-    fetcher.sleep_max = 0.0
+def test_calls_that_never_hit_the_network_do_not_wait_for_a_slot():
+    manager, fetcher = _manager_and_fetcher(0.3, 0.3)
 
-    def fake_method(**_kwargs):
-        fetcher._enforce_rate_limit()
-        return "ok"
+    def cached_lookup():
+        return "cached"  # no _enforce_rate_limit: nothing is sent
 
-    fetcher.__dict__["fake_method"] = fake_method
-    manager._call_fetcher_method(fetcher, "fake_method")
-
-    assert getattr(fetcher._rate_limit_tls, "managed", False) is False
-    assert getattr(fetcher._rate_limit_tls, "slot_reserved", False) is False
-
-
-def test_managed_flag_cleared_when_method_raises():
-    manager = DataFetcherManager(fetchers=[])
-    fetcher = AkshareFetcher()
-    fetcher.sleep_min = 0.0
-    fetcher.sleep_max = 0.0
-
-    def boom(**_kwargs):
-        fetcher._enforce_rate_limit()
-        raise RuntimeError("boom")
-
-    fetcher.__dict__["boom"] = boom
-    try:
-        manager._call_fetcher_method(fetcher, "boom")
-    except RuntimeError:
-        pass
-
-    assert getattr(fetcher._rate_limit_tls, "managed", False) is False
+    fetcher.__dict__["cached_lookup"] = cached_lookup
+    started = time.monotonic()
+    for _ in range(3):
+        assert manager._call_fetcher_method(fetcher, "cached_lookup") == "cached"
+    assert time.monotonic() - started < 0.1
 
 
 def test_daily_cache_reuses_market_wide_table(monkeypatch):
