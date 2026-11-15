@@ -8,6 +8,8 @@ and this project adheres to [Semantic Versioning](https://semver.org/).
 > For user-friendly release highlights, see the [GitHub Releases](https://github.com/ZhuLinsen/daily_stock_analysis/releases) page.
 
 ## [Unreleased]
+- [改进] 通知分发收敛为 `NotificationService.send_with_results()` 单一实现，pipeline 不再维护按渠道分支，新增逐渠道诊断回调、邮件分组与微信仪表盘内容处理。
+
 
 - [修复] 美股超跌反弹回测引擎修正：没有行业数据时不再把所有标的都算作同一个 `UNKNOWN` 行业而最多只持 2 只；买入委托只在信号次日开盘有效，未成交即作废，不再用陈旧信号在之后有空位时成交；预热期改取回测起点之前的历史，不再占用回测区间；按 `data10/splits.csv` 对价格和成交量做拆股复权，拆股不再被当成超跌信号；股票池如实命名为「美国全市场日线（含中途上市/退市，非标普 500 成分）」，加载器允许中途上市与退市；做空策略权益改为「现金 − 现价 × 剩余股数」，融券费与分红计入现金；成交记录同时写 `net_pnl`/`realized_pnl`，胜率不再恒为 0；保本与跟踪止损改用上一交易日的数据，避免用当日最低价挪止损再拿当日开盘价判止损；分批止盈按批次累计盈亏。新增 `scripts/signal_scanner/build_rebound_input.py` 作为 data10 → 回测输入的唯一转换入口。
 - [修复] 日线数据新鲜度显式化：盘中抓到的当日 K 线是累计值，落库后会被当成完整日线并让收盘后同日重跑被「今日已有数据」挡住，现在保存前只保留到最近已收盘交易日，未收盘行不入库（pipeline 取数、agent 历史预取、`history_loader` 回写三条写库路径一致处理）；抓取失败回退到库内旧数据时，上下文与提示词写明「日线数据截至 X（落后 N 个交易日）」，`daily_bars` 数据块降级为 `stale` 并相应扣减数据质量分，行情表标题改为「最新可得行情」，不再把多日前的行情当作今日行情。

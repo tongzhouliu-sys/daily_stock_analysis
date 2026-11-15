@@ -256,6 +256,12 @@ P3 新增三类通知路由配置：
 
 P5 强化聚合报告通知路径的失败边界：`_send_notifications()` 在 report 路由过滤后对每个静态通知渠道单独发送。某个渠道抛异常会记录日志并视为该渠道失败，但不会跳过后续渠道，也不会中断分析主流程。
 
+T38 起渠道分发只有一套实现：`StockAnalysisPipeline._send_notifications()` 只负责生成聚合报告、保存本地报告和记录历史诊断，实际渠道遍历、路由过滤、Markdown 转图片、降噪、邮件分组与逐渠道异常隔离全部由 `NotificationService.send_with_results()` 完成。pipeline 不再出现 `if channel == ...` 的渠道分支，新增渠道只需接入 `_send_to_static_channel()`。
+
+- `send_with_results()` 新增 `results` / `report_builder` / `report_type` / `on_channel_result` 四个可选参数，用于报告路由下的微信仪表盘内容、邮件分组内容和逐渠道诊断回调；不传时保持旧的纯文本发送行为。
+- 企业微信报告路由使用 `generate_wechat_dashboard()`（BRIEF 模式使用 `generate_brief_report()`）生成紧凑内容，并由该内容单独生成图片，其他渠道使用完整聚合报告。
+- 邮件分组在 `NotificationService.group_results_by_email_receivers()` 内完成，命中分组的结果只包含本组股票，未命中分组的结果发往默认收件人；逐组失败互不影响。
+
 - 邮件按 receiver group 单独隔离；某个收件人分组失败时，后续分组仍会继续发送。
 - 任一静态渠道发送成功时，P4 降噪 reservation 会写入正式记录；全部静态渠道失败或抛异常时，会释放 reservation。
 - `send_to_context()` 仍独立于静态渠道 route 和降噪记录，用于回复触发任务的 Bot 会话上下文。

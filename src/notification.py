@@ -20,7 +20,7 @@ import logging
 import time
 from dataclasses import dataclass, field
 from datetime import datetime
-from typing import List, Dict, Any, Optional, Tuple, TYPE_CHECKING
+from typing import List, Dict, Any, Optional, Tuple, TYPE_CHECKING, Callable
 from enum import Enum
 
 from src.config import Config, get_config
@@ -89,6 +89,28 @@ from src.notification_sender import (
 )
 
 logger = logging.getLogger(__name__)
+
+
+def _share_image_payload(result: Any) -> Optional[Dict[str, Any]]:
+    """Return structured poster data when the result exposes the real contract."""
+
+    to_dict = getattr(result, "to_dict", None)
+    if not callable(to_dict):
+        return None
+    try:
+        payload = to_dict()
+    except Exception as exc:
+        logger.debug("构建分享图片结构化数据失败，回退 Markdown: %s", exc)
+        return None
+    return payload if isinstance(payload, dict) and payload else None
+
+
+def _structured_payload_for(group: Optional[List[Any]]) -> Optional[Dict[str, Any]]:
+    """Per-group poster payload: only meaningful for a single-stock group."""
+
+    if group is not None and len(group) == 1:
+        return _share_image_payload(group[0])
+    return None
 
 
 def _safe_float(value: Any) -> Optional[float]:
@@ -2596,6 +2618,42 @@ class NotificationService(
     def _sanitize_notification_diagnostics(text: Any) -> str:
         return sanitize_diagnostic_text(text)
 
+    def _build_report_dashboard(self, results: List[Any], report_type: str) -> str:
+        """Build the compact WeChat content for a daily report route."""
+
+        if str(report_type or "").strip().lower() == ReportType.BRIEF.value:
+            return self.generate_brief_report(results)
+        return self.generate_wechat_dashboard(results)
+
+    def group_results_by_email_receivers(
+        self,
+        results: List[Any],
+        email_stock_codes: Optional[List[str]] = None,
+    ) -> List[Tuple[Optional[List[str]], List[Any]]]:
+        """Split results by the receivers configured in ``stock_email_groups``.
+
+        Preserves first-seen ordering and mirrors the historical routing rule:
+        results that match no group are sent to the default receivers (``None``).
+        """
+
+        groups: Dict[Optional[Tuple[str, ...]], List[Any]] = {}
+        from data_provider.base import normalize_stock_code
+
+        for result in results:
+            canonical = normalize_stock_code(str(getattr(result, "code", "") or ""))
+            receivers: List[str] = []
+            for stocks, emails in self._stock_email_groups:
+                if canonical in stocks:
+                    receivers.extend(emails)
+            key: Optional[Tuple[str, ...]] = (
+                tuple(dict.fromkeys(receivers)) if receivers else None
+            )
+            groups.setdefault(key, []).append(result)
+        return [
+            (list(key) if key is not None else None, items)
+            for key, items in groups.items()
+        ]
+
     def _send_to_static_channel(
         self,
         channel: NotificationChannel,
@@ -2605,6 +2663,7 @@ class NotificationService(
         email_stock_codes: Optional[List[str]],
         email_send_to_all: bool,
         route_type: Optional[str] = None,
+        email_receivers: Optional[List[str]] = None,
     ) -> bool:
         use_image = self._should_use_image_for_channel(channel, image_bytes)
         sanitized_content = strip_hidden_markdown_metadata(content).strip()
@@ -2627,11 +2686,12 @@ class NotificationService(
                 return self._send_telegram_photo(image_bytes)
             return self.send_to_telegram(content)
         if channel == NotificationChannel.EMAIL:
-            receivers = None
-            if email_send_to_all and self._stock_email_groups:
-                receivers = self.get_all_email_receivers()
-            elif email_stock_codes and self._stock_email_groups:
-                receivers = self.get_receivers_for_stocks(email_stock_codes)
+            receivers = email_receivers
+            if receivers is None:
+                if email_send_to_all and self._stock_email_groups:
+                    receivers = self.get_all_email_receivers()
+                elif email_stock_codes and self._stock_email_groups:
+                    receivers = self.get_receivers_for_stocks(email_stock_codes)
             if use_image:
                 return self._send_email_with_inline_image(image_bytes, receivers=receivers)
             return self.send_to_email(
@@ -2673,6 +2733,13 @@ class NotificationService(
         dedup_key: Optional[str] = None,
         cooldown_key: Optional[str] = None,
         structured_payload: Optional[Dict[str, Any]] = None,
+        *,
+        results: Optional[List[Any]] = None,
+        report_builder: Optional[Callable[[List[Any]], str]] = None,
+        report_type: Optional[str] = None,
+        on_channel_result: Optional[
+            Callable[[str, bool, Optional[BaseException], Optional[List[Any]]], None]
+        ] = None,
     ) -> NotificationDispatchResult:
         """
         Send a notification and return per-channel diagnostics.
@@ -2699,6 +2766,11 @@ class NotificationService(
             Structured dispatch diagnostics.
         """
         context_success = self.send_to_context(content)
+        if context_success and on_channel_result is not None:
+            try:
+                on_channel_result("__context__", True, None, None)
+            except Exception:
+                logger.exception("通知渠道结果回调失败: __context__")
         if not self.should_broadcast_static_channels():
             if context_success:
                 logger.info("已通过上下文会话完成推送，跳过静态通知渠道")
@@ -2786,29 +2858,45 @@ class NotificationService(
             if ch.value in self._markdown_to_image_channels
             and ch not in {NotificationChannel.NTFY, NotificationChannel.GOTIFY}
         }
-        if channels_needing_image:
-            from src.md2img import markdown_to_image
-            image_bytes = markdown_to_image(
-                content,
-                max_chars=self._markdown_to_image_max_chars,
-                structured_payload=structured_payload,
+
+        def _md2img_hint() -> str:
+            try:
+                engine = getattr(get_config(), "md2img_engine", "wkhtmltoimage")
+            except Exception:
+                engine = "wkhtmltoimage"
+            return (
+                "npm i -g markdown-to-file" if engine == "markdown-to-file"
+                else "wkhtmltopdf (apt install wkhtmltopdf / brew install wkhtmltopdf)"
             )
+
+        def _convert_to_image(text: str, payload: Optional[Dict[str, Any]]) -> Optional[bytes]:
+            from src.md2img import markdown_to_image
+            kwargs: Dict[str, Any] = {"max_chars": self._markdown_to_image_max_chars}
+            if payload is not None:
+                kwargs["structured_payload"] = payload
+            return markdown_to_image(text, **kwargs)
+
+        # WeChat renders its own compact dashboard for report routes, so its
+        # poster has to be rendered from that content instead of the full
+        # aggregate report. Other callers keep the historical behaviour of
+        # rendering the content they passed in.
+        use_wechat_dashboard = bool(results) and bool(report_type)
+        base_image_channels = set(channels_needing_image)
+        if use_wechat_dashboard:
+            base_image_channels.discard(NotificationChannel.WECHAT)
+
+        image_bytes = None
+        if base_image_channels:
+            image_bytes = _convert_to_image(content, structured_payload)
             if image_bytes:
-                logger.info("Markdown 已转换为图片，将向 %s 发送图片",
-                            [ch.value for ch in channels_needing_image])
-            elif channels_needing_image:
-                try:
-                    from src.config import get_config
-                    engine = getattr(get_config(), "md2img_engine", "wkhtmltoimage")
-                except Exception:
-                    engine = "wkhtmltoimage"
-                hint = (
-                    "npm i -g markdown-to-file" if engine == "markdown-to-file"
-                    else "wkhtmltopdf (apt install wkhtmltopdf / brew install wkhtmltopdf)"
+                logger.info(
+                    "Markdown 已转换为图片，将向 %s 发送图片",
+                    [ch.value for ch in base_image_channels],
                 )
+            else:
                 logger.warning(
                     "Markdown 转图片失败，将回退为文本发送。请检查 MARKDOWN_TO_IMAGE_CHANNELS 配置并安装 %s",
-                    hint,
+                    _md2img_hint(),
                 )
 
         channel_names = ', '.join(ChannelDetector.get_channel_name(ch) for ch in target_channels)
@@ -2818,47 +2906,131 @@ class NotificationService(
         fail_count = 0
         channel_results: List[ChannelAttemptResult] = []
 
-        for channel in target_channels:
-            channel_name = ChannelDetector.get_channel_name(channel)
+        def _attempt(
+            label: str,
+            send_callable: Callable[[], Any],
+            targeted_results: Optional[List[Any]] = None,
+        ) -> Tuple[bool, Optional[BaseException], int]:
             started_at = time.monotonic()
+            error: Optional[BaseException] = None
             try:
-                result = self._send_to_static_channel(
+                ok = bool(send_callable())
+            except Exception as exc:  # one channel must not break the others
+                logger.error("%s 发送失败: %s", label, exc)
+                ok, error = False, exc
+            latency_ms = int((time.monotonic() - started_at) * 1000)
+            if on_channel_result is not None:
+                try:
+                    on_channel_result(label, ok, error, targeted_results)
+                except Exception:
+                    logger.exception("通知渠道结果回调失败: %s", label)
+            return ok, error, latency_ms
+
+        def _record_attempt_result(
+            channel: NotificationChannel,
+            ok: bool,
+            error: Optional[BaseException],
+            latency_ms: int,
+            label: Optional[str] = None,
+        ) -> None:
+            nonlocal success_count, fail_count
+            if ok:
+                success_count += 1
+            else:
+                fail_count += 1
+            channel_results.append(
+                ChannelAttemptResult(
+                    channel=label or channel.value,
+                    success=ok,
+                    error_code=None if ok else ("exception" if error else "send_failed"),
+                    retryable=not ok,
+                    latency_ms=latency_ms,
+                    diagnostics=(
+                        self._sanitize_notification_diagnostics(str(error))
+                        if error else None
+                    ),
+                )
+            )
+
+        for channel in target_channels:
+            channel_content = content
+            if use_wechat_dashboard and channel == NotificationChannel.WECHAT:
+                channel_content = self._build_report_dashboard(results, report_type or "")
+                logger.info(f"企业微信仪表盘长度: {len(channel_content)} 字符")
+
+            channel_image = image_bytes
+            if (
+                channel == NotificationChannel.WECHAT
+                and channel in channels_needing_image
+                and channel_content is not content
+            ):
+                channel_image = _convert_to_image(channel_content, structured_payload)
+                if channel_image is None:
+                    logger.warning(
+                        "企业微信 Markdown 转图片失败，将回退为文本发送。请检查 MARKDOWN_TO_IMAGE_CHANNELS 配置并安装 %s",
+                        _md2img_hint(),
+                    )
+
+            email_groups: Optional[List[Tuple[Optional[List[str]], List[Any]]]] = None
+            if (
+                channel == NotificationChannel.EMAIL
+                and results
+                and report_builder is not None
+                and not email_send_to_all
+                and self._stock_email_groups
+            ):
+                email_groups = self.group_results_by_email_receivers(
+                    results, email_stock_codes
+                )
+
+            if email_groups:
+                image_failure_logged = False
+                for receivers, group_results in email_groups:
+                    label = (
+                        f"{channel.value}:{','.join(receivers)}"
+                        if receivers else f"{channel.value}:default"
+                    )
+                    group_content = report_builder(group_results)
+                    group_image = None
+                    if channel in channels_needing_image:
+                        group_image = _convert_to_image(
+                            group_content,
+                            _structured_payload_for(group_results),
+                        )
+                        if group_image is None and not image_failure_logged:
+                            image_failure_logged = True
+                            logger.warning(
+                                "Markdown 转图片失败，将回退为文本发送。请检查 MARKDOWN_TO_IMAGE_CHANNELS 配置并安装 %s",
+                                _md2img_hint(),
+                            )
+                    ok, error, latency_ms = _attempt(
+                        label,
+                        lambda group_content=group_content, receivers=receivers, group_image=group_image: self._send_to_static_channel(
+                            channel,
+                            group_content,
+                            image_bytes=group_image,
+                            email_stock_codes=email_stock_codes,
+                            email_send_to_all=email_send_to_all,
+                            route_type=route_type,
+                            email_receivers=receivers,
+                        ),
+                        group_results,
+                    )
+                    _record_attempt_result(channel, ok, error, latency_ms, label=label)
+                continue
+
+            ok, error, latency_ms = _attempt(
+                channel.value,
+                lambda channel=channel, channel_content=channel_content, channel_image=channel_image: self._send_to_static_channel(
                     channel,
-                    content,
-                    image_bytes=image_bytes,
+                    channel_content,
+                    image_bytes=channel_image,
                     email_stock_codes=email_stock_codes,
                     email_send_to_all=email_send_to_all,
                     route_type=route_type,
-                )
-                latency_ms = int((time.monotonic() - started_at) * 1000)
-
-                if result:
-                    success_count += 1
-                else:
-                    fail_count += 1
-                channel_results.append(
-                    ChannelAttemptResult(
-                        channel=channel.value,
-                        success=bool(result),
-                        error_code=None if result else "send_failed",
-                        retryable=not bool(result),
-                        latency_ms=latency_ms,
-                    )
-                )
-
-            except Exception as e:
-                logger.error(f"{channel_name} 发送失败: {e}")
-                fail_count += 1
-                channel_results.append(
-                    ChannelAttemptResult(
-                        channel=channel.value,
-                        success=False,
-                        error_code="exception",
-                        retryable=True,
-                        latency_ms=int((time.monotonic() - started_at) * 1000),
-                        diagnostics=self._sanitize_notification_diagnostics(str(e)),
-                    )
-                )
+                ),
+            )
+            _record_attempt_result(channel, ok, error, latency_ms)
 
         logger.info(f"通知发送完成：成功 {success_count} 个，失败 {fail_count} 个")
         if success_count > 0:
