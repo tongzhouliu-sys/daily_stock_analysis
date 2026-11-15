@@ -307,10 +307,6 @@ class E19MissingFxTestCase(unittest.TestCase):
         self.assertEqual(source, FX_SOURCE_MISSING)
 
 
-if __name__ == "__main__":
-    unittest.main()
-
-
 class R19SparseCashFlowTestCase(unittest.TestCase):
     def test_withdrawal_between_snapshots_is_charged_to_the_later_snapshot(self):
         """Friday 1,000,000 -> Monday 700,000 with a Saturday 300,000 withdrawal is 0%."""
@@ -406,3 +402,7 @@ class R19ConcentrationFxTestCase(unittest.TestCase):
         self.assertAlmostEqual(concentration["top_positions"][0]["weight_pct"], 100.0, places=4)
         self.assertAlmostEqual(concentration["total_market_value"], 72_000.0, places=4)
         self.assertEqual(concentration["excluded_missing_price_count"], 1)
+
+
+if __name__ == "__main__":
+    unittest.main()

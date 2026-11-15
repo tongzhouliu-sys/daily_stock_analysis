@@ -15,7 +15,7 @@ from unittest.mock import patch
 
 import pandas as pd
 
-from src.config import Config, DEFAULT_BACKTEST_ENGINE_VERSION, DEFAULT_BACKTEST_ENGINE_VERSION
+from src.config import Config, DEFAULT_BACKTEST_ENGINE_VERSION
 from src.core.backtest_engine import BACKTEST_STATUS_COMPLETED, OVERALL_SENTINEL_CODE
 from src.repositories.backtest_repo import BacktestRepository
 from src.services.backtest_service import BacktestService
