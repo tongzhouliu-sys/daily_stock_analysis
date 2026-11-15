@@ -5,8 +5,9 @@
 既消耗 token，也让下一轮与上一轮并发。这里按 ``run_id``（即客户端 request_id）
 注册一个 ``threading.Event``：
 
-- ``POST /api/v1/agent/chat/stop`` 置位；
-- SSE 生成器因客户端断开结束时置位；
+- ``POST /api/v1/agent/chat/stop`` 置位（停止按钮唯一的取消入口）；
+- 客户端断开（刷新、关页面、断网）**不**置位：后端继续跑完并落库，
+  前端重新进入会话靠轮询恢复；
 - ``run_agent_loop`` 在每个检查点读取，退出后由生成器 ``release_run`` 回收。
 
 设计上刻意保持进程内、无持久化：事件只在一次运行期间有意义，进程重启后

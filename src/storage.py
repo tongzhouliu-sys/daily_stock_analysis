@@ -97,7 +97,11 @@ def to_utc_isoformat(value: Optional[datetime]) -> Optional[str]:
 
 
 _PROCESS_STARTED_AT = utc_naive_now()
-_CHAT_RUNNING_STALE_AFTER = timedelta(seconds=90)
+
+# 运行心跳超过这个秒数没有刷新，就视为这一轮已中断（进程崩溃、线程被杀等）。
+# 单一定义，SSE 心跳、启动清理和“会话是否仍在运行”的判定都读这一处。
+CHAT_RUNNING_STALE_AFTER_SECONDS = 90
+_CHAT_RUNNING_STALE_AFTER = timedelta(seconds=CHAT_RUNNING_STALE_AFTER_SECONDS)
 
 
 # === 数据模型定义 ===

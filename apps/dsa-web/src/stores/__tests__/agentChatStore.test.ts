@@ -14,6 +14,7 @@ vi.mock('../../api/agent', async (importOriginal) => {
         session_state: { selected_skill_ids: [] }, is_running: false, running_progress_steps: [],
       })),
       chatStream: vi.fn(),
+      stopChat: vi.fn(async () => ({ success: true, cancelled: true })),
     },
   };
 });
@@ -419,8 +420,30 @@ describe('agentChatStore.startStream', () => {
 
     void useAgentChatStore.getState().stopStream();
 
+    // R7: 界面同步清空，不等停止接口往返；接口在后台按 request_id 取消。
     expect(ac.signal.aborted).toBe(true);
     expect(useAgentChatStore.getState().terminalStatus).toBe('stopped');
+    expect(useAgentChatStore.getState().loading).toBe(false);
+    expect(agentApi.stopChat).toHaveBeenCalledWith({
+      request_id: 'request-before-accepted',
+      session_id: 'session-test',
+    });
+  });
+
+  it('does not call the stop API when there is no request id to stop', () => {
+    vi.mocked(agentApi.stopChat).mockClear();
+    const ac = new AbortController();
+    useAgentChatStore.setState({
+      loading: true,
+      abortController: ac,
+      activeRequestId: null,
+      sessionId: 'session-test',
+    });
+
+    void useAgentChatStore.getState().stopStream();
+
+    expect(agentApi.stopChat).not.toHaveBeenCalled();
+    expect(ac.signal.aborted).toBe(true);
   });
 
   it('does not create a session or user message when stopped before accepted', async () => {
