@@ -1502,7 +1502,7 @@ Set the following variables in `.env` (all optional, have defaults):
 
 Backtesting triggers automatically after the daily analysis flow completes (non-blocking; failures do not affect notifications). It can also be triggered manually via API.
 
-> The engine version moved from `v1` to `v2` (E10/E11/E14 semantics changed). After the upgrade, the stats page only aggregates the new version; old rows stay in the database but are excluded from stats. The first automatic backtest re-evaluates every eligible historical analysis, so the per-run batch limit still applies but that first run is noticeably slower. Use `force=true` to trigger a manual recompute immediately.
+> The engine version moved from `v1` to `v2` with three semantic changes: analyses generated pre-market or intraday are evaluated from the same-day close instead of the previous close; stop-losses fill at the worse of the open and the stop price, and records with an invalid stop (a buy whose stop is not below the entry) are excluded; sell-type signals whose window return is between −2% and +2% count as neutral instead of hits. After the upgrade, the stats page only aggregates the new version; old rows stay in the database but are excluded from stats. The first automatic backtest re-evaluates every eligible historical analysis, so the per-run batch limit still applies but that first run is noticeably slower. Use `force=true` to trigger a manual recompute immediately.
 
 ### Evaluation Metrics
 

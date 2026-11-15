@@ -226,7 +226,7 @@ P5 通过 sidecar 表保存用户反馈和后验结果，不扩展 `decision_sig
 - 当前 `engine_version=decision-signal-v2`（E10/E11/E14 改变了评估口径后从 `decision-signal-v1` 升级）。旧版本记录保留在库里，但默认统计接口只按当前版本过滤，不参与统计页汇总；需要重算时用 `POST /api/v1/decision-signals/outcomes/run` 并带 `force=true`。
 - 命中定义（`neutral_band_pct=2.0`，neutral 不进入命中/未命中分母）：
   - 卖出类 `reduce/sell/avoid` 期望 `not_up`：区间收益 `<= -2%` 命中，`>= +2%` 未命中，中间为 neutral；
-  - 持有类 `hold` 期望 `not_down`：区间收益 `>= 0` 命中，`<= -2%` 未命中，其余按收益落点判定；
+  - 持有类 `hold` 期望 `not_down`：区间收益 `>= 0` 命中，`<= -2%` 未命中，`-2% < 收益 < 0` 为 neutral；
   - 买入类 `buy/add` 期望 `up`：`>= +2%` 命中，`<= -2%` 未命中；
   - `watch/alert` 等非方向动作写入 `unable(non_directional_action)`。
 - 后验评估只支持日线可验证的 `1d/3d/5d/10d`；`intraday/swing/long`、非方向动作、缺价和 forward bars 不足会写入 `eval_status=unable` 与明确 `unable_reason`。
