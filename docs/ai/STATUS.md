@@ -13,6 +13,7 @@
 | 首问引导（intake） | 新会话首问生成 1–5 个受控选项；后端不支持时前端回退 legacy 提示 | `api/v1/endpoints/agent.py:1121` |
 | 数据新鲜度标注 | 日线落后时报告写「截至 X（落后 N 个交易日）」并降级数据块 | `src/analyzer.py`、`src/core/pipeline.py` |
 | 分析任务取消 | `POST /api/v1/analysis/tasks/{task_id}/cancel`，排队即取消、运行中在进度检查点中止 | `api/v1/endpoints/analysis.py` |
+| 问股断开不取消 | 刷新/关页只断开 SSE，后台继续跑完；取消只认停止接口，断开后取消入口保留到执行体退出 | `api/v1/endpoints/agent.py`、`src/agent/cancellation.py` |
 | 选股单飞 | 已有 `pending/processing/cancel_requested` 选股任务时再次提交返回 409 | `api/v1/endpoints/screening.py` |
 | 问股页面拆分与记忆化 | 侧栏 / 消息 / 进度 / 输入 / 引导卡独立组件，打字不重渲染历史消息 | `apps/dsa-web/src/components/chat/` |
 

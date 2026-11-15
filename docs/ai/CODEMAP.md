@@ -15,16 +15,16 @@
 | `src/services/` | 业务服务层：分析、筛选、通知、系统配置、任务与诊断 | 208 | 84546 |
 | `src/repositories/` | 数据访问层：数据库读写封装 | 11 | 3934 |
 | `src/schemas/` | API / 报告数据结构定义 | 10 | 2107 |
-| `src/agent/` | 问股 Agent：意图解析、编排、工具与流式事件 | 64 | 26570 |
+| `src/agent/` | 问股 Agent：意图解析、编排、工具与流式事件 | 64 | 26571 |
 | `src/llm/` | LLM 调用封装与本地 CLI 生成后端 | 12 | 6466 |
 | `data_provider/` | 多数据源适配、优先级与 fallback | 22 | 19261 |
-| `api/` | FastAPI 应用与 v1 路由 | 44 | 13085 |
+| `api/` | FastAPI 应用与 v1 路由 | 44 | 13093 |
 | `bot/` | IM / 机器人接入 | 22 | 5524 |
 | `apps/dsa-web/src/` | Web 前端（React + Vite） | 334 | 110924 |
 | `apps/dsa-desktop/` | Electron 桌面端壳与打包配置 | 8 | 8469 |
 | `scripts/` | 本地与 CI 脚本 | 52 | 10786 |
 | `.github/scripts/` | GitHub Actions 专用脚本 | 2 | 652 |
-| `tests/` | pytest 测试 | 374 | 189292 |
+| `tests/` | pytest 测试 | 374 | 189322 |
 
 ## 大文件（Python，≥400 行）
 
@@ -40,7 +40,7 @@
 | `src/search_service.py` | 4962 | `_terminate_search_process`:56, `_search_topic_news_process_worker`:67, `_call_topic_news_in_subprocess`:95, `_post_with_retry`:186, `_get_with_retry`:198, `fetch_url_content`:205 | 72 |
 | `src/services/screening_service.py` | 4384 | `_safe_float`:97, `_utc_now_iso`:109, `_resolve_screening_data_dir`:113, `_screening_hotspot_cache_path`:120, `_screening_hotspot_history_path`:126, `_screening_hotspot_detail_cache_dir`:132 | 23 |
 | `src/core/pipeline.py` | 4261 | `_share_image_payload`:132, `_coerce_context_date`:146, `_supports_explicit_keyword`:160, `_symbol_scope_lookup_values`:175, `_measure_fetch_step`:246, `_format_fetch_timings`:261 | 69 |
-| `src/config.py` | 3980 | `ConfigIssue`:81, `_has_ntfy_topic_endpoint`:143, `_has_gotify_base_url`:154, `normalize_tickflow_kline_adjust`:168, `parse_prompt_cache_diagnostics_level`:180, `AgentContextCompressionPreset`:208 | 353 |
+| `src/config.py` | 3979 | `ConfigIssue`:81, `_has_ntfy_topic_endpoint`:142, `_has_gotify_base_url`:153, `normalize_tickflow_kline_adjust`:167, `parse_prompt_cache_diagnostics_level`:179, `AgentContextCompressionPreset`:207 | 353 |
 | `src/notification.py` | 3308 | `_share_image_payload`:94, `_structured_payload_for`:108, `_safe_float`:116, `_format_strategy_skill_items`:136, `_append_strategy_synthesis_block`:156, `NotificationChannel`:207 | 85 |
 | `src/llm/local_cli_backend.py` | 2966 | `_diagnostic_field_name_pattern`:256, `_diagnostic_field_assignment_pattern`:286, `_diagnostic_json_assignment_pattern`:301, `_diagnostic_line_field_pattern`:315, `_diagnostic_double_quoted_yaml_line_pattern`:337, `_diagnostic_yaml_explicit_key_pattern`:357 | 25 |
 | `data_provider/akshare_fetcher.py` | 2693 | `_is_etf_code`:111, `_is_hk_code`:130, `_normalize_tencent_volume`:162, `_normalize_cn_daily_volume`:194, `_parse_tencent_amount`:231, `is_hk_stock_code`:249 | 51 |
@@ -58,8 +58,8 @@
 | `data_provider/tushare_fetcher.py` | 1432 | `_is_etf_code`:51, `_is_us_code`:63, `_resolve_tushare_http_url`:75, `_TushareHttpClient`:97, `TushareFetcher`:135 | 14 |
 | `data_provider/efinance_fetcher.py` | 1431 | `EfinanceRealtimeQuote`:80, `_is_etf_code`:155, `_build_eastmoney_etf_secid`:172, `_is_us_code`:184, `_ef_call_with_timeout`:196, `_classify_eastmoney_error`:219 | 14 |
 | `src/services/decision_signal_service.py` | 1388 | `DecisionSignalNotFoundError`:75, `DecisionSignalStorageError`:79, `DecisionSignalWriteOutcome`:87, `DecisionSignalService`:110 | 35 |
+| `api/v1/endpoints/agent.py` | 1373 | `ChatRequest`:72, `_intake_status_code`:119, `_public_answer_meta`:123, `_needs_object_intake`:134, `_reuse_session_brief`:141, `_build_agent_chat_context`:158 | 25 |
 | `src/services/alert_service.py` | 1372 | `AlertServiceError`:87, `AlertNotFoundError`:93, `UnsupportedAlertTypeError`:99, `AlertService`:105 | 15 |
-| `api/v1/endpoints/agent.py` | 1365 | `ChatRequest`:72, `_intake_status_code`:119, `_public_answer_meta`:123, `_needs_object_intake`:134, `_reuse_session_brief`:141, `_build_agent_chat_context`:158 | 25 |
 | `src/agent/llm_adapter.py` | 1354 | `_resolve_litellm_exception`:64, `ToolCall`:82, `LLMResponse`:92, `_split_provider_model`:190, `_object_to_dict`:200, `_provider_specific_fields_from`:224 | 122 |
 | `src/services/screening/daily.py` | 1345 | `enrich_daily_features`:63, `fetch_daily_history`:170, `_normalize_daily_code`:341, `_normalize_daily_source`:353, `_normalize_max_workers`:357, `_call_daily_wrapper`:363 | 8 |
 | …另外 126 个 ≥400 行的文件 | — | — | — |
@@ -83,8 +83,8 @@
 
 ## 规模快照
 
-- Python 源码（不含测试）：498 个文件，230983 行
-- Python 测试：368 个文件，189113 行
+- Python 源码（不含测试）：498 个文件，230991 行
+- Python 测试：368 个文件，189143 行
 - 前端 TS/TSX：326 个文件，102411 行
 - ≥400 行的 Python 文件：156 个
 
