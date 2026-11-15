@@ -159,6 +159,36 @@ def test_client_disconnect_does_not_cancel_the_run() -> None:
     assert not cancellation.is_cancelled(request_id)
 
 
+def test_stop_after_client_disconnect_still_cancels_run() -> None:
+    """Q1: 刷新后仍可点停止。断开不能提前回收 request_id 的取消入口。"""
+
+    release = threading.Event()
+    executor = _FakeExecutor(release, wait_seconds=5.0)
+    request_id = "disconnect-then-stop"
+
+    async def _scenario():
+        with patch.object(agent_endpoint, "_select_agent_chat_backend", return_value="litellm"):
+            stream, first = await _open_stream(SimpleNamespace(db=_FakeDb()), executor, request_id)
+            second = await asyncio.wait_for(stream.__anext__(), timeout=5)
+            await stream.aclose()
+            # 断开时执行体仍在后台跑，停止入口必须还在。
+            assert cancellation.request_cancel(request_id) is True
+            release.set()
+            await asyncio.to_thread(executor.finished.wait, 5)
+            for _ in range(100):
+                if cancellation.get_run_event(request_id) is None:
+                    break
+                await asyncio.sleep(0.01)
+        return first, second
+
+    first, second = asyncio.run(_scenario())
+
+    assert _read_event(first)["type"] == "accepted"
+    assert _read_event(second)["type"] == "generating"
+    assert executor.cancelled is True
+    assert cancellation.get_run_event(request_id) is None
+
+
 def test_idle_timeout_cancels_run_and_clears_running_state() -> None:
     """连续没有业务事件才超时；超时要取消本轮并清运行态。"""
 

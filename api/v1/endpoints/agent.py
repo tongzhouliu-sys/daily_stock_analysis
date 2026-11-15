@@ -1023,6 +1023,10 @@ async def agent_chat_stream(
                 "session_id": session_id,
             }
             asyncio.run_coroutine_threadsafe(queue.put(event), loop)
+        finally:
+            # Q1: 断开的流不再回收注册表；本轮的取消入口要保留到执行体真正退出，
+            # 否则刷新后点“停止”会找不到 request_id，后台仍会跑完。
+            release_run(request_id)
 
     async def event_generator():
         fut = None
@@ -1127,6 +1131,7 @@ async def agent_chat_stream(
                 yield "data: " + json.dumps(event, ensure_ascii=False) + "\n\n"
                 return
             fut = loop.run_in_executor(None, run_sync, executor, turn)
+            fut.add_done_callback(lambda _future: release_run(request_id))
             # T26: 每 15 秒发一行注释心跳，并同步刷新会话运行心跳，
             # 避免长回答被 90 秒的运行态判定误认为已中断（审计 A9）。
             heartbeat_at = loop.time()
@@ -1181,7 +1186,10 @@ async def agent_chat_stream(
                     logger.debug("agent executor cleanup timed out after 5s for session %s", session_id)
                 except Exception as exc:
                     logger.warning("agent executor cleanup error (ignored): %s", exc, exc_info=True)
-            release_run(request_id)
+            # Q1: 后台执行体自己回收注册表；生成器断开时不能提前回收，
+            # 否则刷新后再点“停止”找不到这一轮。
+            if fut is None:
+                release_run(request_id)
 
     return StreamingResponse(
         event_generator(),
