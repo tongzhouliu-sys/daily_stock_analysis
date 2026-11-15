@@ -223,7 +223,12 @@ P5 通过 sidecar 表保存用户反馈和后验结果，不扩展 `decision_sig
 
 - `decision_signal_feedback` 保存每个信号最新的 `useful|not_useful` 反馈、可选原因/备注和来源。
 - `decision_signal_outcomes` 按 `(signal_id, horizon, engine_version)` 幂等保存后验评估结果。
-- 当前 `engine_version=decision-signal-v1`。
+- 当前 `engine_version=decision-signal-v2`（E10/E11/E14 改变了评估口径后从 `decision-signal-v1` 升级）。旧版本记录保留在库里，但默认统计接口只按当前版本过滤，不参与统计页汇总；需要重算时用 `POST /api/v1/decision-signals/outcomes/run` 并带 `force=true`。
+- 命中定义（`neutral_band_pct=2.0`，neutral 不进入命中/未命中分母）：
+  - 卖出类 `reduce/sell/avoid` 期望 `not_up`：区间收益 `<= -2%` 命中，`>= +2%` 未命中，中间为 neutral；
+  - 持有类 `hold` 期望 `not_down`：区间收益 `>= 0` 命中，`<= -2%` 未命中，其余按收益落点判定；
+  - 买入类 `buy/add` 期望 `up`：`>= +2%` 命中，`<= -2%` 未命中；
+  - `watch/alert` 等非方向动作写入 `unable(non_directional_action)`。
 - 后验评估只支持日线可验证的 `1d/3d/5d/10d`；`intraday/swing/long`、非方向动作、缺价和 forward bars 不足会写入 `eval_status=unable` 与明确 `unable_reason`。
 - 评估时冻结 action、market、market_phase、source_type、source_agent、plan_quality、data_quality_level、holding_state 等统计维度，历史统计不依赖后续 live join。
 

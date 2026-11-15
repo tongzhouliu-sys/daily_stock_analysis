@@ -23,6 +23,7 @@ from api.app import create_app
 from src.config import Config
 from src.repositories.decision_signal_outcome_repo import DecisionSignalOutcomeRepository
 from src.services.decision_signal_outcome_service import (
+    DECISION_SIGNAL_OUTCOME_ENGINE_VERSION,
     MIN_REVIEW_SAMPLE_SIZE,
     DecisionSignalOutcomeService,
 )
@@ -103,7 +104,7 @@ def _add_outcome(
         session.add(DecisionSignalOutcomeRecord(
             signal_id=signal_id,
             horizon=horizon,
-            engine_version="decision-signal-v1",
+            engine_version=DECISION_SIGNAL_OUTCOME_ENGINE_VERSION,
             eval_status=eval_status,
             outcome=outcome,
             direction_expected="up",

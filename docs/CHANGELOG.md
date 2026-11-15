@@ -8,6 +8,7 @@ and this project adheres to [Semantic Versioning](https://semver.org/).
 > For user-friendly release highlights, see the [GitHub Releases](https://github.com/ZhuLinsen/daily_stock_analysis/releases) page.
 
 ## [Unreleased]
+- [改进] 评估口径升级版本号：E10/E11/E14 改变评估口径后，`DECISION_SIGNAL_OUTCOME_ENGINE_VERSION` 从 `decision-signal-v1` 升到 `decision-signal-v2`，`BACKTEST_ENGINE_VERSION` 默认值从 `v1` 升到 `v2`（`config.py` / `config_registry.py` / `.env.example` 同步）。统计接口默认只按当前版本过滤，旧版本记录保留在库中但不参与统计；首次自动回测会重新评估所有符合条件的历史分析，单次批量上限仍生效但首轮更慢，可用 `force=true` 手动重算。`docs/decision-signals.md` 补充卖出类 / 持有类 / 买入类命中定义与 v2 说明，`docs/full-guide.md` 与英文版同步。相关测试改为引用版本常量而不是硬编码 `decision-signal-v1`。
 - [修复] 技术指标告警时区：`_drop_partial_today` 取当前时间从 `datetime.now()`（服务器本地、无时区）改为 `datetime.now(timezone.utc)`，`get_market_now` 不再把 UTC+8 服务器的本地时间当成美东时间；美股盘中（北京 03:00）能正确丢弃未收盘的当日 K 线，收盘后保留。
 - [修复] 持仓风险口径：回撤不再只认"出入金日期正好等于快照日期"，两个相邻快照之间（不含前一个、含后一个）的全部出入金都计入后一个快照，周五 100 万、周六取现 30 万、周一 70 万不再报 30% 回撤。集中度与行业集中度扣除缺价持仓时，改用与总额相同的汇率换算到 CNY（缺汇率的持仓单独计数、不参与分子分母），美元账户 AAPL 1 万有价 + MSFT 1 万缺价、汇率 7.2 时 AAPL 权重恢复为 100%。
 - [修复] 全市场表缓存改用交易日：板块资金流排名、龙虎榜等盘中会变的整表接口，缓存键从服务器本地自然日改为 A 股时区下的有效交易日（复用 `trading_calendar` 的 `get_market_now` / `is_market_open` / `get_effective_trading_date`），盘中 TTL 5 分钟、收盘后按交易日复用；业绩预告/快报、机构持股仍按交易日缓存。超时后被放弃的后台调用线程限制为 8 个，超过上限直接按超时返回。测试覆盖盘中 6 分钟重抓、盘中 4 分钟命中、收盘后 1 小时命中、UTC 服务器下北京 08:00 与周末的交易日键。

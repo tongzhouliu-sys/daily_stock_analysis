@@ -38,6 +38,9 @@ except ModuleNotFoundError:
     get_stock_bar = None
 
 from src.config import Config
+from src.services.decision_signal_outcome_service import (
+    DECISION_SIGNAL_OUTCOME_ENGINE_VERSION,
+)
 from src.storage import (
     DatabaseManager,
     AnalysisHistory,
@@ -2419,7 +2422,7 @@ class AnalysisHistoryTestCase(unittest.TestCase):
             session.add(DecisionSignalOutcomeRecord(
                 signal_id=linked_signal_id,
                 horizon="3d",
-                engine_version="decision-signal-v1",
+                engine_version=DECISION_SIGNAL_OUTCOME_ENGINE_VERSION,
                 eval_status="completed",
                 outcome="hit",
                 action="buy",

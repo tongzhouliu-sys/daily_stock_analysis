@@ -38,7 +38,7 @@ from src.utils.sanitize import sanitize_decision_signal_text
 
 logger = logging.getLogger(__name__)
 
-DECISION_SIGNAL_OUTCOME_ENGINE_VERSION = "decision-signal-v1"
+DECISION_SIGNAL_OUTCOME_ENGINE_VERSION = "decision-signal-v2"
 SUPPORTED_OUTCOME_HORIZONS = {
     "1d": 1,
     "3d": 3,

@@ -10,7 +10,10 @@ from datetime import date, datetime
 import pytest
 
 from src.config import Config
-from src.services.decision_signal_outcome_service import DecisionSignalOutcomeService
+from src.services.decision_signal_outcome_service import (
+    DECISION_SIGNAL_OUTCOME_ENGINE_VERSION,
+    DecisionSignalOutcomeService,
+)
 from src.storage import DatabaseManager, DecisionSignalOutcomeRecord, DecisionSignalRecord, StockDaily
 
 
@@ -120,7 +123,7 @@ def _seed_calibration_outcomes(
             session.add(DecisionSignalOutcomeRecord(
                 signal_id=signal.id,
                 horizon=horizon,
-                engine_version="decision-signal-v1",
+                engine_version=DECISION_SIGNAL_OUTCOME_ENGINE_VERSION,
                 eval_status="completed",
                 outcome=outcome_value,
                 direction_expected="not_up" if action in {"sell", "reduce", "avoid"} else "up",
@@ -768,3 +771,60 @@ def test_batch_uses_oldest_retryable_horizon_timestamp_for_signal_order(isolated
 
     assert result["updated"] == 2
     assert {item["signal_id"] for item in result["items"]} == {multi_horizon_id}
+
+
+def test_stats_exclude_old_engine_version_rows_but_keep_them_stored(isolated_db):
+    """R21: v2 is the only version in default stats; v1 rows stay in the DB."""
+    old_signal_id = _add_signal(isolated_db)
+    new_signal_id = _add_signal(isolated_db, session_date="2024-01-03")
+    with isolated_db.session_scope() as session:
+        session.add(DecisionSignalOutcomeRecord(
+            signal_id=old_signal_id,
+            horizon="3d",
+            engine_version="decision-signal-v1",
+            eval_status="completed",
+            outcome="hit",
+            direction_expected="up",
+            direction_correct=True,
+            anchor_date=date(2024, 1, 2),
+            eval_window_days=3,
+            start_price=100.0,
+            end_close=102.0,
+            max_high=108.0,
+            min_low=94.0,
+            stock_return_pct=2.0,
+            action="buy",
+            market="cn",
+        ))
+        session.add(DecisionSignalOutcomeRecord(
+            signal_id=new_signal_id,
+            horizon="3d",
+            engine_version=DECISION_SIGNAL_OUTCOME_ENGINE_VERSION,
+            eval_status="completed",
+            outcome="miss",
+            direction_expected="up",
+            direction_correct=False,
+            anchor_date=date(2024, 1, 3),
+            eval_window_days=3,
+            start_price=100.0,
+            end_close=98.0,
+            max_high=108.0,
+            min_low=94.0,
+            stock_return_pct=-2.0,
+            action="buy",
+            market="cn",
+        ))
+
+    stats = DecisionSignalOutcomeService(db_manager=isolated_db).get_stats()
+
+    assert stats["engine_version"] == DECISION_SIGNAL_OUTCOME_ENGINE_VERSION
+    assert stats["total"] == 1
+    assert stats["miss"] == 1
+    assert stats["hit"] == 0
+
+    with isolated_db.session_scope() as session:
+        versions = {
+            row.engine_version
+            for row in session.query(DecisionSignalOutcomeRecord).all()
+        }
+    assert versions == {"decision-signal-v1", DECISION_SIGNAL_OUTCOME_ENGINE_VERSION}

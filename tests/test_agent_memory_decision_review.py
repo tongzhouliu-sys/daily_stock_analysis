@@ -14,7 +14,7 @@ from src.agent.memory import AgentMemory, AnalysisMemoryEntry, DecisionSignalRev
 from src.agent.protocols import AgentContext
 from src.agent.tools.registry import ToolRegistry
 from src.config import Config
-from src.services.decision_signal_outcome_service import DecisionSignalOutcomeService
+from src.services.decision_signal_outcome_service import DECISION_SIGNAL_OUTCOME_ENGINE_VERSION, DecisionSignalOutcomeService
 from src.storage import (
     DatabaseManager,
     DecisionSignalFeedbackRecord,
@@ -68,7 +68,7 @@ def _seed_hit_outcomes(db: DatabaseManager, *, count: int, code: str = "600519")
             session.add(DecisionSignalOutcomeRecord(
                 signal_id=signal.id,
                 horizon="3d",
-                engine_version="decision-signal-v1",
+                engine_version=DECISION_SIGNAL_OUTCOME_ENGINE_VERSION,
                 eval_status="completed",
                 outcome="hit",
                 direction_expected="up",
@@ -248,7 +248,7 @@ def _seed_missed_signal_with_feedback(
         session.add(DecisionSignalOutcomeRecord(
             signal_id=signal.id,
             horizon="3d",
-            engine_version="decision-signal-v1",
+            engine_version=DECISION_SIGNAL_OUTCOME_ENGINE_VERSION,
             eval_status="completed",
             outcome="miss",
             direction_expected="up",
