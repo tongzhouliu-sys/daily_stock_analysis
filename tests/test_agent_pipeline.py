@@ -3446,5 +3446,127 @@ class TestSkillActivation(unittest.TestCase):
             self.assertEqual(result.sentiment_score, 80)
 
 
+class TestAnalyzeWithAgentCancellation(unittest.TestCase):
+    """R13: a cancelled task must not save or notify from the Agent path."""
+
+    def _build_pipeline(self, mock_config, mock_build_executor, agent_run):
+        mock_cfg = MagicMock()
+        mock_cfg.max_workers = 2
+        mock_cfg.agent_mode = True
+        mock_cfg.agent_max_steps = 10
+        mock_cfg.agent_skills = []
+        mock_cfg.bocha_api_keys = []
+        mock_cfg.tavily_api_keys = []
+        mock_cfg.brave_api_keys = []
+        mock_cfg.serpapi_keys = []
+        mock_cfg.searxng_base_urls = []
+        mock_cfg.searxng_public_instances_enabled = False
+        mock_cfg.news_max_age_days = 7
+        mock_cfg.enable_realtime_quote = True
+        mock_cfg.enable_chip_distribution = True
+        mock_cfg.realtime_source_priority = []
+        mock_cfg.save_context_snapshot = False
+        mock_cfg.report_language = "zh"
+        mock_config.return_value = mock_cfg
+
+        from src.core.pipeline import StockAnalysisPipeline
+
+        pipeline = StockAnalysisPipeline(config=mock_cfg)
+        pipeline.search_service.is_available = False
+        pipeline.db.save_analysis_history.return_value = 3001
+        pipeline._extract_decision_signal_after_history_save = MagicMock()
+
+        mock_executor = MagicMock()
+        mock_executor.run.side_effect = agent_run
+        mock_build_executor.return_value = mock_executor
+        return pipeline, mock_executor
+
+    def _agent_result(self):
+        from src.agent.executor import AgentResult
+
+        return AgentResult(
+            success=True,
+            content="{}",
+            dashboard={
+                "stock_name": "贵州茅台",
+                "sentiment_score": 60,
+                "trend_prediction": "震荡",
+                "operation_advice": "持有",
+                "decision_type": "hold",
+                "analysis_summary": "测试",
+            },
+            provider="gemini",
+        )
+
+    def _patches(self):
+        return (
+            patch('src.core.pipeline.get_config'),
+            patch('src.core.pipeline.get_db'),
+            patch('src.core.pipeline.DataFetcherManager'),
+            patch('src.core.pipeline.GeminiAnalyzer'),
+            patch('src.core.pipeline.NotificationService'),
+            patch('src.core.pipeline.SearchService'),
+            patch('src.agent.factory.build_agent_executor'),
+        )
+
+    def test_cancel_requested_during_agent_run_skips_save(self):
+        from src.core.task_cancellation import TaskCancelledError
+        from src.enums import ReportType
+
+        cancel_requested = {"value": False}
+        agent_result = self._agent_result()
+
+        def agent_run(*_args, **_kwargs):
+            # The user presses cancel while the Agent is still working.
+            cancel_requested["value"] = True
+            return agent_result
+
+        def progress_callback(_progress, _message):
+            if cancel_requested["value"]:
+                raise TaskCancelledError("task cancelled")
+
+        p_cfg, p_db, p_fetch, p_llm, p_notify, p_search, p_exec = self._patches()
+        with p_cfg as mock_config, p_db, p_fetch, p_llm, p_notify, p_search, p_exec as mock_build:
+            pipeline, executor = self._build_pipeline(mock_config, mock_build, agent_run)
+            pipeline.progress_callback = progress_callback
+
+            with self.assertRaises(TaskCancelledError):
+                pipeline._analyze_with_agent(
+                    code="600519",
+                    report_type=ReportType.SIMPLE,
+                    query_id="q-cancel-agent",
+                    stock_name="贵州茅台",
+                    realtime_quote=None,
+                    chip_data=None,
+                )
+
+            executor.run.assert_called_once()
+            pipeline.db.save_analysis_history.assert_not_called()
+            pipeline._extract_decision_signal_after_history_save.assert_not_called()
+
+    def test_cancellation_raised_inside_agent_run_propagates(self):
+        from src.core.task_cancellation import TaskCancelledError
+        from src.enums import ReportType
+
+        def agent_run(*_args, **_kwargs):
+            raise TaskCancelledError("task cancelled")
+
+        p_cfg, p_db, p_fetch, p_llm, p_notify, p_search, p_exec = self._patches()
+        with p_cfg as mock_config, p_db, p_fetch, p_llm, p_notify, p_search, p_exec as mock_build:
+            pipeline, _executor = self._build_pipeline(mock_config, mock_build, agent_run)
+
+            with self.assertRaises(TaskCancelledError):
+                pipeline._analyze_with_agent(
+                    code="600519",
+                    report_type=ReportType.SIMPLE,
+                    query_id="q-cancel-agent-inner",
+                    stock_name="贵州茅台",
+                    realtime_quote=None,
+                    chip_data=None,
+                )
+
+            pipeline.db.save_analysis_history.assert_not_called()
+
+
 if __name__ == '__main__':
     unittest.main()

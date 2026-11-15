@@ -1783,6 +1783,10 @@ class StockAnalysisPipeline:
             finally:
                 reset_news_evidence_scope(news_evidence_token)
 
+            # R13: Agent 运行期间没有进度回调；运行结束后先过一次取消检查点，
+            # 用户已取消时不再整理、保存或推送结果。
+            self._emit_progress(94, f"{stock_name}：正在校验并整理分析结果")
+
             # 转换为 AnalysisResult
             result = self._agent_result_to_analysis_result(
                 agent_result,
@@ -2022,6 +2026,8 @@ class StockAnalysisPipeline:
 
             # 保存分析历史记录
             if result and result.success:
+                # 与普通链路一致：保存前的取消检查点放在 try 之外，避免被保存失败分支吞掉。
+                self._emit_progress(97, f"{stock_name}：正在保存分析报告")
                 try:
                     agent_context_snapshot = self._build_context_snapshot(
                         enhanced_context={
@@ -2086,6 +2092,9 @@ class StockAnalysisPipeline:
 
             return result
 
+        except TaskCancelledError:
+            # 取消必须传到任务队列，不能被当成"Agent 分析失败"返回 None。
+            raise
         except Exception as e:
             logger.error(f"[{code}] Agent 分析失败: {e}")
             logger.exception(f"[{code}] Agent 详细错误信息:")
