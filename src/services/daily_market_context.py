@@ -44,14 +44,49 @@ _MARKET_REVIEW_LOCK_WAIT_BACKOFF_MULTIPLIER = 1.5
 _MARKET_REVIEW_LOCK_WAIT_MAX_ATTEMPTS = 40
 
 _RISK_PATTERNS: Tuple[Tuple[str, Tuple[str, ...]], ...] = (
-    ("high_risk", ("高风险", "风险偏高", "风险较高", "high risk", "elevated risk")),
-    ("market_cooling", ("退潮", "降温", "risk-off", "risk off", "cooling")),
+    ("high_risk", (
+        "高风险", "风险偏高", "风险较高", "high risk", "elevated risk",
+        "고위험", "위험 확대",
+    )),
+    ("market_cooling", (
+        "市场降温", "情绪退潮", "退潮", "risk-off", "risk off", "cooling",
+        "리스크 오프", "위험 회피",
+    )),
     ("conservative", (
         "建议观望", "保持谨慎", "谨慎观望", "以观望为主", "保守配置", "等待确认",
         "stay cautious", "remain cautious", "wait for confirmation",
         "conservative positioning",
+        "관망 권장", "보수적 접근",
     )),
-    ("low_position_cap", ("仓位上限", "轻仓", "低仓位", "小仓", "position cap", "low position", "small position")),
+    ("low_position_cap", (
+        "仓位上限", "轻仓", "低仓位", "小仓", "position cap", "low position", "small position",
+        "비중 축소 권고", "비중 축소",
+    )),
+)
+
+# T13 follow-up (R17): a negated phrase ("不建议轻仓试错") must not produce a
+# risk tag, and a bare "降温" is too common in "情绪降温后企稳回升" to mean a
+# cooling market on its own.
+_RISK_NEGATION_HINTS = ("不", "未", "并非", "没有", "不建议", "勿", "无需")
+_RISK_NEGATION_LOOKBACK = 4
+
+_CN_NUMERAL_VALUES = {
+    "一": 1,
+    "二": 2,
+    "两": 2,
+    "三": 3,
+    "四": 4,
+    "五": 5,
+    "六": 6,
+    "七": 7,
+    "八": 8,
+    "九": 9,
+    "十": 10,
+}
+_CN_NUMERAL_PATTERN = "一二两三四五六七八九十"
+_POSITION_CAP_KEYWORD_PATTERN = (
+    r"(?:仓位上限|仓位不超过|仓位最多|仓位控制在|不超过|最多|"
+    r"position\s+cap|position\s+limit|max(?:imum)?\s+position)"
 )
 
 
@@ -941,23 +976,82 @@ def _truncate(text: str, limit: int) -> str:
     return text[: limit - 1].rstrip() + "…"
 
 
+def _pattern_hit(lowered: str, pattern: str) -> bool:
+    """Return True when ``pattern`` occurs outside a short negation window."""
+    needle = pattern.lower()
+    if not needle:
+        return False
+    start = lowered.find(needle)
+    while start != -1:
+        prefix = lowered[max(0, start - _RISK_NEGATION_LOOKBACK):start]
+        if not any(hint in prefix for hint in _RISK_NEGATION_HINTS):
+            return True
+        start = lowered.find(needle, start + 1)
+    return False
+
+
 def _extract_risk_tags(text: str) -> List[str]:
     lowered = text.lower()
     tags: List[str] = []
     for tag, patterns in _RISK_PATTERNS:
-        if any(pattern.lower() in lowered for pattern in patterns):
+        if any(_pattern_hit(lowered, pattern) for pattern in patterns):
             tags.append(tag)
     return tags
 
 
+def _normalize_position_cap_percent(value: int) -> Optional[str]:
+    if value <= 0 or value > 100:
+        return None
+    return f"{value}%"
+
+
+def _cn_numeral_to_int(token: str) -> Optional[int]:
+    token = token.strip()
+    if not token:
+        return None
+    if token.isdigit():
+        return int(token)
+    if token == "半":
+        return 5
+    if token in _CN_NUMERAL_VALUES:
+        return _CN_NUMERAL_VALUES[token]
+    return None
+
+
 def _extract_position_cap(text: str) -> Optional[str]:
+    """Extract an explicit position cap and normalize it to a percent string.
+
+    T13 follow-up (R17): "轻仓"/"小仓" are descriptive words, not a cap, so
+    they no longer populate ``position_cap``. "仓位上限三成" / "半仓" /
+    "不超过 30%" all normalize to ``30%`` / ``50%`` / ``30%``.
+    """
     if not text:
         return None
-    cap_match = re.search(r"(?:仓位上限|仓位不超过|position cap|position limit)[^0-9%]{0,12}(\d{1,3}\s*%)", text, re.IGNORECASE)
-    if cap_match:
-        return cap_match.group(1).replace(" ", "")
-    low_position_match = re.search(r"(轻仓|低仓位|小仓|low position|small position)", text, re.IGNORECASE)
-    return low_position_match.group(1) if low_position_match else None
+
+    percent_match = re.search(
+        rf"{_POSITION_CAP_KEYWORD_PATTERN}[^0-9%]{{0,12}}(\d{{1,3}})\s*%",
+        text,
+        re.IGNORECASE,
+    )
+    if percent_match:
+        return _normalize_position_cap_percent(int(percent_match.group(1)))
+
+    cheng_match = re.search(
+        rf"{_POSITION_CAP_KEYWORD_PATTERN}[^0-9{_CN_NUMERAL_PATTERN}半%]{{0,8}}"
+        rf"([0-9{_CN_NUMERAL_PATTERN}半])\s*成",
+        text,
+        re.IGNORECASE,
+    )
+    if cheng_match:
+        value = _cn_numeral_to_int(cheng_match.group(1))
+        if value is not None:
+            return _normalize_position_cap_percent(value * 10)
+
+    half_position_match = re.search(r"半仓", text)
+    if half_position_match:
+        return _normalize_position_cap_percent(50)
+
+    return None
 
 
 def _coerce_context_mapping(context: Any) -> Dict[str, Any]:

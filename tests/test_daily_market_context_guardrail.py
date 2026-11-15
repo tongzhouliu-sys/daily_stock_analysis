@@ -3,8 +3,16 @@
 
 from __future__ import annotations
 
+import json
+from datetime import date, datetime
+from types import SimpleNamespace
+from unittest.mock import MagicMock, patch
+
+import pytest
+
 from src.analyzer import AnalysisResult
 from src.daily_market_context_guardrail import apply_daily_market_context_guardrail
+from src.services.daily_market_context import DailyMarketContextService
 
 
 def _result() -> AnalysisResult:
@@ -403,3 +411,83 @@ def test_position_cap_still_downgrades_buy() -> None:
 
     assert "daily_market_context_buy_softened" in adjustments
     assert result.decision_type == "hold"
+
+
+def _context_from_summary(monkeypatch, summary: str) -> dict:
+    """Run the real summary -> extraction -> context path from R17."""
+    record = SimpleNamespace(
+        id=17,
+        query_id="market-review-r17",
+        code="MARKET",
+        report_type="market_review",
+        analysis_summary=summary,
+        news_content=summary,
+        raw_result=json.dumps({"raw_response": summary}, ensure_ascii=False),
+        context_snapshot=json.dumps(
+            {
+                "report_kind": "market_review",
+                "market_review_region": "cn",
+                "market_review_payload": {
+                    "kind": "market_review",
+                    "region": "cn",
+                    "markdown_report": summary,
+                    "sections": [{"key": "overview", "title": "概览", "markdown": summary}],
+                },
+                "report_language": "zh",
+            },
+            ensure_ascii=False,
+        ),
+        created_at=datetime(2026, 11, 14, 9, 30),
+    )
+    db = MagicMock()
+    db.get_analysis_history.return_value = [record]
+    service = DailyMarketContextService(db_manager=db, today_fn=lambda: date(2026, 11, 14))
+    with patch("src.services.daily_market_context.run_market_review"):
+        context = service.get_context(
+            region="cn",
+            config=SimpleNamespace(report_language="zh"),
+            notifier=MagicMock(),
+            analyzer=MagicMock(),
+            search_service=MagicMock(),
+            allow_generate=False,
+        )
+    assert context is not None
+    return context.to_safe_dict()
+
+
+@pytest.mark.parametrize(
+    ("summary", "expected_decision", "expect_downgrade", "expected_cap"),
+    [
+        ("市场谨慎乐观，量能温和放大。", "buy", False, None),
+        ("观望情绪消退，资金回流。", "buy", False, None),
+        ("建议观望，等待方向确认。", "buy", False, None),
+        ("市场高风险，情绪退潮。", "hold", True, None),
+        ("仓位上限三成。", "hold", True, "30%"),
+        ("不建议轻仓试错，趋势向好。", "buy", False, None),
+        ("情绪降温后企稳回升。", "buy", False, None),
+        ("시장 고위험, 관망 권장.", "hold", True, None),
+        ("仓位不超过 40%，保持谨慎。", "hold", True, "40%"),
+    ],
+)
+def test_summary_text_round_trip_drives_guardrail(
+    monkeypatch,
+    summary: str,
+    expected_decision: str,
+    expect_downgrade: bool,
+    expected_cap: str | None,
+) -> None:
+    context = _context_from_summary(monkeypatch, summary)
+    if expected_cap is not None:
+        assert context.get("position_cap") == expected_cap
+    else:
+        assert not context.get("position_cap")
+
+    result = _result()
+    adjustments = apply_daily_market_context_guardrail(
+        result,
+        daily_market_context=context,
+        report_language="zh",
+    )
+
+    assert result.decision_type == expected_decision
+    assert ("daily_market_context_buy_softened" in adjustments) is expect_downgrade
