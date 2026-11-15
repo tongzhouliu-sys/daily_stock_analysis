@@ -39,6 +39,30 @@ from .realtime_types import CircuitBreaker
 # 配置日志
 logger = logging.getLogger(__name__)
 
+
+# Fundamental context fans out into parallel blocks per stock (bundle,
+# valuation, capital flow, dragon-tiger, boards), and DataFetcherManager is
+# shared by the analysis workers. A pool sized for serial blocks (8) ran out
+# with three workers, and the non-blocking acquire then failed whichever block
+# came last -- often capital flow, which downgraded every buy to hold.
+_FUNDAMENTAL_PARALLEL_BLOCKS_PER_STOCK = 5
+_FUNDAMENTAL_TIMEOUT_WORKER_FLOOR = 8
+
+
+def _resolve_fundamental_timeout_worker_limit() -> int:
+    """Size the timeout worker pool for parallel blocks times analysis workers."""
+    try:
+        from src.config import get_config
+
+        workers = int(getattr(get_config(), "max_workers", 0) or 0)
+    except Exception:  # noqa: BLE001 - config unavailable in some scaffolds
+        workers = 0
+    workers = max(workers, 3)
+    return max(
+        _FUNDAMENTAL_TIMEOUT_WORKER_FLOOR,
+        _FUNDAMENTAL_PARALLEL_BLOCKS_PER_STOCK * workers + 1,
+    )
+
 # Omitted means standalone fetching; explicit None means already attempted.
 _REALTIME_QUOTE_UNSET = object()
 
@@ -776,7 +800,7 @@ class DataFetcherManager:
         self._tickflow_lock = RLock()
         self._fundamental_cache: Dict[str, Dict[str, Any]] = {}
         self._fundamental_cache_lock = RLock()
-        self._fundamental_timeout_worker_limit = 8
+        self._fundamental_timeout_worker_limit = _resolve_fundamental_timeout_worker_limit()
         self._fundamental_timeout_slots = BoundedSemaphore(self._fundamental_timeout_worker_limit)
 
     def _ensure_concurrency_guards(self) -> None:

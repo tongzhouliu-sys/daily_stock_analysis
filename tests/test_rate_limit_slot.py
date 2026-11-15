@@ -251,6 +251,9 @@ def test_concurrent_a_share_analyses_keep_capital_flow(monkeypatch):
     With the old 2-second shared interval every stock ran out of its 8-second
     fundamental budget waiting for the limiter, capital flow became "failed"
     and every buy was downgraded to hold, although upstream answered at once.
+    The manager's timeout worker pool was also sized for serial blocks, so with
+    parallel blocks the last block (often capital flow) was rejected with
+    "worker pool exhausted".
     """
     import akshare as ak
 
@@ -258,22 +261,24 @@ def test_concurrent_a_share_analyses_keep_capital_flow(monkeypatch):
 
     codes = ["600519", "000858", "601318"]
 
+    # Upstream latencies are chosen so every block of all three stocks is in
+    # flight at the same time (each block holds a timeout worker slot).
     def table(**_kwargs):
-        time.sleep(0.05)
+        time.sleep(0.3)
         return pd.DataFrame({
             "股票代码": codes, "代码": codes,
             "营业总收入": [1.0] * 3, "归母净利润": [1.0] * 3, "报告期": ["20260930"] * 3,
         })
 
     def flow(**_kwargs):
-        time.sleep(0.05)
+        time.sleep(0.3)
         return pd.DataFrame({
             "日期": pd.date_range("2026-11-01", periods=10).astype(str),
             "主力净流入-净额": [1e6] * 10,
         })
 
     def sector(**_kwargs):
-        time.sleep(0.05)
+        time.sleep(0.3)
         return pd.DataFrame({"名称": ["a", "b", "c"], "今日主力净流入-净额": [1.0, 2.0, -1.0]})
 
     for name in _FUNDAMENTAL_AKSHARE_INTERFACES:
@@ -285,10 +290,21 @@ def test_concurrent_a_share_analyses_keep_capital_flow(monkeypatch):
 
     manager = DataFetcherManager(fetchers=[])
     statuses: dict[str, str] = {}
+    errors: dict[str, object] = {}
+
+    def slow_sector_rankings(_limit):
+        # Offline stand-in for the network call inside the boards block. The
+        # block still runs through _run_with_retry, so it holds a timeout
+        # worker slot while the other blocks of all three stocks run.
+        time.sleep(1.5)
+        return [], [], [], "offline test"
+
+    monkeypatch.setattr(manager, "_get_sector_rankings_with_meta", slow_sector_rankings)
 
     def run(code: str) -> None:
         context = manager.get_fundamental_context(code, realtime_quote=None)
         statuses[code] = context["capital_flow"].get("status")
+        errors[code] = context["capital_flow"].get("errors")
 
     threads = [threading.Thread(target=run, args=(code,), daemon=True) for code in codes]
     for thread in threads:
@@ -298,4 +314,15 @@ def test_concurrent_a_share_analyses_keep_capital_flow(monkeypatch):
 
     fa._clear_daily_table_cache()
     fa._clear_source_rate_limiters_for_tests()
-    assert statuses == {code: "ok" for code in codes}, statuses
+    assert statuses == {code: "ok" for code in codes}, (statuses, errors)
+
+
+def test_timeout_worker_pool_scales_with_analysis_workers(monkeypatch):
+    from types import SimpleNamespace
+
+    import data_provider.base as base
+
+    monkeypatch.setattr("src.config.get_config", lambda: SimpleNamespace(max_workers=6))
+    limit = base._resolve_fundamental_timeout_worker_limit()
+    # Every worker may run all parallel fundamental blocks at the same time.
+    assert limit >= base._FUNDAMENTAL_PARALLEL_BLOCKS_PER_STOCK * 6
