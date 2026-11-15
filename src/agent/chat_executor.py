@@ -22,6 +22,8 @@ from src.storage import DatabaseManager
 if TYPE_CHECKING:
     from src.services.agent_chat_session_service import AgentChatSessionService, ResolvedChatTurn
 
+logger = logging.getLogger(__name__)
+
 
 @dataclass(frozen=True)
 class PreparedAgentChatTurn:
@@ -392,4 +394,10 @@ class AgentChatExecutor:
                     db_manager=turn.db_manager,
                 )
             except Exception:
-                pass
+                # 清运行态失败不能吞得无声无息：会话可能因此卡在“分析中”。
+                # 90 秒心跳过期后会被 ``_is_session_turn_in_progress`` 兜底清掉，
+                # 但这里必须留下可排查的日志。
+                logger.warning(
+                    "Failed to clear running state for session %s (turn %s)",
+                    turn.session_id, turn.run_id, exc_info=True,
+                )

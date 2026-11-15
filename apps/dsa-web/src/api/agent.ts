@@ -243,7 +243,7 @@ export const agentApi = {
     return { success: true };
   },
   /** T26: 让后端真正取消当前运行中的一轮（而不只是断开 SSE 连接）。 */
-  async stopChat(payload: { session_id?: string; request_id?: string }): Promise<{
+  async stopChat(payload: { request_id: string; session_id?: string }): Promise<{
     success: boolean;
     cancelled: boolean;
     message?: string;

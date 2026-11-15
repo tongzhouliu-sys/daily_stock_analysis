@@ -7,7 +7,7 @@
   被停止后不再发生模型调用
 - 停止时落“已停止”终态标记而不是完整回答
 - 会话运行中再次提问返回 409 / ``session_turn_in_progress``
-- 停止接口未注册时保守清理运行态
+- 停止接口必须带 ``request_id``，只带 ``session_id`` 返回 422
 """
 
 from __future__ import annotations
@@ -240,7 +240,7 @@ class TestRunningTurnConflict(unittest.TestCase):
 
 
 class TestStopEndpoint(unittest.TestCase):
-    def test_stop_requests_cancel_and_clears_running(self) -> None:
+    def test_stop_requests_cancel(self) -> None:
         client = TestClient(create_app())
         event = register_run("stop-request")
         try:
