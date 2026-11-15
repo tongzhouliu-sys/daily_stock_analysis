@@ -40,6 +40,7 @@
 | [Grok Bot Skill 示例](examples/grok_bot/README.md) | 给 Grok Bot 粘贴的最小 Skill，调用现有 REST |
 | [通知能力基线](notifications.md) | 企业微信、飞书、Telegram、Discord、Slack、邮件等通知渠道配置 |
 | [Tushare 股票列表指南](TUSHARE_STOCK_LIST_GUIDE.md) | Tushare 股票列表相关配置和使用说明 |
+| [配置单一声明源（方案）](config-single-source.md) | `config.py` / `config_registry.py` / `system_config_service.py` 三处配置声明的收敛方案与迁移路径 |
 
 ## 使用专题
 

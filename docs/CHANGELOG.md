@@ -8,6 +8,7 @@ and this project adheres to [Semantic Versioning](https://semver.org/).
 > For user-friendly release highlights, see the [GitHub Releases](https://github.com/ZhuLinsen/daily_stock_analysis/releases) page.
 
 ## [Unreleased]
+- [文档] 新增 [配置单一声明源方案](config-single-source.md)：量化 `config.py` / `config_registry.py` / `system_config_service.py` 三处共 101 个键需要手工同步的现状，给出声明表驱动的目标设计与分阶段迁移路径；按 Q1「继续跟上游」的决策，本项以提给上游的方案交付，本地只保留 `tests/test_config_env_loading.py` 作为过渡保护，不落地结构性拆除。
 - [改进] 问股页面按区块拆分：`ChatPage` 的 2016 行单文件拆成会话侧栏、消息项、流式进度、输入区与引导卡五个组件（`components/chat/ChatSessionSidebar/ChatMessageItem/ChatLiveProgress/ChatInputArea/ChatGuideCards`），`ChatPage` 只保留状态编排；消息项与进度区加记忆化，输入框打字不再重渲染历史消息；Enter 发送忽略输入法组合状态；store 订阅改为 `useShallow` 选择器，不再整棵状态树变化就重渲染。
 - [改进] 报告对象构造收敛为 `api/v1/report_builder.build_analysis_report()` 单一入口：同步分析、任务状态数据库回退与历史详情三个接口对同一条记录返回一致的 `meta`/`summary`/`strategy`/`details`，重复的 `_extract_guardrail_reason` 等辅助逻辑合并。
 
