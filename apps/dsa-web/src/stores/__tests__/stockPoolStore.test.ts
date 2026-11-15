@@ -1413,6 +1413,46 @@ describe('stockPoolStore', () => {
     expect(useStockPoolStore.getState().isLoadingStockBar).toBe(false);
   });
 
+  it('does not toggle the stock-bar loading flag for a silent refresh', async () => {
+    const silentRequest = createDeferred<StockBarResponse>();
+    vi.mocked(historyApi.getStockBarList).mockReturnValueOnce(silentRequest.promise);
+
+    const silentPromise = useStockPoolStore.getState().refreshStockBar(true);
+    expect(useStockPoolStore.getState().isLoadingStockBar).toBe(false);
+
+    silentRequest.resolve({ total: 1, items: [stockBarItem] });
+    await silentPromise;
+
+    expect(useStockPoolStore.getState().isLoadingStockBar).toBe(false);
+    expect(useStockPoolStore.getState().stockBarItems).toEqual([stockBarItem]);
+  });
+
+  it('clears the loading flag when a silent refresh finishes before the non-silent load', async () => {
+    const initialStockBarRequest = createDeferred<StockBarResponse>();
+    const silentStockBarRequest = createDeferred<StockBarResponse>();
+
+    vi.mocked(historyApi.getStockBarList)
+      .mockReturnValueOnce(initialStockBarRequest.promise)
+      .mockReturnValueOnce(silentStockBarRequest.promise);
+
+    const initialPromise = useStockPoolStore.getState().loadStockBar();
+    expect(useStockPoolStore.getState().isLoadingStockBar).toBe(true);
+
+    const silentPromise = useStockPoolStore.getState().refreshStockBar(true);
+    expect(useStockPoolStore.getState().isLoadingStockBar).toBe(true);
+
+    silentStockBarRequest.resolve({ total: 1, items: [stockBarItem] });
+    await silentPromise;
+    expect(useStockPoolStore.getState().isLoadingStockBar).toBe(true);
+
+    initialStockBarRequest.resolve({ total: 0, items: [] });
+    await initialPromise;
+
+    const state = useStockPoolStore.getState();
+    expect(state.stockBarItems).toEqual([stockBarItem]);
+    expect(state.isLoadingStockBar).toBe(false);
+  });
+
   it('keeps stock-bar failure state when a stale older request succeeds after a newer failure', async () => {
     const staleStockBarRequest = createDeferred<StockBarResponse>();
     const latestStockBarRequest = createDeferred<StockBarResponse>();

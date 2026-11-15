@@ -45,6 +45,11 @@ let historyRequestSeq = 0;
 let marketReviewHistoryRequestSeq = 0;
 let stockHistoryRequestSeq = 0;
 let stockBarRequestSeq = 0;
+// Loading ownership token: only the request that turned the loading flag on may
+// turn it off. A silent refresh never touches the flag, so a non-silent load in
+// flight is still cleared by its own `finally` even if a silent refresh is the
+// latest request.
+let stockBarLoadingToken = 0;
 let activeTaskRequestSeq = 0;
 let activeTaskLocalRevision = 0;
 let manualSelectionRequestSeq = 0;
@@ -1081,6 +1086,7 @@ export const useStockPoolStore = create<StockPoolState>((set, get) => ({
     manualSelectionRequestSeq = 0;
     manualSelectionRequestId = 0;
     stockBarRequestSeq += 1;
+    stockBarLoadingToken += 1;
     activeTaskRequestSeq += 1;
     activeTaskLocalRevision += 1;
     dismissedTaskIds.clear();
@@ -1092,6 +1098,7 @@ export const useStockPoolStore = create<StockPoolState>((set, get) => ({
     const state = get();
     if (state.isLoadingStockBar) return;
     const requestSeq = ++stockBarRequestSeq;
+    const loadingToken = ++stockBarLoadingToken;
     set({ isLoadingStockBar: true });
     try {
       const response = await historyApi.getStockBarList({
@@ -1108,7 +1115,7 @@ export const useStockPoolStore = create<StockPoolState>((set, get) => ({
       }
       set({ stockBarRefreshFailed: true });
     } finally {
-      if (requestSeq === stockBarRequestSeq) {
+      if (loadingToken === stockBarLoadingToken) {
         set({ isLoadingStockBar: false });
       }
     }
@@ -1117,7 +1124,8 @@ export const useStockPoolStore = create<StockPoolState>((set, get) => ({
   refreshStockBar: async (silent = false) => {
     const requestSeq = ++stockBarRequestSeq;
     // T20: Only set loading state if not silent
-    if (!silent) {
+    const loadingToken = silent ? null : ++stockBarLoadingToken;
+    if (loadingToken !== null) {
       set({ isLoadingStockBar: true });
     }
     try {
@@ -1135,8 +1143,9 @@ export const useStockPoolStore = create<StockPoolState>((set, get) => ({
       }
       set({ stockBarRefreshFailed: true });
     } finally {
-      // T20: Only clear loading state if not silent
-      if (requestSeq === stockBarRequestSeq && !silent) {
+      // T20: Only clear loading state if not silent, and only when this request
+      // still owns the flag.
+      if (loadingToken !== null && loadingToken === stockBarLoadingToken) {
         set({ isLoadingStockBar: false });
       }
     }

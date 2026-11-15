@@ -3423,7 +3423,35 @@ class DatabaseManager(metaclass=_DatabaseManagerMeta):
             results = session.execute(data_query).scalars().all()
             
             return list(results), total
-    
+
+    def count_analysis_history_by_codes(self, codes: List[str]) -> Dict[str, int]:
+        """Count analysis-history rows per raw stock code in one grouped query.
+
+        The stock bar used to run one ``count`` query per rendered stock. This
+        method performs a single ``GROUP BY code`` scan for every candidate code
+        spelling, and callers merge the spellings that belong to one stock
+        (e.g. ``600519`` / ``600519.SH``), matching the old per-candidate sums.
+        """
+        from sqlalchemy import func
+
+        normalized = sorted({str(code).strip() for code in codes if str(code or "").strip()})
+        if not normalized:
+            return {}
+
+        with self.get_session() as session:
+            rows = session.execute(
+                select(AnalysisHistory.code, func.count(AnalysisHistory.id))
+                .where(AnalysisHistory.code.in_(normalized))
+                .group_by(AnalysisHistory.code)
+            ).all()
+
+        counts: Dict[str, int] = {}
+        for code, count in rows:
+            if code is None:
+                continue
+            counts[str(code)] = int(count or 0)
+        return counts
+
     def get_analysis_history_by_id(self, record_id: int) -> Optional[AnalysisHistory]:
         """
         根据数据库主键 ID 查询单条分析历史记录

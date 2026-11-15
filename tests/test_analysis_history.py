@@ -621,6 +621,74 @@ class AnalysisHistoryTestCase(unittest.TestCase):
         self.assertEqual(stock_bar.items[0].stock_code, "005930.KS")
         self.assertEqual(stock_bar.items[0].analysis_count, 2)
 
+    def test_stock_bar_counts_all_stocks_with_one_grouped_query(self) -> None:
+        if get_stock_bar is None:
+            self.skipTest("fastapi is not installed in this test environment")
+
+        rows = [
+            ("600519", "贵州茅台", "query_bar_count_a"),
+            ("600519.SH", "贵州茅台", "query_bar_count_b"),
+            ("000001", "平安银行", "query_bar_count_c"),
+            ("AAPL", "Apple", "query_bar_count_d"),
+        ]
+        for code, name, query_id in rows:
+            result = self._build_result()
+            result.code = code
+            result.name = name
+            self.assertGreater(
+                self.db.save_analysis_history(
+                    result=result,
+                    query_id=query_id,
+                    report_type="simple",
+                    news_content="news",
+                    context_snapshot=None,
+                    save_snapshot=False,
+                ),
+                0,
+            )
+
+        service = HistoryService(self.db)
+        expected_counts = {}
+        for record in self.db.get_distinct_stocks_from_history(limit=50):
+            display = service._display_stock_code(record.code or "")
+            candidates = HistoryService._history_code_filter_candidates(display)
+            expected_counts[display] = self.db.get_analysis_history_paginated(
+                code=candidates,
+                limit=1,
+            )[1]
+
+        with patch.object(
+            self.db,
+            "count_analysis_history_by_codes",
+            wraps=self.db.count_analysis_history_by_codes,
+        ) as count_query, patch.object(
+            self.db,
+            "get_analysis_history_paginated",
+            side_effect=AssertionError("stock bar must not count per item"),
+        ):
+            response = get_stock_bar(
+                start_date=None,
+                end_date=None,
+                limit=10,
+                db_manager=self.db,
+            )
+
+        # One grouped count query for the whole page, no per-stock count query.
+        count_query.assert_called_once()
+        self.assertGreaterEqual(len(response.items), 3)
+        for item in response.items:
+            self.assertEqual(
+                item.analysis_count,
+                expected_counts[item.stock_code],
+                f"analysis_count mismatch for {item.stock_code}",
+            )
+
+        merged = next(
+            item for item in response.items
+            if item.stock_code.split(".", 1)[0] == "600519"
+        )
+        self.assertEqual(merged.analysis_count, 2)
+
     def test_save_analysis_history_persists_sniper_columns_via_shared_parser(self) -> None:
         """迁出 sniper parser 后历史狙击点位列仍按原规则保存。"""
         result = self._build_result()

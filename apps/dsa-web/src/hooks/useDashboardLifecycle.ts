@@ -8,7 +8,7 @@ type UseDashboardLifecycleOptions = {
   refreshHistoryForCompletedTask?: (task: TaskInfo) => Promise<void>;
   refreshActiveTasks: () => Promise<void>;
   loadStockBar: () => Promise<void>;
-  refreshStockBar: () => Promise<void>;
+  refreshStockBar: (silent?: boolean) => Promise<void>;
   loadMarketReviewHistory?: () => Promise<void>;
   refreshMarketReviewHistory?: (silent?: boolean) => Promise<void>;
   syncTaskCreated: (task: TaskInfo) => void;
@@ -58,8 +58,13 @@ export function useDashboardLifecycle({
     }
 
     const intervalId = window.setInterval(() => {
+      // T20: hidden tabs skip the tick entirely; the visibility handler catches
+      // up when the user comes back.
+      if (document.hidden) {
+        return;
+      }
       void refreshHistory(true);
-      void refreshStockBar();
+      void refreshStockBar(true);
       void refreshMarketReviewHistory?.(true);
       void refreshActiveTasks();
       onDashboardDataRefresh?.();
@@ -76,7 +81,7 @@ export function useDashboardLifecycle({
     const handleVisibilityChange = () => {
       if (document.visibilityState === 'visible') {
         void refreshHistory(true);
-        void refreshStockBar();
+        void refreshStockBar(true);
         void refreshMarketReviewHistory?.(true);
         void refreshActiveTasks();
         onDashboardDataRefresh?.();

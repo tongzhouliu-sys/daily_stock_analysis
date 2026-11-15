@@ -434,9 +434,24 @@ def get_stock_bar(
             if norm_code not in seen or record.id > seen[norm_code].id:
                 seen[norm_code] = record
 
+        # Truncate the deduplicated list *before* assembling rows so the count
+        # query only covers what is actually rendered.
+        records_to_render = list(seen.values())[:limit]
+
+        code_candidates_by_group: dict = {}
+        candidate_codes: list = []
+        for record in records_to_render:
+            display_stock_code = service._display_stock_code(record.code)
+            candidates = HistoryService._history_code_filter_candidates(display_stock_code)
+            code_candidates_by_group[record.id] = candidates
+            candidate_codes.extend(candidates)
+
+        # One grouped count query for every candidate spelling instead of one
+        # count query per stock.
+        count_by_code = db_manager.count_analysis_history_by_codes(candidate_codes)
+
         items = []
-        for norm_code in seen:
-            record = seen[norm_code]
+        for record in records_to_render:
             raw_result = parse_json_field(getattr(record, "raw_result", None))
             model_used = raw_result.get("model_used") if isinstance(raw_result, dict) else None
             sentiment_score = _coalesce_int(
@@ -460,10 +475,10 @@ def get_stock_bar(
             )
 
             display_stock_code = service._display_stock_code(record.code)
-            analysis_count = db_manager.get_analysis_history_paginated(
-                code=HistoryService._history_code_filter_candidates(display_stock_code),
-                limit=1,
-            )[1]
+            analysis_count = sum(
+                count_by_code.get(candidate, 0)
+                for candidate in code_candidates_by_group.get(record.id, [])
+            )
             items.append(
                 StockBarItem(
                     id=record.id,
@@ -485,7 +500,6 @@ def get_stock_bar(
                 )
             )
 
-        items = items[:limit]
         return StockBarResponse(total=len(items), items=items)
 
     except Exception as e:

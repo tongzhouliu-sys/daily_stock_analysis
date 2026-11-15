@@ -62,6 +62,7 @@ describe('useDashboardLifecycle', () => {
       vi.advanceTimersByTime(30_000);
     });
     expect(refreshHistory).toHaveBeenCalledWith(true);
+    expect(defaultMocks.refreshStockBar).toHaveBeenCalledWith(true);
     expect(defaultMocks.refreshMarketReviewHistory).toHaveBeenCalledWith(true);
     expect(refreshActiveTasks).toHaveBeenCalledTimes(2);
     expect(onDashboardDataRefresh).toHaveBeenCalledTimes(1);
@@ -75,9 +76,48 @@ describe('useDashboardLifecycle', () => {
     });
 
     expect(refreshHistory).toHaveBeenCalledTimes(2);
+    expect(defaultMocks.refreshStockBar).toHaveBeenCalledTimes(2);
+    expect(defaultMocks.refreshStockBar).toHaveBeenLastCalledWith(true);
     expect(defaultMocks.refreshMarketReviewHistory).toHaveBeenCalledTimes(2);
     expect(refreshActiveTasks).toHaveBeenCalledTimes(3);
     expect(onDashboardDataRefresh).toHaveBeenCalledTimes(2);
+  });
+
+  it('skips the interval refresh while the page is hidden', () => {
+    const refreshHistory = vi.fn().mockResolvedValue(undefined);
+    const refreshActiveTasks = vi.fn().mockResolvedValue(undefined);
+    Object.defineProperty(document, 'hidden', {
+      configurable: true,
+      value: true,
+    });
+
+    try {
+      renderHook(() =>
+        useDashboardLifecycle({
+          loadInitialHistory: vi.fn().mockResolvedValue(undefined),
+          refreshHistory,
+          refreshActiveTasks,
+          syncTaskCreated: vi.fn(),
+          syncTaskUpdated: vi.fn(),
+          syncTaskFailed: vi.fn(),
+          removeTask: vi.fn(),
+          ...defaultMocks,
+        }),
+      );
+
+      act(() => {
+        vi.advanceTimersByTime(30_000);
+      });
+
+      expect(refreshHistory).not.toHaveBeenCalled();
+      expect(defaultMocks.refreshStockBar).not.toHaveBeenCalled();
+      expect(refreshActiveTasks).toHaveBeenCalledTimes(1);
+    } finally {
+      Object.defineProperty(document, 'hidden', {
+        configurable: true,
+        value: false,
+      });
+    }
   });
 
   it('cleans pending task removal timers on unmount', () => {
