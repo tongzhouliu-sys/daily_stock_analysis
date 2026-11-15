@@ -48,7 +48,7 @@ _VALID_ACTION_REASON = {
     (DomainAction.DIRECT_REPLY, DomainReasonCode.SOCIAL),
 }
 
-POLICY_VERSION = "1.1.0"
+POLICY_VERSION = "1.2.0"
 
 
 class DomainGuardDecision(BaseModel):

@@ -342,10 +342,14 @@ class TestDomainGuardClassification:
         d, m = service.classify("帮我解这道微积分题")
         assert d.action == DomainAction.REDIRECT
 
-    def test_movie_recommendation(self, service):
-        """推荐几部好看的电影 → REDIRECT"""
+    def test_movie_recommendation_fails_open(self, service):
+        """推荐几部好看的电影 → ALLOW
+
+        R8 变更：“电影”已从离题词表移除——“万达电影”“光线传媒电影票房”都是
+        正当的投资提问。缺少离题词后这条无法判定，按 Q4 放行。
+        """
         d, m = service.classify("推荐几部好看的电影")
-        assert d.action == DomainAction.REDIRECT
+        assert d.action == DomainAction.ALLOW
 
     def test_game_strategy_fails_open(self, service):
         """这个游戏怎么通关 → ALLOW
@@ -691,3 +695,66 @@ class TestT4AcceptanceMatrix:
         d, m = service.classify("茅台最近为什么跌")
         assert d.action == DomainAction.ALLOW
         assert m.source == "rule"
+
+
+class TestR8RuleOrderAndBoundaries:
+    """R8 验收：标的优先于离题词，英文/ASCII 关键词带词边界。"""
+
+    @pytest.fixture
+    def service(self):
+        return AgentDomainGuardService(config=None)
+
+    @pytest.mark.parametrize(
+        "message",
+        [
+            # 股票名/上市公司名里带“电影”“娱乐”“旅游”，必须先按标的认识放行
+            "万达电影最近怎么样",
+            "腾讯音乐娱乐怎么样",
+            "中国中免旅游零售业务怎么样",
+            "光线传媒电影票房",
+        ],
+    )
+    def test_listed_company_names_win_over_off_topic_words(self, service, message):
+        d, m = service.classify(message)
+        assert d.action == DomainAction.ALLOW
+        assert d.reason_code in (DomainReasonCode.INVESTMENT, DomainReasonCode.MIXED)
+
+    @pytest.mark.parametrize(
+        "message",
+        [
+            "Give me a pasta recipe",
+            "Tell me about the weather today",
+        ],
+    )
+    def test_english_off_topic_is_redirected(self, service, message):
+        d, m = service.classify(message)
+        assert d.action == DomainAction.REDIRECT
+        assert d.reason_code == DomainReasonCode.OFF_TOPIC
+
+    @pytest.mark.parametrize(
+        "message",
+        [
+            "What is the PE of AAPL",
+            "PE 是多少",
+            "这个 ETF 的费率怎么样",
+            "ROE 和 PB 怎么一起看",
+        ],
+    )
+    def test_ascii_acronyms_still_match_investment(self, service, message):
+        d, m = service.classify(message)
+        assert d.action == DomainAction.ALLOW
+
+    @pytest.mark.parametrize(
+        "word",
+        ["recipe", "segmentation", "repeat", "tape", "grape"],
+    )
+    def test_short_acronyms_do_not_match_inside_english_words(self, service, word):
+        """``PE`` 不能在 ``recipe`` / ``segmentation`` 这类单词内部命中。"""
+
+        from src.services.agent_domain_guard_service import _PATTERNS_ZH
+
+        assert _PATTERNS_ZH["investment"].search(word) is None
+
+    def test_policy_version_bumped(self):
+        """规则顺序与词表变了，policy_version 必须跟着走。"""
+        assert POLICY_VERSION == "1.2.0"
