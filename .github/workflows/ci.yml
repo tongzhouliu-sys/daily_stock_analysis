@@ -269,6 +269,10 @@ jobs:
         run: npm run lint
       - name: 🏗️ Build
         run: npm run build
+      - name: 📦 Check first-screen bundle
+        # Fails when the entry preloads lazy-only libraries (export, charts,
+        # markdown); such regressions only show up in the built output.
+        run: python3 ../../scripts/check_static_assets.py ../../static
       - name: 🌐 Install fixture browser
         run: npx playwright install --with-deps chromium
       - name: 🧪 Verify default smoke without backend credentials
