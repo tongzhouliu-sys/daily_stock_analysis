@@ -305,11 +305,8 @@ async def app_lifespan(app: FastAPI):
 
     warmup_akshare_cache()
     scanner_host = getattr(app.state, "scanner_host", None)
-    if scanner_host is not None:
-        try:
-            await run_in_threadpool(scanner_host.start)
-        except (ImportError, OSError) as exc:
-            logger.error("Scanner worker startup failed: %s", type(exc).__name__)
+    # Scanner workers start lazily on the first request to /api/v1/scanner so a
+    # deployment that never opens the scanner does not run idle child processes.
     try:
         yield
     finally:

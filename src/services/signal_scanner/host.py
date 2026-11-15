@@ -18,6 +18,12 @@ from src.services.signal_scanner.core import ROOT, Settings, require
 
 logger = logging.getLogger(__name__)
 
+# Crash-loop guard for the worker supervisor. The first restart waits one base
+# interval; each further consecutive failure doubles the wait, capped at max.
+RESTART_BASE_SECONDS = 5.0
+RESTART_MAX_SECONDS = 300.0
+MAX_RESTART_FAILURES = 5
+
 
 class HostAuth:
     """Use DSA's current session, retaining scanner write-CSRF protection."""
@@ -81,19 +87,48 @@ class ScannerHost:
 
     def _supervise(self):
         # A failed collector/research process must not leave a healthy Web page
-        # with a permanently stalled queue. Rate-limit restarts to this interval.
-        while not self.stopping.wait(5):
+        # with a permanently stalled queue. Restarts back off exponentially
+        # (5s -> 5min) and stop after 5 consecutive failed restarts, so a
+        # crash-on-start worker cannot restart forever.
+        failures = 0
+        delay = RESTART_BASE_SECONDS
+        while not self.stopping.wait(delay):
+            died = []
             with self.lock:
                 if self.stopping.is_set():
                     return
                 for index, child in enumerate(self.processes):
                     if child.poll() is not None:
-                        kind = self.kinds[index]
-                        logger.warning("Restarting scanner %s worker after exit %s", kind, child.returncode)
-                        try:
-                            self.processes[index] = self._spawn(kind, self.streams[index])
-                        except OSError:
-                            logger.exception("Unable to restart scanner %s worker", kind)
+                        died.append((index, self.kinds[index], child.returncode))
+                if not died:
+                    failures = 0
+                    delay = RESTART_BASE_SECONDS
+                    continue
+                failures += len(died)
+                if failures > MAX_RESTART_FAILURES:
+                    for _index, kind, returncode in died:
+                        logger.error(
+                            "Scanner %s worker exited %s; giving up after %s consecutive failures",
+                            kind,
+                            returncode,
+                            MAX_RESTART_FAILURES,
+                        )
+                    self.stopping.set()
+                    return
+                for index, kind, returncode in died:
+                    logger.warning(
+                        "Restarting scanner %s worker after exit %s (failure %s/%s)",
+                        kind,
+                        returncode,
+                        failures,
+                        MAX_RESTART_FAILURES,
+                    )
+                    try:
+                        self.processes[index] = self._spawn(kind, self.streams[index])
+                    except OSError:
+                        logger.exception("Unable to restart scanner %s worker", kind)
+                        failures += 1
+            delay = min(delay * 2, RESTART_MAX_SECONDS)
 
     def initialize(self):
         with self.lock:
@@ -184,5 +219,12 @@ class ScannerHost:
                                            "message": "扫描器无法初始化，请检查依赖与运行目录"}},
                                status_code=503)(scope, receive, send)
             return
+        # Workers are started on demand: a deployment that never touches the
+        # scanner must not carry two idle polling child processes. Starting on
+        # the first scanner request keeps the queue live exactly when it is used.
+        try:
+            await run_in_threadpool(self.start)
+        except (ImportError, OSError) as exc:
+            logger.error("Scanner worker startup failed: %s", type(exc).__name__)
         await application(scope, receive, send)
 

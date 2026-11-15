@@ -9,6 +9,7 @@ and this project adheres to [Semantic Versioning](https://semver.org/).
 
 ## [Unreleased]
 
+- [改进] 扫描器 worker 改为按需启动：服务启动时不再拉起常驻的扫描/研究子进程，首次访问 `/api/v1/scanner` 接口时才启动，未使用扫描器的部署不再空转两个轮询进程；监督线程重启改为指数退避（5 秒起、上限 5 分钟），连续 5 次重启仍失败后停止并记错误日志。`SCANNER_WORKERS_ENABLED` 语义不变。
 - [修复] 组合回撤改按外部现金流调整：日收益以「前一日权益 + 当日净入金/出金」为分母连乘，提现 300k 不再被算成 30% 回撤；回撤告警改用 `current_drawdown_pct`，历史峰值回撤只做展示，回撤修复后不再重复推送。
 - [修复] 缺价持仓改为按成本估值并显式标记：`valuation_basis="cost"`、`price_missing=true`、`PRICE_MISSING` limitation，未实现盈亏率返回 `null` 而不是 0%；止损与个股/行业集中度跳过缺价持仓并披露 `excluded_missing_price_count`，不再把成本估值读成 −100% 止损或拉偏权重。
 - [修复] 缺汇率不再静默 1:1 折算：查不到直接/反向汇率时返回 `0.0 / missing_rate`，该部分从账户与快照汇总中剔除，并通过 `fx_missing`、`FX_MISSING` limitation 与前端提示显式披露。

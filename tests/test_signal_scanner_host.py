@@ -1,5 +1,7 @@
 """Exercise the real mounted scanner with DSA auth and its real SQLite writes."""
 
+import io
+
 from fastapi import FastAPI
 from fastapi.testclient import TestClient
 import pytest
@@ -204,3 +206,104 @@ def test_csrf_survives_host_recreation_but_not_session_rotation(tmp_path, monkey
     assert HostAuth().session(request)["csrf_token"] == first
     assert auth.rotate_session_secret()
     assert HostAuth().session(request)["csrf_token"] != first
+
+
+class _FakeChild:
+    """Stand-in worker process used to test lifecycle without spawning Python."""
+
+    def __init__(self, pid=0):
+        self.pid = pid
+        self.returncode = None
+
+    def poll(self):
+        return self.returncode
+
+    def wait(self, timeout=None):
+        return self.returncode if self.returncode is not None else 0
+
+
+class _FakeStopEvent:
+    """Deterministic replacement for threading.Event that records wait timeouts."""
+
+    def __init__(self, limit):
+        self.delays = []
+        self.limit = limit
+        self._set = False
+
+    def wait(self, timeout):
+        self.delays.append(timeout)
+        if self._set or len(self.delays) > self.limit:
+            self._set = True
+            return True
+        return False
+
+    def set(self):
+        self._set = True
+
+    def is_set(self):
+        return self._set
+
+
+def test_workers_start_on_first_scanner_request_not_at_startup(tmp_path, monkeypatch):
+    monkeypatch.setenv("SCANNER_RUNTIME", str(tmp_path))
+    monkeypatch.setenv("SCANNER_WORKERS_ENABLED", "true")
+    monkeypatch.setenv("SCANNER_DAILY_MARKET", "false")
+    monkeypatch.setattr(auth, "is_auth_enabled", lambda: False)
+    spawned = []
+
+    def fake_spawn(self, kind, _stream):
+        child = _FakeChild(pid=1000 + len(spawned))
+        spawned.append(kind)
+        return child
+
+    monkeypatch.setattr(ScannerHost, "_spawn", fake_spawn)
+    monkeypatch.setattr("src.services.signal_scanner.host.os.killpg", lambda *_args: None)
+    host = ScannerHost()
+    app = FastAPI()
+    app.mount("/api/v1/scanner", host)
+    client = TestClient(app)
+    try:
+        # No scheduler, no lifespan hook, no request: no child processes.
+        assert host.processes == []
+        assert spawned == []
+
+        response = client.get("/api/v1/scanner/rule-validation/catalog")
+        assert response.status_code == 200, response.text
+
+        assert spawned == ["scan", "research"]
+        assert len(host.processes) == 2
+        # A second request must not spawn a second fleet.
+        client.get("/api/v1/scanner/rule-validation/catalog")
+        assert spawned == ["scan", "research"]
+    finally:
+        for child in host.processes:
+            child.returncode = 0
+        host.stop()
+
+
+def test_supervisor_backs_off_and_gives_up_after_five_failures():
+    host = ScannerHost()
+    crashed = _FakeChild(pid=1)
+    crashed.returncode = 1
+    host.processes = [crashed]
+    host.kinds = ["scan"]
+    host.streams = [io.BytesIO()]
+    host.stopping = _FakeStopEvent(limit=10)
+    spawn_calls = []
+
+    def crashing_spawn(kind, _stream):
+        spawn_calls.append(kind)
+        child = _FakeChild(pid=100 + len(spawn_calls))
+        child.returncode = 1
+        return child
+
+    host._spawn = crashing_spawn
+    host._supervise()
+
+    self_delays = host.stopping.delays
+    assert len(spawn_calls) == 5
+    assert self_delays[:6] == [5.0, 10.0, 20.0, 40.0, 80.0, 160.0]
+    assert all(later > earlier for earlier, later in zip(self_delays, self_delays[1:]))
+    # After 5 failed restarts the supervisor stops itself instead of looping.
+    assert host.stopping.is_set()
+    assert host.monitor is None
