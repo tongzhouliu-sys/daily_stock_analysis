@@ -129,6 +129,10 @@ AGENT_BACKEND_REMOVED_MESSAGE = (
 TICKFLOW_KLINE_ADJUST_VALUES = {"none", "forward", "backward", "forward_additive", "backward_additive"}
 # 沪深300 / 中证500 / 创业板 / 红利低波 / 纳指 / 黄金；防守资产为货币 ETF
 DEFAULT_BACKTEST_ENGINE_VERSION = "v2"
+# Older .env.example files shipped an uncommented BACKTEST_ENGINE_VERSION=v1.
+# Deployments copied from them keep writing new-semantics results under v1,
+# mixed with old v1 results, unless the line is removed or updated.
+LEGACY_BACKTEST_ENGINE_VERSIONS = frozenset({"v1"})
 DEFAULT_ETF_ROTATION_POOL = ("510300", "510500", "159915", "512890", "513100", "518880")
 DEFAULT_ETF_ROTATION_SAFE_ASSET = "511880"
 # Fallback defaults used when ANSPIRE_API_KEYS is reused as legacy OpenAI-compatible source.
@@ -3311,6 +3315,19 @@ class Config:
             primary environment variable / field name it relates to.
         """
         issues: List[ConfigIssue] = []
+
+        # --- Backtest engine version pinned by an old template ---
+        if str(self.backtest_engine_version or "").strip().lower() in LEGACY_BACKTEST_ENGINE_VERSIONS:
+            issues.append(ConfigIssue(
+                severity="warning",
+                message=(
+                    f"BACKTEST_ENGINE_VERSION 仍固定为 {self.backtest_engine_version}（旧模板默认值）。"
+                    f"当前评估口径的版本是 {DEFAULT_BACKTEST_ENGINE_VERSION}，继续使用旧版本号会让新口径结果"
+                    "与旧结果混在同一版本里统计；请删除这一行或改为 "
+                    f"{DEFAULT_BACKTEST_ENGINE_VERSION}。"
+                ),
+                field="BACKTEST_ENGINE_VERSION",
+            ))
 
         # --- Stock list ---
         if not self.stock_list:

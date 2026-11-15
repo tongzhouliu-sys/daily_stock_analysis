@@ -1495,7 +1495,7 @@ Set the following variables in `.env` (all optional, have defaults):
 | `BACKTEST_ENABLED` | `true` | Whether to auto-run backtest after daily analysis |
 | `BACKTEST_EVAL_WINDOW_DAYS` | `10` | Evaluation window (trading days) |
 | `BACKTEST_MIN_AGE_DAYS` | `14` | Only backtest records older than N days to avoid incomplete data |
-| `BACKTEST_ENGINE_VERSION` | `v2` | Engine version, used to distinguish results when logic is updated |
+| `BACKTEST_ENGINE_VERSION` | `v2` | Engine version, used to distinguish results when logic is updated. Older `.env.example` files shipped an uncommented `BACKTEST_ENGINE_VERSION=v1`; deployments based on them should delete that line or set `v2`, otherwise new-semantics results are written under `v1` and mixed with old results in statistics. Config validation warns about this |
 | `BACKTEST_NEUTRAL_BAND_PCT` | `2.0` | Neutral band threshold (%), ±2% treated as range-bound |
 
 ### Auto-run

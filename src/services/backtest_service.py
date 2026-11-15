@@ -11,7 +11,7 @@ from typing import Any, Dict, List, Optional, Tuple
 from sqlalchemy import and_, select
 
 from data_provider.base import canonical_stock_code, normalize_stock_code
-from src.config import get_config
+from src.config import get_config, DEFAULT_BACKTEST_ENGINE_VERSION
 from src.core.backtest_engine import OVERALL_SENTINEL_CODE, BacktestEngine, EvaluationConfig
 from src.market_phase_summary import (
     extract_market_phase_summary,
@@ -75,7 +75,7 @@ class BacktestService:
         if min_age_days is None:
             min_age_days = getattr(config, "backtest_min_age_days", 14)
 
-        engine_version = getattr(config, "backtest_engine_version", "v1")
+        engine_version = getattr(config, "backtest_engine_version", DEFAULT_BACKTEST_ENGINE_VERSION)
         neutral_band_pct = float(getattr(config, "backtest_neutral_band_pct", 2.0))
 
         eval_config = EvaluationConfig(
@@ -561,7 +561,7 @@ class BacktestService:
         analysis_target: Optional[AnalysisTarget] = None,
     ) -> Dict[str, Any]:
         config = get_config()
-        engine_version = str(getattr(config, "backtest_engine_version", "v1"))
+        engine_version = str(getattr(config, "backtest_engine_version", DEFAULT_BACKTEST_ENGINE_VERSION))
         code, identity_kwargs = self._read_identity(
             code, analysis_target, analysis_date_from=analysis_date_from,
             analysis_date_to=analysis_date_to, analysis_phase=analysis_phase,
@@ -628,7 +628,7 @@ class BacktestService:
         analysis_target: Optional[AnalysisTarget] = None,
     ) -> Optional[Dict[str, Any]]:
         config = get_config()
-        engine_version = str(getattr(config, "backtest_engine_version", "v1"))
+        engine_version = str(getattr(config, "backtest_engine_version", DEFAULT_BACKTEST_ENGINE_VERSION))
         if analysis_target is not None and scope != "stock":
             raise ValueError("Validated backtest identity requires stock scope")
         code, identity_kwargs = self._read_identity(

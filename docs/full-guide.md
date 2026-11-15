@@ -1672,7 +1672,7 @@ P5 在 Web `/decision-signals` 页面筛选区下方展示当前 outcome engine 
 | `BACKTEST_ENABLED` | `true` | 是否在每日分析后自动运行回测 |
 | `BACKTEST_EVAL_WINDOW_DAYS` | `10` | 评估窗口（交易日数） |
 | `BACKTEST_MIN_AGE_DAYS` | `14` | 仅回测 N 天前的记录，避免数据不完整 |
-| `BACKTEST_ENGINE_VERSION` | `v2` | 引擎版本号，升级逻辑时用于区分结果 |
+| `BACKTEST_ENGINE_VERSION` | `v2` | 引擎版本号，升级逻辑时用于区分结果。旧版 `.env.example` 里有一行未注释的 `BACKTEST_ENGINE_VERSION=v1`，照它配置的部署请删除这一行或改为 `v2`，否则新口径结果会以 `v1` 写入、与旧结果混在一起统计；配置校验会对此给出警告 |
 | `BACKTEST_NEUTRAL_BAND_PCT` | `2.0` | 中性区间阈值（%），±2% 内视为震荡 |
 
 ### 自动运行

@@ -113,6 +113,28 @@ class TestValidateStructuredHappyPath:
 
 
 # ---------------------------------------------------------------------------
+# validate_structured() — backtest engine version pinned by an old template
+# ---------------------------------------------------------------------------
+
+class TestValidateStructuredBacktestEngineVersion:
+    def test_legacy_pinned_version_is_a_warning(self):
+        from src.config import DEFAULT_BACKTEST_ENGINE_VERSION, LEGACY_BACKTEST_ENGINE_VERSIONS
+
+        legacy = sorted(LEGACY_BACKTEST_ENGINE_VERSIONS)[0]
+        issues = _make_config(backtest_engine_version=legacy).validate_structured()
+        warnings = [i for i in issues if i.field == "BACKTEST_ENGINE_VERSION"]
+        assert len(warnings) == 1
+        assert warnings[0].severity == "warning"
+        assert DEFAULT_BACKTEST_ENGINE_VERSION in warnings[0].message
+
+    def test_current_version_has_no_warning(self):
+        from src.config import DEFAULT_BACKTEST_ENGINE_VERSION
+
+        issues = _make_config(backtest_engine_version=DEFAULT_BACKTEST_ENGINE_VERSION).validate_structured()
+        assert not [i for i in issues if i.field == "BACKTEST_ENGINE_VERSION"]
+
+
+# ---------------------------------------------------------------------------
 # validate_structured() — stock list
 # ---------------------------------------------------------------------------
 

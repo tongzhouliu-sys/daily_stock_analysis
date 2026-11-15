@@ -13,6 +13,8 @@ import math
 import re
 from typing import Any, Dict, Iterable, List, Optional, Protocol, Sequence
 
+from src.config import DEFAULT_BACKTEST_ENGINE_VERSION
+
 
 OVERALL_SENTINEL_CODE = "__overall__"
 
@@ -55,7 +57,7 @@ class BacktestResultLike(Protocol):
 class EvaluationConfig:
     eval_window_days: int
     neutral_band_pct: float = 2.0
-    engine_version: str = "v1"
+    engine_version: str = DEFAULT_BACKTEST_ENGINE_VERSION
 
 
 class BacktestEngine:
