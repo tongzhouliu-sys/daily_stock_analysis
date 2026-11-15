@@ -11,6 +11,7 @@ from __future__ import annotations
 
 import threading
 import time
+from datetime import datetime, timezone
 from unittest.mock import patch
 
 import pandas as pd
@@ -167,8 +168,8 @@ def test_daily_cache_expires_on_new_day(monkeypatch):
 
     key = fa._daily_cache_key("stock_sector_fund_flow_rank", {})
     with fa._daily_table_cache_lock:
-        _day, payload = fa._daily_table_cache[key]
-        fa._daily_table_cache[key] = ("1999-01-01", payload)
+        _day, _stored_at, payload = fa._daily_table_cache[key]
+        fa._daily_table_cache[key] = ("1999-01-01", _stored_at, payload)
 
     result = adapter._call_df_candidates([("stock_sector_fund_flow_rank", {})])
     assert len(calls) == 2
@@ -258,3 +259,82 @@ def test_manager_runs_independent_fundamental_blocks_concurrently():
     assert ctx["capital_flow"]["status"] == "partial"
     assert ctx["dragon_tiger"]["status"] == "partial"
     assert ctx["boards"]["status"] == "partial"
+
+
+def _fixed_cache_clock(monkeypatch, initial: datetime):
+    clock = {"now": initial}
+    monkeypatch.setattr(fa, "_resolve_cache_now", lambda now=None: clock["now"])
+    return clock
+
+
+def test_intraday_market_table_refetches_after_five_minutes(monkeypatch):
+    fa._clear_daily_table_cache()
+    clock = _fixed_cache_clock(monkeypatch, datetime(2026, 11, 16, 2, 0, tzinfo=timezone.utc))  # 10:00 北京
+    adapter = fa.AkshareFundamentalAdapter()
+    calls: list[int] = []
+
+    def fake_rank(**kwargs):
+        calls.append(1)
+        return pd.DataFrame({"板块": ["半导体"], "今日主力净流入-净额": [float(len(calls))]})
+
+    monkeypatch.setattr("akshare.stock_sector_fund_flow_rank", fake_rank, raising=False)
+
+    adapter._call_df_candidates([("stock_sector_fund_flow_rank", {})])
+    clock["now"] = datetime(2026, 11, 16, 2, 6, tzinfo=timezone.utc)
+    refreshed = adapter._call_df_candidates([("stock_sector_fund_flow_rank", {})])
+
+    assert len(calls) == 2
+    assert refreshed[1] == "stock_sector_fund_flow_rank"
+    fa._clear_daily_table_cache()
+
+
+def test_intraday_market_table_hits_cache_within_five_minutes(monkeypatch):
+    fa._clear_daily_table_cache()
+    clock = _fixed_cache_clock(monkeypatch, datetime(2026, 11, 16, 2, 0, tzinfo=timezone.utc))
+    adapter = fa.AkshareFundamentalAdapter()
+    calls: list[int] = []
+
+    def fake_rank(**kwargs):
+        calls.append(1)
+        return pd.DataFrame({"板块": ["半导体"], "今日主力净流入-净额": [1.0]})
+
+    monkeypatch.setattr("akshare.stock_sector_fund_flow_rank", fake_rank, raising=False)
+
+    adapter._call_df_candidates([("stock_sector_fund_flow_rank", {})])
+    clock["now"] = datetime(2026, 11, 16, 2, 4, tzinfo=timezone.utc)
+    cached = adapter._call_df_candidates([("stock_sector_fund_flow_rank", {})])
+
+    assert len(calls) == 1
+    assert cached[1] == "stock_sector_fund_flow_rank:daily_cache"
+    fa._clear_daily_table_cache()
+
+
+def test_after_close_market_table_reuses_trading_day_cache(monkeypatch):
+    fa._clear_daily_table_cache()
+    clock = _fixed_cache_clock(monkeypatch, datetime(2026, 11, 16, 8, 0, tzinfo=timezone.utc))  # 16:00 北京
+    adapter = fa.AkshareFundamentalAdapter()
+    calls: list[int] = []
+
+    def fake_rank(**kwargs):
+        calls.append(1)
+        return pd.DataFrame({"板块": ["半导体"], "今日主力净流入-净额": [1.0]})
+
+    monkeypatch.setattr("akshare.stock_sector_fund_flow_rank", fake_rank, raising=False)
+
+    adapter._call_df_candidates([("stock_sector_fund_flow_rank", {})])
+    clock["now"] = datetime(2026, 11, 16, 9, 0, tzinfo=timezone.utc)
+    cached = adapter._call_df_candidates([("stock_sector_fund_flow_rank", {})])
+
+    assert len(calls) == 1
+    assert cached[1] == "stock_sector_fund_flow_rank:daily_cache"
+    fa._clear_daily_table_cache()
+
+
+def test_cache_day_uses_market_timezone_not_server_timezone(monkeypatch):
+    # 服务器在 UTC，北京时间 08:00（开盘前）仍应落在同一个 A 股交易日。
+    fixed = datetime(2026, 11, 16, 0, 0, tzinfo=timezone.utc)
+    assert fa._trading_day_cache_key(fixed) == "2026-11-16"
+
+    # 周末回退到最近一个交易日。
+    saturday = datetime(2026, 11, 14, 0, 0, tzinfo=timezone.utc)
+    assert fa._trading_day_cache_key(saturday) == "2026-11-13"

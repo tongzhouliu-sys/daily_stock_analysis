@@ -13,10 +13,12 @@ import math
 import re
 import threading
 import time
-from datetime import datetime, timedelta
+from datetime import datetime, timedelta, timezone
 from typing import Any, Callable, Dict, List, Optional, Tuple
 
 import pandas as pd
+
+from src.core.trading_calendar import MarketPhase
 
 logger = logging.getLogger(__name__)
 
@@ -26,6 +28,11 @@ logger = logging.getLogger(__name__)
 # 让其它块继续按已有数据返回。
 _FUNDAMENTAL_MIN_CALL_TIMEOUT_SECONDS = 1.0
 _FUNDAMENTAL_CALL_TIMEOUT_RATIO = 0.35
+# R18: 超时后被放弃的后台线程仍占着上游连接。限制同时存在的弃置线程数，
+# 超限时直接按超时返回，不再新开线程。
+_FUNDAMENTAL_MAX_ABANDONED_CALL_THREADS = 8
+_abandoned_call_threads = 0
+_abandoned_call_threads_lock = threading.Lock()
 
 
 # T29: 基本面并行块共用的按数据源限速器。
@@ -125,10 +132,11 @@ def _clear_source_rate_limiters_for_tests() -> None:
         _SOURCE_RATE_LIMITERS.clear()
 
 
-# T28: 全市场表进程内按天缓存。
-# 板块资金流排名、龙虎榜、业绩预告/快报、机构持股这类整表接口在同一个交易日内
-# 内容稳定，但一次分析里可能在多个 block / 多只股票上被重复拉取。这里按
-# 「接口名 + 参数 + 自然日」缓存一份副本，跨日自动失效。
+# T28/R18: 全市场表进程内缓存。
+# 板块资金流排名、龙虎榜这类整表接口在盘中会变，不能按自然日缓存一整天；
+# 业绩预告/快报、机构持股这类表在同一个交易日内稳定。这里按
+# 「接口名 + 参数 + 该市场时区下的有效交易日」缓存一份副本，跨交易日自动
+# 失效；盘中会变的表额外限制 5 分钟 TTL，收盘后按交易日缓存。
 _DAILY_CACHEABLE_AKSHARE_INTERFACES = {
     "stock_sector_fund_flow_rank",
     "stock_lhb_stock_statistic_em",
@@ -138,8 +146,23 @@ _DAILY_CACHEABLE_AKSHARE_INTERFACES = {
     "stock_yjkb_em",
     "stock_institute_hold",
 }
+# 盘中会变的表：板块资金流排名、龙虎榜。其余按交易日缓存即可。
+_INTRADAY_VOLATILE_AKSHARE_INTERFACES = {
+    "stock_sector_fund_flow_rank",
+    "stock_lhb_stock_statistic_em",
+    "stock_lhb_detail_em",
+    "stock_lhb_jgmmtj_em",
+}
+# 全市场表来自 A 股上游，缓存键使用 A 股时区与交易日。
+_INTRADAY_TABLE_CACHE_TTL_SECONDS = 300
+_DAILY_TABLE_CACHE_MARKET = "cn"
+_INTRADAY_MARKET_PHASES = {
+    MarketPhase.INTRADAY,
+    MarketPhase.LUNCH_BREAK,
+    MarketPhase.CLOSING_AUCTION,
+}
 _DAILY_TABLE_CACHE_MAX_ENTRIES = 64
-_daily_table_cache: Dict[Tuple[str, str], Tuple[str, Any]] = {}
+_daily_table_cache: Dict[Tuple[str, str], Tuple[str, float, Any]] = {}
 _daily_table_cache_lock = threading.Lock()
 
 
@@ -153,39 +176,90 @@ def _daily_cache_key(func_name: str, kwargs: Dict[str, Any]) -> Optional[Tuple[s
     return func_name, token
 
 
-def _load_daily_table(key: Optional[Tuple[str, str]]):
+def _resolve_cache_now(now: Optional[datetime] = None) -> datetime:
+    """Return an aware time for cache keys; server timezone never decides the day."""
+    if now is None:
+        return datetime.now(timezone.utc)
+    if now.tzinfo is None:
+        return now.replace(tzinfo=timezone.utc)
+    return now
+
+
+def _trading_day_cache_key(now: datetime) -> str:
+    """Resolve the effective A-share trading day in the market timezone."""
+    from src.core.trading_calendar import (
+        get_effective_trading_date,
+        get_market_now,
+        is_market_open,
+    )
+
+    market_now = get_market_now(_DAILY_TABLE_CACHE_MARKET, current_time=now)
+    local_date = market_now.date()
+    if is_market_open(_DAILY_TABLE_CACHE_MARKET, local_date):
+        return local_date.isoformat()
+    return get_effective_trading_date(
+        _DAILY_TABLE_CACHE_MARKET, current_time=now
+    ).isoformat()
+
+
+def _is_intraday_table(func_name: str, now: datetime) -> bool:
+    if func_name not in _INTRADAY_VOLATILE_AKSHARE_INTERFACES:
+        return False
+    from src.core.trading_calendar import infer_market_phase
+
+    return (
+        infer_market_phase(_DAILY_TABLE_CACHE_MARKET, current_time=now)
+        in _INTRADAY_MARKET_PHASES
+    )
+
+
+def _load_daily_table(
+    key: Optional[Tuple[str, str]],
+    now: Optional[datetime] = None,
+):
     if key is None:
         return None
-    today = datetime.now().date().isoformat()
+    cache_now = _resolve_cache_now(now)
+    day_key = _trading_day_cache_key(cache_now)
     with _daily_table_cache_lock:
         item = _daily_table_cache.get(key)
         if not item:
             return None
-        day, cached = item
-        if day != today:
+        day, stored_at, cached = item
+        if day != day_key:
             _daily_table_cache.pop(key, None)
             return None
+        if _is_intraday_table(key[0], cache_now):
+            age = cache_now.timestamp() - stored_at
+            if age >= _INTRADAY_TABLE_CACHE_TTL_SECONDS:
+                return None
         try:
             return cached.copy()
         except Exception:
             return cached
 
 
-def _store_daily_table(key: Optional[Tuple[str, str]], df: Any) -> None:
+def _store_daily_table(
+    key: Optional[Tuple[str, str]],
+    df: Any,
+    now: Optional[datetime] = None,
+) -> None:
     if key is None:
         return
-    today = datetime.now().date().isoformat()
+    cache_now = _resolve_cache_now(now)
+    day_key = _trading_day_cache_key(cache_now)
     with _daily_table_cache_lock:
         if len(_daily_table_cache) >= _DAILY_TABLE_CACHE_MAX_ENTRIES:
-            stale = [k for k, (day, _) in _daily_table_cache.items() if day != today]
+            stale = [k for k, (day, _, _) in _daily_table_cache.items() if day != day_key]
             for k in stale:
                 _daily_table_cache.pop(k, None)
             if len(_daily_table_cache) >= _DAILY_TABLE_CACHE_MAX_ENTRIES:
                 _daily_table_cache.clear()
         try:
-            _daily_table_cache[key] = (today, df.copy())
+            value = df.copy()
         except Exception:
-            _daily_table_cache[key] = (today, df)
+            value = df
+        _daily_table_cache[key] = (day_key, cache_now.timestamp(), value)
 
 
 def _clear_daily_table_cache() -> None:
@@ -223,14 +297,24 @@ def _call_with_deadline(
     if timeout <= 0:
         raise TimeoutError(f"{label} 无剩余预算")
 
+    global _abandoned_call_threads
+    with _abandoned_call_threads_lock:
+        if _abandoned_call_threads >= _FUNDAMENTAL_MAX_ABANDONED_CALL_THREADS:
+            raise TimeoutError(f"{label} 弃置调用过多，跳过本次请求")
+        _abandoned_call_threads += 1
+
     box: Dict[str, Any] = {}
     errors: Dict[str, BaseException] = {}
 
     def _runner() -> None:
+        global _abandoned_call_threads
         try:
             box["value"] = func(**kwargs)
         except BaseException as exc:  # noqa: BLE001 - 原样抛回调用方
             errors["value"] = exc
+        finally:
+            with _abandoned_call_threads_lock:
+                _abandoned_call_threads -= 1
 
     worker = threading.Thread(
         target=_runner,
