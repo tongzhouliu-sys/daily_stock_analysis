@@ -120,6 +120,16 @@ class EfinanceRealtimeQuote:
 
 logger = logging.getLogger(__name__)
 
+
+def _lots_to_shares(value: Any) -> Optional[int]:
+    """Convert an Eastmoney lot count (手) to shares; keep a missing value missing.
+
+    ``(safe_int(v) or 0) * 100`` turned a missing volume into 0, which the
+    pipeline then wrote as the day's volume.
+    """
+    lots = safe_int(value)
+    return None if lots is None else lots * 100
+
 EASTMONEY_HISTORY_ENDPOINT = "push2his.eastmoney.com/api/qt/stock/kline/get"
 
 
@@ -744,7 +754,7 @@ class EfinanceFetcher(BaseFetcher):
                 change_pct=safe_float(row.get(pct_col)),
                 change_amount=safe_float(row.get(chg_col)),
                 # R26: Eastmoney realtime volume is in lots (手).
-                volume=(safe_int(row.get(vol_col)) or 0) * 100,
+                volume=_lots_to_shares(row.get(vol_col)),
                 amount=safe_float(row.get(amt_col)),
                 turnover_rate=safe_float(row.get(turn_col)),
                 amplitude=safe_float(row.get(amp_col)),
@@ -927,7 +937,7 @@ class EfinanceFetcher(BaseFetcher):
                 change_pct=safe_float(row.get(pct_col)),
                 change_amount=safe_float(row.get(chg_col)),
                 # R26: Eastmoney realtime volume is in lots (手).
-                volume=(safe_int(row.get(vol_col)) or 0) * 100,
+                volume=_lots_to_shares(row.get(vol_col)),
                 amount=safe_float(row.get(amt_col)),
                 turnover_rate=safe_float(row.get(turn_col)),
                 amplitude=safe_float(row.get(amp_col)),

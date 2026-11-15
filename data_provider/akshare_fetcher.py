@@ -61,6 +61,16 @@ RealtimeQuote = UnifiedRealtimeQuote
 
 logger = logging.getLogger(__name__)
 
+
+def _lots_to_shares(value: Any) -> Optional[int]:
+    """Convert an Eastmoney lot count (手) to shares; keep a missing value missing.
+
+    ``(safe_int(v) or 0) * 100`` turned a missing volume into 0, which the
+    pipeline then wrote as the day's volume.
+    """
+    lots = safe_int(value)
+    return None if lots is None else lots * 100
+
 SINA_REALTIME_ENDPOINT = "hq.sinajs.cn/list"
 TENCENT_REALTIME_ENDPOINT = "qt.gtimg.cn/q"
 _AKSHARE_HISTORY_CALL_TIMEOUT = 30.0
@@ -1249,7 +1259,7 @@ class AkshareFetcher(BaseFetcher):
                 change_pct=safe_float(row.get('涨跌幅')),
                 change_amount=safe_float(row.get('涨跌额')),
                 # R26: Eastmoney spot volume is in lots (手).
-                volume=(safe_int(row.get('成交量')) or 0) * 100,
+                volume=_lots_to_shares(row.get('成交量')),
                 amount=safe_float(row.get('成交额')),
                 volume_ratio=safe_float(row.get('量比')),
                 turnover_rate=safe_float(row.get('换手率')),
@@ -1656,7 +1666,7 @@ class AkshareFetcher(BaseFetcher):
                 change_pct=safe_float(row.get('涨跌幅')),
                 change_amount=safe_float(row.get('涨跌额')),
                 # R26: Eastmoney ETF spot volume is in lots (手).
-                volume=(safe_int(row.get('成交量')) or 0) * 100,
+                volume=_lots_to_shares(row.get('成交量')),
                 amount=safe_float(row.get('成交额')),
                 volume_ratio=safe_float(row.get('量比')),
                 turnover_rate=safe_float(row.get('换手率')),

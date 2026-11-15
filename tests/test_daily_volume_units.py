@@ -204,3 +204,15 @@ class DailyVolumeMigrationTest(unittest.TestCase):
 
 if __name__ == "__main__":
     unittest.main()
+
+
+def test_missing_eastmoney_volume_stays_missing():
+    # ``(safe_int(v) or 0) * 100`` turned a missing realtime volume into 0,
+    # which the pipeline then wrote as the day's volume.
+    from data_provider import akshare_fetcher, efinance_fetcher
+
+    for module in (efinance_fetcher, akshare_fetcher):
+        assert module._lots_to_shares(None) is None
+        assert module._lots_to_shares("") is None
+        assert module._lots_to_shares("12") == 1200
+        assert module._lots_to_shares(0) == 0
