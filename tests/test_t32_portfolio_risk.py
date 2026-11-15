@@ -309,3 +309,100 @@ class E19MissingFxTestCase(unittest.TestCase):
 
 if __name__ == "__main__":
     unittest.main()
+
+
+class R19SparseCashFlowTestCase(unittest.TestCase):
+    def test_withdrawal_between_snapshots_is_charged_to_the_later_snapshot(self):
+        """Friday 1,000,000 -> Monday 700,000 with a Saturday 300,000 withdrawal is 0%."""
+
+        service = _service(
+            snapshots=[
+                _snapshot_row(16, 1_000_000.0),  # Friday
+                _snapshot_row(19, 700_000.0),  # Monday, no snapshot on the weekend
+            ],
+            ledger=[_ledger_row(17, direction="out", amount=300_000.0)],
+        )
+
+        result = service._build_drawdown(
+            account_id=1,
+            as_of_date=date(2026, 1, 20),
+            cost_method="fifo",
+            threshold_pct=10.0,
+            lookback_days=30,
+        )
+
+        self.assertEqual(result["series_points"], 2)
+        self.assertAlmostEqual(result["max_drawdown_pct"], 0.0, places=4)
+        self.assertAlmostEqual(result["current_drawdown_pct"], 0.0, places=4)
+        self.assertFalse(result["alert"])
+
+    def test_deposit_between_snapshots_does_not_create_a_gain(self):
+        service = _service(
+            snapshots=[
+                _snapshot_row(16, 1_000_000.0),
+                _snapshot_row(19, 1_300_000.0),
+            ],
+            ledger=[_ledger_row(17, direction="in", amount=300_000.0)],
+        )
+
+        result = service._build_drawdown(
+            account_id=1,
+            as_of_date=date(2026, 1, 20),
+            cost_method="fifo",
+            threshold_pct=10.0,
+            lookback_days=30,
+        )
+
+        self.assertAlmostEqual(result["max_drawdown_pct"], 0.0, places=4)
+        self.assertAlmostEqual(result["current_drawdown_pct"], 0.0, places=4)
+
+
+class _FxPortfolioService:
+    """USD -> CNY at 7.2; CNY direct."""
+
+    def convert_amount(self, *, amount, from_currency, to_currency, as_of_date):
+        currency = str(from_currency).upper()
+        if currency == "USD":
+            return float(amount) * 7.2, False, "fx"
+        return float(amount), False, "direct"
+
+
+class R19ConcentrationFxTestCase(unittest.TestCase):
+    def test_missing_price_exclusion_uses_summary_currency_rate(self):
+        service = PortfolioRiskService(
+            repo=_FakeRepo(),
+            portfolio_service=_FxPortfolioService(),
+        )
+        snapshot = {
+            "currency": "CNY",
+            # 10,000 USD priced + 10,000 USD cost-valued, both at 7.2
+            "total_market_value": 144_000.0,
+            "accounts": [
+                {
+                    "account_id": 1,
+                    "base_currency": "USD",
+                    "positions": [
+                        {
+                            "symbol": "AAPL",
+                            "market_value_base": 10_000.0,
+                            "valuation_currency": "USD",
+                            "price_available": True,
+                        },
+                        {
+                            "symbol": "MSFT",
+                            "market_value_base": 10_000.0,
+                            "valuation_currency": "USD",
+                            "price_available": False,
+                            "valuation_basis": "cost",
+                        },
+                    ],
+                }
+            ],
+        }
+
+        concentration = service._build_concentration(snapshot, 50.0, as_of_date=date(2026, 1, 5))
+
+        self.assertEqual([row["symbol"] for row in concentration["top_positions"]], ["AAPL"])
+        self.assertAlmostEqual(concentration["top_positions"][0]["weight_pct"], 100.0, places=4)
+        self.assertAlmostEqual(concentration["total_market_value"], 72_000.0, places=4)
+        self.assertEqual(concentration["excluded_missing_price_count"], 1)

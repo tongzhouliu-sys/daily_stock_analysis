@@ -290,19 +290,55 @@ class PortfolioRiskService:
             return as_of_date
         return max(window_start, min(first_activity_candidates))
 
+    def _position_value_in_cny(
+        self,
+        pos: Dict[str, Any],
+        account: Dict[str, Any],
+        *,
+        as_of_date: date,
+    ) -> Tuple[float, bool]:
+        """Convert a position's value to the summary currency (CNY).
+
+        Returns ``(value_in_cny, fx_missing)``. Missing FX is never converted at
+        par: callers must exclude the value from both the numerator and the
+        denominator instead of subtracting a foreign-currency number from a
+        CNY total (R19).
+        """
+        market_value = float(pos.get("market_value_base") or 0.0)
+        valuation_currency = str(
+            pos.get("valuation_currency") or account.get("base_currency") or "CNY"
+        )
+        converted, _, source = self.portfolio_service.convert_amount(
+            amount=market_value,
+            from_currency=valuation_currency,
+            to_currency="CNY",
+            as_of_date=as_of_date,
+        )
+        if source == "missing_rate":
+            return 0.0, True
+        return float(converted or 0.0), False
+
     def _build_concentration(self, snapshot: Dict[str, Any], threshold_pct: float, *, as_of_date: date) -> Dict[str, Any]:
         total_mv = float(snapshot.get("total_market_value", 0.0) or 0.0)
         exposure_by_symbol: Dict[str, float] = {}
         excluded_mv = 0.0
         excluded_count = 0
+        excluded_missing_fx_count = 0
         for account in snapshot.get("accounts", []):
             for pos in account.get("positions", []):
                 symbol = str(pos.get("symbol") or "").strip().upper()
                 if not symbol:
                     continue
                 if not bool(pos.get("price_available", True)):
-                    # Cost-valued fallback stock must not distort weights.
-                    excluded_mv += float(pos.get("market_value_base") or 0.0)
+                    # Cost-valued fallback stock must not distort weights. The
+                    # subtraction uses the same FX rate as the total.
+                    excluded_value, fx_missing = self._position_value_in_cny(
+                        pos, account, as_of_date=as_of_date
+                    )
+                    if fx_missing:
+                        excluded_missing_fx_count += 1
+                        continue
+                    excluded_mv += excluded_value
                     excluded_count += 1
                     continue
                 market_value = float(pos.get("market_value_base") or 0.0)
@@ -336,6 +372,7 @@ class PortfolioRiskService:
             "alert": bool(top_weight >= threshold_pct),
             "top_positions": rows[:10],
             "excluded_missing_price_count": excluded_count,
+            "excluded_missing_fx_count": excluded_missing_fx_count,
         }
 
     def _build_sector_concentration(
@@ -350,6 +387,7 @@ class PortfolioRiskService:
         sector_symbols: Dict[str, set] = {}
         excluded_mv = 0.0
         excluded_count = 0
+        excluded_missing_fx_count = 0
         coverage = {
             "classified_count": 0,
             "unclassified_count": 0,
@@ -365,7 +403,13 @@ class PortfolioRiskService:
                 if not symbol:
                     continue
                 if not bool(pos.get("price_available", True)):
-                    excluded_mv += float(pos.get("market_value_base") or 0.0)
+                    excluded_value, fx_missing = self._position_value_in_cny(
+                        pos, account, as_of_date=as_of_date
+                    )
+                    if fx_missing:
+                        excluded_missing_fx_count += 1
+                        continue
+                    excluded_mv += excluded_value
                     excluded_count += 1
                     continue
 
@@ -411,6 +455,7 @@ class PortfolioRiskService:
             "top_sectors": rows[:10],
             "coverage": coverage,
             "excluded_missing_price_count": excluded_count,
+            "excluded_missing_fx_count": excluded_missing_fx_count,
             "errors": errors[:20],
         }
 
@@ -566,20 +611,33 @@ class PortfolioRiskService:
             lookback_days=lookback_days,
         )
         # External deposits/withdrawals are not performance: chain daily returns
-        # against "previous equity + today's net flow" so moving cash in or out
-        # cannot manufacture a drawdown.
+        # against "previous equity + net flow" so moving cash in or out cannot
+        # manufacture a drawdown. Snapshots are sparse (only written when the
+        # portfolio is viewed), so flows are accumulated over the whole gap
+        # between two adjacent snapshots, excluding the earlier endpoint and
+        # including the later one (R19).
         index_value = 1.0
         peak = 0.0
         max_drawdown = 0.0
         current_drawdown = 0.0
         previous_equity: Optional[float] = None
+        previous_key: Optional[str] = None
+        flow_keys = sorted(flows_by_date)
         for key, equity in series:
-            net_flow = float(flows_by_date.get(key, 0.0))
+            if previous_equity is None or previous_key is None:
+                net_flow = 0.0
+            else:
+                net_flow = sum(
+                    flows_by_date[flow_key]
+                    for flow_key in flow_keys
+                    if previous_key < flow_key <= key
+                )
             if previous_equity is not None and previous_equity > 0:
                 base = previous_equity + net_flow
                 if base > 0:
                     index_value *= equity / base
             previous_equity = equity
+            previous_key = key
             peak = max(peak, index_value)
             if peak <= 0:
                 drawdown = 0.0

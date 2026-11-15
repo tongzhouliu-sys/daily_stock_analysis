@@ -8,6 +8,7 @@ and this project adheres to [Semantic Versioning](https://semver.org/).
 > For user-friendly release highlights, see the [GitHub Releases](https://github.com/ZhuLinsen/daily_stock_analysis/releases) page.
 
 ## [Unreleased]
+- [修复] 持仓风险口径：回撤不再只认"出入金日期正好等于快照日期"，两个相邻快照之间（不含前一个、含后一个）的全部出入金都计入后一个快照，周五 100 万、周六取现 30 万、周一 70 万不再报 30% 回撤。集中度与行业集中度扣除缺价持仓时，改用与总额相同的汇率换算到 CNY（缺汇率的持仓单独计数、不参与分子分母），美元账户 AAPL 1 万有价 + MSFT 1 万缺价、汇率 7.2 时 AAPL 权重恢复为 100%。
 - [修复] 全市场表缓存改用交易日：板块资金流排名、龙虎榜等盘中会变的整表接口，缓存键从服务器本地自然日改为 A 股时区下的有效交易日（复用 `trading_calendar` 的 `get_market_now` / `is_market_open` / `get_effective_trading_date`），盘中 TTL 5 分钟、收盘后按交易日复用；业绩预告/快报、机构持股仍按交易日缓存。超时后被放弃的后台调用线程限制为 8 个，超过上限直接按超时返回。测试覆盖盘中 6 分钟重抓、盘中 4 分钟命中、收盘后 1 小时命中、UTC 服务器下北京 08:00 与周末的交易日键。
 - [修复] 大盘护栏提取层收紧：`降温` 这类单词不再单独触发 `market_cooling`，改为 `市场降温` / `情绪退潮` / `退潮` 等短语，`情绪降温后企稳回升` 不再把买入降级；风险词命中前检查前 4 个字符里的否定词（`不` / `未` / `并非` / `没有` / `不建议` / `勿` / `无需`），`不建议轻仓试错` 不再产出 `low_position_cap`；补充韩语风险词（`고위험` / `리스크 오프` / `관망 권장` / `비중 축소 권고`）。`position_cap` 只认显式上限：`仓位上限三成` → `30%`、`半仓` → `50%`、`仓位不超过 40%` → `40%`，`轻仓` / `小仓` 只作为 `low_position_cap` 提示标签，不再当成仓位上限。`tests/test_daily_market_context_guardrail.py` 新增 9 条从复盘摘要原文经提取层到护栏判定的端到端用例。
 - [修复] 首页静默刷新：首页定时器与回到前台的刷新改为 `refreshStockBar(true)`，标签页隐藏时整轮跳过，右栏不再每 30 秒闪一次加载态；加载标志改成"谁置真谁负责清除"的令牌制，非静默请求未返回时插入一次静默刷新，`finally` 仍能正确清掉 `isLoadingStockBar`（原先两边都不清，自选股查询会永久停用）。个股栏 `analysis_count` 改为一次 `GROUP BY code` 批量计数，同一只股票的不同代码写法（如 `600519` / `600519.SH`）在内存中合并，先去重截断再组装，不再逐只查询。
