@@ -243,9 +243,17 @@ class PerformanceCalculator:
                 "max_consecutive_losses": 0,
             }
 
-        # Separate wins and losses
-        wins = [p for p in closed_positions if p.get("realized_pnl", 0) > 0]
-        losses = [p for p in closed_positions if p.get("realized_pnl", 0) < 0]
+        # Separate wins and losses. Trade records historically wrote
+        # ``net_pnl`` while this reader looked for ``realized_pnl``, so every
+        # trade counted as a zero-P&L trade and the win rate was always 0 (E7).
+        def trade_pnl(trade: Dict[str, Any]) -> float:
+            value = trade.get("realized_pnl")
+            if value is None:
+                value = trade.get("net_pnl", 0.0)
+            return value or 0.0
+
+        wins = [p for p in closed_positions if trade_pnl(p) > 0]
+        losses = [p for p in closed_positions if trade_pnl(p) < 0]
 
         total_trades = len(closed_positions)
         winning_trades = len(wins)
@@ -254,23 +262,23 @@ class PerformanceCalculator:
         win_rate = winning_trades / total_trades if total_trades > 0 else None
 
         # Average win/loss
-        avg_win = sum(p["realized_pnl"] for p in wins) / len(wins) if wins else None
-        avg_loss = abs(sum(p["realized_pnl"] for p in losses) / len(losses)) if losses else None
+        avg_win = sum(trade_pnl(p) for p in wins) / len(wins) if wins else None
+        avg_loss = abs(sum(trade_pnl(p) for p in losses) / len(losses)) if losses else None
 
         # Profit factor
-        gross_profit = sum(p["realized_pnl"] for p in wins) if wins else 0
-        gross_loss = abs(sum(p["realized_pnl"] for p in losses)) if losses else 0
+        gross_profit = sum(trade_pnl(p) for p in wins) if wins else 0
+        gross_loss = abs(sum(trade_pnl(p) for p in losses)) if losses else 0
         profit_factor = gross_profit / gross_loss if gross_loss > 0 else None
 
         # Expectancy
-        total_pnl = sum(p.get("realized_pnl", 0) for p in closed_positions)
+        total_pnl = sum(trade_pnl(p) for p in closed_positions)
         expectancy = total_pnl / total_trades if total_trades > 0 else None
 
         # Max consecutive losses
         max_consec_losses = 0
         current_consec = 0
         for p in closed_positions:
-            if p.get("realized_pnl", 0) < 0:
+            if trade_pnl(p) < 0:
                 current_consec += 1
                 max_consec_losses = max(max_consec_losses, current_consec)
             else:

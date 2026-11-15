@@ -22,7 +22,8 @@ class Position:
     entry_commission: float
     industry: str
     holding_sessions: int = 0
-    
+    last_price: float = 0.0
+
     def market_value(self, current_price: float) -> float:
         return self.shares * current_price
     
@@ -80,7 +81,7 @@ class Portfolio:
     def equity(self, prices: Dict[str, float]) -> float:
         """Calculate total equity (cash + positions market value)."""
         positions_value = sum(
-            pos.market_value(prices.get(pos.security_id, pos.entry_price))
+            pos.market_value(prices.get(pos.security_id, pos.last_price or pos.entry_price))
             for pos in self.positions.values()
         )
         return self.cash + positions_value
@@ -121,9 +122,14 @@ class Portfolio:
         
         if self.num_positions() >= self.config.max_positions:
             return False
-        
-        if self.industry_count(industry) >= self.config.max_per_industry:
-            return False
+
+        # E1: without industry data the per-industry cap cannot be evaluated.
+        # Capping every "UNKNOWN" name to two positions silently reduced the
+        # portfolio to two holdings, so the check is skipped in that case.
+        normalized_industry = (industry or "").strip()
+        if normalized_industry and normalized_industry.upper() != "UNKNOWN":
+            if self.industry_count(normalized_industry) >= self.config.max_per_industry:
+                return False
         
         # Calculate position size
         fill_price = open_price * (1 + self.config.slippage_rate)
@@ -230,7 +236,7 @@ class Portfolio:
         """Record daily portfolio snapshot."""
         equity = self.equity(prices)
         positions_value = sum(
-            pos.market_value(prices.get(pos.security_id, pos.entry_price))
+            pos.market_value(prices.get(pos.security_id, pos.last_price or pos.entry_price))
             for pos in self.positions.values()
         )
         

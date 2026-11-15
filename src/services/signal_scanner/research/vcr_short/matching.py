@@ -277,7 +277,10 @@ class OrderMatcher:
                 result["should_exit"] = True
                 result["exit_price"] = self.calculate_entry_price(current_open, is_short=False)
                 result["exit_reason"] = ExitReason.TAKE_PROFIT_1
-                result["exit_shares"] = int(position.shares * self.config.tp1_close_pct)
+                result["exit_shares"] = min(
+                    position.shares_remaining,
+                    max(1, int(position.shares * self.config.tp1_close_pct)),
+                )
                 return result
 
             # If low <= TP1, exit at TP1
@@ -285,7 +288,10 @@ class OrderMatcher:
                 result["should_exit"] = True
                 result["exit_price"] = self.calculate_entry_price(tp1, is_short=False)
                 result["exit_reason"] = ExitReason.TAKE_PROFIT_1
-                result["exit_shares"] = int(position.shares * self.config.tp1_close_pct)
+                result["exit_shares"] = min(
+                    position.shares_remaining,
+                    max(1, int(position.shares * self.config.tp1_close_pct)),
+                )
                 return result
 
         # TP2
@@ -319,28 +325,29 @@ class OrderMatcher:
     def update_trailing_stop(
         self,
         position: Position,
-        current_low: float,
+        prev_low: float,
         prev_high: float
     ):
-        """Update trailing stop loss.
+        """Update the stop using only the previous completed session (E8).
+
+        The stop level is evaluated against the *current* session's open/high,
+        so it must be derived from data that was already known before that
+        open. Passing the current day's low here (the old behaviour) moved the
+        breakeven stop after the open it was then checked against.
 
         Rules:
-        1. When price hits S-R (entry - risk), move SL to breakeven (S)
-        2. From next day, update SL = min(current_SL, prev_high * 1.005)
-
-        Args:
-            position: Position to update
-            current_low: Today's low price
-            prev_high: Previous day's high price
+        1. When the previous low touches S-R (entry - risk), move SL to
+           breakeven (S), effective from the current session.
+        2. When breakeven is active, SL = min(SL, prev_high * (1 + buffer)).
         """
-        # Check if we should activate breakeven stop
         if not position.breakeven_activated:
-            # If low touches S-R, activate breakeven
-            if current_low <= position.entry_price - position.initial_risk_per_share:
+            if prev_low <= position.entry_price - position.initial_risk_per_share:
                 position.breakeven_activated = True
-                position.current_stop_loss = position.entry_price
+                position.current_stop_loss = min(
+                    position.current_stop_loss,
+                    position.entry_price
+                )
 
-        # Update trailing stop if breakeven is active
         if position.breakeven_activated and prev_high > 0:
             trailing_level = prev_high * (1 + self.config.trailing_stop_buffer)
             position.current_stop_loss = min(

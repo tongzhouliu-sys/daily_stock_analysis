@@ -56,16 +56,15 @@ class Ledger:
         date: str,
         positions: Dict[str, Any],
         borrow_rates: Dict[str, float]
-    ):
+    ) -> float:
         """Accrue daily borrow fees for all open positions.
 
         Borrow fee = shares * entry_price * annual_rate / 365
 
-        Args:
-            date: Current date
-            positions: Dictionary of instrument_id -> Position
-            borrow_rates: Dictionary of instrument_id -> annual borrow rate
+        Returns the total fee accrued on ``date`` so the caller can debit cash
+        (E6: accrued fees must reduce equity, not only be reported).
         """
+        daily_total = 0.0
         for instrument_id, pos in positions.items():
             if pos.shares_remaining <= 0:
                 continue
@@ -96,6 +95,8 @@ class Ledger:
                 daily_fee=daily_fee,
                 cumulative_fee=cumulative
             ))
+            daily_total += daily_fee
+        return daily_total
 
     def record_dividend(
         self,

@@ -44,6 +44,10 @@ def _write_summary_json(
     """Write summary.json with key metrics."""
     summary = {
         "backtest_period": f"{config['start_date']} to {config['end_date']}",
+        "universe": (results.get("data_info") or {}).get("universe_name"),
+        "universe_size": (results.get("data_info") or {}).get("universe_size"),
+        "max_positions_configured": config.get("max_positions"),
+        "max_positions_observed": (results.get("data_info") or {}).get("max_open_positions_observed"),
         "initial_equity": config["initial_equity"],
         "final_equity": results["performance"]["final_equity"],
         "total_return_pct": results["performance"]["total_return_pct"],
@@ -71,13 +75,27 @@ def _write_report_md(
 ):
     """Write report.md with human-readable summary."""
     perf = results["performance"]
-    
+    data_info = results.get("data_info") or {}
+    universe_name = data_info.get("universe_name") or "美国上市股票（流动性筛选池）"
+
     lines = [
-        "# 标普 500 超跌反弹策略回测报告",
+        f"# {universe_name} 超跌反弹策略回测报告",
         "",
         f"**回测区间**: {config['start_date']} 至 {config['end_date']}",
         f"**初始资金**: ${config['initial_equity']:,.2f}",
         f"**最终权益**: ${perf['final_equity']:,.2f}",
+        "",
+        "## 股票池与数据口径",
+        "",
+        f"- **股票池定义**: {universe_name}",
+        f"- **股票池规模**: {data_info.get('universe_size', 'n/a')} 个代码，"
+        f"{data_info.get('securities_loaded', 'n/a')} 个具备可用行情",
+        f"- **上市/退市处理**: {data_info.get('universe_note') or '允许中途上市与退市，不使用期末存活名单'}",
+        f"- **复权方式**: {data_info.get('adjustment') or '未复权'}",
+        f"- **成交假设**: {data_info.get('execution') or 'T 日收盘生成信号，T+1 开盘成交'}",
+        f"- **预热处理**: 回测起点之前 {data_info.get('warmup_sessions_before_start', 0)} 个交易日仅用于指标预热",
+        f"- **最大持仓数（配置/实际）**: {data_info.get('max_positions', config.get('max_positions'))} / "
+        f"{data_info.get('max_open_positions_observed', 0)}",
         "",
         "## 核心指标",
         "",
@@ -158,7 +176,7 @@ def _write_trades_csv(trades: List[Dict[str, Any]], output_path: Path):
     ]
     
     with open(output_path / "trades.csv", "w", newline="") as f:
-        writer = csv.DictWriter(f, fieldnames=fieldnames)
+        writer = csv.DictWriter(f, fieldnames=fieldnames, extrasaction="ignore")
         writer.writeheader()
         for trade in trades:
             writer.writerow(trade)
@@ -233,6 +251,7 @@ def _write_run_manifest(
     """Write run_manifest.json with reproducibility info."""
     manifest = {
         "config": config,
+        "data_info": results.get("data_info"),
         "generated_at": datetime.utcnow().isoformat() + "Z",
         "results_summary": {
             "total_trades": len(results["trades"]),

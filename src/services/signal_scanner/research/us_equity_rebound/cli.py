@@ -16,10 +16,21 @@ from .data_loader import (
     load_market_data,
     load_spy_data,
     load_universe,
+    load_universe_metadata,
     load_corporate_actions,
     load_trading_calendar,
     validate_data_consistency,
 )
+
+
+def _universe_name(data_dir: str) -> str:
+    metadata = load_universe_metadata(data_dir)
+    return (
+        metadata.get("name")
+        or metadata.get("description")
+        or metadata.get("definition")
+        or "美国上市股票（流动性筛选池）"
+    )
 
 
 def main():
@@ -147,6 +158,7 @@ def cmd_run(args) -> int:
         spy_data=spy_data,
         universe=universe,
         corporate_actions=corporate_actions,
+        universe_name=_universe_name(args.data_dir),
     )
     
     # Generate reports

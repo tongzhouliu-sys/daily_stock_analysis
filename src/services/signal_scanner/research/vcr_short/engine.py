@@ -194,17 +194,18 @@ class VCRShortBacktestEngine:
                 if instrument_id not in current_prices:
                     continue
 
-                # Update trailing stop
-                if i > 0:
+                # Update trailing stop from the previous completed session only:
+                # the current session's open/high/low are used after this point
+                # to decide exits, so they must not influence the stop level (E8).
+                if position.entry_day_index >= 1 and i > 0:
                     prev_date = backtest_dates[i - 1]
                     date_to_idx = inst_date_idx.get(instrument_id, {})
-                    if prev_date in date_to_idx:
-                        prev_idx = date_to_idx[prev_date]
-                        prev_high = data[instrument_id]["high"][prev_idx]
+                    prev_idx = date_to_idx.get(prev_date)
+                    if prev_idx is not None:
                         self.order_matcher.update_trailing_stop(
                             position=position,
-                            current_low=current_lows[instrument_id],
-                            prev_high=prev_high
+                            prev_low=data[instrument_id]["low"][prev_idx],
+                            prev_high=data[instrument_id]["high"][prev_idx]
                         )
 
                 exit_info = self.order_matcher.check_exit_conditions(
@@ -240,14 +241,10 @@ class VCRShortBacktestEngine:
                     borrow_fees = ledger.get_total_borrow_fees(closed_pos.instrument_id)
                     dividends = ledger.get_total_dividends(closed_pos.instrument_id)
 
-                    net_pnl = ledger.calculate_net_pnl(
-                        entry_price=closed_pos.entry_price,
-                        exit_price=closed_pos.exit_price,
-                        shares=closed_pos.shares,
-                        borrow_fees=borrow_fees,
-                        dividends=dividends,
-                        commission=self.config.commission_per_trade
-                    )
+                    # Full-trade P&L is the sum of every exit tranche, not the
+                    # last tranche's entry/exit price pair (E9). Costs have
+                    # already been allocated per tranche inside the portfolio.
+                    net_pnl = closed_pos.realized_pnl
 
                     all_trades.append({
                         "instrument_id": closed_pos.instrument_id,
@@ -258,31 +255,38 @@ class VCRShortBacktestEngine:
                         "exit_price": closed_pos.exit_price,
                         "shares": closed_pos.shares,
                         "exit_reason": closed_pos.exit_reason.value,
-                        "gross_pnl": (closed_pos.entry_price - closed_pos.exit_price) * closed_pos.shares,
+                        "gross_pnl": closed_pos.gross_realized,
                         "borrow_fees": borrow_fees,
                         "dividends": dividends,
+                        "commission": closed_pos.commission_paid,
                         "net_pnl": net_pnl,
+                        "realized_pnl": net_pnl,
                     })
 
             # === Accrue Borrow Fees ===
-            ledger.accrue_borrow_fees(
+            daily_borrow_fee = ledger.accrue_borrow_fees(
                 date=current_date,
                 positions=portfolio.positions,
                 borrow_rates=borrow_rates
             )
+            # E6: the fee leaves the account, it is not only a report number.
+            portfolio.cash -= daily_borrow_fee
 
             # === Process Dividends ===
             for instrument_id, position in portfolio.positions.items():
                 if instrument_id in dividend_data:
                     for div_event in dividend_data[instrument_id]:
                         if div_event["date"] == current_date:
-                            ledger.record_dividend(
+                            payment = ledger.record_dividend(
                                 ex_dividend_date=current_date,
                                 instrument_id=instrument_id,
                                 shares=position.shares_remaining,
                                 dividend_per_share=div_event["amount"]
                             )
-                            position.dividends_paid += div_event["amount"] * position.shares_remaining
+                            if payment:
+                                position.dividends_paid += payment
+                                # Short seller pays the dividend to the lender.
+                                portfolio.cash -= payment
 
             # === Generate Signals for Next Day ===
             if i < len(backtest_dates) - 1:
@@ -356,6 +360,7 @@ class VCRShortBacktestEngine:
                 "entry_price": pos.entry_price,
                 "shares_remaining": pos.shares_remaining,
                 "unrealized_pnl": pos.unrealized_pnl,
+                "realized_pnl": pos.realized_pnl,
             }
             for pos in portfolio.positions.values()
         ]

@@ -63,6 +63,8 @@ class Position:
     # P&L
     realized_pnl: float = 0.0
     unrealized_pnl: float = 0.0
+    gross_realized: float = 0.0
+    costs_realized: float = 0.0
 
     def to_dict(self) -> Dict[str, Any]:
         """Convert to dictionary for reporting."""
@@ -90,6 +92,8 @@ class Position:
             "exit_reason": self.exit_reason.value if self.exit_reason else None,
             "realized_pnl": self.realized_pnl,
             "unrealized_pnl": self.unrealized_pnl,
+            "gross_realized": self.gross_realized,
+            "costs_realized": self.costs_realized,
         }
 
 
@@ -108,16 +112,18 @@ class Portfolio:
     def current_equity(self, current_prices: Dict[str, float]) -> float:
         """Calculate current portfolio equity.
 
-        Equity = Cash - Sum(short_position_market_value)
+        Equity = Cash - Sum(current market value of short shares).
+
+        ``open_position`` already credited the short-sale proceeds to cash,
+        so adding the entry notional back here would double count it (E6).
+        Missing prices fall back to the entry price, which leaves equity flat
+        rather than dropping the liability.
         """
         equity = self.cash
 
         for pos in self.positions.values():
-            if pos.instrument_id in current_prices:
-                current_price = current_prices[pos.instrument_id]
-                # Short P&L = (entry_price - current_price) * shares_remaining
-                unrealized = (pos.entry_price - current_price) * pos.shares_remaining
-                equity += pos.entry_price * pos.shares_remaining + unrealized
+            current_price = current_prices.get(pos.instrument_id, pos.entry_price)
+            equity -= current_price * pos.shares_remaining
 
         return equity
 
@@ -207,15 +213,29 @@ class Portfolio:
             return None
 
         pos = self.positions[instrument_id]
+        shares = min(shares, pos.shares_remaining)
+        if shares <= 0:
+            return None
 
-        # Calculate P&L for closed shares
-        pnl = (pos.entry_price - exit_price) * shares
+        shares_before = pos.shares_remaining
 
-        # Subtract costs
-        pnl -= pos.dividends_paid * (shares / pos.shares)
-        pnl -= pos.commission_paid
+        # Per-tranche P&L: accumulate gross P&L and only the costs that have
+        # not yet been charged to an earlier tranche (E9). Charging the full
+        # position commission/dividends on every partial exit overstated the
+        # loss of the first tranche.
+        gross_pnl = (pos.entry_price - exit_price) * shares
+        total_costs = pos.commission_paid + pos.borrow_fee_accrued + pos.dividends_paid
+        pending_costs = max(0.0, total_costs - pos.costs_realized)
+        if shares >= shares_before:
+            allocated_costs = pending_costs
+        else:
+            allocated_costs = pending_costs * (shares / shares_before)
 
+        pos.costs_realized += allocated_costs
+        pos.gross_realized += gross_pnl
+        pnl = gross_pnl - allocated_costs
         pos.realized_pnl += pnl
+
         pos.shares_remaining -= shares
 
         # Update cash: 平仓时支付买回成本
