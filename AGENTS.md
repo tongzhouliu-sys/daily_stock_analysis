@@ -47,6 +47,7 @@
 - `CLAUDE.md` 必须是指向 `AGENTS.md` 的软链接，用于兼容 Claude 生态。
 - `.github/copilot-instructions.md` 与 `.github/instructions/*.instructions.md` 是 GitHub Copilot / Coding Agent 的镜像或分层补充；若与本文件冲突，以 `AGENTS.md` 为准。
 - 仓库协作 skill 存放在 `.claude/skills/`，分析产物存放在 `.claude/reviews/`；前者可以入库，后者默认视为本地产物。
+- 常青文档存放在 `docs/ai/`：开始任务前先读 `docs/ai/CODEMAP.md` 和 `docs/ai/STATUS.md`，按需读其余三份（`FLOWS.md`、`DATA-FLOW.md`、`PITFALLS.md`），不要一上来就全仓扫描。`CODEMAP.md` 由 `python scripts/gen_ai_codemap.py` 生成，手改会被 CI 的 `--check` 拦下。
 - 根目录 `SKILL.md` 与 `docs/openclaw-skill-integration.md` 属于产品或外部集成说明，不是仓库协作规则真源。
 - 若未来新增 `.agents/skills/` 或其他 agent 专用目录，必须先明确单一真源，再通过脚本或镜像同步；禁止手工长期维护多份同义内容。
 - 修改 AI 协作治理资产时，执行：

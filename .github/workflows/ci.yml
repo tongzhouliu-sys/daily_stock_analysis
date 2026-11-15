@@ -75,6 +75,8 @@ jobs:
           python-version: '3.11'
       - name: 🤖 Check AI governance assets
         run: python scripts/check_ai_assets.py
+      - name: 🗺️ Check codemap is up to date
+        run: python scripts/gen_ai_codemap.py --check
 
   backend-tests:
     name: backend-tests (${{ matrix.shard }}/3)

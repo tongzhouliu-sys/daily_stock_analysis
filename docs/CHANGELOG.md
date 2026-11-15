@@ -8,6 +8,8 @@ and this project adheres to [Semantic Versioning](https://semver.org/).
 > For user-friendly release highlights, see the [GitHub Releases](https://github.com/ZhuLinsen/daily_stock_analysis/releases) page.
 
 ## [Unreleased]
+- [新功能] 新增 `docs/ai/` 五份常青文档：`CODEMAP.md`（脚本生成）、`FLOWS.md`（单股分析 / 问股一次提问 / 配置保存三条链路）、`DATA-FLOW.md`（抓取到页面）、`PITFALLS.md`、`STATUS.md`；配套 `scripts/gen_ai_codemap.py` 与 `--check` 模式，CI 的 `ai-governance` 步骤校验 `CODEMAP.md` 是否与源码同步。`AGENTS.md` 要求开始任务前先读 `CODEMAP.md` 与 `STATUS.md`。
+- [改进] `DESIGN.md` 的机器可读头部改为产品实际使用的变量（铜色 `hsl(15 69% 37%)`、暖纸画布、2–3px 圆角、系统字体栈、等宽数字），删除与上线界面不一致的 IBM Carbon 参考副本，改为指向官方文档。
 - [文档] 新增 [配置单一声明源方案](config-single-source.md)：量化 `config.py` / `config_registry.py` / `system_config_service.py` 三处共 101 个键需要手工同步的现状，给出声明表驱动的目标设计与分阶段迁移路径；按 Q1「继续跟上游」的决策，本项以提给上游的方案交付，本地只保留 `tests/test_config_env_loading.py` 作为过渡保护，不落地结构性拆除。
 - [改进] 问股页面按区块拆分：`ChatPage` 的 2016 行单文件拆成会话侧栏、消息项、流式进度、输入区与引导卡五个组件（`components/chat/ChatSessionSidebar/ChatMessageItem/ChatLiveProgress/ChatInputArea/ChatGuideCards`），`ChatPage` 只保留状态编排；消息项与进度区加记忆化，输入框打字不再重渲染历史消息；Enter 发送忽略输入法组合状态；store 订阅改为 `useShallow` 选择器，不再整棵状态树变化就重渲染。
 - [改进] 报告对象构造收敛为 `api/v1/report_builder.build_analysis_report()` 单一入口：同步分析、任务状态数据库回退与历史详情三个接口对同一条记录返回一致的 `meta`/`summary`/`strategy`/`details`，重复的 `_extract_guardrail_reason` 等辅助逻辑合并。
