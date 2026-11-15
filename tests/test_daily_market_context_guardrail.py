@@ -467,6 +467,19 @@ def _context_from_summary(monkeypatch, summary: str) -> dict:
         ("情绪降温后企稳回升。", "buy", False, None),
         ("시장 고위험, 관망 권장.", "hold", True, None),
         ("仓位不超过 40%，保持谨慎。", "hold", True, "40%"),
+        # Numbers that are not about position size must not become a cap.
+        ("预计指数回调不超过5%，结构性机会仍在。", "buy", False, None),
+        ("上涨个股最多三成，赚钱效应一般。", "buy", False, None),
+        ("不必半仓，趋势向好可积极参与。", "buy", False, None),
+        ("建议控制仓位在三成以内。", "hold", True, "30%"),
+        # "不" inside 不少 / 不断 is not a negation.
+        ("不少板块退潮，题材快速轮动。", "hold", True, None),
+        ("高位股不断退潮。", "hold", True, None),
+        ("未来两日仍是高风险阶段。", "hold", True, None),
+        # English negation and a cooling word unrelated to the market.
+        ("Market is not high risk; breadth keeps improving.", "buy", False, None),
+        ("Inflation cooling supports equities.", "buy", False, None),
+        ("Market cooling and risk-off flows dominate.", "hold", True, None),
     ],
 )
 def test_summary_text_round_trip_drives_guardrail(

@@ -49,7 +49,8 @@ _RISK_PATTERNS: Tuple[Tuple[str, Tuple[str, ...]], ...] = (
         "고위험", "위험 확대",
     )),
     ("market_cooling", (
-        "市场降温", "情绪退潮", "退潮", "risk-off", "risk off", "cooling",
+        "市场降温", "情绪退潮", "退潮", "risk-off", "risk off",
+        "market cooling", "sentiment cooling", "cooling sentiment",
         "리스크 오프", "위험 회피",
     )),
     ("conservative", (
@@ -67,8 +68,15 @@ _RISK_PATTERNS: Tuple[Tuple[str, Tuple[str, ...]], ...] = (
 # T13 follow-up (R17): a negated phrase ("不建议轻仓试错") must not produce a
 # risk tag, and a bare "降温" is too common in "情绪降温后企稳回升" to mean a
 # cooling market on its own.
-_RISK_NEGATION_HINTS = ("不", "未", "并非", "没有", "不建议", "勿", "无需")
+# A bare "不" is not a negation marker: 不少 / 不断 / 不仅 would hide a real
+# risk word, and "未" must not match 未来. English negators need word
+# boundaries and a longer window ("is not a high risk").
+_RISK_NEGATION_PATTERN = re.compile(
+    r"(?:不是|不算|不会|不太|不再|不必|不建议|不至于|并不|并非|没有|无需|勿|未(?!来|知))"
+)
+_RISK_NEGATION_PATTERN_EN = re.compile(r"\b(?:not|no|never|without|isn't|aren't|wasn't)\b")
 _RISK_NEGATION_LOOKBACK = 4
+_RISK_NEGATION_LOOKBACK_EN = 16
 
 _CN_NUMERAL_VALUES = {
     "一": 1,
@@ -84,9 +92,10 @@ _CN_NUMERAL_VALUES = {
     "十": 10,
 }
 _CN_NUMERAL_PATTERN = "一二两三四五六七八九十"
+# A cap needs position context: a bare 不超过 / 最多 also appears in
+# "指数回调不超过5%" or "上涨个股最多三成", which are not position limits.
 _POSITION_CAP_KEYWORD_PATTERN = (
-    r"(?:仓位上限|仓位不超过|仓位最多|仓位控制在|不超过|最多|"
-    r"position\s+cap|position\s+limit|max(?:imum)?\s+position)"
+    r"(?:仓位|position\s+cap|position\s+limit|max(?:imum)?\s+position)"
 )
 
 
@@ -983,11 +992,19 @@ def _pattern_hit(lowered: str, pattern: str) -> bool:
         return False
     start = lowered.find(needle)
     while start != -1:
-        prefix = lowered[max(0, start - _RISK_NEGATION_LOOKBACK):start]
-        if not any(hint in prefix for hint in _RISK_NEGATION_HINTS):
+        if not _is_negated(lowered, start, ascii_pattern=needle.isascii()):
             return True
         start = lowered.find(needle, start + 1)
     return False
+
+
+def _is_negated(lowered: str, start: int, *, ascii_pattern: bool) -> bool:
+    """Whether the phrase starting at ``start`` sits in a short negation window."""
+    if ascii_pattern:
+        prefix = lowered[max(0, start - _RISK_NEGATION_LOOKBACK_EN):start]
+        return _RISK_NEGATION_PATTERN_EN.search(prefix) is not None
+    prefix = lowered[max(0, start - _RISK_NEGATION_LOOKBACK):start]
+    return _RISK_NEGATION_PATTERN.search(prefix) is not None
 
 
 def _extract_risk_tags(text: str) -> List[str]:
@@ -1028,28 +1045,31 @@ def _extract_position_cap(text: str) -> Optional[str]:
     if not text:
         return None
 
-    percent_match = re.search(
-        rf"{_POSITION_CAP_KEYWORD_PATTERN}[^0-9%]{{0,12}}(\d{{1,3}})\s*%",
+    lowered = text.lower()
+
+    for percent_match in re.finditer(
+        rf"{_POSITION_CAP_KEYWORD_PATTERN}[^0-9%。；;]{{0,12}}(\d{{1,3}})\s*%",
         text,
         re.IGNORECASE,
-    )
-    if percent_match:
-        return _normalize_position_cap_percent(int(percent_match.group(1)))
+    ):
+        if not _is_negated(lowered, percent_match.start(), ascii_pattern=False):
+            return _normalize_position_cap_percent(int(percent_match.group(1)))
 
-    cheng_match = re.search(
-        rf"{_POSITION_CAP_KEYWORD_PATTERN}[^0-9{_CN_NUMERAL_PATTERN}半%]{{0,8}}"
+    for cheng_match in re.finditer(
+        rf"{_POSITION_CAP_KEYWORD_PATTERN}[^0-9{_CN_NUMERAL_PATTERN}半%。；;]{{0,8}}"
         rf"([0-9{_CN_NUMERAL_PATTERN}半])\s*成",
         text,
         re.IGNORECASE,
-    )
-    if cheng_match:
+    ):
+        if _is_negated(lowered, cheng_match.start(), ascii_pattern=False):
+            continue
         value = _cn_numeral_to_int(cheng_match.group(1))
         if value is not None:
             return _normalize_position_cap_percent(value * 10)
 
-    half_position_match = re.search(r"半仓", text)
-    if half_position_match:
-        return _normalize_position_cap_percent(50)
+    for half_position_match in re.finditer(r"半仓", text):
+        if not _is_negated(lowered, half_position_match.start(), ascii_pattern=False):
+            return _normalize_position_cap_percent(50)
 
     return None
 
