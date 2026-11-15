@@ -129,7 +129,6 @@ AGENT_BACKEND_REMOVED_MESSAGE = (
 TICKFLOW_KLINE_ADJUST_VALUES = {"none", "forward", "backward", "forward_additive", "backward_additive"}
 # 沪深300 / 中证500 / 创业板 / 红利低波 / 纳指 / 黄金；防守资产为货币 ETF
 DEFAULT_BACKTEST_ENGINE_VERSION = "v2"
-DEFAULT_BACKTEST_ENGINE_VERSION = "v2"
 DEFAULT_ETF_ROTATION_POOL = ("510300", "510500", "159915", "512890", "513100", "518880")
 DEFAULT_ETF_ROTATION_SAFE_ASSET = "511880"
 # Fallback defaults used when ANSPIRE_API_KEYS is reused as legacy OpenAI-compatible source.
