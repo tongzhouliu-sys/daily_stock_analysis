@@ -100,6 +100,11 @@ logger = logging.getLogger(__name__)
 # Configuration keys are written as dotenv assignments; anything outside this
 # shape would either be silently skipped or corrupt the file.
 _CONFIG_WRITE_KEY_PATTERN = re.compile(r"^[A-Z][A-Z0-9_]*$")
+# A dotenv interpolation reference other than the webhook body template's own
+# placeholders (${content}, ${title}, ${content_json}, ${title_json}).
+_ENV_INTERPOLATION_REFERENCE_PATTERN = re.compile(
+    r"\$\{(?!(?:content_json|title_json|content|title)\})"
+)
 
 # Keys that change how the service boots or where it stores data. A Web session
 # must not be able to rewrite them: in particular ADMIN_AUTH_ENABLED would
@@ -796,6 +801,7 @@ class SystemConfigService:
 
         updates = self._parse_imported_env_content(content)
         updates = self._drop_matching_startup_import_items(updates)
+        updates = self._drop_unchanged_interpolated_import_items(updates)
         return self.update(
             config_version=config_version,
             items=updates,
@@ -2552,6 +2558,26 @@ class SystemConfigService:
             mask_token=mask_token,
         )
 
+    def _drop_unchanged_interpolated_import_items(
+        self, updates: List[Dict[str, str]]
+    ) -> List[Dict[str, str]]:
+        """Skip imported ``${...}`` references that already exist unchanged.
+
+        Files may legitimately use dotenv references such as
+        ``WEBUI_PORT=${API_PORT}``. Re-importing an unchanged line is not a
+        write, so it must not trip the reference rejection and break
+        export-then-import. New or changed references, and every other item
+        (including retired values), still go through full validation.
+        """
+        saved_raw = self._manager._read_config_map(normalize_values=False)
+        return [
+            item for item in updates
+            if not (
+                _ENV_INTERPOLATION_REFERENCE_PATTERN.search(item["value"])
+                and saved_raw.get(item["key"]) == item["value"]
+            )
+        ]
+
     @staticmethod
     def _parse_imported_env_content(content: str) -> List[Dict[str, str]]:
         """Parse raw `.env` text into update items without expanding app templates."""
@@ -2942,6 +2968,17 @@ class SystemConfigService:
                 continue
             if unicodedata.category(char) in ("Cc", "Zl", "Zp"):
                 return f"contains control character U+{ord(char):04X}"
+        # dotenv reads a value that starts with a quote as a quoted string that
+        # may span lines; an unterminated quote swallows every following
+        # assignment (ADMIN_AUTH_ENABLED included) until the next quote.
+        if value.lstrip()[:1] in ("'", '"'):
+            return "starts with a quote character"
+        # ${OTHER_KEY} is expanded by dotenv when the file is read, both for the
+        # settings page and at runtime (for example inside a webhook URL), which
+        # would copy a secret into a value that is displayed or sent out. Only
+        # the application's own webhook template placeholders are allowed.
+        if _ENV_INTERPOLATION_REFERENCE_PATTERN.search(value):
+            return "contains a ${...} reference to another setting"
         return None
 
     @staticmethod

@@ -90,6 +90,69 @@ class ConfigValueInjectionTestCase(unittest.TestCase):
                 self.assertEqual(issue["code"], "invalid_value")
                 self.assertEqual(self.env_path.read_bytes(), before)
 
+    def _update_many(self, items):
+        version = self.manager.get_config_version()
+        return self.service.update(
+            config_version=version,
+            items=[{"key": key, "value": value} for key, value in items],
+            mask_token="******",
+            reload_now=False,
+        )
+
+    def test_leading_quote_cannot_swallow_following_lines(self) -> None:
+        # dotenv treats a value that starts with a quote as a quoted string that
+        # may span lines: 'x ... y' would swallow every assignment in between,
+        # including ADMIN_AUTH_ENABLED, so the next process starts without auth.
+        before = self.env_path.read_bytes()
+        for opening, closing in (("'x", "y'"), ('"x', 'y"')):
+            with self.subTest(quote=opening[0]):
+                with self.assertRaises(ConfigValidationError) as ctx:
+                    self._update_many([("TELEGRAM_CHAT_ID", opening), ("PUSHPLUS_TOPIC", closing)])
+                self.assertEqual(ctx.exception.issues[0]["code"], "invalid_value")
+                self.assertEqual(self.env_path.read_bytes(), before)
+        values = ConfigManager(env_path=self.env_path).read_config_map()
+        self.assertEqual(values.get("ADMIN_AUTH_ENABLED"), "true")
+
+    def test_interpolation_reference_to_another_key_is_rejected(self) -> None:
+        # ${OTHER_KEY} would be expanded by dotenv, both when the settings page
+        # reads the file and when the runtime loads it (for example inside a
+        # webhook URL), copying a secret into a value that is shown or sent out.
+        before = self.env_path.read_bytes()
+        for value in ("${GEMINI_API_KEY}", "https://hook.example/?k=${LLM_FOO_API_KEY}"):
+            with self.subTest(value=value):
+                with self.assertRaises(ConfigValidationError):
+                    self._update("TELEGRAM_CHAT_ID", value)
+                self.assertEqual(self.env_path.read_bytes(), before)
+
+    def test_webhook_template_placeholders_remain_allowed(self) -> None:
+        template = '{"msgtype":"text","text":{"content":"${title}: ${content}"}}'
+        self.assertIsNone(SystemConfigService._env_value_unsafe_reason(template))
+
+    def test_export_then_import_keeps_existing_dotenv_references(self) -> None:
+        self.env_path.write_text(
+            self.env_path.read_text(encoding="utf-8")
+            + "API_PORT=8000\nWEBUI_PORT=${API_PORT}\n",
+            encoding="utf-8",
+        )
+        exported = self.env_path.read_text(encoding="utf-8")
+        self.service.import_env(
+            config_version=self.manager.get_config_version(),
+            content=exported,
+            reload_now=False,
+        )
+        self.assertIn("WEBUI_PORT=${API_PORT}", self.env_path.read_text(encoding="utf-8"))
+
+    def test_interpolation_reference_is_rejected_on_import(self) -> None:
+        before = self.env_path.read_bytes()
+        content = before.decode("utf-8") + "TELEGRAM_CHAT_ID=${GEMINI_API_KEY}\n"
+        with self.assertRaises(ConfigValidationError):
+            self.service.import_desktop_env(
+                config_version=self.manager.get_config_version(),
+                content=content,
+                reload_now=False,
+            )
+        self.assertEqual(self.env_path.read_bytes(), before)
+
     def test_tab_remains_allowed(self) -> None:
         # Tabs cannot start a new dotenv assignment and are used by some
         # template values, so they must stay valid.

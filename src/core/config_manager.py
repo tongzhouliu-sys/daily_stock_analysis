@@ -196,6 +196,10 @@ class ConfigManager:
 
         raw_values = dotenv_values(self._env_path, interpolate=False)
         if normalize_values:
+            # Display keeps dotenv interpolation so the settings page matches the
+            # runtime value. Writes through the API reject ``${OTHER_KEY}``
+            # references (see SystemConfigService._env_value_unsafe_reason), so a
+            # caller cannot plant one to copy a secret into a displayed field.
             values = dotenv_values(self._env_path)
             for raw_key, raw_value in raw_values.items():
                 if (
