@@ -279,11 +279,47 @@ def _select_best_bars(db, stock_code: str, start: date, end: date, stock_identit
     return best_code, best_bars
 
 
-def _write_back_to_db(df: pd.DataFrame, stock_code: str, source: str) -> None:
-    """Persist a network-fetched DataFrame to DB. Failures are logged, not raised."""
+def _last_completed_session_date(stock_code: str) -> Optional[date]:
+    """Return the newest session whose daily bar is final.
+
+    During a trading session the *expected* daily bar date is today, but today's
+    bar is still accumulating. Persistence must stop at the previous session.
+    """
+    try:
+        from data_provider.base import get_market_for_stock
+        from src.core.trading_calendar import get_effective_trading_date
+
+        return get_effective_trading_date(get_market_for_stock(stock_code))
+    except Exception as exc:  # pragma: no cover - calendar/import guard
+        logger.debug("last completed session unavailable for %s: %s", stock_code, exc)
+        return None
+
+
+def _write_back_to_db(
+    df: pd.DataFrame,
+    stock_code: str,
+    source: str,
+    end_date: Optional[date] = None,
+) -> None:
+    """Persist a network-fetched DataFrame to DB. Failures are logged, not raised.
+
+    C11: rows after the last completed session are intraday partial bars and
+    must not be persisted as finished daily bars.
+    """
     if df is None or df.empty:
         return
     try:
+        from src.utils.daily_bar_freshness import drop_unclosed_daily_bars
+
+        last_completed = _last_completed_session_date(stock_code)
+        if last_completed is not None and end_date is not None:
+            # Never persist past the caller's allowed window either.
+            last_completed = min(last_completed, end_date)
+        elif last_completed is None:
+            last_completed = end_date
+        df, _dropped = drop_unclosed_daily_bars(df, last_completed, code=stock_code)
+        if df is None or df.empty:
+            return
         from src.storage import get_db
         _, normalized_code = _history_code_candidates(stock_code)
         db = get_db()
@@ -347,7 +383,7 @@ def _fetch_from_network(
         if df is not None and not df.empty:
             _network_cache.put(cache_key, df, source)
             if write_back:
-                _write_back_to_db(df, stock_code, source)
+                _write_back_to_db(df, stock_code, source, end)
             _network_cache.finish_inflight(cache_key, df, source, None)
             result = df.tail(days).copy() if len(df) > days else df.copy()
             return result, source

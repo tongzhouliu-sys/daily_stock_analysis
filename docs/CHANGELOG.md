@@ -9,6 +9,7 @@ and this project adheres to [Semantic Versioning](https://semver.org/).
 
 ## [Unreleased]
 
+- [修复] 日线数据新鲜度显式化：盘中抓到的当日 K 线是累计值，落库后会被当成完整日线并让收盘后同日重跑被「今日已有数据」挡住，现在保存前只保留到最近已收盘交易日，未收盘行不入库（pipeline 取数、agent 历史预取、`history_loader` 回写三条写库路径一致处理）；抓取失败回退到库内旧数据时，上下文与提示词写明「日线数据截至 X（落后 N 个交易日）」，`daily_bars` 数据块降级为 `stale` 并相应扣减数据质量分，行情表标题改为「最新可得行情」，不再把多日前的行情当作今日行情。
 - [改进] 后端零散健壮性修复：持仓 CSV 导入解析与名称匹配移入线程池，不再阻塞事件循环；自选股增删加进程内锁，避免并发读改写丢更新；任务进度与广播改用不含 `flow_events` 的浅快照，降低高频进度更新开销。
 - [新功能] 分析任务支持取消：新增 `POST /api/v1/analysis/tasks/{task_id}/cancel`，排队中的任务立即转 `cancelled`，运行中的任务转 `cancel_requested` 并在下一个进度检查点中止（不再只是定义了永不使用的状态）；选股任务改为单飞，已有 `pending/processing/cancel_requested` 的选股任务时再次提交返回 `409 screening_task_in_progress`。
 - [修复] 保存调度配置不再终止正在跑的分析：调度器重启改为只重建调度线程，正在运行的分析子进程继续执行并在日志里说明；显式 `stop()` 仍会终止进程树。改密码成功后轮换会话签名密钥，其他设备上的旧会话立即失效，当前浏览器重新下发会话 Cookie 保持登录；交易流水 CSV 上传加 5MB 上限，超限返回 `413 file_too_large`。

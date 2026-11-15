@@ -194,6 +194,8 @@ def _today_looks_complete_daily_bar(
 
 _QUOTE_LABELS_EN = {
     "今日行情": "Today's Quote",
+    "最新可得行情": "Latest Available Quote",
+    "最新可得收盘价": "Latest Available Close",
     "收盘价": "Close",
     "上一完整交易日行情": "Last Complete Trading Day Quote",
     "上一完整交易日收盘价": "Last Complete Trading Day Close",
@@ -214,6 +216,10 @@ def _phase_aware_quote_labels(context: Dict[str, Any], report_language: str = "z
 
 def _phase_aware_quote_labels_zh(context: Dict[str, Any]) -> Tuple[str, str]:
     """Choose Chinese quote-table labels that do not conflict with phase context."""
+    if context.get("data_stale") is True:
+        # C12: the stored bars lag the expected session, so never label them
+        # as today's quote.
+        return "最新可得行情", "最新可得收盘价"
     phase_context = context.get("market_phase_context")
     if not isinstance(phase_context, dict):
         return "今日行情", "收盘价"
@@ -4596,7 +4602,31 @@ Output strictly in the following JSON format. This is a complete Decision Dashbo
             ]
         )
         quote_rows_text = "\n".join(quote_rows)
-        
+
+        # C12: state the real daily-bar date when it lags the expected session.
+        data_freshness_row = ""
+        if context.get("data_stale") is True:
+            data_as_of = context.get("data_as_of") or context.get("date") or unknown_text
+            stale_sessions = context.get("data_stale_sessions")
+            if english:
+                behind = (
+                    f"，{stale_sessions} trading session(s) behind"
+                    if stale_sessions not in (None, "")
+                    else ""
+                )
+                data_freshness_row = (
+                    f"| Data As Of | {data_as_of}{behind}; not today's quote |\n"
+                )
+            else:
+                behind = (
+                    f"，落后 {stale_sessions} 个交易日"
+                    if stale_sessions not in (None, "")
+                    else ""
+                )
+                data_freshness_row = (
+                    f"| 数据截至 | {data_as_of}{behind}，不是今日行情 |\n"
+                )
+
         # ========== 构建决策仪表盘格式的输入 ==========
         if english:
             prompt = f"""# Decision Dashboard Analysis Request
@@ -4607,8 +4637,7 @@ Output strictly in the following JSON format. This is a complete Decision Dashbo
 | Stock Code | **{code}** |
 | Stock Name | **{stock_name}** |
 | Analysis Date | {context.get('date', unknown_text)} |
-
----
+{data_freshness_row}---
 """
         else:
             prompt = f"""# 决策仪表盘分析请求
@@ -4619,8 +4648,7 @@ Output strictly in the following JSON format. This is a complete Decision Dashbo
 | 股票代码 | **{code}** |
 | 股票名称 | **{stock_name}** |
 | 分析日期 | {context.get('date', unknown_text)} |
-
----
+{data_freshness_row}---
 """
         prompt += format_market_phase_prompt_section(
             context.get("market_phase_context"),

@@ -180,14 +180,33 @@ def _build_quote_block(artifacts: PipelineAnalysisArtifacts) -> AnalysisContextB
 def _build_daily_bars_block(artifacts: PipelineAnalysisArtifacts) -> AnalysisContextBlock:
     context = artifacts.base_context or {}
     date_value = context.get("date")
+    stale = bool(context.get("data_stale"))
+    stale_sessions = context.get("data_stale_sessions")
     metadata = {
         key: value
         for key, value in {
             "date": date_value,
             "data_missing": bool(context.get("data_missing")),
+            "data_as_of": context.get("data_as_of"),
+            "data_expected_as_of": context.get("data_expected_as_of"),
+            "data_stale": stale or None,
+            "data_stale_sessions": stale_sessions,
         }.items()
         if value not in (None, "")
     }
+    stale_warnings = []
+    if stale:
+        # C12: make the real data date explicit in the prompt instead of
+        # letting stale DB rows read as today's session.
+        stale_warnings.append(
+            str(context.get("data_freshness_note_zh") or "").strip()
+            or f"日线数据截至 {context.get('data_as_of') or date_value}"
+        )
+        stale_warnings.append(
+            str(context.get("data_freshness_note_en") or "").strip()
+            or f"Daily bars end at {context.get('data_as_of') or date_value}"
+        )
+        stale_warnings = [item for item in stale_warnings if item]
     if context.get("data_missing"):
         return AnalysisContextBlock(
             status=ContextFieldStatus.MISSING,
@@ -232,10 +251,15 @@ def _build_daily_bars_block(artifacts: PipelineAnalysisArtifacts) -> AnalysisCon
         block_status = ContextFieldStatus.PARTIAL
     else:
         block_status = ContextFieldStatus.MISSING
+    if stale and block_status != ContextFieldStatus.MISSING:
+        # Stale bars still count, but at a lower quality weight so the score
+        # reflects that the newest bar is not the expected session.
+        block_status = ContextFieldStatus.STALE
     return AnalysisContextBlock(
         status=block_status,
         items=items,
         source="storage.get_analysis_context",
+        warnings=stale_warnings,
         metadata=metadata,
     )
 

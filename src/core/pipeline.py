@@ -467,6 +467,23 @@ class StockAnalysisPipeline:
             if df is None or df.empty:
                 return False, "获取数据为空"
 
+            # C11: 盘中抓到的当日 K 线是累计值，落库会被当成完整日线，
+            # 且让收盘后同日重跑被“今日已有数据”挡住。这里只保留到最近一个
+            # 已收盘交易日，未收盘行不入库。
+            from src.utils.daily_bar_freshness import drop_unclosed_daily_bars
+
+            df, dropped = drop_unclosed_daily_bars(df, target_date, code=code)
+            if dropped:
+                logger.info(
+                    "%s(%s) 跳过 %s 根未收盘日线（最近完整交易日 %s）",
+                    stock_name,
+                    code,
+                    dropped,
+                    target_date,
+                )
+            if df is None or df.empty:
+                return False, "获取数据为空"
+
             # 保存到数据库
             saved_count = self.db.save_daily_data(df, code, source_name)
             logger.info(f"{stock_name}({code}) 数据保存成功（来源: {source_name}，新增 {saved_count} 条）")
@@ -827,7 +844,7 @@ class StockAnalysisPipeline:
             self._emit_progress(58, f"{stock_name}：正在整理分析上下文")
             with _measure_fetch_step(fetch_timings, "分析上下文"):
                 context = self._get_analysis_context_with_market_fallback(
-                    code, analysis_target=analysis_target
+                    code, analysis_target=analysis_target, current_time=current_time
                 )
 
             if context is None:
@@ -1547,7 +1564,11 @@ class StockAnalysisPipeline:
         try:
             df, source = self.fetcher_manager.get_daily_data(code, days=min_days)
             if df is not None and not df.empty:
-                self.db.save_daily_data(df, code, source)
+                from src.utils.daily_bar_freshness import drop_unclosed_daily_bars
+
+                df, _dropped = drop_unclosed_daily_bars(df, target, code=code)
+                if df is not None and not df.empty:
+                    self.db.save_daily_data(df, code, source)
                 logger.info("[%s] Prefetched %d rows of history for agent (source: %s)", code, len(df), source)
         except Exception as e:
             logger.warning("[%s] Agent history prefetch failed: %s", code, e)
@@ -2064,12 +2085,16 @@ class StockAnalysisPipeline:
             return None
 
     def _load_agent_analysis_context(
-        self, code: str, stock_name: str, analysis_target: Optional[AnalysisTarget] = None
+        self,
+        code: str,
+        stock_name: str,
+        analysis_target: Optional[AnalysisTarget] = None,
+        current_time: Optional[datetime] = None,
     ) -> Dict[str, Any]:
         """Load daily-bar context for Agent pack summaries without blocking analysis."""
         try:
             context = self._get_analysis_context_with_market_fallback(
-                code, analysis_target=analysis_target
+                code, analysis_target=analysis_target, current_time=current_time
             )
         except Exception as exc:
             logger.warning(
@@ -2095,39 +2120,89 @@ class StockAnalysisPipeline:
         }
 
     def _get_analysis_context_with_market_fallback(
-        self, code: str, analysis_target: Optional[AnalysisTarget] = None
+        self,
+        code: str,
+        analysis_target: Optional[AnalysisTarget] = None,
+        current_time: Optional[datetime] = None,
     ) -> Optional[Dict[str, Any]]:
-        """Load analysis context, fetching JP/KR/TW daily bars when DB has no context."""
+        """Load analysis context, fetching JP/KR/TW daily bars when DB has no context.
+
+        C12: the returned context always carries the freshness of the newest
+        stored daily bar relative to the expected trading session, so a stale
+        fallback can be disclosed instead of being read as today's quote.
+        """
         context = self.db.get_analysis_context(code)
         if isinstance(context, dict) and context:
-            return context
+            return self._attach_context_freshness(
+                context, code, analysis_target=analysis_target, current_time=current_time
+            )
 
         if analysis_target is not None and analysis_target.asset_type == ParseStatus.INDEX:
             market = "cn"
         else:
             market = get_market_for_stock(normalize_stock_code(code))
         if market not in {"jp", "kr", "tw"}:
-            return context
+            return self._attach_context_freshness(
+                context, code, analysis_target=analysis_target, current_time=current_time
+            )
 
         try:
             df, source_name = self.fetcher_manager.get_daily_data(code, days=60)
         except Exception as exc:
             logger.warning("[%s] JP/KR daily fallback fetch failed: %s", code, exc)
-            return context
+            return self._attach_context_freshness(
+                context, code, analysis_target=analysis_target, current_time=current_time
+            )
 
         if df is None or df.empty:
             logger.warning("[%s] JP/KR daily fallback returned empty data", code)
-            return context
+            return self._attach_context_freshness(
+                context, code, analysis_target=analysis_target, current_time=current_time
+            )
 
         try:
+            from src.utils.daily_bar_freshness import drop_unclosed_daily_bars
+
+            target = self._resolve_resume_target_date(
+                code, current_time=current_time, analysis_target=analysis_target
+            )
+            df, _dropped = drop_unclosed_daily_bars(df, target, code=code)
             self.db.save_daily_data(df, code, source_name)
             refreshed = self.db.get_analysis_context(code)
             if isinstance(refreshed, dict) and refreshed:
-                return refreshed
+                return self._attach_context_freshness(
+                    refreshed, code, analysis_target=analysis_target, current_time=current_time
+                )
         except Exception as exc:
             logger.warning("[%s] JP/KR daily fallback persistence failed: %s", code, exc)
 
-        return self._build_analysis_context_from_daily_df(code, df)
+        return self._attach_context_freshness(
+            self._build_analysis_context_from_daily_df(code, df),
+            code,
+            analysis_target=analysis_target,
+            current_time=current_time,
+        )
+
+    def _attach_context_freshness(
+        self,
+        context: Optional[Dict[str, Any]],
+        code: str,
+        *,
+        analysis_target: Optional[AnalysisTarget] = None,
+        current_time: Optional[datetime] = None,
+    ) -> Optional[Dict[str, Any]]:
+        if not isinstance(context, dict) or not context:
+            return context
+        if analysis_target is not None and analysis_target.asset_type == ParseStatus.INDEX:
+            market = "cn"
+        else:
+            market = get_market_for_stock(normalize_stock_code(code))
+        expected = self._resolve_resume_target_date(
+            code, current_time=current_time, analysis_target=analysis_target
+        )
+        from src.utils.daily_bar_freshness import attach_daily_bar_freshness
+
+        return attach_daily_bar_freshness(context, market=market, expected_as_of=expected)
 
     def _build_analysis_context_from_daily_df(self, code: str, df: pd.DataFrame) -> Optional[Dict[str, Any]]:
         if df is None or df.empty:
