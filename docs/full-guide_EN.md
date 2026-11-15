@@ -422,6 +422,7 @@ For the notification baseline, diagnostics, and deployment notes, see [Notificat
 > - **Sector leaderboard** uses a fixed fallback order: consistent with global priority.
 > - **Timeout control** is a `best-effort` soft timeout: the stage will quickly degrade and continue execution based on the budget, but does not guarantee a hard interrupt of underlying third-party network calls.
 > - `FUNDAMENTAL_STAGE_TIMEOUT_SECONDS=8.0` indicates the target budget for the newly added fundamental stage, not a strict hard SLA; Windows, Docker, or rate-limited free data sources can raise it to `12-15s`.
+> - Growth/earnings/institution, capital flow, dragon-tiger and board blocks are independent and run concurrently, each bounded by that budget, so the stage takes roughly as long as its slowest block. On the AkShare side every interface call has its own timeout window (about 35% of the budget, 1s floor); once the budget is exhausted the remaining interfaces are skipped but already-fetched blocks are kept. Market-wide tables (sector fund-flow ranking, dragon-tiger, earnings forecast/express, institutional holdings) are cached per process for the current calendar day and invalidated on the next day.
 > - For a hard SLA, please upgrade to isolated child process execution in future versions to forcefully terminate timeout tasks.
 
 ### Other Configuration

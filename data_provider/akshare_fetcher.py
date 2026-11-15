@@ -428,6 +428,10 @@ class AkshareFetcher(BaseFetcher):
         self.sleep_min = sleep_min
         self.sleep_max = sleep_max
         self._last_request_time: Optional[float] = None
+        # T28: 只保护限速状态的短锁；等待本身发生在锁外
+        self._rate_limit_lock = threading.Lock()
+        # T28: 标记「管理器已代为限速」，避免方法内部再次睡眠（尤其在锁内）
+        self._rate_limit_tls = threading.local()
         self._history_call_timeout = _AKSHARE_HISTORY_CALL_TIMEOUT
         self._market_stats_call_timeout = _AKSHARE_MARKET_STATS_CALL_TIMEOUT
         # 东财补丁开启才执行打补丁操作
@@ -450,31 +454,68 @@ class AkshareFetcher(BaseFetcher):
         except Exception as e:
             logger.debug(f"设置 User-Agent 失败: {e}")
     
-    def _enforce_rate_limit(self) -> None:
+    # T28: 这些方法走单股直连接口（新浪/腾讯），只需要最小间隔，不需要随机 jitter
+    rate_limit_jitterless_methods = frozenset({
+        "_fetch_stock_data_sina",
+        "_fetch_stock_data_tx",
+        "_get_stock_realtime_quote_sina",
+        "_get_stock_realtime_quote_tencent",
+    })
+
+    def begin_managed_call(self) -> None:
+        """T28: 标记本次调用由管理器托管限速。"""
+        self._rate_limit_tls.managed = True
+        self._rate_limit_tls.pending = 0.0
+
+    def take_pending_rate_limit_delay(self) -> float:
+        """T28: 取出本次调用累积的限速等待时长，由管理器在锁外睡眠。"""
+        delay = float(getattr(self._rate_limit_tls, "pending", 0.0) or 0.0)
+        self._rate_limit_tls.pending = 0.0
+        self._rate_limit_tls.managed = False
+        return max(0.0, delay)
+
+    def _reserve_rate_limit_delay(self, *, jitter: bool = True) -> float:
+        """T28: 登记本次请求槽位并返回应当等待的秒数（含 jitter，不睡眠）。
+
+        返回值只是“账”，由调用方决定在哪里睡眠：托管调用累积到 tls 由管理器
+        在锁外等待；直接调用则由 ``_enforce_rate_limit`` 原地等待。
+        """
+        acquired = self._rate_limit_lock.acquire(timeout=1.0)
+        try:
+            now = time.time()
+            delay = 0.0
+            if self._last_request_time is not None:
+                delay = max(0.0, self.sleep_min - (now - self._last_request_time))
+            if jitter and not INTERACTIVE_MODE.get():
+                delay += self.random_sleep_seconds(self.sleep_min, self.sleep_max)
+            self._last_request_time = now + delay
+            return delay
+        finally:
+            if acquired:
+                self._rate_limit_lock.release()
+
+    def _enforce_rate_limit(self, *, jitter: bool = True) -> None:
         """
         强制执行速率限制
-        
+
         策略：
-        1. 检查距离上次请求的时间间隔
-        2. 如果间隔不足，补充休眠时间
-        3. 然后再执行随机 jitter 休眠（交互模式下跳过）
-        
+        1. 登记本次请求槽位，得到应等待时长（含 jitter）
+        2. 托管调用：不在此处睡眠，累积给管理器在调用锁外统一等待
+        3. 直接调用：原地睡眠，且不依赖任何共享锁
+
         T3: 交互模式下只保留最小间隔休眠，跳过随机休眠以减少延迟
+        T28: 托管调用把等待移出共享锁；腾讯/新浪单股直连接口传 jitter=False
         """
-        if self._last_request_time is not None:
-            elapsed = time.time() - self._last_request_time
-            min_interval = self.sleep_min
-            if elapsed < min_interval:
-                additional_sleep = min_interval - elapsed
-                logger.debug(f"补充休眠 {additional_sleep:.2f} 秒")
-                time.sleep(additional_sleep)
-        
-        # 交互模式下跳过随机休眠，减少延迟
-        if not INTERACTIVE_MODE.get():
-            # 执行随机 jitter 休眠
-            self.random_sleep(self.sleep_min, self.sleep_max)
-        self._last_request_time = time.time()
-    
+        delay = self._reserve_rate_limit_delay(jitter=jitter)
+        if getattr(self._rate_limit_tls, "managed", False):
+            self._rate_limit_tls.pending = (
+                float(getattr(self._rate_limit_tls, "pending", 0.0) or 0.0) + delay
+            )
+            return
+        if delay > 0:
+            logger.debug(f"补充休眠 {delay:.2f} 秒")
+            time.sleep(delay)
+
     @retry(
         stop=stop_after_attempt(3),  # 最多重试3次
         wait=wait_exponential(multiplier=1, min=2, max=30),  # 指数退避：2, 4, 8... 最大30秒
@@ -682,7 +723,7 @@ class AkshareFetcher(BaseFetcher):
         # 转换代码格式：sh600000, sz000001, bj920748
         symbol = _to_sina_tx_symbol(stock_code)
 
-        self._enforce_rate_limit()
+        self._enforce_rate_limit(jitter=False)
 
         try:
             df = _akshare_call_with_timeout(
@@ -731,7 +772,7 @@ class AkshareFetcher(BaseFetcher):
         # 转换代码格式：sh600000, sz000001, bj920748
         symbol = _to_sina_tx_symbol(stock_code)
 
-        self._enforce_rate_limit()
+        self._enforce_rate_limit(jitter=False)
 
         try:
             df = _akshare_call_with_timeout(
@@ -1245,7 +1286,7 @@ class AkshareFetcher(BaseFetcher):
                 f"[API调用] 新浪财经接口获取 {stock_code} 实时行情: endpoint={SINA_REALTIME_ENDPOINT}, symbol={symbol}"
             )
             
-            self._enforce_rate_limit()
+            self._enforce_rate_limit(jitter=False)
             response = requests.get(url, headers=headers, timeout=10)
             response.encoding = 'gbk'
             api_elapsed = time.time() - api_start
@@ -1396,7 +1437,7 @@ class AkshareFetcher(BaseFetcher):
                 f"[API调用] 腾讯财经接口获取 {stock_code} 实时行情: endpoint={TENCENT_REALTIME_ENDPOINT}, symbol={symbol}"
             )
             
-            self._enforce_rate_limit()
+            self._enforce_rate_limit(jitter=False)
             response = requests.get(url, headers=headers, timeout=10)
             response.encoding = 'gbk'
             api_elapsed = time.time() - api_start

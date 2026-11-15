@@ -24,6 +24,7 @@ import logging
 import os
 import random
 import re
+import threading
 import time
 from concurrent.futures import ThreadPoolExecutor, TimeoutError as FuturesTimeoutError
 from dataclasses import dataclass, field
@@ -293,6 +294,10 @@ class EfinanceFetcher(BaseFetcher):
         self.sleep_min = sleep_min
         self.sleep_max = sleep_max
         self._last_request_time: Optional[float] = None
+        # T28: 只保护限速状态的短锁；等待本身发生在锁外
+        self._rate_limit_lock = threading.Lock()
+        # T28: 标记「管理器已代为限速」，避免方法内部再次睡眠（尤其在锁内）
+        self._rate_limit_tls = threading.local()
         # 东财补丁开启才执行打补丁操作
         if get_config().enable_eastmoney_patch:
             eastmoney_patch()
@@ -329,31 +334,60 @@ class EfinanceFetcher(BaseFetcher):
         except Exception as e:
             logger.debug(f"设置 User-Agent 失败: {e}")
     
-    def _enforce_rate_limit(self) -> None:
+    def begin_managed_call(self) -> None:
+        """T28: 标记本次调用由管理器托管限速。"""
+        self._rate_limit_tls.managed = True
+        self._rate_limit_tls.pending = 0.0
+
+    def take_pending_rate_limit_delay(self) -> float:
+        """T28: 取出本次调用累积的限速等待时长，由管理器在锁外睡眠。"""
+        delay = float(getattr(self._rate_limit_tls, "pending", 0.0) or 0.0)
+        self._rate_limit_tls.pending = 0.0
+        self._rate_limit_tls.managed = False
+        return max(0.0, delay)
+
+    def _reserve_rate_limit_delay(self, *, jitter: bool = True) -> float:
+        """T28: 登记本次请求槽位并返回应当等待的秒数（含 jitter，不睡眠）。
+
+        返回值只是“账”，由调用方决定在哪里睡眠：托管调用累积到 tls 由管理器
+        在锁外等待；直接调用则由 ``_enforce_rate_limit`` 原地等待。
+        """
+        acquired = self._rate_limit_lock.acquire(timeout=1.0)
+        try:
+            now = time.time()
+            delay = 0.0
+            if self._last_request_time is not None:
+                delay = max(0.0, self.sleep_min - (now - self._last_request_time))
+            if jitter and not INTERACTIVE_MODE.get():
+                delay += self.random_sleep_seconds(self.sleep_min, self.sleep_max)
+            self._last_request_time = now + delay
+            return delay
+        finally:
+            if acquired:
+                self._rate_limit_lock.release()
+
+    def _enforce_rate_limit(self, *, jitter: bool = True) -> None:
         """
         强制执行速率限制
-        
+
         策略：
-        1. 检查距离上次请求的时间间隔
-        2. 如果间隔不足，补充休眠时间
-        3. 然后再执行随机 jitter 休眠（交互模式下跳过）
-        
+        1. 登记本次请求槽位，得到应等待时长（含 jitter）
+        2. 托管调用：不在此处睡眠，累积给管理器在调用锁外统一等待
+        3. 直接调用：原地睡眠，且不依赖任何共享锁
+
         T3: 交互模式下只保留最小间隔休眠，跳过随机休眠以减少延迟
+        T28: 托管调用把等待移出共享锁；腾讯/新浪单股直连接口传 jitter=False
         """
-        if self._last_request_time is not None:
-            elapsed = time.time() - self._last_request_time
-            min_interval = self.sleep_min
-            if elapsed < min_interval:
-                additional_sleep = min_interval - elapsed
-                logger.debug(f"补充休眠 {additional_sleep:.2f} 秒")
-                time.sleep(additional_sleep)
-        
-        # 交互模式下跳过随机休眠，减少延迟
-        if not INTERACTIVE_MODE.get():
-            # 执行随机 jitter 休眠
-            self.random_sleep(self.sleep_min, self.sleep_max)
-        self._last_request_time = time.time()
-    
+        delay = self._reserve_rate_limit_delay(jitter=jitter)
+        if getattr(self._rate_limit_tls, "managed", False):
+            self._rate_limit_tls.pending = (
+                float(getattr(self._rate_limit_tls, "pending", 0.0) or 0.0) + delay
+            )
+            return
+        if delay > 0:
+            logger.debug(f"补充休眠 {delay:.2f} 秒")
+            time.sleep(delay)
+
     @retry(
         stop=stop_after_attempt(1),  # 减少到1次，避免触发限流
         wait=wait_exponential(multiplier=1, min=4, max=60),  # 保持等待时间设置

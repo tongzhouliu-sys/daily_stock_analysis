@@ -64,7 +64,13 @@ def isolated_application_environment():
         for key in ("_auth_enabled", "_session_secret", "_password_hash_salt", "_password_hash_stored"):
             setattr(auth, key, None)
         auth._rate_limit = {}
+        # T28: 全市场表按天缓存是进程级的，测试之间必须清空，
+        # 否则前一个用例伪造的 akshare 结果会泄漏到后续用例。
+        from data_provider import fundamental_adapter as _fundamental_adapter
+
+        _fundamental_adapter._clear_daily_table_cache()
         yield
+        _fundamental_adapter._clear_daily_table_cache()
         Config.reset_instance()
         for key in ("_auth_enabled", "_session_secret", "_password_hash_salt", "_password_hash_stored"):
             setattr(auth, key, None)

@@ -19,6 +19,7 @@ import random
 import time
 from contextlib import contextmanager
 from contextvars import ContextVar
+from concurrent.futures import ThreadPoolExecutor
 from threading import BoundedSemaphore, RLock, Thread
 from abc import ABC, abstractmethod
 from datetime import datetime, timezone
@@ -384,6 +385,19 @@ class BaseFetcher(ABC):
     name: str = "BaseFetcher"
     priority: int = 99  # 优先级数字越小越优先
     allow_empty_daily_data: bool = False
+
+    # T28: 锁外限速。
+    # 数据源在 ``_enforce_rate_limit`` 里只登记本次请求槽位并算出应等待的时长，
+    # 由管理器在本方法的调用锁**释放之后**统一睡眠。这样并发 worker 不会因为
+    # 另一个 worker 正在做限速等待而排在锁上。
+    def begin_managed_call(self) -> None:
+        """标记本次调用由管理器托管限速（默认数据源无需处理）。"""
+        return None
+
+    def take_pending_rate_limit_delay(self) -> float:
+        """取出本次调用累积的限速等待时长（秒），并清空标记。"""
+        return 0.0
+
     
     @abstractmethod
     def _fetch_raw_data(self, stock_code: str, start_date: str, end_date: str) -> pd.DataFrame:
@@ -640,6 +654,16 @@ class BaseFetcher(ABC):
         logger.debug(f"随机休眠 {sleep_time:.2f} 秒...")
         time.sleep(sleep_time)
 
+    @staticmethod
+    def random_sleep_seconds(min_seconds: float = 1.0, max_seconds: float = 3.0) -> float:
+        """T28: 只生成 jitter 秒数，不睡眠，供锁外限速统一等待。"""
+        try:
+            low = max(0.0, float(min_seconds))
+            high = max(low, float(max_seconds))
+        except (TypeError, ValueError):
+            return 0.0
+        return random.uniform(low, high)
+
 
 class DataFetcherManager:
     """
@@ -811,10 +835,34 @@ class DataFetcherManager:
             return lock
 
     def _call_fetcher_method(self, fetcher: BaseFetcher, method_name: str, *args, **kwargs):
-        """Serialize shared fetcher state access through manager-owned per-instance locks."""
+        """Serialize shared fetcher state access through manager-owned per-instance locks.
+
+        T28: 限速等待放在锁外完成。数据源在 ``_enforce_rate_limit`` 里只登记本次
+        请求槽位并算出应等待时长，真正的 ``sleep`` 由管理器在本方法的调用锁
+        **释放之后**执行，因此并发 worker 不会被另一个 worker 的限速等待连带阻塞。
+        """
         method = getattr(fetcher, method_name)
-        with self._get_fetcher_call_lock(fetcher):
-            return method(*args, **kwargs)
+        pending = 0.0
+        begin = getattr(fetcher, "begin_managed_call", None)
+        take = getattr(fetcher, "take_pending_rate_limit_delay", None)
+        if callable(begin):
+            begin()
+        try:
+            with self._get_fetcher_call_lock(fetcher):
+                try:
+                    return method(*args, **kwargs)
+                finally:
+                    if callable(take):
+                        try:
+                            pending = float(take() or 0.0)
+                        except Exception:
+                            logger.debug(
+                                "take_pending_rate_limit_delay failed", exc_info=True
+                            )
+                            pending = 0.0
+        finally:
+            if pending > 0:
+                time.sleep(pending)
 
     @classmethod
     def _filter_daily_fetchers_for_market(
@@ -4437,21 +4485,88 @@ class DataFetcherManager:
             [valuation_err] if valuation_err else [],
         )
 
+        # T28: 基本面剩余块彼此独立，并发执行；单个接口变慢不再把整轮串行拖长。
+        # 组装仍按固定顺序进行，errors / source_chain 顺序与串行实现保持一致。
+        block_budget = min(fetch_timeout, remaining_seconds)
+        block_results: Dict[str, Any] = {}
+        block_timings: Dict[str, int] = {}
+        block_failures: Dict[str, BaseException] = {}
+
+        def _run_block(name: str, task: Callable[[], Any]) -> None:
+            started = time.monotonic()
+            try:
+                value: Any = task()
+            except Exception as exc:  # noqa: BLE001 - 异常语义由组装阶段决定
+                value = None
+                block_failures[name] = exc
+            block_results[name] = value
+            block_timings[name] = int((time.monotonic() - started) * 1000)
+
+        bundle_needed = remaining_seconds > 0
+        block_tasks: List[Tuple[str, Callable[[], Any]]] = []
+        if bundle_needed:
+            block_tasks.append(
+                (
+                    "bundle",
+                    lambda: self._run_with_retry(
+                        lambda: self._fundamental_adapter.get_fundamental_bundle(
+                            stock_code, budget_seconds=block_budget
+                        ),
+                        block_budget,
+                        "fundamental_bundle",
+                        quarantine_key=("akshare", "fundamental_bundle"),
+                    ),
+                )
+            )
+        if not is_etf:
+            block_tasks.extend([
+                (
+                    "capital_flow",
+                    lambda: self.get_capital_flow_context(
+                        stock_code, budget_seconds=block_budget
+                    ),
+                ),
+                (
+                    "dragon_tiger",
+                    lambda: self.get_dragon_tiger_context(
+                        stock_code, budget_seconds=block_budget
+                    ),
+                ),
+                (
+                    "boards",
+                    lambda: self.get_board_context(
+                        stock_code, budget_seconds=block_budget
+                    ),
+                ),
+            ])
+
+        if len(block_tasks) > 1:
+            with ThreadPoolExecutor(
+                max_workers=len(block_tasks),
+                thread_name_prefix="fundamental-block",
+            ) as pool:
+                futures = [pool.submit(_run_block, name, task) for name, task in block_tasks]
+                for future in futures:
+                    future.result()
+        else:
+            for name, task in block_tasks:
+                _run_block(name, task)
+
         # growth / earnings / institution (one AkShare call)
-        if remaining_seconds <= 0:
+        if not bundle_needed:
             bundle_status = "failed"
             bundle_payload: Dict[str, Any] = {}
             bundle_errors = ["fundamental stage timeout"]
             bundle_ms = 0
         else:
-            bundle_timeout = min(fetch_timeout, remaining_seconds)
-            bundle_payload, bundle_err_msg, bundle_ms = self._run_with_retry(
-                lambda: self._fundamental_adapter.get_fundamental_bundle(stock_code),
-                bundle_timeout,
-                "fundamental_bundle",
-                quarantine_key=("akshare", "fundamental_bundle"),
-            )
-            _consume_budget(bundle_ms)
+            bundle_value = block_results.get("bundle")
+            if isinstance(bundle_value, tuple) and len(bundle_value) == 3:
+                bundle_payload, bundle_err_msg, bundle_ms = bundle_value
+            else:
+                bundle_payload = None
+                bundle_err_msg = block_failures.get("bundle")
+                bundle_err_msg = str(bundle_err_msg) if bundle_err_msg else "fundamental_bundle failed"
+                bundle_ms = block_timings.get("bundle", 0)
             if not isinstance(bundle_payload, dict):
                 bundle_status = "failed"
                 bundle_payload = {}
@@ -4461,7 +4576,6 @@ class DataFetcherManager:
             else:
                 bundle_status = str(bundle_payload.get("status", "not_supported"))
                 bundle_errors = [bundle_err_msg] if bundle_err_msg else []
-
         bundle_chain = self._normalize_source_chain(
             bundle_payload.get("source_chain", []),
             "fundamental_bundle",
@@ -4555,46 +4669,36 @@ class DataFetcherManager:
 
         # capital flow
         if is_etf:
-            result_ctx["capital_flow"] = self._build_fundamental_block(
-                "not_supported",
-                {},
-                [{"provider": "fundamental_pipeline", "result": "not_supported", "duration_ms": 0}],
-                ["etf not fully supported"],
-            )
-            result_ctx["dragon_tiger"] = self._build_fundamental_block(
-                "not_supported",
-                {},
-                [{"provider": "fundamental_pipeline", "result": "not_supported", "duration_ms": 0}],
-                ["etf not fully supported"],
-            )
-            result_ctx["boards"] = self._build_fundamental_block(
-                "not_supported",
-                {},
-                [{"provider": "fundamental_pipeline", "result": "not_supported", "duration_ms": 0}],
-                ["etf not fully supported"],
-            )
+            for block_name in ("capital_flow", "dragon_tiger", "boards"):
+                result_ctx[block_name] = self._build_fundamental_block(
+                    "not_supported",
+                    {},
+                    [{"provider": "fundamental_pipeline", "result": "not_supported", "duration_ms": 0}],
+                    ["etf not fully supported"],
+                )
             result_ctx["status"] = "partial"
         else:
-            capital_flow_budget = min(fetch_timeout, remaining_seconds)
-            capital_flow_start = time.time()
-            result_ctx["capital_flow"] = self.get_capital_flow_context(
-                stock_code,
-                budget_seconds=capital_flow_budget,
-            )
-            _consume_budget(int((time.time() - capital_flow_start) * 1000))
-
-            dragon_tiger_budget = min(fetch_timeout, remaining_seconds)
-            dragon_tiger_start = time.time()
-            result_ctx["dragon_tiger"] = self.get_dragon_tiger_context(
-                stock_code,
-                budget_seconds=dragon_tiger_budget,
-            )
-            _consume_budget(int((time.time() - dragon_tiger_start) * 1000))
-
-            result_ctx["boards"] = self.get_board_context(
-                stock_code,
-                budget_seconds=min(fetch_timeout, remaining_seconds),
-            )
+            for block_name in ("capital_flow", "dragon_tiger", "boards"):
+                failure = block_failures.get(block_name)
+                if failure is not None:
+                    # 保持原有异常语义：子块抛错时不返回半成品上下文
+                    raise failure
+                value = block_results.get(block_name)
+                if isinstance(value, dict):
+                    result_ctx[block_name] = value
+                else:
+                    result_ctx[block_name] = self._build_fundamental_block(
+                        "failed",
+                        {},
+                        [
+                            {
+                                "provider": "fundamental_pipeline",
+                                "result": "failed",
+                                "duration_ms": block_timings.get(block_name, 0),
+                            }
+                        ],
+                        [f"{block_name} returned no payload"],
+                    )
 
         block_statuses = {
             "valuation": result_ctx["valuation"].get("status", "not_supported"),
@@ -4728,7 +4832,9 @@ class DataFetcherManager:
         has_capital_flow_supplement = bool(cn_capital_flow_supplement_fetchers)
         adapter_budget = timeout * 0.6 if (timeout > 0 and has_capital_flow_supplement) else timeout
         payload, err, cost_ms = self._run_with_retry(
-            lambda: self._fundamental_adapter.get_capital_flow(stock_code),
+            lambda: self._fundamental_adapter.get_capital_flow(
+                stock_code, budget_seconds=adapter_budget
+            ),
             adapter_budget,
             "capital_flow",
             quarantine_key=("akshare", "capital_flow"),
@@ -4807,7 +4913,9 @@ class DataFetcherManager:
                 ["fundamental stage timeout"],
             )
         payload, err, cost_ms = self._run_with_retry(
-            lambda: self._fundamental_adapter.get_dragon_tiger_flag(stock_code),
+            lambda: self._fundamental_adapter.get_dragon_tiger_flag(
+                stock_code, budget_seconds=timeout
+            ),
             timeout,
             "dragon_tiger",
             quarantine_key=("akshare", "dragon_tiger"),

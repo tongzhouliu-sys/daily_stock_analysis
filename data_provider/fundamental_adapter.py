@@ -11,12 +11,143 @@ from __future__ import annotations
 import logging
 import math
 import re
+import threading
+import time
 from datetime import datetime, timedelta
-from typing import Any, Dict, List, Optional, Tuple
+from typing import Any, Callable, Dict, List, Optional, Tuple
 
 import pandas as pd
 
 logger = logging.getLogger(__name__)
+
+# T28: 单接口限时。基本面聚合一次会串行打 6 组不同接口，任何一组卡住都会
+# 吃掉整轮预算并把已取到的块一起作废。这里给每次 AkShare 调用一个独立
+# 超时窗口，超时后放弃该次调用（线程为 daemon，不影响主流程返回），
+# 让其它块继续按已有数据返回。
+_FUNDAMENTAL_MIN_CALL_TIMEOUT_SECONDS = 1.0
+_FUNDAMENTAL_CALL_TIMEOUT_RATIO = 0.35
+
+
+# T28: 全市场表进程内按天缓存。
+# 板块资金流排名、龙虎榜、业绩预告/快报、机构持股这类整表接口在同一个交易日内
+# 内容稳定，但一次分析里可能在多个 block / 多只股票上被重复拉取。这里按
+# 「接口名 + 参数 + 自然日」缓存一份副本，跨日自动失效。
+_DAILY_CACHEABLE_AKSHARE_INTERFACES = {
+    "stock_sector_fund_flow_rank",
+    "stock_lhb_stock_statistic_em",
+    "stock_lhb_detail_em",
+    "stock_lhb_jgmmtj_em",
+    "stock_yjyg_em",
+    "stock_yjkb_em",
+    "stock_institute_hold",
+}
+_DAILY_TABLE_CACHE_MAX_ENTRIES = 64
+_daily_table_cache: Dict[Tuple[str, str], Tuple[str, Any]] = {}
+_daily_table_cache_lock = threading.Lock()
+
+
+def _daily_cache_key(func_name: str, kwargs: Dict[str, Any]) -> Optional[Tuple[str, str]]:
+    if func_name not in _DAILY_CACHEABLE_AKSHARE_INTERFACES:
+        return None
+    try:
+        token = repr(sorted((str(k), repr(v)) for k, v in kwargs.items()))
+    except Exception:
+        token = repr(kwargs)
+    return func_name, token
+
+
+def _load_daily_table(key: Optional[Tuple[str, str]]):
+    if key is None:
+        return None
+    today = datetime.now().date().isoformat()
+    with _daily_table_cache_lock:
+        item = _daily_table_cache.get(key)
+        if not item:
+            return None
+        day, cached = item
+        if day != today:
+            _daily_table_cache.pop(key, None)
+            return None
+        try:
+            return cached.copy()
+        except Exception:
+            return cached
+
+
+def _store_daily_table(key: Optional[Tuple[str, str]], df: Any) -> None:
+    if key is None:
+        return
+    today = datetime.now().date().isoformat()
+    with _daily_table_cache_lock:
+        if len(_daily_table_cache) >= _DAILY_TABLE_CACHE_MAX_ENTRIES:
+            stale = [k for k, (day, _) in _daily_table_cache.items() if day != today]
+            for k in stale:
+                _daily_table_cache.pop(k, None)
+            if len(_daily_table_cache) >= _DAILY_TABLE_CACHE_MAX_ENTRIES:
+                _daily_table_cache.clear()
+        try:
+            _daily_table_cache[key] = (today, df.copy())
+        except Exception:
+            _daily_table_cache[key] = (today, df)
+
+
+def _clear_daily_table_cache() -> None:
+    """测试用：清空进程内全市场表缓存。"""
+    with _daily_table_cache_lock:
+        _daily_table_cache.clear()
+
+
+def _resolve_call_timeout(
+    deadline: Optional[float],
+    budget_seconds: Optional[float],
+) -> Optional[float]:
+    """按剩余预算推导单次接口超时；无预算约束时返回 None（不限时）。"""
+    if budget_seconds is None or budget_seconds <= 0:
+        return None
+    remaining = budget_seconds if deadline is None else max(0.0, deadline - time.monotonic())
+    if remaining <= 0:
+        return 0.0
+    cap = max(
+        _FUNDAMENTAL_MIN_CALL_TIMEOUT_SECONDS,
+        float(budget_seconds) * _FUNDAMENTAL_CALL_TIMEOUT_RATIO,
+    )
+    return min(cap, remaining)
+
+
+def _call_with_deadline(
+    func: Callable[..., Any],
+    kwargs: Dict[str, Any],
+    timeout: Optional[float],
+    label: str,
+) -> Any:
+    """在独立线程里执行一次接口调用，超过 timeout 即放弃等待。"""
+    if timeout is None:
+        return func(**kwargs)
+    if timeout <= 0:
+        raise TimeoutError(f"{label} 无剩余预算")
+
+    box: Dict[str, Any] = {}
+    errors: Dict[str, BaseException] = {}
+
+    def _runner() -> None:
+        try:
+            box["value"] = func(**kwargs)
+        except BaseException as exc:  # noqa: BLE001 - 原样抛回调用方
+            errors["value"] = exc
+
+    worker = threading.Thread(
+        target=_runner,
+        name=f"fundamental-call-{label}",
+        daemon=True,
+    )
+    worker.start()
+    worker.join(timeout)
+    if worker.is_alive():
+        raise TimeoutError(f"{label} 调用超过 {timeout:g}s，已放弃等待")
+    if "value" in errors:
+        raise errors["value"]
+    return box.get("value")
+
 
 _DIVIDEND_KEYWORD_MAP: Dict[str, List[str]] = {
     "per_share": [
@@ -343,6 +474,8 @@ class AkshareFundamentalAdapter:
         candidates: List[Tuple[str, Dict[str, Any]]],
         *,
         stock_code: Optional[str] = None,
+        deadline: Optional[float] = None,
+        budget_seconds: Optional[float] = None,
     ) -> Tuple[Optional[pd.DataFrame], Optional[str], List[str]]:
         errors: List[str] = []
         try:
@@ -354,10 +487,24 @@ class AkshareFundamentalAdapter:
             fn = getattr(ak, func_name, None)
             if fn is None:
                 continue
+            cache_key = _daily_cache_key(func_name, kwargs)
+            cached_df = _load_daily_table(cache_key)
+            if cached_df is not None:
+                if stock_code is not None:
+                    cached_df = _filter_rows_by_code(cached_df, stock_code, require_code=True)
+                if isinstance(cached_df, pd.DataFrame) and not cached_df.empty:
+                    return cached_df, f"{func_name}:daily_cache", errors
+            call_timeout = _resolve_call_timeout(deadline, budget_seconds)
+            if call_timeout is not None and call_timeout <= 0:
+                errors.append(f"{func_name}:budget_exhausted")
+                break
             try:
-                df = fn(**kwargs)
+                df = _call_with_deadline(fn, dict(kwargs), call_timeout, func_name)
                 if isinstance(df, pd.Series):
                     df = df.to_frame().T
+                if isinstance(df, pd.DataFrame) and not df.empty:
+                    # 缓存整表原始结果（过滤前），避免把单只股票的过滤结果存成全局表。
+                    _store_daily_table(cache_key, df)
                 if isinstance(df, pd.DataFrame) and not df.empty and stock_code is not None:
                     # Market-wide endpoints must contain the requested stock.
                     # A nonempty table for other stocks must not stop fallback.
@@ -369,9 +516,16 @@ class AkshareFundamentalAdapter:
                 continue
         return None, None, errors
 
-    def get_fundamental_bundle(self, stock_code: str) -> Dict[str, Any]:
+    def get_fundamental_bundle(
+        self,
+        stock_code: str,
+        budget_seconds: Optional[float] = None,
+    ) -> Dict[str, Any]:
         """
         Return normalized fundamental blocks from AkShare with partial tolerance.
+
+        T28: ``budget_seconds`` 是整组聚合的总预算。每个接口有独立的限时窗口，
+        预算耗尽后跳过剩余接口但仍返回已取到的块，避免一个慢接口把整轮作废。
         """
         result: Dict[str, Any] = {
             "status": "not_supported",
@@ -381,6 +535,11 @@ class AkshareFundamentalAdapter:
             "source_chain": [],
             "errors": [],
         }
+        deadline = (
+            time.monotonic() + float(budget_seconds)
+            if budget_seconds is not None and budget_seconds > 0
+            else None
+        )
 
         # Reuse the provider's market mapping after package initialization;
         # importing it at module scope would cycle through data_provider.base.
@@ -395,7 +554,7 @@ class AkshareFundamentalAdapter:
             ("stock_financial_abstract", {"symbol": stock_code}),
             ("stock_financial_analysis_indicator", {"symbol": stock_code}),
             ("stock_financial_analysis_indicator", {}),
-        ])
+        ], deadline=deadline, budget_seconds=budget_seconds)
         result["errors"].extend(fin_errors)
         if fin_df is not None:
             row = _financial_abstract_row(fin_df) if "指标" in fin_df else _extract_latest_row(fin_df, stock_code)
@@ -439,7 +598,7 @@ class AkshareFundamentalAdapter:
         forecast_df, forecast_source, forecast_errors = self._call_df_candidates([
             ("stock_yjyg_em", {"date": report_date})
             for report_date in report_dates
-        ], stock_code=stock_code)
+        ], stock_code=stock_code, deadline=deadline, budget_seconds=budget_seconds)
         result["errors"].extend(forecast_errors)
         if forecast_df is not None:
             row = _extract_latest_row(forecast_df, stock_code)
@@ -453,7 +612,7 @@ class AkshareFundamentalAdapter:
         quick_df, quick_source, quick_errors = self._call_df_candidates([
             ("stock_yjkb_em", {"date": report_date})
             for report_date in report_dates
-        ], stock_code=stock_code)
+        ], stock_code=stock_code, deadline=deadline, budget_seconds=budget_seconds)
         result["errors"].extend(quick_errors)
         if quick_df is not None:
             row = _extract_latest_row(quick_df, stock_code)
@@ -468,7 +627,7 @@ class AkshareFundamentalAdapter:
             ("stock_fhps_detail_em", {"symbol": stock_code}),
             ("stock_history_dividend_detail", {"symbol": stock_code, "indicator": "分红", "date": ""}),
             ("stock_dividend_cninfo", {"symbol": stock_code}),
-        ])
+        ], deadline=deadline, budget_seconds=budget_seconds)
         result["errors"].extend(dividend_errors)
         if dividend_df is not None:
             dividend_payload = _build_dividend_payload(dividend_df, stock_code, max_events=5)
@@ -482,7 +641,7 @@ class AkshareFundamentalAdapter:
                 "symbol": f"{report_date[:4]}{int(report_date[4:6]) // 3}",
             })
             for report_date in report_dates
-        ], stock_code=stock_code)
+        ], stock_code=stock_code, deadline=deadline, budget_seconds=budget_seconds)
         result["errors"].extend(inst_errors)
         if inst_df is not None:
             row = _extract_latest_row(inst_df, stock_code)
@@ -494,7 +653,7 @@ class AkshareFundamentalAdapter:
         top10_df, top10_source, top10_errors = self._call_df_candidates([
             ("stock_gdfx_top_10_em", {"symbol": shareholder_symbol, "date": report_date})
             for report_date in report_dates
-        ])
+        ], deadline=deadline, budget_seconds=budget_seconds)
         result["errors"].extend(top10_errors)
         if top10_df is not None:
             row = _extract_latest_row(top10_df, stock_code)
@@ -507,10 +666,23 @@ class AkshareFundamentalAdapter:
         result["status"] = "partial" if has_content else "not_supported"
         return result
 
-    def get_capital_flow(self, stock_code: str, top_n: int = 5) -> Dict[str, Any]:
+    def get_capital_flow(
+        self,
+        stock_code: str,
+        top_n: int = 5,
+        budget_seconds: Optional[float] = None,
+    ) -> Dict[str, Any]:
         """
         Return stock + sector capital flow.
+
+        T28: 传入 ``budget_seconds`` 时，个股资金流与板块排名的两次接口各自限时，
+        预算耗尽后保留已取到的部分。
         """
+        deadline = (
+            time.monotonic() + float(budget_seconds)
+            if budget_seconds is not None and budget_seconds > 0
+            else None
+        )
         result: Dict[str, Any] = {
             "status": "not_supported",
             "stock_flow": {},
@@ -525,7 +697,7 @@ class AkshareFundamentalAdapter:
         stock_code = _normalize_code(stock_code)
         stock_df, stock_source, stock_errors = self._call_df_candidates([
             ("stock_individual_fund_flow", {"stock": stock_code, "market": market}),
-        ])
+        ], deadline=deadline, budget_seconds=budget_seconds)
         result["errors"].extend(stock_errors)
         if stock_df is not None and "日期" in stock_df:
             dates = pd.to_datetime(stock_df["日期"], errors="coerce")
@@ -542,7 +714,7 @@ class AkshareFundamentalAdapter:
 
         sector_df, sector_source, sector_errors = self._call_df_candidates([
             ("stock_sector_fund_flow_rank", {}),
-        ])
+        ], deadline=deadline, budget_seconds=budget_seconds)
         result["errors"].extend(sector_errors)
         if sector_df is not None:
             name_col = next((c for c in sector_df.columns if any(k in str(c) for k in ("板块", "行业", "名称", "name"))), None)
@@ -563,10 +735,22 @@ class AkshareFundamentalAdapter:
         result["status"] = "partial" if has_content else "not_supported"
         return result
 
-    def get_dragon_tiger_flag(self, stock_code: str, lookback_days: int = 20) -> Dict[str, Any]:
+    def get_dragon_tiger_flag(
+        self,
+        stock_code: str,
+        lookback_days: int = 20,
+        budget_seconds: Optional[float] = None,
+    ) -> Dict[str, Any]:
         """
         Return dragon-tiger signal in lookback window.
+
+        T28: 传入 ``budget_seconds`` 时对候选接口各自限时。
         """
+        deadline = (
+            time.monotonic() + float(budget_seconds)
+            if budget_seconds is not None and budget_seconds > 0
+            else None
+        )
         result: Dict[str, Any] = {
             "status": "not_supported",
             "is_on_list": False,
@@ -580,7 +764,7 @@ class AkshareFundamentalAdapter:
             ("stock_lhb_stock_statistic_em", {}),
             ("stock_lhb_detail_em", {}),
             ("stock_lhb_jgmmtj_em", {}),
-        ])
+        ], deadline=deadline, budget_seconds=budget_seconds)
         result["errors"].extend(errors)
         if df is None:
             return result

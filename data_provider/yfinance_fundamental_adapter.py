@@ -155,7 +155,15 @@ class YfinanceFundamentalAdapter:
     market-agnostic.
     """
 
-    def get_fundamental_bundle(self, stock_code: str) -> Dict[str, Any]:
+    def get_fundamental_bundle(
+        self,
+        stock_code: str,
+        budget_seconds: Optional[float] = None,
+    ) -> Dict[str, Any]:
+        # T28: 与 AkShare 适配器保持同一签名。yfinance 的限时由上层
+        # _run_with_retry / _run_with_timeout 统一约束，这里不再叠加超时，
+        # 避免同一预算被重复扣减。
+        _ = budget_seconds
         result: Dict[str, Any] = {
             "status": "not_supported",
             "growth": {},

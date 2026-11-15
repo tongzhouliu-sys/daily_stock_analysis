@@ -82,7 +82,7 @@ def _make_tencent_payload(
 @pytest.fixture
 def akshare_fetcher(monkeypatch):
     fetcher = AkshareFetcher()
-    monkeypatch.setattr(fetcher, "_enforce_rate_limit", lambda: None)
+    monkeypatch.setattr(fetcher, "_enforce_rate_limit", lambda **_kwargs: None)
     return fetcher
 
 

@@ -248,7 +248,14 @@ class FutuFundamentalAdapter:
             result["belong_boards"] = boards
             result["source_chain"].extend(self._source("owner_plate"))
 
-    def get_fundamental_bundle(self, stock_code: str) -> Dict[str, Any]:
+    def get_fundamental_bundle(
+        self,
+        stock_code: str,
+        budget_seconds: Optional[float] = None,
+    ) -> Dict[str, Any]:
+        # T28: 与 AkShare 适配器保持同一签名；Futu 调用本身受 futu 客户端超时
+        # 与上层 _run_with_retry 约束，这里不重复扣减预算。
+        _ = budget_seconds
         code = self._code(stock_code)
         result: Dict[str, Any] = {
             "status": "not_supported",

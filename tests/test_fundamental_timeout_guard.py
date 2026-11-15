@@ -15,7 +15,7 @@ def test_repeated_capital_flow_timeouts_do_not_spawn_more_background_workers():
     workers = []
     config = SimpleNamespace(fundamental_retry_max=2, fundamental_fetch_timeout_seconds=0.01)
 
-    def blocked(_stock_code):
+    def blocked(_stock_code, **_kwargs):
         workers.append(current_thread())
         release.wait()
         return {"stock_flow": {"today_main_net_inflow": 1}}
@@ -187,7 +187,7 @@ def test_capital_flow_quarantine_preserves_other_blocks_and_recovers():
     workers = []
     capital_payload = {"stock_flow": {"today_main_net_inflow": 1}}
 
-    def blocked(_stock_code):
+    def blocked(_stock_code, **_kwargs):
         workers.append(current_thread())
         release.wait()
         return capital_payload

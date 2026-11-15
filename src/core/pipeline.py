@@ -15,6 +15,7 @@ import logging
 import inspect
 import threading
 import time
+from contextlib import contextmanager
 from pathlib import Path
 import uuid
 from collections import defaultdict
@@ -235,6 +236,31 @@ def _symbol_scope_lookup_values(code: str, market: str) -> List[str]:
         add_case_variants(f"SS.{normalized}")
         add_case_variants(f"{normalized}.SS")
     return values
+
+
+@contextmanager
+def _measure_fetch_step(sink: Dict[str, float], label: str):
+    """T28: 记录单股取数各步骤耗时，便于定位慢在哪个接口。
+
+    ``sink`` 是本次分析的局部累加器，异常时也写入，保证日志完整。
+    """
+    started = time.monotonic()
+    try:
+        yield
+    finally:
+        try:
+            sink[label] = sink.get(label, 0.0) + (time.monotonic() - started)
+        except Exception:  # pragma: no cover - 纯诊断信息，不允许影响主流程
+            pass
+
+
+def _format_fetch_timings(sink: Dict[str, float]) -> str:
+    """把耗时累加器格式化成单行日志片段。"""
+    if not sink:
+        return ""
+    ordered = sorted(sink.items(), key=lambda item: item[1], reverse=True)
+    parts = [f"{label}={seconds:.2f}s" for label, seconds in ordered]
+    return f"取数耗时: {' '.join(parts)} (合计 {sum(sink.values()):.2f}s)"
 
 
 class StockAnalysisPipeline:
@@ -512,6 +538,8 @@ class StockAnalysisPipeline:
             )
 
             self._emit_progress(18, f"{code}：正在获取行情与筹码数据")
+            # T28: 采集各取数步骤耗时，定位慢接口
+            fetch_timings: Dict[str, float] = {}
             # 获取股票名称（先走轻量名称路径，后续若 realtime_quote 有 name 再覆盖）
             # 指数目标使用注册表中文显示名（matched_index.display_name），避免把
             # raw alias / canonical code / 六码机器码带入搜索查询（Story 1.5 V7）。
@@ -523,13 +551,15 @@ class StockAnalysisPipeline:
                 )
                 stock_name = index_name or analysis_target.display_code or code
             else:
-                stock_name = self.fetcher_manager.get_stock_name(code, allow_realtime=False)
+                with _measure_fetch_step(fetch_timings, "名称"):
+                    stock_name = self.fetcher_manager.get_stock_name(code, allow_realtime=False)
 
             # Step 1: 获取实时行情（量比、换手率等）- 使用统一入口，自动故障切换
             realtime_quote = None
             try:
                 if self.config.enable_realtime_quote:
-                    realtime_quote = self.fetcher_manager.get_realtime_quote(code, log_final_failure=False)
+                    with _measure_fetch_step(fetch_timings, "实时行情"):
+                        realtime_quote = self.fetcher_manager.get_realtime_quote(code, log_final_failure=False)
                     if realtime_quote:
                         # 股票使用实时行情名称；指数保持注册表中文名为权威显示名。
                         if realtime_quote.name and not is_index:
@@ -558,7 +588,8 @@ class StockAnalysisPipeline:
                 logger.debug(f"{stock_name}({code}) 指数目标跳过筹码分布")
             else:
                 try:
-                    chip_data = self.fetcher_manager.get_chip_distribution(code)
+                    with _measure_fetch_step(fetch_timings, "筹码"):
+                        chip_data = self.fetcher_manager.get_chip_distribution(code)
                     if chip_data:
                         logger.info(f"{stock_name}({code}) 筹码分布: 获利比例={chip_data.profit_ratio:.1%}, "
                                   f"90%集中度={chip_data.concentration_90:.2%}")
@@ -591,6 +622,7 @@ class StockAnalysisPipeline:
             # - 关闭开关时仍返回 not_supported 结构
             # - 指数目标跳过基本面/板块/资金流/龙虎榜/公司事件（INDEX_SKIP_MODULES）
             fundamental_context = None
+            fundamental_started = time.monotonic()
             fundamental_modules = {
                 "fundamental",
                 "belong_boards",
@@ -619,6 +651,7 @@ class StockAnalysisPipeline:
                     logger.warning(f"{stock_name}({code}) 基本面聚合失败: {e}")
                     fundamental_context = self.fetcher_manager.build_failed_fundamental_context(code, str(e))
 
+            fetch_timings["基本面"] = time.monotonic() - fundamental_started
             if is_index and "belong_boards" in INDEX_SKIP_MODULES:
                 logger.debug(f"{stock_name}({code}) 指数目标跳过板块归属")
                 if isinstance(fundamental_context, dict):
@@ -682,6 +715,9 @@ class StockAnalysisPipeline:
                               f"买入信号={trend_result.buy_signal.value}, 评分={trend_result.signal_score}")
             except Exception as e:
                 logger.warning(f"{stock_name}({code}) 趋势分析失败: {e}", exc_info=True)
+
+            if fetch_timings:
+                logger.info("%s(%s) %s", stock_name, code, _format_fetch_timings(fetch_timings))
 
             if use_agent:
                 logger.info(f"{stock_name}({code}) 启用 Agent 模式进行分析")
@@ -781,9 +817,10 @@ class StockAnalysisPipeline:
 
             # Step 5: 获取分析上下文（技术面数据）
             self._emit_progress(58, f"{stock_name}：正在整理分析上下文")
-            context = self._get_analysis_context_with_market_fallback(
-                code, analysis_target=analysis_target
-            )
+            with _measure_fetch_step(fetch_timings, "分析上下文"):
+                context = self._get_analysis_context_with_market_fallback(
+                    code, analysis_target=analysis_target
+                )
 
             if context is None:
                 logger.warning(f"{stock_name}({code}) 无法获取历史行情数据，将仅基于新闻和实时行情分析")
