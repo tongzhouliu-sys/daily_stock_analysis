@@ -5,7 +5,16 @@ from collections import defaultdict
 from zoneinfo import ZoneInfo
 
 from pathlib import Path
+ROOT = Path(__file__).resolve().parents[2]
 sys.path.insert(0, str(Path(__file__).resolve().parent))
+
+import argparse
+_parser = argparse.ArgumentParser(add_help=False)
+_parser.add_argument('--data10-dir', default=str(ROOT / 'local/data/data10'))
+_parser.add_argument('--data-dir', default=str(ROOT / 'data/ibkrv5'))
+_args, _ = _parser.parse_known_args()
+DATA10_DIR = Path(_args.data10_dir)
+DATA_DIR = Path(_args.data_dir)
 from backtest_ibkrv5_opportunities_20d import load_data10, load_yahoo_oct, exit_after_trading_days
 
 ET = ZoneInfo('America/New_York')
@@ -19,16 +28,16 @@ def fnum(x):
         return None
 
 # ---------- load prices ----------
-closes, _ = load_data10()
+closes, _ = load_data10(DATA10_DIR)
 # also load OHLC for MAE/MFE
 ohlc = defaultdict(dict)
 import glob, os
-for fp in glob.glob('local/data/data10/2026-*.csv'):
+for fp in glob.glob(str(DATA10_DIR / '2026-*.csv')):
     d = os.path.basename(fp)[:10]
     with open(fp) as f:
         for row in csv.DictReader(f):
             ohlc[row['ticker']][d] = (float(row['open']), float(row['high']), float(row['low']), float(row['close']))
-tickers_all = sorted({r['ticker'] for r in csv.DictReader(open('data/ibkrv5/backtest20d/trades_hourly.csv'))} | {'SPY'})
+tickers_all = sorted({r['ticker'] for r in csv.DictReader(open(str(DATA_DIR / 'backtest20d/trades_hourly.csv')))} | {'SPY'})
 oct_c, oct_d, miss = load_yahoo_oct(tickers_all)
 for t, dd in oct_c.items():
     for d, c in dd.items():
@@ -37,8 +46,8 @@ tdates = sorted(set(closes['SPY'].keys()))
 print('trading dates:', tdates[0], '~', tdates[-1], len(tdates))
 
 # ---------- load hourly raw + join returns ----------
-raw = {r['id']: r for r in csv.DictReader(open('data/ibkrv5/opportunities_hourly_20260616_20261023.csv', encoding='utf-8-sig'))}
-trades = list(csv.DictReader(open('data/ibkrv5/backtest20d/trades_hourly.csv')))
+raw = {r['id']: r for r in csv.DictReader(open(str(DATA_DIR / 'opportunities_hourly_20260616_20261023.csv'), encoding='utf-8-sig'))}
+trades = list(csv.DictReader(open(str(DATA_DIR / 'backtest20d/trades_hourly.csv'))))
 done = [r for r in trades if r['ret_20td_quote']]
 print('evaluable trades:', len(done))
 
@@ -158,5 +167,5 @@ show('E. 信号序号分组', [('1-2次', [r for r in done if r['seq_total'] <= 
                       ('>10次', [r for r in done if r['seq_total'] > 10])])
 results['seq'] = {k: stats([r for r in done if r['seq_total'] == k]) for k in range(1, 8)}
 
-json.dump(results, open('data/ibkrv5/backtest20d/patterns_scan.json', 'w'), ensure_ascii=False, indent=1, default=str)
+json.dump(results, open(str(DATA_DIR / 'backtest20d/patterns_scan.json'), 'w'), ensure_ascii=False, indent=1, default=str)
 print('\nsaved patterns_scan.json')

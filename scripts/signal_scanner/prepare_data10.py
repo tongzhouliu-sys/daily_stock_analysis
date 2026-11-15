@@ -20,8 +20,9 @@ PROVIDER = "LOCAL_DATA10_TIINGO_MERGED"
 FEED = "EOD_RAW"
 
 
-def prepare(library_root):
+def prepare(library_root, data10_dir=None):
     library_root = Path(library_root).resolve()
+    data10_dir = Path(data10_dir or ROOT / "local/data/data10").resolve()
     OUT.mkdir(parents=True, exist_ok=True)
     (OUT / "inputs").mkdir(exist_ok=True)
     (OUT / "bundles").mkdir(exist_ok=True)
@@ -59,7 +60,7 @@ def prepare(library_root):
     wanted = {i["ticker"]: i for i in snapshot["instruments"]}
     imported_splits, action_conflicts = [], []
     for filename in ("splits.csv", "splits_new.csv"):
-        with (ROOT / "data10" / filename).open(newline="") as f:
+        with (data10_dir / filename).open(newline="") as f:
             for n, row in enumerate(csv.DictReader(f), 2):
                 ticker, day = row["ticker"], row["execution_date"]
                 if ticker not in wanted or not audit["first_date"] <= day <= audit["last_date"]:
@@ -273,6 +274,12 @@ if __name__ == "__main__":
     parser = argparse.ArgumentParser(description=__doc__)
     parser.add_argument("--output", type=Path, default=OUT)
     parser.add_argument("--library-root", type=Path, default=OUT)
+    parser.add_argument(
+        "--data10-dir",
+        type=Path,
+        default=ROOT / "local/data/data10",
+        help="Directory containing data10 split CSV files.",
+    )
     args = parser.parse_args()
     OUT = args.output.resolve()
-    prepare(args.library_root)
+    prepare(args.library_root, args.data10_dir)

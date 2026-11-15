@@ -50,10 +50,11 @@ YAHOO_P2 = int(datetime(2026, 10, 24, tzinfo=timezone.utc).timestamp())
 
 # ---------- 行情加载 ----------
 
-def load_data10():
+def load_data10(data10_dir=None):
     closes = defaultdict(dict)
     dates = set()
-    for fp in sorted(glob.glob(os.path.join(ROOT, "local/data/data10/2026-*.csv"))):
+    base_dir = data10_dir or os.path.join(ROOT, "local/data/data10")
+    for fp in sorted(glob.glob(os.path.join(base_dir, "2026-*.csv"))):
         d = os.path.basename(fp)[:10]
         dates.add(d)
         with open(fp) as f:

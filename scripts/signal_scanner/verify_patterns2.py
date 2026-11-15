@@ -4,7 +4,16 @@ import csv, json, sys, datetime, statistics
 from collections import defaultdict
 
 from pathlib import Path
+ROOT = Path(__file__).resolve().parents[2]
 sys.path.insert(0, str(Path(__file__).resolve().parent))
+
+import argparse
+_parser = argparse.ArgumentParser(add_help=False)
+_parser.add_argument('--data10-dir', default=str(ROOT / 'local/data/data10'))
+_parser.add_argument('--data-dir', default=str(ROOT / 'data/ibkrv5'))
+_args, _ = _parser.parse_known_args()
+DATA10_DIR = Path(_args.data10_dir)
+DATA_DIR = Path(_args.data_dir)
 from backtest_ibkrv5_opportunities_20d import load_data10, load_yahoo_oct, exit_after_trading_days, portfolio_sim
 
 def fnum(x):
@@ -14,23 +23,23 @@ def fnum(x):
     except (TypeError, ValueError):
         return None
 
-closes, _ = load_data10()
+closes, _ = load_data10(DATA10_DIR)
 ohlc = defaultdict(dict)
 import glob, os
-for fp in glob.glob('local/data/data10/2026-*.csv'):
+for fp in glob.glob(str(DATA10_DIR / '2026-*.csv')):
     d = os.path.basename(fp)[:10]
     with open(fp) as f:
         for row in csv.DictReader(f):
             ohlc[row['ticker']][d] = (float(row['high']), float(row['low']))
-tickers_all = sorted({r['ticker'] for r in csv.DictReader(open('data/ibkrv5/backtest20d/trades_hourly.csv'))} | {'SPY'})
+tickers_all = sorted({r['ticker'] for r in csv.DictReader(open(str(DATA_DIR / 'backtest20d/trades_hourly.csv')))} | {'SPY'})
 oct_c, oct_d, miss = load_yahoo_oct(tickers_all)
 for t, dd in oct_c.items():
     for d, c in dd.items(): closes[t][d] = c
 tdates = sorted(set(closes['SPY'].keys()))
 spy = closes['SPY']
 
-raw = {r['id']: r for r in csv.DictReader(open('data/ibkrv5/opportunities_hourly_20260616_20261023.csv', encoding='utf-8-sig'))}
-done = [r for r in csv.DictReader(open('data/ibkrv5/backtest20d/trades_hourly.csv')) if r['ret_20td_quote']]
+raw = {r['id']: r for r in csv.DictReader(open(str(DATA_DIR / 'opportunities_hourly_20260616_20261023.csv'), encoding='utf-8-sig'))}
+done = [r for r in csv.DictReader(open(str(DATA_DIR / 'backtest20d/trades_hourly.csv'))) if r['ret_20td_quote']]
 for r in done:
     src = raw.get(r['id'], {})
     r['entry_price'] = fnum(r['entry_price']); r['ret'] = fnum(r['ret_20td_quote'])
@@ -88,10 +97,10 @@ print(f'    >>> 若9月底持有该池至今: 等权 {statistics.mean(oct_loss)*
 # ===== 4. 推荐表分层（jsonl 因子 × 已知收益） =====
 print('\n=== 4. 推荐表分层（rank / sequence_n / regime_t0 / consec_down_days / sim_outcome） ===')
 rec = {}
-for line in open('data/ibkrv5/recommendations_full_20260427_20261023.jsonl'):
+for line in open(str(DATA_DIR / 'recommendations_full_20260427_20261023.jsonl')):
     d = json.loads(line)
     rec[d['id']] = d
-rec_tr = [r for r in csv.DictReader(open('data/ibkrv5/backtest20d/trades_recommendations.csv')) if r['ret_20td']]
+rec_tr = [r for r in csv.DictReader(open(str(DATA_DIR / 'backtest20d/trades_recommendations.csv'))) if r['ret_20td']]
 print('  recommendations 可评估:', len(rec_tr), '（其中 hourly 表交集已单列）')
 rows = []
 for r in rec_tr:
@@ -152,4 +161,4 @@ for sl in [None, 0.05, 0.08, 0.10, 0.15]:
                 rets.append(closes[r['ticker']][ex] / entry - 1)
         print(f'  止损{("%d%%" % (sl*100)) if sl else "无":>5s}: n={len(rets):4d} mean={statistics.mean(rets)*100:+6.2f}% med={statistics.median(rets)*100:+6.2f}% win={sum(1 for x in rets if x>0)/len(rets)*100:5.1f}% 触发止损={sum(1 for x in rets if x<=-sl-1e-9) if sl else 0}')
 
-json.dump({'note': 'stdout'}, open('data/ibkrv5/backtest20d/patterns_verify2.json', 'w'))
+json.dump({'note': 'stdout'}, open(str(DATA_DIR / 'backtest20d/patterns_verify2.json'), 'w'))
