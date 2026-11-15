@@ -649,6 +649,11 @@ class EfinanceFetcher(BaseFetcher):
         if 'amount' not in df.columns:
             df['amount'] = 0
 
+        # R26: Eastmoney (efinance) reports daily A-share/ETF volume in lots
+        # (手); the storage contract is shares. Verified against Tencent and
+        # Sina for SH main board, SZ main board, ChiNext, STAR and ETF.
+        df['volume'] = pd.to_numeric(df['volume'], errors='coerce').fillna(0) * 100
+
         
         # 如果没有 code 列，手动添加
         if 'code' not in df.columns:
@@ -760,7 +765,8 @@ class EfinanceFetcher(BaseFetcher):
                 price=safe_float(row.get(price_col)),
                 change_pct=safe_float(row.get(pct_col)),
                 change_amount=safe_float(row.get(chg_col)),
-                volume=safe_int(row.get(vol_col)),
+                # R26: Eastmoney realtime volume is in lots (手).
+                volume=(safe_int(row.get(vol_col)) or 0) * 100,
                 amount=safe_float(row.get(amt_col)),
                 turnover_rate=safe_float(row.get(turn_col)),
                 amplitude=safe_float(row.get(amp_col)),
@@ -942,7 +948,8 @@ class EfinanceFetcher(BaseFetcher):
                 price=safe_float(row.get(price_col)),
                 change_pct=safe_float(row.get(pct_col)),
                 change_amount=safe_float(row.get(chg_col)),
-                volume=safe_int(row.get(vol_col)),
+                # R26: Eastmoney realtime volume is in lots (手).
+                volume=(safe_int(row.get(vol_col)) or 0) * 100,
                 amount=safe_float(row.get(amt_col)),
                 turnover_rate=safe_float(row.get(turn_col)),
                 amplitude=safe_float(row.get(amp_col)),

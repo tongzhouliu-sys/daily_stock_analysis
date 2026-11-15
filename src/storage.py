@@ -67,6 +67,8 @@ logger = logging.getLogger(__name__)
 T = TypeVar("T")
 CURRENT_SCHEMA_VERSION = "2026-06-05-create-all-baseline"
 CHAT_STATE_SCHEMA_VERSION = "2026-11-11-chat-active-stock-report"
+# R26: one-shot migration key for daily volume unit normalization (lots -> shares).
+DAILY_VOLUME_SHARES_MIGRATION_VERSION = "2026-11-15-daily-volume-shares"
 INTELLIGENCE_ITEM_NULL_SCOPE_VALUE = "__dsa_null_scope__"
 
 # SQLAlchemy ORM 基类
@@ -1441,6 +1443,116 @@ class _DatabaseManagerMeta(type):
             return super().__call__(*args, **kwargs)
 
 
+def migrate_daily_volume_to_shares(
+    engine: Any,
+    session_factory: Callable[[], Session],
+    *,
+    dry_run: bool = False,
+    backup: bool = True,
+) -> Dict[str, Any]:
+    """Normalize historical A-share/ETF daily volume from lots (手) to shares.
+
+    R26: ``EfinanceFetcher`` always stored lots; ``AkshareFetcher`` stored lots
+    through the Eastmoney channels and shares through the Sina fallback. The
+    amount/close ratio disambiguates the two without relying on channel flags,
+    and only 6-digit A-share/ETF codes are touched (HK/US volume is already in
+    shares). The migration is guarded by ``DAILY_VOLUME_SHARES_MIGRATION_VERSION``
+    so it runs at most once, and a dry run never writes the marker.
+    """
+
+    import sqlite3
+
+    stats: Dict[str, Any] = {
+        "applied": False,
+        "already_applied": False,
+        "dry_run": bool(dry_run),
+        "scanned": 0,
+        "updated": 0,
+        "skipped": 0,
+        "backup_path": None,
+    }
+
+    with session_factory() as session:
+        existing = session.get(DatabaseSchemaMigration, DAILY_VOLUME_SHARES_MIGRATION_VERSION)
+        if existing is not None:
+            stats["already_applied"] = True
+            return stats
+
+    if backup and not dry_run and engine.url.get_backend_name() == "sqlite":
+        db_path = engine.url.database
+        if db_path and db_path != ":memory:":
+            backup_path = f"{db_path}.bak-{datetime.now().strftime('%Y%m%d%H%M%S')}"
+            try:
+                source = sqlite3.connect(db_path)
+                target = sqlite3.connect(backup_path)
+                try:
+                    source.backup(target)
+                finally:
+                    target.close()
+                    source.close()
+                stats["backup_path"] = backup_path
+                logger.warning("[StockDaily] 成交量单位迁移前备份数据库: %s", backup_path)
+            except Exception as exc:
+                logger.error("[StockDaily] 成交量单位迁移备份失败，已中止: %s", exc)
+                raise
+
+    target_sources = ("EfinanceFetcher", "AkshareFetcher")
+    with session_factory() as session:
+        rows = (
+            session.query(StockDaily)
+            .filter(
+                StockDaily.data_source.in_(target_sources),
+                StockDaily.volume.isnot(None),
+                StockDaily.volume > 0,
+                func.length(StockDaily.code) == 6,
+            )
+            .yield_per(2000)
+        )
+        for row in rows:
+            stats["scanned"] += 1
+            code = str(row.code or "").strip()
+            if not (len(code) == 6 and code.isdigit()):
+                continue
+            volume = float(row.volume or 0)
+            if volume <= 0:
+                continue
+            amount = float(row.amount or 0)
+            close = float(row.close or 0)
+            if amount > 0 and close > 0:
+                expected = amount / close
+                multiply = abs(volume * 100 - expected) < abs(volume - expected)
+            else:
+                # Without amount/close only efinance is known to be lots.
+                multiply = row.data_source == "EfinanceFetcher"
+            if not multiply:
+                stats["skipped"] += 1
+                continue
+            stats["updated"] += 1
+            if not dry_run:
+                row.volume = int(round(volume * 100))
+
+        if dry_run:
+            session.rollback()
+            return stats
+
+        session.add(
+            DatabaseSchemaMigration(
+                version=DAILY_VOLUME_SHARES_MIGRATION_VERSION,
+                description="Normalize EfinanceFetcher/AkshareFetcher daily volume from lots to shares",
+            )
+        )
+        session.commit()
+
+    stats["applied"] = True
+    logger.warning(
+        "[StockDaily] 成交量单位迁移完成: scanned=%s updated=%s skipped=%s",
+        stats["scanned"],
+        stats["updated"],
+        stats["skipped"],
+    )
+    return stats
+
+
 class DatabaseManager(metaclass=_DatabaseManagerMeta):
     """
     数据库管理器 - 单例模式
@@ -1567,6 +1679,7 @@ class DatabaseManager(metaclass=_DatabaseManagerMeta):
             self._ensure_llm_usage_telemetry_columns()
             self._ensure_decision_signal_profile_schema()
             self._ensure_stock_daily_canonical_id()
+            self.migrate_daily_volume_to_shares()
             self._ensure_intelligence_item_scope_values()
             self._ensure_schema_migration_record()
             self._ensure_intelligence_items_unique_index()
@@ -1670,6 +1783,21 @@ class DatabaseManager(metaclass=_DatabaseManagerMeta):
         if cleared:
             logger.info("Cleared %s stale Agent chat running state(s)", cleared)
         return cleared
+
+    def migrate_daily_volume_to_shares(
+        self,
+        *,
+        dry_run: bool = False,
+        backup: bool = True,
+    ) -> Dict[str, Any]:
+        """Normalize historical A-share/ETF daily volume from lots to shares (R26)."""
+
+        return migrate_daily_volume_to_shares(
+            self._engine,
+            self._SessionLocal,
+            dry_run=dry_run,
+            backup=backup,
+        )
 
     def _ensure_chat_session_schema(self) -> None:
         """Additive Chat state migration; old writers may omit every new column."""

@@ -191,6 +191,43 @@ def _normalize_tencent_volume(fields: List[str]) -> Optional[int]:
     return raw_volume * 100
 
 
+def _normalize_cn_daily_volume(df: pd.DataFrame, *, assume_lots: bool = False) -> pd.DataFrame:
+    """Normalize an A-share/ETF daily frame's ``成交量`` to shares.
+
+    R26: akshare's channels disagree. Eastmoney (``stock_zh_a_hist`` /
+    ``fund_etf_hist_em``) reports lots (手), Sina reports shares, and the
+    Tencent daily wrapper is not consistent across boards. When ``成交额`` and
+    ``收盘`` are available, pick whichever of raw / raw*100 is closer to
+    ``amount / close``; otherwise fall back to the channel's assumed unit.
+    """
+
+    if df is None or df.empty or '成交量' not in df.columns:
+        return df
+
+    volume = pd.to_numeric(df['成交量'], errors='coerce').fillna(0)
+    factor_series = None
+    if '成交额' in df.columns and '收盘' in df.columns:
+        amount = pd.to_numeric(df['成交额'], errors='coerce')
+        close = pd.to_numeric(df['收盘'], errors='coerce')
+        expected = amount / close
+        valid = (close > 0) & (amount > 0) & (volume > 0)
+        if bool(valid.any()):
+            raw_delta = (volume - expected).abs()
+            lots_delta = (volume * 100 - expected).abs()
+            factor_series = pd.Series(1, index=df.index, dtype='int64')
+            factor_series = factor_series.where(~(lots_delta < raw_delta), 100)
+            factor_series = factor_series.where(valid, 100 if assume_lots else 1)
+
+    if factor_series is None:
+        normalized = volume * 100 if assume_lots else volume
+    else:
+        normalized = volume * factor_series
+
+    normalized_df = df.copy()
+    normalized_df['成交量'] = normalized
+    return normalized_df
+
+
 def _parse_tencent_amount(fields: List[str]) -> Optional[float]:
     """
     解析腾讯实时行情成交额，单位为元。
@@ -705,7 +742,8 @@ class AkshareFetcher(BaseFetcher):
 
             if df is not None and not df.empty:
                 logger.info(f"[API返回] ak.stock_zh_a_hist 成功: {len(df)} 行, 耗时 {api_elapsed:.2f}s")
-                return df
+                # R26: Eastmoney daily volume is reported in lots (手).
+                return _normalize_cn_daily_volume(df, assume_lots=True)
             else:
                 logger.warning(f"[API返回] ak.stock_zh_a_hist 返回空数据")
                 return pd.DataFrame()
@@ -805,7 +843,9 @@ class AkshareFetcher(BaseFetcher):
                     df['涨跌幅'] = df['收盘'].pct_change() * 100
                     df['涨跌幅'] = df['涨跌幅'].fillna(0)
 
-                return df
+                # R26: the Tencent daily wrapper differs by board (SH already
+                # shares, SZ main board still lots); amount/close disambiguates.
+                return _normalize_cn_daily_volume(df, assume_lots=False)
             return pd.DataFrame()
 
         except Exception as e:
@@ -860,7 +900,8 @@ class AkshareFetcher(BaseFetcher):
             else:
                 logger.warning(f"[API返回] ak.fund_etf_hist_em 返回空数据, 耗时 {api_elapsed:.2f}s")
             
-            return df
+            # R26: Eastmoney ETF daily volume is also reported in lots (手).
+            return _normalize_cn_daily_volume(df, assume_lots=True)
             
         except Exception as e:
             error_msg = str(e).lower()
@@ -1237,7 +1278,8 @@ class AkshareFetcher(BaseFetcher):
                 price=safe_float(row.get('最新价')),
                 change_pct=safe_float(row.get('涨跌幅')),
                 change_amount=safe_float(row.get('涨跌额')),
-                volume=safe_int(row.get('成交量')),
+                # R26: Eastmoney spot volume is in lots (手).
+                volume=(safe_int(row.get('成交量')) or 0) * 100,
                 amount=safe_float(row.get('成交额')),
                 volume_ratio=safe_float(row.get('量比')),
                 turnover_rate=safe_float(row.get('换手率')),
@@ -1643,7 +1685,8 @@ class AkshareFetcher(BaseFetcher):
                 price=safe_float(row.get('最新价')),
                 change_pct=safe_float(row.get('涨跌幅')),
                 change_amount=safe_float(row.get('涨跌额')),
-                volume=safe_int(row.get('成交量')),
+                # R26: Eastmoney ETF spot volume is in lots (手).
+                volume=(safe_int(row.get('成交量')) or 0) * 100,
                 amount=safe_float(row.get('成交额')),
                 volume_ratio=safe_float(row.get('量比')),
                 turnover_rate=safe_float(row.get('换手率')),
