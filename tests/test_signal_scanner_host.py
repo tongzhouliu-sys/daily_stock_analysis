@@ -281,6 +281,77 @@ def test_workers_start_on_first_scanner_request_not_at_startup(tmp_path, monkeyp
         host.stop()
 
 
+def _record_spawned_workers(monkeypatch):
+    """Replace process creation so lifecycle tests never fork Python."""
+    spawned = []
+
+    def fake_spawn(self, kind, _stream):
+        spawned.append(kind)
+        return _FakeChild(pid=1000 + len(spawned))
+
+    monkeypatch.setattr(ScannerHost, "_spawn", fake_spawn)
+    monkeypatch.setattr("src.services.signal_scanner.host.os.killpg", lambda *_args: None)
+    return spawned
+
+
+def _lifespan_app(monkeypatch, host):
+    """Mount the real scanner host behind the real DSA app lifespan.
+
+    Startup work unrelated to the scanner (scheduler reconciliation, stock
+    index refresh, AkShare warmup) is neutralized so the test exercises only
+    the worker-start decision.
+    """
+    from api.app import app_lifespan
+
+    monkeypatch.setenv("DSA_RUNTIME_SCHEDULER_SUPPRESS_START", "1")
+    monkeypatch.setattr("api.app._schedule_stock_index_background_refresh", lambda *_args: None)
+    monkeypatch.setattr("src.services.name_to_code_resolver.warmup_akshare_cache", lambda: None)
+    app = FastAPI(lifespan=app_lifespan)
+    app.state.scanner_host = host
+    app.mount("/api/v1/scanner", host)
+    return app
+
+
+def test_daily_market_deployment_starts_market_worker_with_the_app(tmp_path, monkeypatch):
+    """SCANNER_DAILY_MARKET=true deployments are health-checked on the market child."""
+    monkeypatch.setenv("SCANNER_RUNTIME", str(tmp_path))
+    monkeypatch.setenv("SCANNER_WORKERS_ENABLED", "true")
+    monkeypatch.setenv("SCANNER_DAILY_MARKET", "true")
+    monkeypatch.setattr(auth, "is_auth_enabled", lambda: False)
+    spawned = _record_spawned_workers(monkeypatch)
+    host = ScannerHost()
+    app = _lifespan_app(monkeypatch, host)
+    with TestClient(app) as client:
+        # Startup itself must own the market worker: no request has arrived yet.
+        assert spawned == ["scan", "research", "market"]
+        assert len(host.processes) == 3
+        assert all(child.poll() is None for child in host.processes)
+        assert client.get("/api/v1/scanner/rule-validation/catalog").status_code == 200
+        # The lazy first-request path must reuse the fleet, not spawn a second one.
+        assert spawned == ["scan", "research", "market"]
+        assert len(host.processes) == 3
+    assert host.processes == []
+
+
+def test_startup_without_daily_market_keeps_lazy_worker_start(tmp_path, monkeypatch):
+    monkeypatch.setenv("SCANNER_RUNTIME", str(tmp_path))
+    monkeypatch.setenv("SCANNER_WORKERS_ENABLED", "true")
+    monkeypatch.setenv("SCANNER_DAILY_MARKET", "false")
+    monkeypatch.setattr(auth, "is_auth_enabled", lambda: False)
+    spawned = _record_spawned_workers(monkeypatch)
+    host = ScannerHost()
+    app = _lifespan_app(monkeypatch, host)
+    with TestClient(app) as client:
+        assert spawned == []
+        assert host.processes == []
+        response = client.get("/api/v1/scanner/rule-validation/catalog")
+        assert response.status_code == 200, response.text
+        assert spawned == ["scan", "research"]
+        client.get("/api/v1/scanner/rule-validation/catalog")
+        assert spawned == ["scan", "research"]
+    assert host.processes == []
+
+
 def test_supervisor_backs_off_and_gives_up_after_five_failures():
     host = ScannerHost()
     crashed = _FakeChild(pid=1)

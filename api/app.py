@@ -307,6 +307,14 @@ async def app_lifespan(app: FastAPI):
     scanner_host = getattr(app.state, "scanner_host", None)
     # Scanner workers start lazily on the first request to /api/v1/scanner so a
     # deployment that never opens the scanner does not run idle child processes.
+    # Deployments with SCANNER_DAILY_MARKET=true are health-checked on the market
+    # child right after startup, so they keep the eager start. ScannerHost.start
+    # is idempotent under its lock, so the lazy path cannot spawn a second fleet.
+    if scanner_host is not None and scanner_host.should_start_at_startup():
+        try:
+            await run_in_threadpool(scanner_host.start)
+        except (ImportError, OSError) as exc:
+            logger.error("Scanner worker startup failed: %s", type(exc).__name__)
     try:
         yield
     finally:

@@ -27,7 +27,7 @@ and this project adheres to [Semantic Versioning](https://semver.org/).
 - [修复] 买卖信号映射改为单调：先按趋势封顶、再按分数落位，空头排列下 `buy` 分数不再得到比 `watch` 分数更差的信号（原先 `watch` 得“观望”、`buy` 反而得“强烈卖出”）。
 - [修复] 前端竞态与状态修正：报告资讯区按请求序号校验响应，快速切换报告时旧报告的晚到资讯不再写入新报告；持仓页快照/风险与流水请求同样带请求序号，切换账户后旧账户响应不再覆盖新账户视图，流水股票代码筛选加 300ms 防抖（原先每敲一键发一次请求）；回测页初始化失败改为显式错误提示并继续取结果，不再把失败显示成“暂无结果”，翻页与结果集说明改用“已应用的筛选”而不是输入框当前值，避免未点筛选就翻页时串用未提交条件。
 - [修复] 次级/幽灵按钮悬停失效：`index.css` 中 26 个与 Tailwind 重名的手写工具类（`text-primary`、`bg-card`、`border-subtle` 等）移入 `@layer utilities`，不再以无层规则压过 `hover:` 变体；浏览器实测悬停前后文字颜色由 `rgb(208,201,190)` 变为 `rgb(240,236,229)`。
-- [改进] 扫描器 worker 改为按需启动：服务启动时不再拉起常驻的扫描/研究子进程，首次访问 `/api/v1/scanner` 接口时才启动，未使用扫描器的部署不再空转两个轮询进程；监督线程重启改为指数退避（5 秒起、上限 5 分钟），连续 5 次重启仍失败后停止并记错误日志。`SCANNER_WORKERS_ENABLED` 语义不变。
+- [改进] 扫描器 worker 改为按需启动：服务启动时不再拉起常驻的扫描/研究子进程，首次访问 `/api/v1/scanner` 接口时才启动，未使用扫描器的部署不再空转两个轮询进程；`SCANNER_DAILY_MARKET=true` 的部署是例外，启动时即拉起含 market 的 worker 组（部署健康检查依赖 `signal_scanner.host_worker market` 进程），且首次请求不会重复拉起已有 worker 组；监督线程重启改为指数退避（5 秒起、上限 5 分钟），连续 5 次重启仍失败后停止并记错误日志。`SCANNER_WORKERS_ENABLED` 语义不变。
 - [修复] 组合回撤改按外部现金流调整：日收益以「前一日权益 + 当日净入金/出金」为分母连乘，提现 300k 不再被算成 30% 回撤；回撤告警改用 `current_drawdown_pct`，历史峰值回撤只做展示，回撤修复后不再重复推送。
 - [修复] 缺价持仓改为按成本估值并显式标记：`valuation_basis="cost"`、`price_missing=true`、`PRICE_MISSING` limitation，未实现盈亏率返回 `null` 而不是 0%；止损与个股/行业集中度跳过缺价持仓并披露 `excluded_missing_price_count`，不再把成本估值读成 −100% 止损或拉偏权重。
 - [修复] 缺汇率不再静默 1:1 折算：查不到直接/反向汇率时返回 `0.0 / missing_rate`，该部分从账户与快照汇总中剔除，并通过 `fx_missing`、`FX_MISSING` limitation 与前端提示显式披露。

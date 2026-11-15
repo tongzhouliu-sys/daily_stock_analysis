@@ -14,13 +14,13 @@ DSA 左侧导航“信号扫描器”进入 `/scanner`。页面沿用 DSA 登录
 
 ## 启动与配置
 
-安装更新后的 `requirements.txt`，构建 Web，正常启动 DSA 服务。应用按需管理扫描、研究以及可选行情采集进程：首次访问 `/api/v1/scanner` 接口时才拉起 worker，此前不占用常驻子进程；worker 异常退出后按 5 秒起、每次翻倍、上限 5 分钟的间隔重启，连续 5 次重启仍失败就停止重启并记一条错误日志（需修复后重启服务恢复）；关闭服务时同时停止其进程。所有模块复用 DSA 的管理员账号、密码与会话；退出登录使原会话在所有模块失效。
+安装更新后的 `requirements.txt`，构建 Web，正常启动 DSA 服务。应用按需管理扫描、研究以及可选行情采集进程：首次访问 `/api/v1/scanner` 接口时才拉起 worker，此前不占用常驻子进程；例外是 `SCANNER_DAILY_MARKET=true` 的部署，这类部署在上线健康检查中依赖 `signal_scanner.host_worker market` 进程，因此服务启动时立即拉起包含 market 的 worker 组。worker 异常退出后按 5 秒起、每次翻倍、上限 5 分钟的间隔重启，连续 5 次重启仍失败就停止重启并记一条错误日志（需修复后重启服务恢复）；关闭服务时同时停止其进程。已启动的 worker 组不会被首次请求重复拉起。所有模块复用 DSA 的管理员账号、密码与会话；退出登录使原会话在所有模块失效。
 
 - `SCANNER_RUNTIME`：独立持久目录；未设置时为 `DATABASE_PATH` 同级的 `signal-scanner/`。
-- `SCANNER_WORKERS_ENABLED`：默认 `true`，含义仍是“服务可托管 worker”，但 worker 在首次访问扫描器接口时懒启动；设为 `false` 可保留查询/API 并改为手动运行 worker；队列任务需要 worker 才能执行。
+- `SCANNER_WORKERS_ENABLED`：默认 `true`，含义仍是“服务可托管 worker”，但 worker 默认在首次访问扫描器接口时懒启动；设为 `false` 可保留查询/API 并改为手动运行 worker；队列任务需要 worker 才能执行。
+- `SCANNER_DAILY_MARKET`：默认 `false`。开启后运行增量行情采集；同时该配置会取消懒启动：服务启动即刻拉起含 market 的 worker 组，因为部署健康检查会在容器启动后核对 `signal_scanner.host_worker market` 进程；还需要已配置的数据源、证券池和合法凭据。
 - `SCANNER_ORIGIN`：可选浏览器 Origin。正常同源部署无需设置；开发代理或特殊反向代理应设置为实际浏览器地址。写请求需要合法 Origin 和会话对应的 CSRF token。
 - `SCANNER_LEGACY_HOST`：可选原扫描器域名，配合 `SCANNER_ORIGIN` 将旧网页跳转到统一入口；旧域名上的写请求明确拒绝，不转发旧密码。
-- `SCANNER_DAILY_MARKET`：默认 `false`。开启后运行增量行情采集；还需要已配置的数据源、证券池和合法凭据。
 - `TIINGO_API_KEY` / `TIINGO_API_KEYS`、`ALPHAVANTAGE_API_KEYS`、已有 `FINNHUB_API_KEY`、`ALPACA_API_KEY` / `ALPACA_SECRET_KEY`：相应行情/事件适配器的凭据；密钥池使用 JSON 数组，仅在私有配置中设置。
 - `SCANNER_WEBHOOK_URL`：可选外部通知地址；域内偏好默认 `external_channel=NONE`，迁移不会自动启用推送。
 - `RULE_VALIDATION_WEB_ENABLED`：默认 `true`。

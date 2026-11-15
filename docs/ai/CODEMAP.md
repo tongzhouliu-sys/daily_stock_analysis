@@ -12,19 +12,19 @@
 | 目录 | 职责 | 文件数 | 行数 |
 | --- | --- | --- | --- |
 | `src/core/` | 主流程编排：pipeline、配置装配、调度入口 | 13 | 14045 |
-| `src/services/` | 业务服务层：分析、筛选、通知、系统配置、任务与诊断 | 208 | 83794 |
+| `src/services/` | 业务服务层：分析、筛选、通知、系统配置、任务与诊断 | 208 | 83814 |
 | `src/repositories/` | 数据访问层：数据库读写封装 | 11 | 3910 |
 | `src/schemas/` | API / 报告数据结构定义 | 10 | 2103 |
 | `src/agent/` | 问股 Agent：意图解析、编排、工具与流式事件 | 64 | 26503 |
 | `src/llm/` | LLM 调用封装与本地 CLI 生成后端 | 12 | 6466 |
 | `data_provider/` | 多数据源适配、优先级与 fallback | 22 | 18957 |
-| `api/` | FastAPI 应用与 v1 路由 | 44 | 12927 |
+| `api/` | FastAPI 应用与 v1 路由 | 44 | 12935 |
 | `bot/` | IM / 机器人接入 | 22 | 5524 |
-| `apps/dsa-web/src/` | Web 前端（React + Vite） | 335 | 109347 |
+| `apps/dsa-web/src/` | Web 前端（React + Vite） | 336 | 110631 |
 | `apps/dsa-desktop/` | Electron 桌面端壳与打包配置 | 8 | 8469 |
 | `scripts/` | 本地与 CI 脚本 | 53 | 10825 |
 | `.github/scripts/` | GitHub Actions 专用脚本 | 2 | 652 |
-| `tests/` | pytest 测试 | 365 | 186112 |
+| `tests/` | pytest 测试 | 365 | 186183 |
 
 ## 大文件（Python，≥400 行）
 
@@ -68,11 +68,11 @@
 
 | 文件 | 行数 |
 | --- | --- |
-| `apps/dsa-web/src/components/settings/LLMChannelEditor.tsx` | 2673 |
+| `apps/dsa-web/src/i18n/uiText.ts` | 3044 |
+| `apps/dsa-web/src/components/settings/LLMChannelEditor.tsx` | 2847 |
 | `apps/dsa-web/src/locales/settingsHelp.ts` | 2558 |
+| `apps/dsa-web/src/pages/StockScreeningPage.tsx` | 2354 |
 | `apps/dsa-web/src/pages/PortfolioPage.tsx` | 2252 |
-| `apps/dsa-web/src/pages/StockScreeningPage.tsx` | 2188 |
-| `apps/dsa-web/src/i18n/uiText.ts` | 2163 |
 | `apps/dsa-web/src/pages/HomePage.tsx` | 1937 |
 | `apps/dsa-web/src/pages/SettingsPage.tsx` | 1738 |
 | `apps/dsa-web/src/pages/DecisionSignalsPage.tsx` | 1633 |
@@ -83,9 +83,9 @@
 
 ## 规模快照
 
-- Python 源码（不含测试）：497 个文件，229357 行
-- Python 测试：359 个文件，185933 行
-- 前端 TS/TSX：327 个文件，100850 行
+- Python 源码（不含测试）：497 个文件，229385 行
+- Python 测试：359 个文件，186004 行
+- 前端 TS/TSX：328 个文件，102134 行
 - ≥400 行的 Python 文件：154 个
 
 规模数字只用于判断改动影响面，不是质量指标。

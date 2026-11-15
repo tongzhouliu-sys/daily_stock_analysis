@@ -25,6 +25,16 @@ RESTART_MAX_SECONDS = 300.0
 MAX_RESTART_FAILURES = 5
 
 
+def worker_start_enabled() -> bool:
+    """SCANNER_WORKERS_ENABLED gates whether the host may own child workers."""
+    return os.environ.get("SCANNER_WORKERS_ENABLED", "true").lower() == "true"
+
+
+def daily_market_enabled() -> bool:
+    """SCANNER_DAILY_MARKET adds the incremental market collector to the fleet."""
+    return os.environ.get("SCANNER_DAILY_MARKET", "false").lower() == "true"
+
+
 class HostAuth:
     """Use DSA's current session, retaining scanner write-CSRF protection."""
 
@@ -146,15 +156,25 @@ class ScannerHost:
             self.application = application
             return application
 
+    def should_start_at_startup(self):
+        """Whether the fleet must be up before the first scanner request.
+
+        Workers stay lazy so an unused scanner does not carry idle polling
+        processes. A deployment with SCANNER_DAILY_MARKET=true is the exception:
+        it is health-checked on the ``host_worker market`` process right after
+        startup, so the fleet must exist before any request arrives.
+        """
+        return worker_start_enabled() and daily_market_enabled()
+
     def start(self):
-        if os.environ.get("SCANNER_WORKERS_ENABLED", "true").lower() != "true":
+        if not worker_start_enabled():
             return
         with self.lock:
             self.initialize()
             if self.processes:
                 return
             kinds = ["scan", "research"]
-            if os.environ.get("SCANNER_DAILY_MARKET", "false").lower() == "true":
+            if daily_market_enabled():
                 kinds.append("market")
             self.stopping.clear()
             try:
