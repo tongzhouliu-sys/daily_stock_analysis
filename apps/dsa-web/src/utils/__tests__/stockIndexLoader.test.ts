@@ -10,6 +10,7 @@ import {
   findStockInIndex,
   getPopularStocks,
   groupStocksByMarket,
+  resetStockIndexLoaderForTests,
 } from '../stockIndexLoader';
 import type { StockIndexItem } from '../../types/stockIndex';
 import { beforeEach, describe, expect, test, vi } from 'vitest';
@@ -84,9 +85,42 @@ describe('stockIndexLoader', () => {
 
   beforeEach(() => {
     vi.clearAllMocks();
+    resetStockIndexLoaderForTests();
   });
 
   describe('loadStockIndex - Load stock index', () => {
+    test('shares one in-flight request between two components on the same page', async () => {
+      mockFetch.mockResolvedValueOnce({
+        ok: true,
+        json: async () => mockIndexData,
+      } as unknown as Response);
+
+      // Two independent components mounting at the same time.
+      const [first, second] = await Promise.all([loadStockIndex(), loadStockIndex()]);
+
+      expect(mockFetch).toHaveBeenCalledTimes(1);
+      expect(first.loaded).toBe(true);
+      expect(second.loaded).toBe(true);
+      expect(first.data).toEqual(second.data);
+    });
+
+    test('re-requests after a failed load instead of caching the failure', async () => {
+      mockFetch.mockRejectedValueOnce(new Error('Network error'));
+      const failed = await loadStockIndex();
+      expect(failed.loaded).toBe(false);
+
+      mockFetch.mockResolvedValueOnce({
+        ok: true,
+        json: async () => mockIndexData,
+      } as unknown as Response);
+
+      const retried = await loadStockIndex();
+
+      expect(mockFetch).toHaveBeenCalledTimes(2);
+      expect(retried.loaded).toBe(true);
+      expect(retried.data).toEqual(mockIndexData);
+    });
+
     test('successfully loads object format index', async () => {
       mockFetch.mockResolvedValueOnce({
         ok: true,

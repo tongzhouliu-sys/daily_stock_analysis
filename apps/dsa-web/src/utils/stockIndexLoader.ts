@@ -13,6 +13,16 @@ const STOCK_INDEX_LOAD_TIMEOUT_MS = 10_000;
 // Cleared on failure to allow retry.
 let cachedLoadPromise: Promise<IndexLoadResult> | null = null;
 
+/**
+ * Reset the module-level in-flight cache.
+ *
+ * Only for tests: the cache is intentionally module-scoped, so a test that
+ * leaves it populated would make every later test observe the first payload.
+ */
+export function resetStockIndexLoaderForTests(): void {
+  cachedLoadPromise = null;
+}
+
 export interface IndexLoadResult {
   /** Index data */
   data: StockIndexItem[];
