@@ -26,6 +26,7 @@ from typing import List, Dict, Any, Optional, Tuple, Callable
 import pandas as pd
 
 from src.config import FUNDAMENTAL_STAGE_TIMEOUT_SECONDS_DEFAULT, get_config, Config
+from src.core.task_cancellation import TaskCancelledError
 from src.storage import get_db
 from data_provider import DataFetcherManager
 from data_provider.base import is_bse_code, normalize_stock_code
@@ -401,6 +402,9 @@ class StockAnalysisPipeline:
             return
         try:
             callback(progress, message)
+        except TaskCancelledError:
+            # R13: 取消是任务级控制流，不是"进度回调失败"，必须传到任务队列。
+            raise
         except Exception as exc:
             query_id = getattr(self, "query_id", None)
             logger.warning(
@@ -1069,6 +1073,9 @@ class StockAnalysisPipeline:
                             portfolio_context=portfolio_context,
                             analysis_target=analysis_target,
                         )
+                except TaskCancelledError:
+                    # R13: 取消检查点发生在保存之前，取消后不写历史记录。
+                    raise
                 except Exception as e:
                     record_history_run(
                         report_saved=False,
@@ -1079,6 +1086,8 @@ class StockAnalysisPipeline:
 
             return result
 
+        except TaskCancelledError:
+            raise
         except Exception as e:
             logger.error(f"{stock_name}({code}) 分析失败: {e}")
             logger.exception(f"{stock_name}({code}) 详细错误信息:")
@@ -3635,6 +3644,9 @@ class StockAnalysisPipeline:
             
             return result
             
+        except TaskCancelledError:
+            # R13: 用户取消必须穿出单股处理，交给任务队列标成已取消。
+            raise
         except Exception as e:
             # 捕获所有异常，确保单股失败不影响整体
             logger.exception(f"[{code}] 处理过程发生未知异常: {e}")

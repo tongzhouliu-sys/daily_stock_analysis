@@ -12,6 +12,7 @@ from typing import Callable
 
 import pandas as pd
 
+from src.core.task_cancellation import TaskCancelledError
 from src.services.screening.config import Config
 from src.services.screening.candidate_context import collect_candidate_context
 from src.services.screening.context import build_llm_context
@@ -574,6 +575,9 @@ def _emit_progress(
         return
     try:
         callback(progress, message)
+    except TaskCancelledError:
+        # R13: 取消信号必须穿出进度回调。
+        raise
     except Exception as exc:  # noqa: BLE001 - progress reporting must not fail screening.
         logger.debug("Screening progress callback failed: %s", exc)
 

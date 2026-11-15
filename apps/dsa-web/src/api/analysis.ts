@@ -10,6 +10,7 @@ import type {
   MarketReviewRequest,
   TaskStatus,
   TaskListResponse,
+  TaskCancelResult,
 } from '../types/analysis';
 import type { RunFlowSnapshot } from '../types/runFlow';
 import { serializeMarketReviewRegions } from '../utils/marketReviewRegion';
@@ -162,6 +163,20 @@ export const analysisApi = {
     const data = toCamelCase<TaskListResponse>(response.data);
 
     return data;
+  },
+
+  /**
+   * Cancel a queued or running analysis task.
+   * A queued task is cancelled immediately; a running task stops at the next
+   * progress checkpoint and never saves a report or sends a notification.
+   * @param taskId Task ID
+   */
+  cancelTask: async (taskId: string): Promise<TaskCancelResult> => {
+    const response = await apiClient.post<Record<string, unknown>>(
+      `/api/v1/analysis/tasks/${encodeURIComponent(taskId)}/cancel`
+    );
+
+    return toCamelCase<TaskCancelResult>(response.data);
   },
 
   /**

@@ -119,6 +119,7 @@ export interface StockPoolState {
   syncTaskUpdated: (task: TaskInfo) => void;
   syncTaskFailed: (task: TaskInfo) => void;
   refreshActiveTasks: () => Promise<void>;
+  cancelTask: (taskId: string) => Promise<void>;
   removeTask: (taskId: string) => void;
   resetDashboardState: () => void;
   loadStockBar: () => Promise<void>;
@@ -1037,6 +1038,27 @@ export const useStockPoolStore = create<StockPoolState>((set, get) => ({
       }
     } catch {
       // Keep the current task panel when reconciliation cannot reach the API.
+    }
+  },
+
+  cancelTask: async (taskId) => {
+    try {
+      const result = await analysisApi.cancelTask(taskId);
+      // Reflect the server's acknowledged state immediately; the task stream
+      // will deliver the terminal `cancelled` event when the run stops.
+      const nextTasks = [...get().activeTasks];
+      const index = nextTasks.findIndex((item) => item.taskId === taskId);
+      if (index >= 0 && nextTasks[index].status !== result.status) {
+        nextTasks[index] = {
+          ...nextTasks[index],
+          status: result.status,
+          message: result.message || nextTasks[index].message,
+        };
+        activeTaskLocalRevision += 1;
+        set({ activeTasks: nextTasks });
+      }
+    } catch (error) {
+      set({ error: getParsedApiError(error) });
     }
   },
 

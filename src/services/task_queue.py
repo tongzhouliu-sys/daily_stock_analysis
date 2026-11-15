@@ -28,6 +28,9 @@ if TYPE_CHECKING:
     from asyncio import Queue as AsyncQueue
 
 from data_provider.base import canonical_stock_code, normalize_stock_code
+# 取消信号的定义在 src/core/task_cancellation.py：pipeline/analyzer 需要捕获它，
+# 又不应依赖服务层。这里重新导出以保持既有导入路径。
+from src.core.task_cancellation import TaskCancelledError
 from src.services.run_diagnostics import (
     activate_run_diagnostic_context,
     get_current_diagnostic_context,
@@ -88,10 +91,6 @@ def asset_type_from_analysis_target(analysis_target: Optional[Any]) -> Optional[
     if asset_type == ParseStatus.STOCK:
         return "stock"
     return None
-
-
-class TaskCancelledError(Exception):
-    """Raised inside a running task when the user requested cancellation."""
 
 
 class TaskStatus(str, Enum):

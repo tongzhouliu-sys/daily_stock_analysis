@@ -189,6 +189,43 @@ describe('TaskPanel', () => {
     expect(container).toBeEmptyDOMElement();
   });
 
+  it('cancels a queued or running task from the task item action', () => {
+    const onCancelTask = vi.fn();
+    render(
+      <TaskPanel
+        tasks={[
+          baseTask,
+          {
+            ...baseTask,
+            taskId: 'task-2',
+            stockCode: 'AAPL',
+            stockName: 'Apple',
+            status: 'pending',
+            progress: 0,
+          },
+        ]}
+        onCancelTask={onCancelTask}
+      />,
+    );
+
+    fireEvent.click(screen.getByRole('button', { name: '取消 贵州茅台 的分析任务' }));
+    fireEvent.click(screen.getByRole('button', { name: '取消 Apple 的分析任务' }));
+
+    expect(onCancelTask).toHaveBeenNthCalledWith(1, 'task-1');
+    expect(onCancelTask).toHaveBeenNthCalledWith(2, 'task-2');
+  });
+
+  it('hides the cancel action once cancellation is already requested', () => {
+    render(
+      <TaskPanel
+        tasks={[{ ...baseTask, status: 'cancel_requested', message: '正在请求取消' }]}
+        onCancelTask={vi.fn()}
+      />,
+    );
+
+    expect(screen.queryByTestId('task-panel-cancel')).not.toBeInTheDocument();
+  });
+
   it('does not render when there are no active tasks', () => {
     const { container } = render(
       <TaskPanel

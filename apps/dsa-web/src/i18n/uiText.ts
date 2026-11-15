@@ -579,6 +579,8 @@ const zh = {
   'taskPanel.openRunFlow': '查看运行流',
   'taskPanel.openRunFlowAria': '查看 {stock} 运行流',
   'taskPanel.statusAria': '任务状态：{status}',
+  'taskPanel.cancelTask': '取消任务',
+  'taskPanel.cancelTaskAria': '取消 {stock} 的分析任务',
   'taskPanel.title': '分析任务',
 
   'runFlow.drawerTitle': '运行流',
@@ -2094,6 +2096,8 @@ const en: Record<UiTextKey, string> = {
   'taskPanel.openRunFlow': 'View run flow',
   'taskPanel.openRunFlowAria': 'View {stock} run flow',
   'taskPanel.statusAria': 'Task status: {status}',
+  'taskPanel.cancelTask': 'Cancel task',
+  'taskPanel.cancelTaskAria': 'Cancel the analysis task for {stock}',
   'taskPanel.title': 'Analysis tasks',
 
   'runFlow.drawerTitle': 'Run Flow',

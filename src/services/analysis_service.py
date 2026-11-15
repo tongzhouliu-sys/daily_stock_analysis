@@ -16,6 +16,7 @@ import uuid
 from typing import Optional, Dict, Any, Callable, List
 
 from src.repositories.analysis_repo import AnalysisRepository
+from src.core.task_cancellation import TaskCancelledError
 from src.report_language import (
     get_sentiment_label,
     get_localized_stock_name,
@@ -173,6 +174,9 @@ class AnalysisService:
             # 构建响应
             return self._build_analysis_response(result, query_id, report_type=rt.value)
             
+        except TaskCancelledError:
+            # R13: 取消必须交给任务队列处理，不能当作普通失败吞掉。
+            raise
         except Exception as e:
             self.last_error = str(e)
             logger.error(f"分析股票 {stock_code} 失败: {e}", exc_info=True)

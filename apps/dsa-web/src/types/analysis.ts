@@ -517,6 +517,13 @@ export interface TaskListResponse {
   tasks: TaskInfo[];
 }
 
+/** Task cancel response */
+export interface TaskCancelResult {
+  taskId: string;
+  status: TaskInfo['status'];
+  message: string;
+}
+
 /** Duplicate task error response */
 export interface DuplicateTaskError {
   error: 'duplicate_task';

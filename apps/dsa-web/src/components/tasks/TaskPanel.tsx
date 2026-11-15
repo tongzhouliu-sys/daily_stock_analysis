@@ -1,6 +1,6 @@
 import type React from 'react';
 import { useId, useState } from 'react';
-import { ChevronDown, RefreshCw, Workflow } from 'lucide-react';
+import { ChevronDown, RefreshCw, Workflow, XCircle } from 'lucide-react';
 import { Badge, Button, Card, StatusDot, Tooltip } from '../common';
 import { DashboardPanelHeader } from '../dashboard';
 import type { TaskInfo } from '../../types/analysis';
@@ -13,12 +13,13 @@ import { useUiLanguage } from '../../contexts/UiLanguageContext';
 interface TaskItemProps {
   task: TaskInfo;
   onOpenRunFlow?: (task: TaskInfo) => void;
+  onCancelTask?: (taskId: string) => void;
 }
 
 /**
  * 单个任务项
  */
-const TaskItem: React.FC<TaskItemProps> = ({ task, onOpenRunFlow }) => {
+const TaskItem: React.FC<TaskItemProps> = ({ task, onOpenRunFlow, onCancelTask }) => {
   const { language, t } = useUiLanguage();
   const isPending = task.status === 'pending';
   const isProcessing = task.status === 'processing';
@@ -63,6 +64,28 @@ const TaskItem: React.FC<TaskItemProps> = ({ task, onOpenRunFlow }) => {
         </div>
 
         <div className="relative z-10 flex shrink-0 items-center gap-1.5">
+          {onCancelTask && (isPending || isProcessing) ? (
+            <Tooltip content={t('taskPanel.cancelTask')}>
+              <span className="inline-flex">
+                <Button
+                  type="button"
+                  variant="ghost"
+                  size="xsm"
+                  className="h-8 w-8 px-0"
+                  data-testid="task-panel-cancel"
+                  onClick={(event) => {
+                    event.stopPropagation();
+                    onCancelTask(task.taskId);
+                  }}
+                  aria-label={t('taskPanel.cancelTaskAria', {
+                    stock: task.stockName || task.stockCode,
+                  })}
+                >
+                  <XCircle className="h-4 w-4" aria-hidden="true" />
+                </Button>
+              </span>
+            </Tooltip>
+          ) : null}
           {onOpenRunFlow ? (
             <Tooltip content={t('taskPanel.openRunFlow')}>
               <span className="inline-flex">
@@ -159,6 +182,8 @@ interface TaskPanelProps {
   className?: string;
   /** 打开运行流面板 */
   onOpenRunFlow?: (task: TaskInfo) => void;
+  /** 取消排队中或运行中的任务 */
+  onCancelTask?: (taskId: string) => void;
   /** 是否折叠 */
   collapsed?: boolean;
   /** 折叠状态变化 */
@@ -175,6 +200,7 @@ export const TaskPanel: React.FC<TaskPanelProps> = ({
   title,
   className = '',
   onOpenRunFlow,
+  onCancelTask,
   collapsed,
   onCollapsedChange,
 }) => {
@@ -287,7 +313,12 @@ export const TaskPanel: React.FC<TaskPanelProps> = ({
         <div id={contentId} className="max-h-64 overflow-y-auto border-t border-subtle p-2">
           <div className="space-y-2">
             {activeTasks.map((task) => (
-              <TaskItem key={task.taskId} task={task} onOpenRunFlow={onOpenRunFlow} />
+              <TaskItem
+                key={task.taskId}
+                task={task}
+                onOpenRunFlow={onOpenRunFlow}
+                onCancelTask={onCancelTask}
+              />
             ))}
           </div>
         </div>

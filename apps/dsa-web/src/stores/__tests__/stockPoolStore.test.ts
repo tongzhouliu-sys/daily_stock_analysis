@@ -27,6 +27,7 @@ vi.mock('../../api/analysis', async () => {
     analysisApi: {
       analyzeAsync: vi.fn(),
       getTasks: vi.fn(),
+      cancelTask: vi.fn(),
     },
   };
 });
@@ -1211,8 +1212,40 @@ describe('stockPoolStore', () => {
     expect(useStockPoolStore.getState().activeTasks).toEqual([staleTask]);
   });
 
-  it('does not prune tasks created after an active-task refresh request started', async () => {
-    const emptySnapshot = createDeferred<TaskListResponse>();
+  it('cancels an active task through the API and reflects the acknowledged status', async () => {
+    const task = createTask({ taskId: 'task-cancel', status: 'processing', progress: 45 });
+    useStockPoolStore.getState().syncTaskCreated(task);
+    vi.mocked(analysisApi.cancelTask).mockResolvedValue({
+      taskId: 'task-cancel',
+      status: 'cancel_requested',
+      message: '已请求取消，等待当前步骤结束',
+    });
+
+    await useStockPoolStore.getState().cancelTask('task-cancel');
+
+    expect(analysisApi.cancelTask).toHaveBeenCalledWith('task-cancel');
+    expect(useStockPoolStore.getState().activeTasks[0]).toMatchObject({
+      taskId: 'task-cancel',
+      status: 'cancel_requested',
+      message: '已请求取消，等待当前步骤结束',
+    });
+  });
+
+  it('keeps the task when cancelling fails and surfaces the error', async () => {
+    const task = createTask({ taskId: 'task-cancel-fail', status: 'processing', progress: 45 });
+    useStockPoolStore.getState().syncTaskCreated(task);
+    vi.mocked(analysisApi.cancelTask).mockRejectedValue(new Error('网络错误'));
+
+    await useStockPoolStore.getState().cancelTask('task-cancel-fail');
+
+    expect(useStockPoolStore.getState().activeTasks[0]).toMatchObject({
+      taskId: 'task-cancel-fail',
+      status: 'processing',
+    });
+    expect(useStockPoolStore.getState().error).toBeTruthy();
+  });
+
+  it('does not prune tasks created after an active-task refresh request started', async () => {    const emptySnapshot = createDeferred<TaskListResponse>();
     const createdTask = createTask({
       taskId: 'task-created-after-request',
       status: 'pending',

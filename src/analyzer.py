@@ -39,6 +39,7 @@ from src.config import (
     get_explicit_llm_channel_model_provider,
     resolve_news_window_days,
 )
+from src.core.task_cancellation import TaskCancelledError
 from src.llm.hermes import (
     HERMES_CHANNEL_NAME,
     build_hermes_redaction_values,
@@ -4226,6 +4227,9 @@ Output strictly in the following JSON format. This is a complete Decision Dashbo
                 return
             try:
                 progress_callback(progress, message)
+            except TaskCancelledError:
+                # R13: 取消信号不是"回调失败"，必须继续上抛。
+                raise
             except Exception as exc:
                 logger.debug("[analyzer] progress callback skipped: %s", exc)
 
