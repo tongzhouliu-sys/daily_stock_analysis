@@ -14,7 +14,7 @@ if TYPE_CHECKING:
     from src.analyzer import AnalysisResult
 
 
-INTRADAY_PHASES = {"intraday", "lunch_break", "closing_auction"}
+from src.core.trading_calendar import INTRADAY_PHASES  # noqa: F401  (单一来源)
 CONSERVATIVE_ACTION_PHASES = {"premarket", "non_trading", "unknown"}
 CORE_DATA_BLOCKS = {"quote", "daily_bars", "technical"}
 

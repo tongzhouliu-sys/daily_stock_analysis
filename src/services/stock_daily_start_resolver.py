@@ -7,7 +7,11 @@ from dataclasses import dataclass
 from datetime import date, datetime
 from typing import Any, Optional
 
-from src.core.trading_calendar import resolve_historical_daily_bar_date
+from src.core.trading_calendar import (
+    INTRADAY_PHASES,
+    resolve_backtest_anchor_bar_date,
+    resolve_historical_daily_bar_date,
+)
 from src.market_phase_summary import (
     extract_market_phase_summary,
     rebuild_market_phase_summary_for_stock_code,
@@ -105,6 +109,32 @@ def resolve_stock_daily_start(
                 identity,
                 None,
                 "invalid_effective_daily_bar_date",
+                legacy_backtest_start_date=effective_date,
+            )
+        phase = (
+            phase_summary.get("phase")
+            if isinstance(phase_summary, dict)
+            else None
+        )
+        if str(phase or "").strip().lower() in INTRADAY_PHASES:
+            # E10: 盘中分析的快照价已经偏离昨收，评估必须以当日收盘为起点，
+            # 否则"下午涨了 5% 才买"的建议会被记成 +5% 起步。
+            anchor_date = resolve_backtest_anchor_bar_date(
+                identity.market,
+                analysis_date,
+                phase,
+            )
+            if anchor_date is None:
+                return DailyStockStartResolution(
+                    identity,
+                    None,
+                    "unresolvable_expected_start_date",
+                    legacy_backtest_start_date=effective_date,
+                )
+            return DailyStockStartResolution(
+                identity,
+                anchor_date,
+                None,
                 legacy_backtest_start_date=effective_date,
             )
         return DailyStockStartResolution(identity, effective_date, None)

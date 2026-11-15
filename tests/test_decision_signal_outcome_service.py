@@ -478,23 +478,31 @@ def test_stock_code_filter_uses_hk_aliases_without_widening_market_filter(isolat
     assert hk_only["evaluated"] == 1
 
 
-def test_not_up_uses_defensive_direction_not_down_direction(isolated_db) -> None:
+def test_not_up_is_symmetric_with_not_down(isolated_db) -> None:
+    """E14: 看空信号也必须有中性区，不能只要没涨过 +2% 就算命中。"""
     reduce_hit_id = _add_signal(isolated_db, code="600519", action="reduce", horizon="3d")
-    reduce_miss_id = _add_signal(isolated_db, code="000001", action="reduce", horizon="3d")
-    _seed_bars(isolated_db, code="600519", closes=[100.5, 101.0, 101.5])
-    _seed_bars(isolated_db, code="000001", closes=[101.0, 102.0, 103.0])
+    reduce_neutral_id = _add_signal(isolated_db, code="000001", action="reduce", horizon="3d")
+    reduce_miss_id = _add_signal(isolated_db, code="000002", action="reduce", horizon="3d")
+    _seed_bars(isolated_db, code="600519", closes=[99.0, 98.0, 97.0])
+    _seed_bars(isolated_db, code="000001", closes=[100.5, 101.0, 101.5])
+    _seed_bars(isolated_db, code="000002", closes=[101.0, 102.0, 103.0])
     service = DecisionSignalOutcomeService(db_manager=isolated_db)
 
     hit = service.run_outcomes(signal_id=reduce_hit_id)["items"][0]
+    neutral = service.run_outcomes(signal_id=reduce_neutral_id)["items"][0]
     miss = service.run_outcomes(signal_id=reduce_miss_id)["items"][0]
 
     assert hit["direction_expected"] == "not_up"
     assert hit["outcome"] == "hit"
+    # 下跌不足 -2% 或上涨不足 +2% 的中间区间是中性，不进命中率分母
+    assert neutral["direction_expected"] == "not_up"
+    assert neutral["outcome"] == "neutral"
+    assert neutral["direction_correct"] is None
     assert miss["direction_expected"] == "not_up"
     assert miss["outcome"] == "miss"
 
 
-def test_unable_reasons_are_persisted_for_non_directional_and_unsupported_horizon(isolated_db) -> None:
+def test_unable_reasons_are_persisted_for_non_directional_and_intraday_uses_one_day(isolated_db) -> None:
     watch_id = _add_signal(isolated_db, action="watch", horizon="3d")
     intraday_buy_id = _add_signal(isolated_db, code="000001", action="buy", horizon="intraday")
     _seed_bars(isolated_db, code="600519", closes=[103, 104, 105])
@@ -508,8 +516,11 @@ def test_unable_reasons_are_persisted_for_non_directional_and_unsupported_horizo
 
     assert watch["eval_status"] == "unable"
     assert watch["unable_reason"] == "non_directional_action"
-    assert intraday["eval_status"] == "unable"
-    assert intraday["unable_reason"] == "unsupported_horizon"
+    # E16: 盘中信号按 1 日周期评估，不再永远 unable(unsupported_horizon)
+    assert intraday["eval_status"] == "completed"
+    assert intraday["horizon"] == "1d"
+    assert intraday["eval_window_days"] == 1
+    assert intraday["outcome"] == "hit"
     assert watch_skipped["evaluated"] == 0
     assert watch_skipped["skipped"] == 1
     assert intraday_skipped["evaluated"] == 0

@@ -122,6 +122,9 @@ class MarketPhaseContext:
         }
 
 
+# 盘中阶段：分析发生在当日开盘之后、收盘之前，价格已经偏离昨收。
+INTRADAY_PHASES = frozenset({"intraday", "lunch_break", "closing_auction"})
+
 def get_market_for_stock(code: str) -> Optional[str]:
     """
     Infer market region for a stock code.
@@ -390,6 +393,39 @@ def resolve_historical_daily_bar_date(
         logger.warning(
             "trading_calendar.resolve_historical_daily_bar_date fail-closed: %s",
             e,
+        )
+        return None
+
+
+def resolve_backtest_anchor_bar_date(
+    market: Optional[str],
+    target_date: date,
+    phase: Optional[str],
+) -> Optional[date]:
+    """Resolve which daily bar should anchor a post-hoc evaluation.
+
+    Premarket recommendations are made against the previous session close, so
+    that close stays the fair entry reference. Intraday phases (including the
+    lunch break and closing auction) are made while the session is already
+    trading at a different price; anchoring them at the previous close makes
+    chasing entries look systematically better than they were (E10), so those
+    anchor at the same session's close instead.
+    """
+    normalized_phase = str(phase or "").strip().lower()
+    if normalized_phase not in INTRADAY_PHASES:
+        return resolve_historical_daily_bar_date(market, target_date, phase)
+
+    if market not in MARKET_EXCHANGE or not _XCALS_AVAILABLE:
+        return None
+    try:
+        cal = xcals.get_calendar(MARKET_EXCHANGE[market])
+        if cal.is_session(target_date):
+            return target_date
+        return cal.date_to_session(target_date, direction="previous").date()
+    except Exception as exc:
+        logger.warning(
+            "trading_calendar.resolve_backtest_anchor_bar_date fail-closed: %s",
+            exc,
         )
         return None
 

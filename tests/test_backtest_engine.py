@@ -184,7 +184,8 @@ class BacktestEngineTestCase(unittest.TestCase):
 
         self.assertEqual(up["outcome"], "hit")
         self.assertEqual(not_down["outcome"], "neutral")
-        self.assertEqual(not_up["outcome"], "hit")
+        # E14: "不会涨"的看空信号与"不会跌"对称，+1.5% 落在中性区内不再算命中
+        self.assertEqual(not_up["outcome"], "neutral")
         self.assertEqual(not_up_miss["outcome"], "miss")
 
     def test_decision_signal_helper_rejects_non_finite_prices(self):

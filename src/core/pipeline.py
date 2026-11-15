@@ -1320,7 +1320,31 @@ class StockAnalysisPipeline:
             )
         )
 
+        # C7: 把同一只股票过去几次建议的事后表现带进上下文，让模型看到自己的
+        # 历史命中情况；不足 3 条时不注入，避免用小样本误导判断。
+        enhanced["outcome_history"] = self._load_outcome_history(context.get("code", ""))
+
         return enhanced
+
+    def _load_outcome_history(self, code: Any) -> List[Dict[str, Any]]:
+        """Load recent completed signal outcomes for one stock (fail-open)."""
+
+        stock_code = str(code or "").strip()
+        if not stock_code:
+            return []
+        try:
+            from src.services.decision_signal_outcome_service import (
+                DecisionSignalOutcomeService,
+            )
+
+            return DecisionSignalOutcomeService(db_manager=self.db).recent_stock_outcomes(
+                stock_code=stock_code,
+                limit=5,
+                min_records=3,
+            )
+        except Exception:
+            logger.debug("加载历史评估失败: %s", stock_code, exc_info=True)
+            return []
 
     def _attach_belong_boards_to_fundamental_context(
         self,

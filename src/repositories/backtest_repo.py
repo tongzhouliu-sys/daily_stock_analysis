@@ -13,7 +13,7 @@ from typing import List, Optional, Tuple
 
 from sqlalchemy import and_, case, delete, desc, func, or_, select
 
-from src.core.backtest_engine import OVERALL_SENTINEL_CODE
+from src.core.backtest_engine import BACKTEST_STATUS_COMPLETED, OVERALL_SENTINEL_CODE
 from src.services.stock_code_utils import resolve_daily_stock_identity
 
 from src.storage import BacktestResult, BacktestSummary, DatabaseManager, AnalysisHistory
@@ -67,10 +67,14 @@ class BacktestRepository:
             query = select(AnalysisHistory).where(and_(*conditions))
 
             if not force:
+                # E12: 只有"已完成"的评估才算终态。insufficient_data / unable /
+                # error 这类记录是当时的行情或数据不足导致的，补足 K 线后必须能被
+                # 重新评估；此前不区分状态一律跳过，等于这些记录永远不会被再评。
                 existing_ids = select(BacktestResult.analysis_history_id).where(
                     and_(
                         BacktestResult.eval_window_days == eval_window_days,
                         BacktestResult.engine_version == engine_version,
+                        BacktestResult.eval_status == BACKTEST_STATUS_COMPLETED,
                     )
                 )
                 query = query.where(AnalysisHistory.id.not_in(existing_ids))

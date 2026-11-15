@@ -872,6 +872,15 @@ def _save_reused_market_review_report(
 def _run_auto_backtest(config: Config) -> None:
     """Run the independently configured auto-backtest without failing analysis."""
 
+    _run_backtest_pass(config)
+    # E15: 信号事后表现此前只有手动 API 能触发，调度与主流程都不调用，
+    # 导致统计页恒为空。自动回测之后顺带评一次，成本只落在未评过的信号上。
+    _run_signal_outcome_pass(config)
+
+
+def _run_backtest_pass(config: Config) -> None:
+    """Run the configured backtest pass (no-op when disabled)."""
+
     try:
         if not getattr(config, 'backtest_enabled', False):
             return
@@ -893,6 +902,28 @@ def _run_auto_backtest(config: Config) -> None:
         )
     except Exception as exc:
         logger.warning(f"自动回测失败（已忽略）: {exc}")
+
+
+def _run_signal_outcome_pass(config: Config) -> None:
+    """Evaluate pending decision-signal outcomes; never fail the analysis run."""
+
+    try:
+        if not getattr(config, 'backtest_enabled', False):
+            return
+
+        from src.services.decision_signal_outcome_service import DecisionSignalOutcomeService
+
+        logger.info("开始计算决策信号事后表现...")
+        result = DecisionSignalOutcomeService().run_outcomes(limit=200)
+        logger.info(
+            "决策信号事后表现完成: evaluated=%s created=%s updated=%s skipped=%s",
+            result.get("evaluated"),
+            result.get("created"),
+            result.get("updated"),
+            result.get("skipped"),
+        )
+    except Exception as exc:
+        logger.warning(f"决策信号事后表现计算失败（已忽略）: {exc}")
 
 
 def _all_stock_targets_succeeded(

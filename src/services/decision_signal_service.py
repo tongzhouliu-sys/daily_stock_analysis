@@ -12,7 +12,11 @@ from typing import Any, Dict, List, Literal, Optional, Tuple, get_args
 
 from data_provider.base import canonical_stock_code, normalize_stock_code
 from src.services.stock_list_parser import ParseStatus, parse_analysis_target
-from src.core.trading_calendar import MarketPhase
+from src.core.trading_calendar import (
+    INTRADAY_PHASES,
+    MarketPhase,
+    get_trading_dates,
+)
 from src.repositories.decision_signal_repo import (
     DecisionSignalCreateResult,
     DecisionSignalRepository,
@@ -55,12 +59,6 @@ REDACTION_MARKERS = ("[REDACTED]", "[REDACTED_URL]")
 TERMINAL_STATUSES = frozenset({"expired", "invalidated", "closed", "archived"})
 BULLISH_ACTIONS = frozenset({"buy", "add"})
 DEFENSIVE_ACTIONS = frozenset({"reduce", "sell", "avoid"})
-INTRADAY_PHASES = frozenset({
-    MarketPhase.PREMARKET.value,
-    MarketPhase.INTRADAY.value,
-    MarketPhase.LUNCH_BREAK.value,
-    MarketPhase.CLOSING_AUCTION.value,
-})
 DEFAULT_INTRADAY_TTL_HOURS = {
     "cn": 4.0,
     "hk": 5.5,
@@ -922,7 +920,30 @@ class DecisionSignalService:
         days = cls._horizon_days(horizon)
         if days is None:
             return None
-        return base + timedelta(days=days)
+        # E16: 有效期按交易日计，周五盘后的 1 日信号不再周六就过期。
+        return cls._add_trading_days(base, days, market)
+
+    @classmethod
+    def _add_trading_days(cls, base: datetime, trading_days: int, market: str) -> datetime:
+        """Return ``base`` shifted by ``trading_days`` sessions.
+
+        Falls back to natural days when the exchange calendar is unavailable;
+        the clock time of ``base`` is preserved either way.
+        """
+        if trading_days <= 0:
+            return base
+        sessions = get_trading_dates(
+            str(market or ""),
+            base.date(),
+            base.date() + timedelta(days=trading_days * 3 + 14),
+        )
+        if sessions is None or len(sessions) == 0:
+            return base + timedelta(days=trading_days)
+        future_sessions = [session.date() for session in sessions if session.date() > base.date()]
+        if len(future_sessions) < trading_days:
+            return base + timedelta(days=trading_days)
+        target = future_sessions[trading_days - 1]
+        return base + timedelta(days=(target - base.date()).days)
 
     @staticmethod
     def _intraday_fallback_hours(market: str) -> float:

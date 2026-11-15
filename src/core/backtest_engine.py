@@ -16,11 +16,20 @@ from typing import Any, Dict, Iterable, List, Optional, Protocol, Sequence
 
 OVERALL_SENTINEL_CODE = "__overall__"
 
+# BacktestResult.eval_status 的取值，收敛成单一来源，避免 repository 与
+# service 各写一份字符串导致"只排除已完成"的判断漂移。
+BACKTEST_STATUS_COMPLETED = "completed"
+BACKTEST_STATUS_INSUFFICIENT_DATA = "insufficient_data"
+BACKTEST_STATUS_UNABLE = "unable"
+BACKTEST_STATUS_ERROR = "error"
+BACKTEST_STATUS_PENDING = "pending"
+
 
 class DailyBarLike(Protocol):
     """Protocol for objects representing a daily OHLC bar."""
 
     date: date
+    open: Optional[float]
     high: Optional[float]
     low: Optional[float]
     close: Optional[float]
@@ -233,6 +242,7 @@ class BacktestEngine:
             take_profit=take_profit,
             window_bars=window_bars,
             end_close=end_close,
+            entry_price=start_price,
         )
 
         simulated_entry_price = start_price if position == "long" else None
@@ -377,8 +387,12 @@ class BacktestEngine:
         results_list = list(results)
 
         total = len(results_list)
-        completed = [r for r in results_list if (r.eval_status or "") == "completed"]
-        insufficient_count = sum(1 for r in results_list if (r.eval_status or "") == "insufficient_data")
+        completed = [
+            r for r in results_list if (r.eval_status or "") == BACKTEST_STATUS_COMPLETED
+        ]
+        insufficient_count = sum(
+            1 for r in results_list if (r.eval_status or "") == BACKTEST_STATUS_INSUFFICIENT_DATA
+        )
 
         long_count = sum(1 for r in completed if (r.position_recommendation or "") == "long")
         cash_count = sum(1 for r in completed if (r.position_recommendation or "") == "cash")
@@ -668,9 +682,13 @@ class BacktestEngine:
             return "neutral", None
 
         if direction_expected == "not_up":
-            if r <= band:
+            # E14: 与"不会跌"对称的三段判定。此前只要没涨过 +2% 就算命中，
+            # 卖出后上涨 1.5% 也被记成命中，卖出类命中率被系统性抬高。
+            if r <= -band:
                 return "hit", True
-            return "miss", False
+            if r >= band:
+                return "miss", False
+            return "neutral", None
 
         return None, None
 
@@ -693,6 +711,7 @@ class BacktestEngine:
         take_profit: Optional[float],
         window_bars: List[DailyBarLike],
         end_close: Optional[float],
+        entry_price: Optional[float] = None,
     ) -> tuple[
         Optional[bool],
         Optional[bool],
@@ -713,19 +732,28 @@ class BacktestEngine:
                 "cash",
             )
 
-        has_any_target = stop_loss is not None or take_profit is not None
+        # E11: 买入的止损价必须低于入场价，否则不是止损而是"必成交"。
+        # 不合理的止损直接标为无效并按无止损处理，避免算出假的 -x% 亏损。
+        stop_loss_invalid = (
+            stop_loss is not None
+            and entry_price is not None
+            and stop_loss >= entry_price
+        )
+        effective_stop_loss = None if stop_loss_invalid else stop_loss
+
+        has_any_target = effective_stop_loss is not None or take_profit is not None
         if not has_any_target:
             return (
                 None,
                 None,
-                "neither",
+                "invalid_stop" if stop_loss_invalid else "neither",
                 None,
                 None,
                 end_close,
-                "window_end",
+                "invalid_stop" if stop_loss_invalid else "window_end",
             )
 
-        hit_sl: Optional[bool] = None if stop_loss is None else False
+        hit_sl: Optional[bool] = None if effective_stop_loss is None else False
         hit_tp: Optional[bool] = None if take_profit is None else False
         first_hit = "neither"
         first_hit_date: Optional[date] = None
@@ -736,7 +764,12 @@ class BacktestEngine:
         for idx, bar in enumerate(window_bars, start=1):
             low = bar.low
             high = bar.high
-            stop_hit = stop_loss is not None and low is not None and low <= stop_loss
+            bar_open = getattr(bar, "open", None)
+            stop_hit = (
+                effective_stop_loss is not None
+                and low is not None
+                and low <= effective_stop_loss
+            )
             tp_hit = take_profit is not None and high is not None and high >= take_profit
 
             if stop_hit:
@@ -752,13 +785,14 @@ class BacktestEngine:
 
             if stop_hit and tp_hit:
                 first_hit = "ambiguous"
-                exit_price = stop_loss
+                exit_price = cls._stop_fill_price(bar_open, effective_stop_loss)
                 exit_reason = "ambiguous_stop_loss"
                 break
 
             if stop_hit:
                 first_hit = "stop_loss"
-                exit_price = stop_loss
+                # E11: 跳空低开时实际成交在开盘价，不能仍按止损价记账
+                exit_price = cls._stop_fill_price(bar_open, effective_stop_loss)
                 exit_reason = "stop_loss"
                 break
 
@@ -776,6 +810,25 @@ class BacktestEngine:
             exit_price,
             exit_reason,
         )
+
+    @staticmethod
+    def _stop_fill_price(
+        bar_open: Optional[float],
+        stop_loss: Optional[float],
+    ) -> Optional[float]:
+        """Long stop-loss fill price: the worse of the bar open and the stop.
+
+        A gap-down open below the stop fills at the open; an intraday break
+        fills at the stop. ``None`` when neither value is usable.
+        """
+        candidates = [
+            value
+            for value in (bar_open, stop_loss)
+            if value is not None and math.isfinite(float(value))
+        ]
+        if not candidates:
+            return None
+        return float(min(candidates))
 
     @staticmethod
     def _average(values: Iterable[Optional[float]]) -> Optional[float]:

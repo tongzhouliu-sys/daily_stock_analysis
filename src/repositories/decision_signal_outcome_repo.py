@@ -176,6 +176,45 @@ class DecisionSignalOutcomeRepository:
             ).scalars().all()
             return list(rows), int(total)
 
+    def list_completed_outcomes_for_stock(
+        self,
+        *,
+        stock_code: str,
+        engine_version: Optional[str] = None,
+        limit: int = 8,
+    ) -> List[DecisionSignalOutcomeRecord]:
+        """Return the most recent completed outcomes for one stock code.
+
+        Outcomes carry no stock code of their own; the owning signal does.
+        Joined here so the analysis prompt can show "what my past calls on this
+        stock actually did" without loading whole outcome tables.
+        """
+        code = str(stock_code or "").strip()
+        if not code:
+            return []
+        safe_limit = max(1, min(int(limit), 50))
+        conditions = [
+            func.upper(DecisionSignalRecord.stock_code) == code.upper(),
+            DecisionSignalOutcomeRecord.eval_status == "completed",
+        ]
+        if engine_version:
+            conditions.append(DecisionSignalOutcomeRecord.engine_version == engine_version)
+        with self.db.get_session() as session:
+            rows = session.execute(
+                select(DecisionSignalOutcomeRecord)
+                .join(
+                    DecisionSignalRecord,
+                    DecisionSignalRecord.id == DecisionSignalOutcomeRecord.signal_id,
+                )
+                .where(and_(*conditions))
+                .order_by(
+                    desc(DecisionSignalOutcomeRecord.anchor_date),
+                    desc(DecisionSignalOutcomeRecord.id),
+                )
+                .limit(safe_limit)
+            ).scalars().all()
+            return list(rows)
+
     def list_stats_rows(
         self,
         *,

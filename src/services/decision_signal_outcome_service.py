@@ -45,6 +45,12 @@ SUPPORTED_OUTCOME_HORIZONS = {
     "5d": 5,
     "10d": 10,
 }
+# E16: 盘中信号默认 horizon=intraday，评估端只支持 1/3/5/10 日，此前这类信号
+# 一律得到 unable(unsupported_horizon)，等于永远评不了。盘中建议本来就只看
+# 当日，按 1 日周期评估。
+SIGNAL_HORIZON_TO_OUTCOME_HORIZON = {
+    "intraday": "1d",
+}
 DEFAULT_STATS_STATUSES = ("active", "expired", "invalidated", "closed")
 OUTCOME_VALUES = frozenset({"hit", "miss", "neutral"})
 EVAL_STATUSES = frozenset({"completed", "unable"})
@@ -184,6 +190,42 @@ class DecisionSignalOutcomeService:
             "skipped": skipped_count,
             "engine_version": DECISION_SIGNAL_OUTCOME_ENGINE_VERSION,
         }
+
+    def recent_stock_outcomes(
+        self,
+        *,
+        stock_code: str,
+        limit: int = 5,
+        min_records: int = 3,
+    ) -> List[Dict[str, Any]]:
+        """Return recent completed outcomes for one stock, or [] if too few.
+
+        C7: the analysis prompt used to be blind to how its own past calls on
+        the same stock turned out. Fewer than ``min_records`` outcomes is not
+        enough evidence to summarise, so callers get an empty list and simply
+        omit the section instead of showing a biased 1-2 sample table.
+        """
+        rows = self.repo.list_completed_outcomes_for_stock(
+            stock_code=stock_code,
+            engine_version=DECISION_SIGNAL_OUTCOME_ENGINE_VERSION,
+            limit=max(int(limit), int(min_records)),
+        )
+        if len(rows) < max(1, int(min_records)):
+            return []
+        items: List[Dict[str, Any]] = []
+        for row in rows[: int(limit)]:
+            items.append(
+                {
+                    "anchor_date": row.anchor_date.isoformat() if row.anchor_date else None,
+                    "horizon": row.horizon,
+                    "action": row.action,
+                    "outcome": row.outcome,
+                    "eval_status": row.eval_status,
+                    "direction_correct": row.direction_correct,
+                    "stock_return_pct": row.stock_return_pct,
+                }
+            )
+        return items
 
     def _list_actionable_candidate_signals(
         self,
@@ -759,11 +801,21 @@ class DecisionSignalOutcomeService:
 
     def _horizons_for_signal(self, signal: DecisionSignalRecord, requested: Optional[List[str]]) -> List[str]:
         if requested:
-            return requested
+            return self._map_outcome_horizons(requested)
         horizon = str(signal.horizon or "").strip()
         if horizon:
-            return [horizon]
+            return self._map_outcome_horizons([horizon])
         return list(SUPPORTED_OUTCOME_HORIZONS.keys())
+
+    @staticmethod
+    def _map_outcome_horizons(horizons: List[str]) -> List[str]:
+        mapped: List[str] = []
+        for horizon in horizons:
+            normalized = str(horizon or "").strip().lower()
+            mapped_horizon = SIGNAL_HORIZON_TO_OUTCOME_HORIZON.get(normalized, normalized)
+            if mapped_horizon and mapped_horizon not in mapped:
+                mapped.append(mapped_horizon)
+        return mapped
 
     def _require_existing_signal(self, signal_id: int) -> DecisionSignalRecord:
         signal_id_norm = self._optional_positive_int(signal_id, "signal_id")

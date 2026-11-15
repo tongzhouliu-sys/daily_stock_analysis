@@ -1334,6 +1334,49 @@ def _first_numeric_value(*values: Any) -> Optional[float]:
     return None
 
 
+def _build_outcome_history_rows(outcome_history: Any) -> List[str]:
+    """C7: 把历史建议与事后表现格式化成提示词表格行。"""
+
+    if not isinstance(outcome_history, list) or len(outcome_history) < 3:
+        return []
+
+    def _fmt(value: Any) -> str:
+        if value is None:
+            return "N/A"
+        if isinstance(value, bool):
+            return "yes" if value else "no"
+        if isinstance(value, float):
+            return f"{value:.2f}"
+        return str(value)
+
+    rows: List[str] = []
+    for item in outcome_history:
+        if not isinstance(item, dict):
+            continue
+        outcome = item.get("outcome")
+        direction_correct = item.get("direction_correct")
+        if outcome:
+            result = str(outcome)
+            if direction_correct is True:
+                result += " (direction correct)"
+            elif direction_correct is False:
+                result += " (direction wrong)"
+        elif item.get("eval_status"):
+            result = str(item.get("eval_status"))
+        else:
+            result = "N/A"
+        rows.append(
+            "| {date} | {horizon} | {action} | {result} | {ret} |".format(
+                date=_fmt(item.get("anchor_date")),
+                horizon=_fmt(item.get("horizon")),
+                action=_fmt(item.get("action")),
+                result=result,
+                ret=_fmt(item.get("stock_return_pct")),
+            )
+        )
+    return rows if len(rows) >= 3 else []
+
+
 def _build_earnings_and_chip_event_rows(
     fundamental_context: Optional[Dict[str, Any]],
 ) -> List[Tuple[str, str, Any, str, str]]:
@@ -5064,6 +5107,30 @@ Output strictly in the following JSON format. This is a complete Decision Dashbo
 - ⚠️ 量能异常提示：成交量较昨日放大超过10倍，可能受异常数据或一次性冲量影响，必须降权解读，不能机械视为强确认信号
 """
         
+        # C7: 近 N 次建议与事后表现（同一只股票，至少 3 条已完成评估）
+        outcome_rows = _build_outcome_history_rows(
+            context.get("outcome_history") if isinstance(context, dict) else None
+        )
+        if outcome_rows:
+            if english:
+                prompt += f"""
+### Recent Calls on This Stock and What Happened
+| Anchor Date | Horizon | Action | Result | Stock Return % |
+|------|------|------|------|------|
+{chr(10).join(outcome_rows)}
+
+> These are the system's own past calls on this stock, already evaluated. Use them to calibrate confidence: if the same setup repeatedly missed, say so explicitly instead of repeating the same conclusion. Do not treat past results as a guarantee of future performance.
+"""
+            else:
+                prompt += f"""
+### 近 N 次建议与事后表现（同一只股票）
+| 评估起点 | 周期 | 当时建议 | 结果 | 期间涨跌幅% |
+|------|------|------|------|------|
+{chr(10).join(outcome_rows)}
+
+> 这些是系统自己在同一只股票上的历史建议及事后结果。用于校准置信度：如果同类形态反复未命中，必须明确说明，而不是重复同一个结论；历史表现不代表未来结果。
+"""
+
         # 添加新闻搜索结果（重点区域）
         news_window_days: Optional[int] = None
         context_window = context.get("news_window_days")
