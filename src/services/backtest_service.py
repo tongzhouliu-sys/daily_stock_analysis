@@ -253,7 +253,13 @@ class BacktestService:
 
         saved = 0
         if results_to_save:
-            saved = self.repo.save_results_batch(results_to_save, replace_existing=force)
+            # R5: 非强制模式下，同一 (analysis, window, version) 的"未完成"旧行
+            # （数据不足/失败）必须被本次重新评估覆盖，否则插入会撞唯一约束并让整批回滚。
+            saved = self.repo.save_results_batch(
+                results_to_save,
+                replace_existing=force,
+                replace_incomplete=not force,
+            )
 
         if saved:
             self._recompute_summaries(

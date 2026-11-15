@@ -16,7 +16,7 @@ from unittest.mock import patch
 import pandas as pd
 
 from src.config import Config
-from src.core.backtest_engine import OVERALL_SENTINEL_CODE
+from src.core.backtest_engine import BACKTEST_STATUS_COMPLETED, OVERALL_SENTINEL_CODE
 from src.repositories.backtest_repo import BacktestRepository
 from src.services.backtest_service import BacktestService
 from src.services.stock_daily_start_resolver import (
@@ -2487,6 +2487,119 @@ class BacktestServiceTestCase(unittest.TestCase):
         self.assertEqual(stats["insufficient"], 1)
         self.assertEqual(stats["diagnostics"]["empty_reason"], "insufficient_daily_data")
         self.assertIn("可用日线行情不足", stats["message"])
+
+    # --- R5: 重新评估不得撞唯一约束 -------------------------------------
+
+    def _seed_reeval_analysis(self, *, query_id: str = "q-reeval", code: str = "000002") -> None:
+        self._seed_analysis(
+            query_id=query_id,
+            code=code,
+            analysis_date=date(2024, 1, 1),
+            created_at=datetime(2024, 1, 1, 0, 0, 0),
+            operation_advice="买入",
+            trend_prediction="看多",
+            start_close=10.0,
+            forward_bars=[],
+        )
+
+    def _add_forward_bars(self, *, code: str = "000002") -> None:
+        with self.db.get_session() as session:
+            session.add_all(
+                [
+                    StockDaily(code=code, date=date(2024, 1, 2), open=10.0, high=11.0, low=10.0, close=11.0),
+                    StockDaily(code=code, date=date(2024, 1, 3), open=11.0, high=12.0, low=10.5, close=11.5),
+                    StockDaily(code=code, date=date(2024, 1, 4), open=11.5, high=12.0, low=11.0, close=11.8),
+                ]
+            )
+            session.commit()
+
+    def _results_for(self, code: str = "000002") -> list[BacktestResult]:
+        with self.db.get_session() as session:
+            return session.query(BacktestResult).filter(BacktestResult.code == code).all()
+
+    def test_reeval_overwrites_insufficient_record_after_bars_arrive(self) -> None:
+        self._seed_reeval_analysis()
+        service = BacktestService(self.db)
+
+        with patch.object(BacktestService, "_try_fill_daily_data", return_value=None):
+            first = service.run_backtest(code="000002", force=False, eval_window_days=3, min_age_days=0, limit=10)
+        self.assertEqual(first["insufficient"], 1)
+        rows = self._results_for()
+        self.assertEqual(len(rows), 1)
+        self.assertEqual(rows[0].eval_status, "insufficient_data")
+
+        # 补足 K 线后重新评估：同一 (分析, 窗口, 引擎版本) 的旧行必须被覆盖
+        self._add_forward_bars()
+        second = service.run_backtest(code="000002", force=False, eval_window_days=3, min_age_days=0, limit=10)
+
+        self.assertEqual(second["saved"], 1)
+        self.assertEqual(second["completed"], 1)
+        rows = self._results_for()
+        self.assertEqual(len(rows), 1)
+        self.assertEqual(rows[0].eval_status, BACKTEST_STATUS_COMPLETED)
+
+    def test_reeval_still_insufficient_updates_instead_of_duplicating(self) -> None:
+        self._seed_reeval_analysis()
+        service = BacktestService(self.db)
+
+        with patch.object(BacktestService, "_try_fill_daily_data", return_value=None):
+            first = service.run_backtest(code="000002", force=False, eval_window_days=3, min_age_days=0, limit=10)
+            # 数据仍然不足：再次评估必须成功，且只保留 1 条记录
+            second = service.run_backtest(code="000002", force=False, eval_window_days=3, min_age_days=0, limit=10)
+
+        self.assertEqual(first["insufficient"], 1)
+        self.assertEqual(second["saved"], 1)
+        rows = self._results_for()
+        self.assertEqual(len(rows), 1)
+        self.assertEqual(rows[0].eval_status, "insufficient_data")
+
+    def test_non_force_reeval_keeps_completed_record(self) -> None:
+        service = BacktestService(self.db)
+        service.run_backtest(code="600519", force=False, eval_window_days=3, min_age_days=0, limit=10)
+
+        with self.db.get_session() as session:
+            row = session.query(BacktestResult).one()
+            row.simulated_return_pct = 42.0
+            session.commit()
+
+        stats = service.run_backtest(code="600519", force=False, eval_window_days=3, min_age_days=0, limit=10)
+
+        self.assertEqual(stats["saved"], 0)
+        with self.db.get_session() as session:
+            rows = session.query(BacktestResult).all()
+        self.assertEqual(len(rows), 1)
+        self.assertEqual(rows[0].simulated_return_pct, 42.0)
+
+    def test_reeval_batch_mixes_new_and_reassessed_analyses(self) -> None:
+        # 一条已存在"数据不足"记录，一条从未评估过
+        self._seed_reeval_analysis(query_id="q-old", code="000002")
+        self._seed_analysis(
+            query_id="q-new",
+            code="601398",
+            analysis_date=date(2024, 1, 1),
+            created_at=datetime(2024, 1, 2, 0, 0, 0),
+            operation_advice="买入",
+            trend_prediction="看多",
+            start_close=100.0,
+            forward_bars=[
+                StockDaily(code="601398", date=date(2024, 1, 2), open=100.0, high=105.0, low=99.0, close=104.0),
+                StockDaily(code="601398", date=date(2024, 1, 3), open=104.0, high=106.0, low=103.0, close=105.0),
+                StockDaily(code="601398", date=date(2024, 1, 4), open=105.0, high=107.0, low=104.0, close=106.0),
+            ],
+        )
+        service = BacktestService(self.db)
+
+        with patch.object(BacktestService, "_try_fill_daily_data", return_value=None):
+            service.run_backtest(code="000002", force=False, eval_window_days=3, min_age_days=0, limit=10)
+
+        self._add_forward_bars()
+        stats = service.run_backtest(force=False, eval_window_days=3, min_age_days=0, limit=10)
+
+        self.assertEqual(stats["saved"], 3)  # setUp 的 600519 + 000002 重评 + 601398 新增
+        self.assertEqual(len(self._results_for("000002")), 1)
+        self.assertEqual(len(self._results_for("601398")), 1)
+        self.assertEqual(len(self._results_for("600519")), 1)
+        self.assertEqual(self._results_for("000002")[0].eval_status, BACKTEST_STATUS_COMPLETED)
 
     def _run_and_get_result(self) -> BacktestResult:
         """Helper: run backtest and return the single BacktestResult row."""

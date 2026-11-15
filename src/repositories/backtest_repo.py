@@ -146,27 +146,51 @@ class BacktestRepository:
             session.add(result)
             session.commit()
 
-    def save_results_batch(self, results: List[BacktestResult], *, replace_existing: bool = False) -> int:
+    def save_results_batch(
+        self,
+        results: List[BacktestResult],
+        *,
+        replace_existing: bool = False,
+        replace_incomplete: bool = False,
+    ) -> int:
+        """批量写入回测结果。
+
+        Args:
+            results: 待写入结果。
+            replace_existing: 强制模式：删除同一
+                ``(analysis_history_id, eval_window_days, engine_version)`` 下的全部旧行。
+            replace_incomplete: 非强制模式：只删除同一键下状态不是"已完成"的旧行。
+                这类记录是当时行情/数据不足导致的，补足数据后必须被重新评估覆盖，
+                否则直接插入会撞唯一约束并让整批回滚（R5）。
+
+        删除与插入在同一个事务里完成。
+        """
         if not results:
             return 0
 
         with self.db.get_session() as session:
             try:
-                if replace_existing:
+                if replace_existing or replace_incomplete:
                     analysis_ids = sorted({r.analysis_history_id for r in results if r.analysis_history_id is not None})
                     key_pairs = sorted({(r.eval_window_days, r.engine_version) for r in results})
 
                     if analysis_ids and key_pairs:
                         for window_days, engine_version in key_pairs:
-                            session.execute(
-                                delete(BacktestResult).where(
-                                    and_(
-                                        BacktestResult.analysis_history_id.in_(analysis_ids),
-                                        BacktestResult.eval_window_days == window_days,
-                                        BacktestResult.engine_version == engine_version,
+                            stale_conditions = [
+                                BacktestResult.analysis_history_id.in_(analysis_ids),
+                                BacktestResult.eval_window_days == window_days,
+                                BacktestResult.engine_version == engine_version,
+                            ]
+                            if not replace_existing:
+                                # 已完成是终态，非强制模式必须保留；
+                                # 历史行的 eval_status 可能为空，同样视为未完成。
+                                stale_conditions.append(
+                                    or_(
+                                        BacktestResult.eval_status.is_(None),
+                                        BacktestResult.eval_status != BACKTEST_STATUS_COMPLETED,
                                     )
                                 )
-                            )
+                            session.execute(delete(BacktestResult).where(and_(*stale_conditions)))
 
                 session.add_all(results)
                 session.commit()
