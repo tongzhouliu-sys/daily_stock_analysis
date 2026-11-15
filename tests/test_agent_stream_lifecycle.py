@@ -442,6 +442,65 @@ def test_disconnect_lets_run_finish_and_persists_full_answer(api_env) -> None:
     assert executor.backend.run.call_count == 1
 
 
+def test_running_heartbeat_stays_fresh_while_run_continues_after_disconnect(api_env) -> None:
+    """断开后、或只输出正文增量时，执行线程仍要刷新心跳，避免被误判过期而放行并发提问。"""
+
+    db = api_env
+
+    from src.agent.agent_backend import AgentRunResult
+    from src.services.agent_chat_session_service import AgentChatSessionService
+
+    session_id = "heartbeat-after-disconnect"
+    request_id = "heartbeat-after-disconnect-request"
+    release = threading.Event()
+
+    def _run(request):
+        if getattr(request, "progress_callback", None) is not None:
+            request.progress_callback({"type": "generating"})
+        # 之后长时间没有任何会落库的进度事件（等同于只在输出正文增量）。
+        release.wait(timeout=5)
+        return AgentRunResult(
+            success=True, final_answer="完整回答", backend="litellm", messages=[],
+        )
+
+    executor = _real_executor(_run)
+    session_service = AgentChatSessionService(db)
+
+    async def _scenario():
+        request = agent_endpoint.ChatRequest(
+            message="分析 600519", session_id=session_id, request_id=request_id,
+        )
+        with patch.object(agent_endpoint, "_select_agent_chat_backend", return_value="litellm"), \
+                patch.object(agent_endpoint, "_build_executor", return_value=executor):
+            response = await agent_endpoint.agent_chat_stream(
+                request, session_service, intake_service=None,
+            )
+            gen = response.body_iterator
+            await gen.__anext__()
+            await asyncio.wait_for(gen.__anext__(), timeout=5)
+            await gen.aclose()
+            # 断言必须在事件循环仍然存活时做：asyncio.run 退出时会等执行线程结束。
+            try:
+                await asyncio.sleep(0.8)  # 远超过期阈值，但这一轮仍在后台运行
+                in_progress = await asyncio.to_thread(
+                    agent_endpoint._is_session_turn_in_progress, session_service, session_id,
+                )
+                still_running = (
+                    await asyncio.to_thread(db.read_chat_session_snapshot, session_id)
+                )["is_running"]
+            finally:
+                release.set()
+            return in_progress, still_running
+
+    with patch.object(agent_endpoint, "HEARTBEAT_INTERVAL_SECONDS", 0.05), \
+            patch.object(agent_endpoint, "CHAT_RUNNING_STALE_AFTER_SECONDS", 0.3):
+        in_progress, still_running = asyncio.run(_scenario())
+
+    assert in_progress is True
+    assert still_running is True
+    _wait_for(lambda: not db.read_chat_session_snapshot(session_id)["is_running"])
+
+
 def test_stop_endpoint_cancels_turn_and_persists_stopped_marker(api_env) -> None:
     """停止接口：下一个检查点退出，不再调用模型，落“已停止”标记并清运行态。"""
 

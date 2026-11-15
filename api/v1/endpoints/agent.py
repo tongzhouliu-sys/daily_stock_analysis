@@ -7,6 +7,7 @@ import asyncio
 import json
 import logging
 import re
+import threading
 import uuid
 from datetime import datetime, timezone
 from typing import Any, Dict, List, Optional
@@ -417,6 +418,27 @@ async def _touch_running_heartbeat(session_service, session_id: str, turn) -> No
         )
     except Exception:
         logger.debug("running heartbeat refresh failed for session %s", session_id, exc_info=True)
+
+
+def _start_running_heartbeat(session_service, session_id: str, turn_id: Optional[str]) -> threading.Event:
+    """在执行线程旁按固定间隔刷新 ``running_heartbeat_at``，直到返回的事件被置位。
+
+    SSE 循环里的心跳只在队列空闲时触发：只输出正文增量（不落库）的长回答，
+    以及客户端断开后仍在后台运行的一轮，都不会刷新心跳，超过 90 秒就会被
+    ``_is_session_turn_in_progress`` 判为过期，从而放行同一会话的并发提问。
+    心跳的生命周期因此跟随执行体，而不是跟随订阅它的连接。
+    """
+    stop = threading.Event()
+
+    def _beat() -> None:
+        while not stop.wait(HEARTBEAT_INTERVAL_SECONDS):
+            try:
+                session_service.db.touch_session_running_heartbeat(session_id, turn_id=turn_id)
+            except Exception:
+                logger.debug("running heartbeat refresh failed for session %s", session_id, exc_info=True)
+
+    threading.Thread(target=_beat, name="agent-chat-heartbeat", daemon=True).start()
+    return stop
 
 
 async def _abort_stalled_turn(session_service, session_id: str, turn, request_id: str) -> None:
@@ -980,6 +1002,9 @@ async def agent_chat_stream(
     cancel_event = register_run(request_id)
 
     def run_sync(executor, turn):
+        stop_heartbeat = _start_running_heartbeat(
+            session_service, session_id, getattr(turn, "run_id", None)
+        )
         try:
             # T5: 启用流式内容输出（当请求和服务端配置都开启时）
             stream_content = (
@@ -1024,6 +1049,7 @@ async def agent_chat_stream(
             }
             asyncio.run_coroutine_threadsafe(queue.put(event), loop)
         finally:
+            stop_heartbeat.set()
             # Q1: 断开的流不再回收注册表；本轮的取消入口要保留到执行体真正退出，
             # 否则刷新后点“停止”会找不到 request_id，后台仍会跑完。
             release_run(request_id)
