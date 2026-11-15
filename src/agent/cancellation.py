@@ -18,10 +18,13 @@
 from __future__ import annotations
 
 import threading
-from typing import Dict, Optional
+from typing import Dict, Optional, Set
 
 _lock = threading.Lock()
 _events: Dict[str, threading.Event] = {}
+# run_id -> other ids that point at the same event (e.g. the persisted turn id
+# that the session detail exposes after a page refresh).
+_aliases: Dict[str, Set[str]] = {}
 
 
 def register_run(run_id: str) -> threading.Event:
@@ -33,6 +36,26 @@ def register_run(run_id: str) -> threading.Event:
     with _lock:
         _events[key] = event
     return event
+
+
+def alias_run(run_id: str, alias: Optional[str]) -> bool:
+    """Make ``alias`` cancel the same run as ``run_id`` until it is released.
+
+    A refreshed page only knows the session's ``running_turn_id``, not the
+    client ``request_id`` the run was registered with; without an alias its
+    stop request could not reach the run.
+    """
+    key = str(run_id or "").strip()
+    alias_key = str(alias or "").strip()
+    if not key or not alias_key or alias_key == key:
+        return False
+    with _lock:
+        event = _events.get(key)
+        if event is None:
+            return False
+        _events[alias_key] = event
+        _aliases.setdefault(key, set()).add(alias_key)
+    return True
 
 
 def get_run_event(run_id: str) -> Optional[threading.Event]:
@@ -64,10 +87,14 @@ def release_run(run_id: str) -> None:
     if not key:
         return
     with _lock:
-        _events.pop(key, None)
+        event = _events.pop(key, None)
+        for alias_key in _aliases.pop(key, ()):
+            if _events.get(alias_key) is event:
+                _events.pop(alias_key, None)
 
 
 __all__ = [
+    "alias_run",
     "register_run",
     "get_run_event",
     "request_cancel",

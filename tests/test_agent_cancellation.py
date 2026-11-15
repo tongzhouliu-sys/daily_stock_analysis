@@ -59,6 +59,19 @@ class TestCancellationRegistry(unittest.TestCase):
         self.assertFalse(is_cancelled("run-1"))
 
 
+    def test_alias_shares_the_event_and_is_released_with_the_run(self) -> None:
+        event = register_run("run-1")
+        self.assertTrue(cancellation.alias_run("run-1", "turn-1"))
+        self.assertIs(get_run_event("turn-1"), event)
+        self.assertTrue(request_cancel("turn-1"))
+        self.assertTrue(event.is_set())
+        release_run("run-1")
+        self.assertIsNone(get_run_event("turn-1"))
+
+    def test_alias_for_unknown_run_is_ignored(self) -> None:
+        self.assertFalse(cancellation.alias_run("missing-run", "turn-2"))
+        self.assertIsNone(get_run_event("turn-2"))
+
 class TestRunLoopCancellation(unittest.TestCase):
     """停止后循环在下一个检查点退出，不再发生模型调用。"""
 

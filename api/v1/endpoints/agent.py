@@ -31,7 +31,7 @@ from src.schemas.agent_intake import (
     IntakeCreateRequest, IntakeCreateResponse, IntakeStatus,
     IntakeUpdateRequest, IntakeUpdateResponse,
 )
-from src.agent.cancellation import register_run, release_run, request_cancel
+from src.agent.cancellation import alias_run, register_run, release_run, request_cancel
 from src.storage import (
     CHAT_RUNNING_STALE_AFTER_SECONDS,
     ChatSessionStateConflict,
@@ -1085,6 +1085,10 @@ async def agent_chat_stream(
                 }
                 yield "data: " + json.dumps(event, ensure_ascii=False) + "\n\n"
                 return
+
+            # A refreshed page only knows the session's running_turn_id, so
+            # the stop endpoint must also reach this run through that id.
+            alias_run(request_id, getattr(turn, "run_id", None))
 
             # T2/T7: a blocked turn is persisted exactly once (user message +
             # reminder) before the accepted event carries its new state.

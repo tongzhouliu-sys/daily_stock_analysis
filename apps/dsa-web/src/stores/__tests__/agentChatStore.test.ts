@@ -1002,6 +1002,32 @@ describe('agentChatStore stop and recovery races', () => {
       terminalStatus: 'interrupted',
     });
   });
+
+  it('can stop a run restored after a page refresh', async () => {
+    vi.mocked(agentApi.stopChat).mockClear();
+    useAgentChatStore.setState({ activeRequestId: null, abortController: null });
+    vi.mocked(agentApi.getChatSessionMessages).mockResolvedValue({
+      session_id: 'session-test',
+      messages: [{ id: 'u1', role: 'user', content: '分析茅台', created_at: null }],
+      session_generation: 'g', session_state_version: 1,
+      active_stock_context: null,
+      session_state: { selected_skill_ids: null },
+      is_running: true,
+      running_turn_id: 'turn-from-detail',
+      running_progress_steps: [{ type: 'thinking', message: '分析中' }],
+      running_heartbeat_at: new Date().toISOString(),
+    });
+
+    await useAgentChatStore.getState().refreshSession();
+    expect(useAgentChatStore.getState().loading).toBe(true);
+
+    await useAgentChatStore.getState().stopStream();
+
+    expect(agentApi.stopChat).toHaveBeenCalledWith({
+      request_id: 'turn-from-detail',
+      session_id: 'session-test',
+    });
+  });
 });
 
 describe('agentChatStore.switchSession', () => {

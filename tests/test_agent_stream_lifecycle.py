@@ -189,6 +189,37 @@ def test_stop_after_client_disconnect_still_cancels_run() -> None:
     assert cancellation.get_run_event(request_id) is None
 
 
+
+def test_stop_by_running_turn_id_after_refresh() -> None:
+    """刷新后前端只知道会话详情里的 running_turn_id，用它停止必须同样生效。"""
+
+    release = threading.Event()
+    executor = _FakeExecutor(release, wait_seconds=5.0)
+    request_id = "refresh-then-stop-by-turn"
+    turn_run_id = _turn().run_id
+
+    async def _scenario():
+        with patch.object(agent_endpoint, "_select_agent_chat_backend", return_value="litellm"):
+            stream, _first = await _open_stream(SimpleNamespace(db=_FakeDb()), executor, request_id)
+            await asyncio.wait_for(stream.__anext__(), timeout=5)
+            await stream.aclose()
+            response = await agent_endpoint.agent_chat_stop(
+                agent_endpoint.ChatStopRequest(request_id=turn_run_id, session_id="lifecycle-session")
+            )
+            assert response.cancelled is True
+            release.set()
+            await asyncio.to_thread(executor.finished.wait, 5)
+            for _ in range(100):
+                if cancellation.get_run_event(request_id) is None:
+                    break
+                await asyncio.sleep(0.01)
+
+    asyncio.run(_scenario())
+
+    assert executor.cancelled is True
+    assert cancellation.get_run_event(request_id) is None
+    assert cancellation.get_run_event(turn_run_id) is None
+
 def test_idle_timeout_cancels_run_and_clears_running_state() -> None:
     """连续没有业务事件才超时；超时要取消本轮并清运行态。"""
 

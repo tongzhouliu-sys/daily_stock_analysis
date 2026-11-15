@@ -308,6 +308,15 @@ function hasUnfinishedTurn(messages: ChatSessionDetail['messages']): boolean {
   return last?.role === 'user';
 }
 
+/**
+ * The id the stop button sends for a run this page did not start itself (for
+ * example after a refresh). The server registers the run under the client
+ * request id and also under the persisted turn id the detail exposes.
+ */
+function runningRequestId(detail: ChatSessionDetail, isRunning: boolean): string | null {
+  return isRunning ? (detail.running_turn_id || null) : null;
+}
+
 function isRunningStale(detail: ChatSessionDetail): boolean {
   if (!detail.is_running) return false;
   const raw = detail.running_heartbeat_at ?? detail.running_started_at;
@@ -373,6 +382,7 @@ export const useAgentChatStore = create<AgentChatState & AgentChatActions>((set,
             ? runningProgress
             : recovering ? [RECOVERING_PROGRESS_STEP] : [],
           loading: isRunning || recovering,
+          activeRequestId: runningRequestId(detail, isRunning),
           ...(staleRunning ? { terminalStatus: 'interrupted' as const } : {}),
         });
 
@@ -478,6 +488,7 @@ export const useAgentChatStore = create<AgentChatState & AgentChatActions>((set,
       const recovering = !isRunning && !staleRunning && hasUnfinishedTurn(detail.messages);
       const runningPatch = streamOwnsTransientState ? {} : {
         loading: isRunning || recovering,
+        activeRequestId: runningRequestId(detail, isRunning),
         progressSteps: isRunning
           ? runningProgress
           : recovering ? [RECOVERING_PROGRESS_STEP] : [],
