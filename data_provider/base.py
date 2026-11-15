@@ -295,6 +295,39 @@ def _is_non_cn_request(stock_code: str) -> bool:
     return _market_tag(normalized) != "cn"
 
 
+def _is_ashare_index_target(stock_code: str) -> bool:
+    """指数目标判定（R11）：只认出带交易所前缀/后缀的显式指数代码。
+
+    资金流能力判定需要区分"这个品种本身没有资金流数据"和"取数失败"。
+    指数属于前者；裸 6 位数字（如 000001）两者都可能，按股票处理。
+    """
+    normalized = (stock_code or "").strip()
+    if not normalized:
+        return False
+    try:
+        from src.services.stock_list_parser import ParseStatus, parse_analysis_target
+    except Exception:  # pragma: no cover - 导入失败按股票处理，保持 fail-open
+        return False
+    try:
+        target = parse_analysis_target(normalized)
+    except Exception:
+        return False
+    return target.asset_type == ParseStatus.INDEX
+
+
+def _capital_flow_unsupported_instrument(stock_code: str) -> bool:
+    """按市场和品种判定资金流能力缺失，而不是由接口报错推断（R11）。
+
+    非 A 股（无 CN 资金流源）、ETF、指数本身没有主力资金流数据；这类返回
+    ``not_supported``。其余情况即便取数失败也保持 ``failed``，分析器据此降级。
+    指数身份必须在 ``normalize_stock_code`` 之前判定，normalize 会去掉交易所前缀。
+    """
+    if _is_ashare_index_target(stock_code):
+        return True
+    normalized = normalize_stock_code(stock_code)
+    return _is_non_cn_request(normalized) or _is_etf_code(normalized)
+
+
 def is_bse_code(code: str) -> bool:
     """
     Check if the code is a Beijing Stock Exchange (BSE) A-share code.
@@ -4808,10 +4841,13 @@ class DataFetcherManager:
         from src.config import get_config
 
         config = get_config()
+        # R11：资金流能力判定必须在 normalize 之前做，normalize 会去掉 sh/sz
+        # 前缀，指数身份只能从前缀/后缀识别。
+        capability_missing = _capital_flow_unsupported_instrument(stock_code)
         stock_code = normalize_stock_code(stock_code)
         timeout = float(budget_seconds if budget_seconds is not None else config.fundamental_fetch_timeout_seconds)
         # 与预算探测/补充循环同口径(_market_tag 不识别 .US/.N/.O 后缀)
-        if _is_non_cn_request(stock_code) or _is_etf_code(stock_code):
+        if capability_missing:
             return self._build_fundamental_block(
                 "not_supported",
                 {},
@@ -4873,13 +4909,16 @@ class DataFetcherManager:
                 [{"provider": "fundamental_pipeline", "result": "failed", "duration_ms": cost_ms}],
                 list(payload.get("errors", [])),
             )
-        adapter_status = str(payload.get("status", "not_supported"))
+        adapter_status = str(payload.get("status", "")).strip().lower()
         if has_stock_flow or has_sector_rankings:
             capital_flow_status = "ok"
-        elif adapter_status == "not_supported":
+        elif adapter_status == "not_supported" and not payload.get("errors"):
+            # R11: 适配器连可调用的接口都没有，且没有任何调用出错。
             capital_flow_status = "not_supported"
         else:
-            capital_flow_status = "partial"
+            # 真实发起过调用但失败（超时、上游报错、预算耗尽）保持 failed，
+            # 由分析器据此降级，而不是当成"市场不支持"。
+            capital_flow_status = "failed" if adapter_status == "failed" else "partial"
 
         return self._build_fundamental_block(
             capital_flow_status,

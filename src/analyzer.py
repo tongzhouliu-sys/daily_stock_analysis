@@ -616,6 +616,8 @@ _CAPITAL_FLOW_UNAVAILABLE_STATUS = {
     "n/a",
     "null",
     "missing",
+    "failed",
+    "error",
 }
 
 
@@ -1547,6 +1549,8 @@ def _capital_flow_status_for_stability(reason: str, language: str) -> str:
     normalized = str(reason or "").strip().lower()
     if "not_supported" in normalized or "unsupported" in normalized or "not available" in normalized:
         return "市场资金流服务暂不支持" if language == "zh" else "Capital flow source unsupported"
+    if "failed" in normalized or "error" in normalized:
+        return "资金流取数失败" if language == "zh" else "Capital flow fetch failed"
     if "empty_stock_flow" in normalized or "missing" in normalized:
         return "资金流数据缺失" if language == "zh" else "capital flow data unavailable"
     return "资金流数据不可用" if language == "zh" else "capital flow unavailable"

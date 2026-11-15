@@ -892,7 +892,15 @@ class AkshareFundamentalAdapter:
                 result["source_chain"].append(f"capital_sector:{sector_source}")
 
         has_content = bool(result["stock_flow"] or result["sector_rankings"]["top"] or result["sector_rankings"]["bottom"])
-        result["status"] = "partial" if has_content else "not_supported"
+        if has_content:
+            result["status"] = "partial"
+        elif result["errors"]:
+            # R11: `not_supported` means "there is no callable interface at all".
+            # An interface that was called and failed (timeout, upstream error)
+            # is a fetch failure; the instrument itself may still publish flow.
+            result["status"] = "failed"
+        else:
+            result["status"] = "not_supported"
         return result
 
     def get_dragon_tiger_flag(
