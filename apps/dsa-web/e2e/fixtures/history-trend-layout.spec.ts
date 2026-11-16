@@ -152,3 +152,41 @@ test('history trend table never overlaps its cells at narrow reading panes', asy
     await testInfo.attach(`history-trend-${width}`, { path: screenshot, contentType: 'image/png' });
   }
 });
+
+test('history trend advice reveals the full conclusion in a masonry panel', async ({ page }, testInfo) => {
+  await mountDrawer(page);
+
+  for (const width of [1280, 390]) {
+    await page.setViewportSize({ width, height: 1000 });
+    await page.waitForTimeout(100);
+
+    // The last row carries legacy free-text advice that the table truncates.
+    await page.getByTestId('history-advice-trigger').last().hover();
+
+    const panel = page.getByTestId('history-advice-panel');
+    await expect(panel).toBeVisible();
+    await expect(panel.getByText('继续持有，等待突破确认后再考虑加仓').first()).toBeVisible();
+
+    const box = await panel.boundingBox();
+    expect(box).not.toBeNull();
+    expect(box!.x).toBeGreaterThanOrEqual(0);
+    expect(box!.y).toBeGreaterThanOrEqual(0);
+    expect(box!.x + box!.width).toBeLessThanOrEqual(width + 1);
+    expect(box!.y + box!.height).toBeLessThanOrEqual(1000 + 1);
+
+    const columnCount = await panel.evaluate((element) => {
+      const offsets = Array.from(element.querySelectorAll('section')).map((section) =>
+        Math.round(section.getBoundingClientRect().left),
+      );
+      return new Set(offsets).size;
+    });
+    expect(columnCount).toBe(width >= 768 ? 2 : 1);
+
+    const screenshot = testInfo.outputPath(`history-trend-advice-${width}.png`);
+    await page.screenshot({ path: screenshot, animations: 'disabled' });
+    await testInfo.attach(`history-trend-advice-${width}`, { path: screenshot, contentType: 'image/png' });
+
+    await page.mouse.move(0, 0);
+    await expect(panel).toBeHidden();
+  }
+});

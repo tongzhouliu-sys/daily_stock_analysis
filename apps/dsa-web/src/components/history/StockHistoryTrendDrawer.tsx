@@ -5,7 +5,6 @@ import { getSentimentTone } from '../../types/analysis';
 import {
   buildDecisionActionLabelMap,
   getDecisionActionLabel,
-  getDecisionActionTone,
   type DecisionActionLabelMap,
 } from '../../utils/decisionAction';
 import { formatDateTime } from '../../utils/format';
@@ -13,6 +12,15 @@ import { Badge, Button, Card } from '../common';
 import { DashboardStateBlock } from '../dashboard';
 import { useUiLanguage } from '../../contexts/UiLanguageContext';
 import type { UiTextKey } from '../../i18n/uiText';
+import { AdviceDetailPopover } from './AdviceDetailPopover';
+import {
+  formatChangePct,
+  formatHistoryTime,
+  formatModelName,
+  formatNumber,
+  getPriceChangeStyle,
+  isPresent,
+} from './historyFormat';
 
 interface StockHistoryTrendDrawerProps {
   report: AnalysisReport;
@@ -35,41 +43,6 @@ const RANGE_OPTIONS: Array<{ value: StockHistoryRange; labelKey: UiTextKey }> = 
   { value: '30d', labelKey: 'stockTrend.window30' },
   { value: '90d', labelKey: 'stockTrend.window90' },
 ];
-
-const isPresent = <T,>(value: T | null | undefined): value is T =>
-  value !== undefined && value !== null && value !== '';
-
-const formatNumber = (value?: number, digits = 2): string =>
-  typeof value === 'number' && Number.isFinite(value) ? value.toFixed(digits) : '--';
-
-const formatChangePct = (value?: number): string => {
-  if (typeof value !== 'number' || !Number.isFinite(value)) {
-    return '--';
-  }
-  const sign = value > 0 ? '+' : '';
-  return `${sign}${value.toFixed(2)}%`;
-};
-
-const formatHistoryTime = (value?: string | null): string => {
-  const formatted = formatDateTime(value);
-  return formatted.length > 11 ? formatted.slice(5) : formatted;
-};
-
-const getPriceChangeStyle = (value?: number): React.CSSProperties | undefined => {
-  if (typeof value !== 'number' || !Number.isFinite(value) || value === 0) {
-    return undefined;
-  }
-  return { color: value > 0 ? 'var(--home-price-up)' : 'var(--home-price-down)' };
-};
-
-const formatModelName = (value: string | undefined, t: (key: UiTextKey, params?: Record<string, string | number>) => string): string => {
-  const model = value?.trim();
-  if (!model) {
-    return t('stockTrend.neverRecorded');
-  }
-  const parts = model.split('/').filter(Boolean);
-  return parts[parts.length - 1] || model;
-};
 
 type AdviceSource = Pick<HistoryItem, 'operationAdvice' | 'trendPrediction' | 'action' | 'actionLabel'>;
 
@@ -324,14 +297,7 @@ export const StockHistoryTrendDrawer: React.FC<StockHistoryTrendDrawerProps> = (
                           {formatHistoryTime(item.createdAt)}
                         </td>
                         <td className="whitespace-nowrap px-2.5 py-3">
-                          <Badge
-                            variant={getDecisionActionTone(item.action, item.actionLabel, item.operationAdvice)}
-                            size="sm"
-                            className="max-w-[6rem] shadow-none"
-                            title={adviceText}
-                          >
-                            <span className="min-w-0 truncate">{adviceText}</span>
-                          </Badge>
+                          <AdviceDetailPopover item={item} adviceText={adviceText} />
                         </td>
                         <td className="px-2.5 py-3 font-mono tabular-nums">
                           {isPresent(item.sentimentScore) ? (

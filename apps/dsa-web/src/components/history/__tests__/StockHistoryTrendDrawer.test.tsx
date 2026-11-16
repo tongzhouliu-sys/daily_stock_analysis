@@ -1,4 +1,4 @@
-import { render, screen } from '@testing-library/react';
+import { fireEvent, render, screen, waitFor, within } from '@testing-library/react';
 import { beforeEach, describe, expect, it, vi } from 'vitest';
 import { UiLanguageProvider } from '../../../contexts/UiLanguageContext';
 import { UI_LANGUAGE_STORAGE_KEY } from '../../../utils/uiLanguage';
@@ -178,5 +178,47 @@ describe('StockHistoryTrendDrawer', () => {
 
     expect(screen.getAllByText('Sell').length).toBeGreaterThanOrEqual(2);
     expect(screen.queryByText('买入')).not.toBeInTheDocument();
+  });
+
+  it('reveals the full analysis conclusion in a hover detail panel', async () => {
+    render(
+      <StockHistoryTrendDrawer
+        report={report}
+        items={[
+          {
+            ...items[0],
+            operationAdvice: '继续持有，等待突破',
+            trendPrediction: '震荡上行，关注量能配合',
+            analysisSummary: '基本面稳健，短期承压，等待放量确认',
+            modelUsed: 'anthropic/claude-sonnet-4.5',
+            currentPrice: 1680.5,
+            changePct: -1.23,
+            volumeRatio: 0.86,
+            turnoverRate: 1.42,
+          },
+        ]}
+        total={1}
+        hasMore={false}
+        isLoading={false}
+        isLoadingMore={false}
+        filters={{ range: 'all', model: 'all', sort: 'desc' }}
+        onClose={vi.fn()}
+        onRangeChange={vi.fn()}
+        onLoadMore={vi.fn()}
+        onSelectRecord={vi.fn()}
+        onRetry={vi.fn()}
+      />,
+    );
+
+    fireEvent.mouseEnter(screen.getByTestId('history-advice-trigger'));
+
+    const panel = await screen.findByTestId('history-advice-panel');
+    expect(within(panel).getByText('震荡上行，关注量能配合')).toBeInTheDocument();
+    expect(within(panel).getByText('基本面稳健，短期承压，等待放量确认')).toBeInTheDocument();
+    expect(within(panel).getByText('claude-sonnet-4.5')).toBeInTheDocument();
+    expect(within(panel).getByText('1680.50')).toBeInTheDocument();
+
+    fireEvent.keyDown(panel, { key: 'Escape' });
+    await waitFor(() => expect(screen.queryByTestId('history-advice-panel')).not.toBeInTheDocument());
   });
 });

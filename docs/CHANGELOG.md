@@ -8,6 +8,7 @@ and this project adheres to [Semantic Versioning](https://semver.org/).
 > For user-friendly release highlights, see the [GitHub Releases](https://github.com/ZhuLinsen/daily_stock_analysis/releases) page.
 
 ## [Unreleased]
+- [改进] 历史趋势「分析结果」列悬停展开瀑布流详情面板：表格里被截断的建议、趋势预测、分析摘要、关键数据与完整模型名在浮层中一次性展示，面板按容器宽度切换 1/2 列瀑布布局，贴近视口边缘时自动回弹到可见区域并支持内部滚动；触发器可键盘聚焦，Esc 关闭。截图用例覆盖 1280/390 宽度下的面板可见范围与列数。
 - [修复] 首页历史趋势表格在窄报告栏下不再文字叠压：去掉固定百分比列宽，改为内容自适应列宽并允许横向滚动，时间/股价/涨跌幅/操作列不再互相遮挡或被裁切；指标卡改用容器查询按阅读栏宽度切换 1/2/4 列，窄栏下提示可左右滑动查看完整指标。新增 `e2e/fixtures/history-trend-layout.spec.ts` 覆盖 1440/1280/1024/900/768/390 宽度下的单元格溢出与重叠。
 - [测试] 内部模块 `src/services/chat_intake_object_resolver.py`（问股引导 v2 的标的解析，目前没有任何生产调用方）对齐 `AnalysisTarget` 字段并恢复其测试。注意：该模块假设的查找表结构与生产环境 `get_chat_stock_lookup()` 返回的结构不一致（真实条目是 `(代码, 名称, 类型)` 元组、无别名表），用真实查找表调用会抛 `AttributeError`；测试使用的是自造的字典结构。接入生产前需要按真实查找表重写，或按 AGENTS.md 1.2 删除。
 - [修复] 日线成交量统一为“股”：`EfinanceFetcher` 的日线与实时 `volume` 不再原样入库，统一按手→股乘 100；AkShare 的东财日线 / ETF 日线 / 东财实时快照同样乘 100，新浪日线保持原值，AkShare 腾讯日线用 `成交额/收盘价` 判断该板块当前返回的是股还是手（沪市已是股、深市主板仍为手）。实测同一交易日 efinance 对腾讯/新浪的比值：600519、000001、300750、688981、510300 均为 100（688981 为 100.002），TickPlus 适配器原本已乘 100，保持不变。新增 `2026-11-15-daily-volume-shares` 迁移，只处理 `EfinanceFetcher` / `AkshareFetcher` 的 6 位 A 股与 ETF，逐行用成交额比值决定是否乘 100，避免把新浪来源的股数再放大；迁移前自动备份 SQLite 文件，`scripts/normalize_daily_volume.py` 默认 dry-run，`--apply` 才写入，重复执行不再变更。`tests/test_daily_volume_units.py` 覆盖两个 fetcher 的固定样本与迁移幂等；`docs/data-source-stability.md` 补充口径说明。
