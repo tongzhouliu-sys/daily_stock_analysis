@@ -39,6 +39,8 @@ async function login(page: Page) {
   }
 
   await expect(passwordInput).toBeVisible({ timeout: 10_000 });
+  // The login form needs the administrator account as well as the password.
+  await page.locator('#username').fill(process.env.DSA_WEB_SMOKE_USERNAME || 'admin');
   await passwordInput.fill(smokePassword!);
   await expect(submitButton).toBeVisible();
 

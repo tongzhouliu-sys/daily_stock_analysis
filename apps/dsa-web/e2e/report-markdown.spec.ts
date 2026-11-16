@@ -24,7 +24,8 @@ async function login(page: Page) {
   // Wait for password input to be visible
   await expect(page.locator('#password')).toBeVisible({ timeout: 10_000 });
 
-  // Fill password and submit
+  // Fill the administrator account and password, then submit
+  await page.locator('#username').fill(process.env.DSA_WEB_SMOKE_USERNAME || 'admin');
   await page.locator('#password').fill(smokePassword!);
 
   // Wait for and click the submit button

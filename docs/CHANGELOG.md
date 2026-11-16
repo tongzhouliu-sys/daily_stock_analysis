@@ -8,6 +8,7 @@ and this project adheres to [Semantic Versioning](https://semver.org/).
 > For user-friendly release highlights, see the [GitHub Releases](https://github.com/ZhuLinsen/daily_stock_analysis/releases) page.
 
 ## [Unreleased]
+- [测试] 恢复 `apps/dsa-web` 的 Playwright UI 用例：登录表单在管理员账号改造后要求同时填写账号，`settings-guard` / `smoke` / `report-markdown` 改为先填 `#username`（默认 `admin`，可用 `DSA_WEB_SMOKE_USERNAME` 覆盖）；`data-center` 的 1280×720 短视口用例不再假设侧边导航必然溢出、也不再假设账号与主题控件位于侧栏，改为断言设置入口可达且顶栏控件可用。`npx playwright test --config playwright.fixture.config.ts` 35/35 通过。
 - [改进] 历史趋势「分析结果」列悬停展开瀑布流详情面板：表格里被截断的建议、趋势预测、分析摘要、关键数据与完整模型名在浮层中一次性展示，面板按容器宽度切换 1/2 列瀑布布局，贴近视口边缘时自动回弹到可见区域并支持内部滚动；触发器可键盘聚焦，Esc 关闭。截图用例覆盖 1280/390 宽度下的面板可见范围与列数。
 - [修复] 首页历史趋势表格在窄报告栏下不再文字叠压：去掉固定百分比列宽，改为内容自适应列宽并允许横向滚动，时间/股价/涨跌幅/操作列不再互相遮挡或被裁切；指标卡改用容器查询按阅读栏宽度切换 1/2/4 列，窄栏下提示可左右滑动查看完整指标。新增 `e2e/fixtures/history-trend-layout.spec.ts` 覆盖 1440/1280/1024/900/768/390 宽度下的单元格溢出与重叠。
 - [测试] 内部模块 `src/services/chat_intake_object_resolver.py`（问股引导 v2 的标的解析，目前没有任何生产调用方）对齐 `AnalysisTarget` 字段并恢复其测试。注意：该模块假设的查找表结构与生产环境 `get_chat_stock_lookup()` 返回的结构不一致（真实条目是 `(代码, 名称, 类型)` 元组、无别名表），用真实查找表调用会抛 `AttributeError`；测试使用的是自造的字典结构。接入生产前需要按真实查找表重写，或按 AGENTS.md 1.2 删除。
