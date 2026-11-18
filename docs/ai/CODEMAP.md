@@ -12,7 +12,7 @@
 | 目录 | 职责 | 文件数 | 行数 |
 | --- | --- | --- | --- |
 | `src/core/` | 主流程编排：pipeline、配置装配、调度入口 | 14 | 14162 |
-| `src/services/` | 业务服务层：分析、筛选、通知、系统配置、任务与诊断 | 208 | 84719 |
+| `src/services/` | 业务服务层：分析、筛选、通知、系统配置、任务与诊断 | 207 | 84035 |
 | `src/repositories/` | 数据访问层：数据库读写封装 | 11 | 3934 |
 | `src/schemas/` | API / 报告数据结构定义 | 10 | 2107 |
 | `src/agent/` | 问股 Agent：意图解析、编排、工具与流式事件 | 64 | 26598 |
@@ -20,11 +20,11 @@
 | `data_provider/` | 多数据源适配、优先级与 fallback | 22 | 19244 |
 | `api/` | FastAPI 应用与 v1 路由 | 44 | 13123 |
 | `bot/` | IM / 机器人接入 | 22 | 5524 |
-| `apps/dsa-web/src/` | Web 前端（React + Vite） | 334 | 111160 |
+| `apps/dsa-web/src/` | Web 前端（React + Vite） | 336 | 111496 |
 | `apps/dsa-desktop/` | Electron 桌面端壳与打包配置 | 8 | 8469 |
 | `scripts/` | 本地与 CI 脚本 | 52 | 10789 |
 | `.github/scripts/` | GitHub Actions 专用脚本 | 2 | 652 |
-| `tests/` | pytest 测试 | 374 | 190133 |
+| `tests/` | pytest 测试 | 373 | 189738 |
 
 ## 大文件（Python，≥400 行）
 
@@ -62,13 +62,13 @@
 | `src/services/alert_service.py` | 1372 | `AlertServiceError`:87, `AlertNotFoundError`:93, `UnsupportedAlertTypeError`:99, `AlertService`:105 | 15 |
 | `src/agent/llm_adapter.py` | 1354 | `_resolve_litellm_exception`:64, `ToolCall`:82, `LLMResponse`:92, `_split_provider_model`:190, `_object_to_dict`:200, `_provider_specific_fields_from`:224 | 122 |
 | `src/services/screening/daily.py` | 1345 | `enrich_daily_features`:63, `fetch_daily_history`:170, `_normalize_daily_code`:341, `_normalize_daily_source`:353, `_normalize_max_workers`:357, `_call_daily_wrapper`:363 | 8 |
-| …另外 126 个 ≥400 行的文件 | — | — | — |
+| …另外 125 个 ≥400 行的文件 | — | — | — |
 
 ## 大文件（前端，≥400 行）
 
 | 文件 | 行数 |
 | --- | --- |
-| `apps/dsa-web/src/i18n/uiText.ts` | 3055 |
+| `apps/dsa-web/src/i18n/uiText.ts` | 3067 |
 | `apps/dsa-web/src/components/settings/LLMChannelEditor.tsx` | 2845 |
 | `apps/dsa-web/src/locales/settingsHelp.ts` | 2558 |
 | `apps/dsa-web/src/pages/StockScreeningPage.tsx` | 2354 |
@@ -83,9 +83,9 @@
 
 ## 规模快照
 
-- Python 源码（不含测试）：498 个文件，231266 行
-- Python 测试：368 个文件，189954 行
-- 前端 TS/TSX：326 个文件，102647 行
-- ≥400 行的 Python 文件：156 个
+- Python 源码（不含测试）：497 个文件，230582 行
+- Python 测试：367 个文件，189559 行
+- 前端 TS/TSX：328 个文件，102983 行
+- ≥400 行的 Python 文件：155 个
 
 规模数字只用于判断改动影响面，不是质量指标。

@@ -542,8 +542,8 @@ def plan_intake_v2(
     
     Args:
         message: User's original message
-        resolution: Object resolution result from chat_intake_object_resolver
-        inference: Intent inference result from chat_intake_intent_resolver
+        resolution: Object resolution result (the resolver module was removed; no production caller)
+        inference: Intent inference result (no production producer)
         session_context: Session context (active_stock, brief_snapshot, etc.)
     
     Returns:
