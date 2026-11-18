@@ -8,6 +8,7 @@ and this project adheres to [Semantic Versioning](https://semver.org/).
 > For user-friendly release highlights, see the [GitHub Releases](https://github.com/ZhuLinsen/daily_stock_analysis/releases) page.
 
 ## [Unreleased]
+- [测试] 固定问股「已有标的时的绑定口径」：「宁德时代怎么样」「宁德时代现在能买吗」这类「名称 + 提问谓语」仍进入切换确认（用户问的就是它）；只是顺带提到的名称（如「和宁德时代的区别在哪」）按对比对象处理，不替换当前标的。行为无变化，仅补回归用例并在 `docs/ai/STATUS.md` 记录口径。
 - [测试] 恢复 `apps/dsa-web` 的 Playwright UI 用例：登录表单在管理员账号改造后要求同时填写账号，`settings-guard` / `smoke` / `report-markdown` 改为先填 `#username`（默认 `admin`，可用 `DSA_WEB_SMOKE_USERNAME` 覆盖）；`data-center` 的 1280×720 短视口用例不再假设侧边导航必然溢出、也不再假设账号与主题控件位于侧栏，改为断言设置入口可达且顶栏控件可用。`npx playwright test --config playwright.fixture.config.ts` 35/35 通过。
 - [改进] 历史趋势「分析结果」列悬停展开瀑布流详情面板：表格里被截断的建议、趋势预测、分析摘要、关键数据与完整模型名在浮层中一次性展示，面板按容器宽度切换 1/2 列瀑布布局，贴近视口边缘时自动回弹到可见区域并支持内部滚动；触发器可键盘聚焦，Esc 关闭。截图用例覆盖 1280/390 宽度下的面板可见范围与列数。
 - [修复] 首页历史趋势表格在窄报告栏下不再文字叠压：去掉固定百分比列宽，改为内容自适应列宽并允许横向滚动，时间/股价/涨跌幅/操作列不再互相遮挡或被裁切；指标卡改用容器查询按阅读栏宽度切换 1/2/4 列，窄栏下提示可左右滑动查看完整指标。新增 `e2e/fixtures/history-trend-layout.spec.ts` 覆盖 1440/1280/1024/900/768/390 宽度下的单元格溢出与重叠。

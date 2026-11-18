@@ -2416,6 +2416,29 @@ def test_unique_mention_binds_without_requiring_polite_or_hypothetical_clarifica
         assert decision.target.identity.stock_code == code
 
 
+@pytest.mark.parametrize("message,kind", [
+    # Subject-first question: the named object is what the user asks about, so
+    # it is a switch to be confirmed in the UI, not a comparison reference.
+    ("宁德时代怎么样", "confirm"),
+    ("宁德时代现在能买吗", "confirm"),
+    # A name that is only mentioned (no question predicate, no switch word)
+    # never replaces the established object.
+    ("和宁德时代的区别在哪", "compare"),
+])
+def test_established_object_subject_question_contract(chat_stock_index, message, kind):
+    from src.agent.chat_object_decision import decide_chat_object
+    from src.agent.stock_scope import StockIdentity
+    from src.services.agent_chat_session_service import _stock_lookup
+
+    registry, lookup = _stock_lookup()
+    current = StockIdentity.from_code("600519.SH", registry)
+    decision = decide_chat_object(message, current, registry, lookup)
+    assert decision.kind == kind
+    if kind == "confirm":
+        assert decision.target.identity.stock_code == "300750"
+        assert decision.changes_target
+
+
 def test_multiple_unique_objects_still_clarify_instead_of_picking_one(chat_stock_index):
     from src.agent.chat_object_decision import decide_chat_object
     from src.services.agent_chat_session_service import _stock_lookup
