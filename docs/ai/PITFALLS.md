@@ -11,7 +11,7 @@
 
 ## 数据
 
-5. **`local/data/data10/` 禁止入库**：近十年美股日线在 `.gitignore` 里；回测输入只通过 `scripts/signal_scanner/build_rebound_input.py` 生成。
+5. **本机回测的数据和结果禁止入库**：`local/data/`（含 `data10/` 与转换后的输入）、`local/backtests/`（报告、净值、交易明细）、`local/scratch/`（日志与临时产物）都只在本机使用，已在 `.gitignore` 里；不要用 `git add -f` 绕过，也不要把回测报告或数据作为 PR 文件提交。回测输入只通过 `scripts/signal_scanner/build_rebound_input.py` 生成。
 6. **盘中当日 K 线是累计值**：抓到的当日 K 线未收盘，落库前必须裁掉，否则「今日已有数据」会挡住收盘后的同日重跑。pipeline 取数、agent 历史预取、`history_loader` 回写三处都要处理。
 7. **回退到旧数据必须标注**：日线落后时报告写「截至 X（落后 N 个交易日）」，数据块降级为 `stale`，不能把多日前的行情当今日行情。
 8. **成交量单位**：不同源返回「手」或「股」，统一在 fetcher 层归一，不要在分析层做二次换算。

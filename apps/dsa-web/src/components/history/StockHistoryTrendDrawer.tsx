@@ -8,7 +8,7 @@ import {
   type DecisionActionLabelMap,
 } from '../../utils/decisionAction';
 import { formatDateTime } from '../../utils/format';
-import { Badge, Button, Card } from '../common';
+import { Badge, Button, Card, Tooltip } from '../common';
 import { DashboardStateBlock } from '../dashboard';
 import { useUiLanguage } from '../../contexts/UiLanguageContext';
 import type { UiTextKey } from '../../i18n/uiText';
@@ -319,12 +319,11 @@ export const StockHistoryTrendDrawer: React.FC<StockHistoryTrendDrawerProps> = (
                           {formatNumber(item.turnoverRate, 2)}{isPresent(item.turnoverRate) ? '%' : ''}
                         </td>
                         <td className="px-2.5 py-3 text-secondary-text">
-                          <div
-                            className="max-w-[7rem] truncate"
-                            title={item.modelUsed || t('stockTrend.noModelTitle')}
-                          >
-                            {formatModelName(item.modelUsed, t)}
-                          </div>
+                          <Tooltip content={item.modelUsed || t('stockTrend.noModelTitle')}>
+                            <div className="max-w-[7rem] truncate">
+                              {formatModelName(item.modelUsed, t)}
+                            </div>
+                          </Tooltip>
                         </td>
                         <td className="px-2.5 py-3">
                           <button

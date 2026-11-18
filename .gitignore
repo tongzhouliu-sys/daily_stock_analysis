@@ -75,7 +75,19 @@ Thumbs.db
 .coverage
 htmlcov/
 
+# 本机回测数据与结果（只保留在 local/，禁止入库、禁止上传 GitHub）
+# 原始行情、转换后输入、回测输出、日志、报告、临时脚本产物统一放 local/。
 local/
+/data10/
+/backtest_results*/
+/backtest_output/
+/backtest_runs/
+/real_data_converted/
+/rebound_converted/
+/test_data/
+/test_e2e_output/
+/backtest_report_*.md
+/backtest*.log
 
 run.sh
 
