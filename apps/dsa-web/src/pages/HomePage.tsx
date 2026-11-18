@@ -303,6 +303,7 @@ const HomePage: React.FC = () => {
   const [isSubmittingMarketReview, setIsSubmittingMarketReview] = useState(false);
   const [marketReviewNotice, setMarketReviewNotice] = useState<MarketReviewNotice>(null);
   const [marketReviewError, setMarketReviewError] = useState<ParsedApiError | null>(null);
+  const [askAiWaitHint, setAskAiWaitHint] = useState(false);
   const [marketReviewReport, setMarketReviewReport] = useState<string | null>(null);
   const [marketReviewPayload, setMarketReviewPayload] = useState<MarketReviewPayload | null>(null);
   const [marketReviewRegionOverride, setMarketReviewRegionOverride] = useState<MarketReviewRegion[] | undefined>();
@@ -925,14 +926,28 @@ const HomePage: React.FC = () => {
     }
   }, [handleSubmitAnalysis, location.pathname, location.state, navigate, setQuery]);
 
+  // A new selected report — or a late save that finally assigns an id — re-arms
+  // the ask-AI entry point and dismisses the wait-for-save hint.
+  useEffect(() => {
+    setAskAiWaitHint(false);
+  }, [selectedReport?.meta.id]);
+
   const handleAskFollowUp = useCallback(() => {
-    if (selectedReport?.meta.id === undefined || selectedReport.meta.reportType === 'market_review') {
+    if (!selectedReport || selectedReport.meta.reportType === 'market_review') {
       return;
     }
 
+    const rid = selectedReport.meta.id;
+    if (rid === undefined) {
+      // The report has not been persisted yet — keep the question local and
+      // tell the user to wait for the save instead of failing silently.
+      setAskAiWaitHint(true);
+      return;
+    }
+    setAskAiWaitHint(false);
+
     const code = selectedReport.meta.stockCode;
     const name = selectedReport.meta.stockName;
-    const rid = selectedReport.meta.id;
     // Start a new chat session so the follow-up doesn't append to the existing conversation
     useAgentChatStore.getState().startNewChat();
     navigate(`/chat?stock=${encodeURIComponent(code)}&name=${encodeURIComponent(name)}&recordId=${rid}`);
@@ -1794,7 +1809,6 @@ const HomePage: React.FC = () => {
                         <Button
                           variant="home-action-ai"
                           size="sm"
-                          disabled={selectedReport.meta.id === undefined}
                           onClick={handleAskFollowUp}
                         >
                           <svg className="h-4 w-4" fill="none" stroke="currentColor" viewBox="0 0 24 24">
@@ -1845,6 +1859,16 @@ const HomePage: React.FC = () => {
                       {t('home.fullReport')}
                     </Button>
                   </div>
+                  {askAiWaitHint && !isMarketReviewHistoryReport ? (
+                    <div
+                      role="status"
+                      aria-live="polite"
+                      data-testid="home-ask-ai-wait-hint"
+                      className="mb-3 rounded-md border border-primary/30 bg-primary/10 px-3 py-2 text-xs text-primary"
+                    >
+                      {t('home.askAiWaitForSave')}
+                    </div>
+                  ) : null}
                   {isHistoryTrendOpen ? (
                     <StockHistoryTrendDrawer
                       key={`stock-history-${selectedReport.meta.id}`}

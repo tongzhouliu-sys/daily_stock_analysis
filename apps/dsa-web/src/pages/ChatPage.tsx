@@ -28,13 +28,16 @@ import ChatLiveProgress from '../components/chat/ChatLiveProgress';
 import ChatInputArea from '../components/chat/ChatInputArea';
 import ChatSessionSidebar from '../components/chat/ChatSessionSidebar';
 import ChatGuideCards from '../components/chat/ChatGuideCards';
+import ReportFollowUpCard from '../components/chat/ReportFollowUpCard';
 import { downloadSessionInFormat, formatSessionAsMarkdown, type ExportFormat } from '../utils/chatExport';
 import { buildScannerFollowUpPrompt } from '../utils/scannerFollowUp';
 import type { ChatFollowUpContext } from '../utils/chatFollowUp';
 import {
+  ChatFollowUpLoadError,
   buildFollowUpPrompt,
+  buildReportFollowUpContext,
   parseFollowUpRecordId,
-  resolveChatFollowUpContext,
+  resolveChatReportDraft,
   sanitizeFollowUpStockCode,
   sanitizeFollowUpStockName,
 } from '../utils/chatFollowUp';
@@ -51,6 +54,23 @@ import { extractIntentHints } from '../utils/chatIntentHints';
 
 // Quick question examples shown on empty state
 type ActiveStockContext = Pick<ChatFollowUpContext, 'stock_code' | 'stock_name'>;
+
+// Server-side report reference failures before the turn is accepted. They are
+// surfaced on the report card instead of a duplicate generic chat error alert.
+const REPORT_ERROR_CODES = new Set(['report_context_unavailable', 'report_context_invalid']);
+
+type ReportDraftStatus = 'loading' | 'ready' | 'failed';
+
+interface ReportFollowUpDraft {
+  recordId: number;
+  requestStockCode: string;
+  requestStockName: string | null;
+  stockCode: string;
+  stockName: string | null;
+  createdAt: string | null;
+  status: ReportDraftStatus;
+  error: string | null;
+}
 
 const QUICK_QUESTIONS: Array<{
   label: string;
@@ -151,7 +171,8 @@ const ChatPage: React.FC = () => {
   const [titleError, setTitleError] = useState('');
   const [titleSaving, setTitleSaving] = useState(false);
   const [sending, setSending] = useState(false);
-  const [isFollowUpContextLoading, setIsFollowUpContextLoading] = useState(false);
+  const [reportDraft, setReportDraft] = useState<ReportFollowUpDraft | null>(null);
+  const [pendingReportRemoval, setPendingReportRemoval] = useState(false);
   const [followUpEvidenceError, setFollowUpEvidenceError] = useState<string | null>(null);
   const [sendToast, setSendToast] = useState<{
     type: 'success' | 'error';
@@ -188,6 +209,7 @@ const ChatPage: React.FC = () => {
   const isMountedRef = useRef(true);
   const sendToastTimerRef = useRef<number | null>(null);
   const followUpHydrationTokenRef = useRef(0);
+  const followUpHandledKeyRef = useRef<string | null>(null);
   const followUpContextRef = useRef<ChatFollowUpContext | null>(null);
   const shouldStickToBottomRef = useRef(true);
   const pendingScrollBehaviorRef = useRef<ScrollBehavior>('auto');
@@ -291,6 +313,7 @@ const ChatPage: React.FC = () => {
     messages,
     selectedSkillIds: sessionSelectedSkillIds,
     activeStockContext,
+    activeReportContext,
     stateContract,
     loading,
     progressSteps,
@@ -322,6 +345,7 @@ const ChatPage: React.FC = () => {
     messages: state.messages,
     selectedSkillIds: state.selectedSkillIds,
     activeStockContext: state.activeStockContext,
+    activeReportContext: state.activeReportContext,
     stateContract: state.stateContract,
     loading: state.loading,
     progressSteps: state.progressSteps,
@@ -636,6 +660,11 @@ const ChatPage: React.FC = () => {
 
   const availableSkillIds = new Set(skills.map((skill) => skill.id));
   const quickQuestions = QUICK_QUESTIONS.filter((question) => availableSkillIds.size === 0 || availableSkillIds.has(question.skill));
+  // A pending report draft blocks every send entry until it is ready or removed.
+  const reportDraftBlocked = reportDraft !== null && reportDraft.status !== 'ready';
+  // Pre-accept report failures are already explained by the report card.
+  const reportChatErrorSuppressed = chatError !== null && chatError.code !== undefined
+    && REPORT_ERROR_CODES.has(chatError.code) && reportDraft !== null;
   const skillLimitReached = selectedSkillIds.length >= MAX_SELECTED_SKILLS;
   const agentConfirmedUnavailable = Boolean(agentStatus && !agentStatus.available);
   const agentAvailable = Boolean(agentStatus?.available) && !agentStatusChecking;
@@ -680,14 +709,29 @@ const ChatPage: React.FC = () => {
     }
   }, [selectedSkillIds, setSelectedSkillIds]);
 
-  const handleStartNewChat = useCallback(() => {
+  const clearFollowUpParams = useCallback(() => {
+    if (searchParams.size > 0) {
+      setSearchParams({}, { replace: true });
+    }
+  }, [searchParams, setSearchParams]);
+
+  const resetReportDraft = useCallback(() => {
+    followUpHydrationTokenRef.current += 1;
+    followUpHandledKeyRef.current = null;
     followUpContextRef.current = null;
+    setReportDraft(null);
+    setPendingReportRemoval(false);
+    clearFollowUpParams();
+  }, [clearFollowUpParams]);
+
+  const handleStartNewChat = useCallback(() => {
+    resetReportDraft();
     setSessionMenu(null);
     closeTitleEditor();
     requestScrollToBottom('auto');
     useAgentChatStore.getState().startNewChat();
     setSidebarOpen(false);
-  }, [closeTitleEditor, requestScrollToBottom]);
+  }, [closeTitleEditor, requestScrollToBottom, resetReportDraft]);
 
   const handleSwitchSession = useCallback((targetSessionId: string) => {
     setSessionMenu(null);
@@ -696,11 +740,11 @@ const ChatPage: React.FC = () => {
       setSidebarOpen(false);
       return;
     }
-    followUpContextRef.current = null;
+    resetReportDraft();
     requestScrollToBottom('auto');
     switchSession(targetSessionId);
     setSidebarOpen(false);
-  }, [closeTitleEditor, requestScrollToBottom, sessionId, switchSession]);
+  }, [closeTitleEditor, requestScrollToBottom, resetReportDraft, sessionId, switchSession]);
 
   const confirmDelete = useCallback(() => {
     if (!deleteConfirmId) return;
@@ -716,6 +760,70 @@ const ChatPage: React.FC = () => {
       });
     setDeleteConfirmId(null);
   }, [deleteConfirmId, sessionId, loadSessions, handleStartNewChat]);
+
+  const loadReportDraft = useCallback((draft: ReportFollowUpDraft) => {
+    const loadToken = ++followUpHydrationTokenRef.current;
+    setReportDraft((current) => current?.recordId === draft.recordId
+      ? { ...current, status: 'loading', error: null }
+      : current);
+    void resolveChatReportDraft({
+      stockCode: draft.requestStockCode,
+      recordId: draft.recordId,
+      index: stockIndex,
+    }).then((resolved) => {
+      if (!isMountedRef.current || followUpHydrationTokenRef.current !== loadToken) return;
+      setReportDraft((current) => current?.recordId === draft.recordId ? {
+        recordId: draft.recordId,
+        requestStockCode: draft.requestStockCode,
+        requestStockName: draft.requestStockName,
+        stockCode: resolved.stockCode,
+        stockName: resolved.stockName,
+        createdAt: resolved.createdAt,
+        status: 'ready',
+        error: null,
+      } : current);
+    }).catch((error: unknown) => {
+      if (!isMountedRef.current || followUpHydrationTokenRef.current !== loadToken) return;
+      const detailKey = error instanceof ChatFollowUpLoadError && error.code === 'report_mismatch'
+        ? 'chat.reportMismatchDetail'
+        : error instanceof ChatFollowUpLoadError && error.code === 'report_not_supported'
+          ? 'chat.reportNotSupportedDetail'
+          : 'chat.reportUnavailableDetail';
+      setReportDraft((current) => current?.recordId === draft.recordId
+        ? { ...current, status: 'failed', error: t(detailKey) }
+        : current);
+    });
+  }, [stockIndex, t]);
+
+  const handleRemoveReportDraft = useCallback(() => {
+    const removed = reportDraft;
+    followUpHydrationTokenRef.current += 1;
+    setReportDraft(null);
+    if (removed) {
+      // Removing the report keeps the original question as a regular follow-up.
+      followUpContextRef.current = {
+        stock_code: removed.requestStockCode,
+        stock_name: removed.requestStockName,
+      };
+    }
+    clearFollowUpParams();
+  }, [clearFollowUpParams, reportDraft]);
+
+  const handleRetryReportDraft = useCallback(() => {
+    if (!reportDraft) return;
+    loadReportDraft(reportDraft);
+  }, [loadReportDraft, reportDraft]);
+
+  const handleRetryActiveReport = useCallback(() => {
+    void refreshSession();
+  }, [refreshSession]);
+
+  const handleRemoveActiveReport = useCallback(() => {
+    if (!activeReportContext || activeReportContext.status !== 'available') return;
+    // The persisted pointer stays until the next accepted turn; the next send
+    // carries `report_record_id: null` to clear it server-side.
+    setPendingReportRemoval(true);
+  }, [activeReportContext]);
 
   // Handle follow-up from report page: ?stock=600519&name=贵州茅台&recordId=xxx
   useEffect(() => {
@@ -740,6 +848,14 @@ const ChatPage: React.FC = () => {
       return;
     }
 
+    // A report draft keeps its URL params so a refresh can re-load the exact
+    // record; other follow-ups preserve the existing clear-immediately contract.
+    const paramKey = searchParams.toString();
+    if (followUpHandledKeyRef.current === paramKey) {
+      return;
+    }
+    followUpHandledKeyRef.current = paramKey;
+
     // Registry canonical first for explicit index follow-ups (sh000016 /
     // 000016.SH / 930955.CSI / csi930955) so the report-follow-up canonical is
     // preserved end-to-end; the sanitize contract is untouched and remains the
@@ -759,38 +875,44 @@ const ChatPage: React.FC = () => {
     const scannerSignal = searchParams.get('scannerSignal');
     setFollowUpEvidenceError(null);
     setInput(initialPrompt);
+    setPendingReportRemoval(false);
     followUpContextRef.current = {
       stock_code: stock,
       stock_name: name,
     };
-    if (recordId !== undefined || scannerSignal) {
-      setIsFollowUpContextLoading(true);
+
+    if (recordId !== undefined) {
+      loadReportDraft({
+        recordId,
+        requestStockCode: stock,
+        requestStockName: name,
+        stockCode: '',
+        stockName: null,
+        createdAt: null,
+        status: 'loading',
+        error: null,
+      });
+    } else {
+      setReportDraft(null);
     }
-    void Promise.all([resolveChatFollowUpContext({
-      stockCode: stock,
-      stockName: name,
-      recordId,
-      index: stockIndex,
-    }), scannerSignal
-      ? buildScannerFollowUpPrompt(stock, scannerSignal, searchParams.get('scannerRevision'))
-      : Promise.resolve(null),
-    ]).then(([context, prompt]) => {
-      if (!isMountedRef.current || followUpHydrationTokenRef.current !== hydrationToken) {
-        return;
-      }
-      followUpContextRef.current = context;
-      if (prompt) setInput((current) => current === initialPrompt ? prompt : current);
-    }).catch((error: unknown) => {
-      if (isMountedRef.current && followUpHydrationTokenRef.current === hydrationToken) {
-        setFollowUpEvidenceError(error instanceof Error ? error.message : '未能载入冻结证据，请从信号详情重试');
-      }
-    }).finally(() => {
-      if (isMountedRef.current && followUpHydrationTokenRef.current === hydrationToken) {
-        setIsFollowUpContextLoading(false);
-      }
-    });
-    setSearchParams({}, { replace: true });
-  }, [searchParams, setSearchParams, stockIndex, stockIndexLoading, agentStatusChecking]);
+
+    if (scannerSignal) {
+      void buildScannerFollowUpPrompt(stock, scannerSignal, searchParams.get('scannerRevision'))
+        .then((prompt) => {
+          if (!isMountedRef.current || followUpHydrationTokenRef.current !== hydrationToken || !prompt) return;
+          setInput((current) => current === initialPrompt ? prompt : current);
+        })
+        .catch((error: unknown) => {
+          if (isMountedRef.current && followUpHydrationTokenRef.current === hydrationToken) {
+            setFollowUpEvidenceError(error instanceof Error ? error.message : '未能载入冻结证据，请从信号详情重试');
+          }
+        });
+    }
+
+    if (recordId === undefined) {
+      setSearchParams({}, { replace: true });
+    }
+  }, [clearFollowUpParams, loadReportDraft, searchParams, setSearchParams, stockIndex, stockIndexLoading, agentStatusChecking]);
 
   const handleSend = useCallback(
     async (
@@ -799,8 +921,12 @@ const ChatPage: React.FC = () => {
       overrideStockContext?: ActiveStockContext,
     ) => {
       const msgText = (overrideMessage ?? input).trim();
+      // A report draft must finish client validation before any send entry
+      // (button, Enter, quick question or clarification confirmation) submits.
+      const reportDraftBlocked = reportDraft !== null && reportDraft.status !== 'ready';
       // T5: prevent duplicate submissions during intake creation
-      if (!msgText || loading || intakeBusy || !agentAvailable || !agentStatus || intakeDraft) return;
+      if (!msgText || loading || intakeBusy || !agentAvailable || !agentStatus || intakeDraft
+        || reportDraftBlocked) return;
       if (overrideMessage !== undefined) {
         setInput(msgText);
       }
@@ -809,9 +935,23 @@ const ChatPage: React.FC = () => {
         requestedSkillIds ?? selectedSkillIds,
       );
       const usedSkillNames = usedSkillIds.length > 0 ? getSkillNames(usedSkillIds) : ['通用'];
-      // Only report/shortcut hints accompany this request. Ordinary follow-ups
-      // rely on the server's accepted state, not a replay or a client-selected fact.
-      const contextForSend = overrideStockContext ?? followUpContextRef.current ?? undefined;
+      const sentReportDraft = reportDraft;
+      const sentRemoval = pendingReportRemoval;
+      const removalBase = followUpContextRef.current ?? (activeStockContext
+        ? { stock_code: activeStockContext.stock_code, stock_name: activeStockContext.stock_name }
+        : null);
+      // The server is the only authority for report content; this request
+      // carries a record pointer and a stock hint, never a copied summary.
+      const contextForSend: ChatFollowUpContext | undefined = overrideStockContext
+        ?? (sentReportDraft?.status === 'ready'
+          ? buildReportFollowUpContext(sentReportDraft.stockCode, sentReportDraft.stockName, sentReportDraft.recordId)
+          : sentRemoval
+            ? {
+                stock_code: removalBase?.stock_code ?? '',
+                stock_name: removalBase?.stock_name ?? null,
+                report_record_id: null,
+              }
+            : followUpContextRef.current ?? undefined);
 
       const payload = {
         message: msgText,
@@ -827,9 +967,21 @@ const ChatPage: React.FC = () => {
         onAccepted: () => {
           followUpHydrationTokenRef.current += 1;
           followUpContextRef.current = null;
-          setIsFollowUpContextLoading(false);
+          if (sentReportDraft) {
+            setReportDraft((current) => current?.recordId === sentReportDraft.recordId ? null : current);
+            clearFollowUpParams();
+          }
+          if (sentRemoval) setPendingReportRemoval(false);
           setInput('');
           requestScrollToBottom('smooth');
+        },
+        onError: ({ error, accepted }: { error: { code?: string; message: string }; accepted: boolean }) => {
+          // Before acceptance the turn was not persisted: keep the draft and
+          // the question so the user can retry or remove the report.
+          if (accepted || !sentReportDraft || !error.code || !REPORT_ERROR_CODES.has(error.code)) return;
+          setReportDraft((current) => current?.recordId === sentReportDraft.recordId
+            ? { ...current, status: 'failed', error: error.message || t('chat.reportUnavailableDetail') }
+            : current);
         },
       };
       // First valid question of a new session: prepare 1-5 controlled choices.
@@ -848,9 +1000,10 @@ const ChatPage: React.FC = () => {
       if (isFirstQuestion) setLegacyIntakeNotice(true);
       await startStream(payload, streamMeta);
     },
-    [agentAvailable, agentStatus, createIntake, getSkillNames, guidedIntakeSupported,
-      hasInitialLoad, input, intakeBusy, intakeDraft, loading, messages.length, normalizeSelectedSkillIds,
-      requestScrollToBottom, selectedSkillIds, sessionId, sessionSelectedSkillIds, startStream, stockIndex],
+    [activeStockContext, agentAvailable, agentStatus, clearFollowUpParams, createIntake, getSkillNames,
+      guidedIntakeSupported, hasInitialLoad, input, intakeBusy, intakeDraft, loading, messages.length,
+      normalizeSelectedSkillIds, pendingReportRemoval, reportDraft, requestScrollToBottom, selectedSkillIds,
+      sessionId, sessionSelectedSkillIds, startStream, stockIndex, t],
   );
 
   const handleStockClarificationDecision = useCallback((
@@ -1266,7 +1419,7 @@ const ChatPage: React.FC = () => {
                 <ChatGuideCards
                   t={t}
                   questions={quickQuestions}
-                  disabled={!agentAvailable || intakeBusy}
+                  disabled={!agentAvailable || intakeBusy || reportDraftBlocked}
                   onSelect={(index) => {
                     const question = quickQuestions[index];
                     if (question) handleQuickQuestion(question);
@@ -1408,7 +1561,7 @@ const ChatPage: React.FC = () => {
           onSend={() => { void handleSend(); }}
           onStop={() => { void stopStream(); }}
           placeholder={intakeDraft ? t('chat.intake.composerHint') : t('chat.composerPlaceholder')}
-          disabled={loading || !agentAvailable || intakeBusy}
+          disabled={loading || !agentAvailable || intakeBusy || reportDraftBlocked}
           loading={loading}
           advancedOptionsOpen={advancedOptionsOpen}
           onToggleAdvancedOptions={() => setAdvancedOptionsOpen((open) => !open)}
@@ -1446,7 +1599,7 @@ const ChatPage: React.FC = () => {
               {legacyIntakeNotice && (
                 <div role="status" className="chat-notice is-muted">{t('chat.intake.legacyApi')}</div>
               )}
-              {chatError ? (
+              {chatError && !reportChatErrorSuppressed ? (
                 <ApiErrorAlert error={chatError.code === 'backend_removed'
                   ? { ...chatError, title: t('settings.agentBackendRemovedLabel'), message: t('settings.agentBackendRemoved') }
                   : chatError} />
@@ -1505,14 +1658,33 @@ const ChatPage: React.FC = () => {
                   className="chat-inline-notice"
                 />
               ) : null}
-              {isFollowUpContextLoading ? (
-                <InlineAlert
-                  variant="info"
-                  title="追问上下文加载中"
-                  message="正在加载历史分析上下文；现在可直接发送追问。"
-                  className="chat-inline-notice"
+              {reportDraft ? (
+                <ReportFollowUpCard
+                  state={reportDraft.status}
+                  recordId={reportDraft.recordId}
+                  stockCode={reportDraft.stockCode || reportDraft.requestStockCode}
+                  stockName={reportDraft.stockName ?? reportDraft.requestStockName}
+                  createdAt={reportDraft.createdAt}
+                  error={reportDraft.error}
+                  onRetry={reportDraft.status === 'failed' ? handleRetryReportDraft : undefined}
+                  onRemove={handleRemoveReportDraft}
+                />
+              ) : activeReportContext && !pendingReportRemoval ? (
+                <ReportFollowUpCard
+                  state={activeReportContext.status === 'available' ? 'active' : 'unavailable'}
+                  recordId={activeReportContext.record_id}
+                  stockCode={activeReportContext.stock_code}
+                  stockName={activeReportContext.stock_name}
+                  createdAt={activeReportContext.created_at}
+                  onRetry={activeReportContext.status === 'available' ? undefined : handleRetryActiveReport}
+                  onRemove={handleRemoveActiveReport}
                 />
               ) : null}
+              {pendingReportRemoval && (
+                <div role="status" className="chat-notice is-muted" data-testid="chat-report-removed-notice">
+                  {t('chat.reportRemovedNotice')}
+                </div>
+              )}
               {followUpEvidenceError ? (
                 <InlineAlert variant="danger" title="扫描证据未载入" message={followUpEvidenceError} className="chat-inline-notice" />
               ) : null}

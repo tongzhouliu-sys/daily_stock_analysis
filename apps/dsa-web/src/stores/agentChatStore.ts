@@ -112,10 +112,17 @@ export interface Message {
   answerMeta?: AnswerMeta | null;
 }
 
+export interface StreamErrorEvent {
+  error: ParsedApiError;
+  accepted: boolean;
+}
+
 export interface StreamMeta {
   skillNames?: string[];
   skillName?: string;
   onAccepted?: (event: StreamAcceptedEvent) => void;
+  /** Called before the request is accepted or after the model has failed. */
+  onError?: (event: StreamErrorEvent) => void;
 }
 
 export interface StreamAcceptedEvent extends ChatStateFields {
@@ -725,6 +732,7 @@ export const useAgentChatStore = create<AgentChatState & AgentChatActions>((set,
       progressSteps: [],
       chatError: null,
     });
+    let streamWasAccepted = false;
 
     try {
       const response = await agentApi.chatStream(
@@ -780,6 +788,7 @@ export const useAgentChatStore = create<AgentChatState & AgentChatActions>((set,
             return false;
           }
           acceptedEvent = event as StreamAcceptedEvent;
+          streamWasAccepted = true;
           finalBackend = acceptedEvent.backend;
           set((s) => ({
             ...statePatch,
@@ -947,7 +956,9 @@ export const useAgentChatStore = create<AgentChatState & AgentChatActions>((set,
       if (isAbortError(error) || !ownsStream() || ac.signal.aborted) {
         // Aborted or superseded requests must not affect the active chat.
       } else {
-        set({ chatError: getParsedApiError(error) });
+        const parsedError = getParsedApiError(error);
+        set({ chatError: parsedError });
+        meta?.onError?.({ error: parsedError, accepted: streamWasAccepted });
         const { currentRoute } = get();
         if (currentRoute !== '/chat') {
           set({ completionBadge: true });
@@ -1019,6 +1030,8 @@ export const useAgentChatStore = create<AgentChatState & AgentChatActions>((set,
       if (capabilityMissing && payload) {
         // An old API has no intake: keep the direct question path working.
         await get().startStream(payload, meta);
+      } else {
+        meta?.onError?.({ error: parsed, accepted: false });
       }
       return false;
     }
