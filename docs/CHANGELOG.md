@@ -8,6 +8,7 @@ and this project adheres to [Semantic Versioning](https://semver.org/).
 > For user-friendly release highlights, see the [GitHub Releases](https://github.com/ZhuLinsen/daily_stock_analysis/releases) page.
 
 ## [Unreleased]
+- [chore] 删除 `src/agent/intake_questions.py` 中无任何调用方的 v2 规划函数 `plan_intake_v2` 与 `_build_brief_preview_v2`（约 210 行，引用的 `chat_intake_intent_resolver` 模块并不存在）。依据 AGENTS.md 1.2；v1 引导链路与对外行为不变。
 - [文档] 日线成交量“手→股”换算（乘 100）补测科创板、北交所、ETF：联网核对 688981、430047、510300 的“成交量 × 100 ÷（成交额 ÷ 收盘价）”均为 0.98–1.01，确认东财系日线对这些市场同样以“手”计，代码无需修改；同步 `docs/data-source-stability.md` 与 `docs/ai/STATUS.md`，关闭 R26 遗留项。
 - [测试] 固定问股「已有标的时的绑定口径」：「宁德时代怎么样」「宁德时代现在能买吗」这类「名称 + 提问谓语」仍进入切换确认（用户问的就是它）；只是顺带提到的名称（如「和宁德时代的区别在哪」）按对比对象处理，不替换当前标的。行为无变化，仅补回归用例并在 `docs/ai/STATUS.md` 记录口径。
 - [测试] 恢复 `apps/dsa-web` 的 Playwright UI 用例：登录表单在管理员账号改造后要求同时填写账号，`settings-guard` / `smoke` / `report-markdown` 改为先填 `#username`（默认 `admin`，可用 `DSA_WEB_SMOKE_USERNAME` 覆盖）；`data-center` 的 1280×720 短视口用例不再假设侧边导航必然溢出、也不再假设账号与主题控件位于侧栏，改为断言设置入口可达且顶栏控件可用。`npx playwright test --config playwright.fixture.config.ts` 35/35 通过。
