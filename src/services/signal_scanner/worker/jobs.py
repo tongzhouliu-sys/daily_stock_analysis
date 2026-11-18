@@ -940,66 +940,135 @@ class Worker:
     def backup(self, j):
         folder = self.settings.runtime / "backups"
         folder.mkdir(exist_ok=True, mode=0o700)
-        path = folder / (j["id"] + ".sqlite3")
-        source = self.db.connect()
-        target = sqlite3.connect(path)
-        try:
-            source.backup(target)
-            require(target.execute("PRAGMA integrity_check").fetchone()[0] == "ok", "BACKUP_INVALID")
-        finally:
-            source.close()
-            target.close()
-        os.chmod(path, 0o600)
-        # Preserve content-addressed referenced files and settings together, not only the SQLite main file.
-        manifest = dict(database=path.name, sha256=hashlib.sha256(path.read_bytes()).hexdigest(), files=[])
-        archive = folder / (j["id"] + ".zip")
-        with zipfile.ZipFile(archive, "w", zipfile.ZIP_DEFLATED) as z:
-            z.write(path, "scanner.sqlite3")
-            for p in (self.settings.runtime / "artifacts").rglob("*.json"):
-                ref = str(p.relative_to(self.settings.runtime))
-                data = p.read_bytes()
-                h = hashlib.sha256(data).hexdigest()
-                require(h == p.stem, "BACKUP_INVALID", "被引用的内容文件已损坏")
-                z.writestr(ref, data)
-                manifest["files"].append(dict(path=ref, sha256=h))
-            with self.db.read() as cx:
-                sources = [get_config(cx, key)["value"] for key in ("provider", "events")]
-            from src.services.signal_scanner.adapters.market import input_path
-            from src.services.signal_scanner.core import reject_credentials
 
-            for config in sources:
-                if config["mode"] != "LOCAL_FILE":
-                    continue
-                original = input_path(self.settings.runtime, config["file"])
-                paths = [original]
-                if original.suffix == ".csv":
-                    paths.append(input_path(self.settings.runtime, original.stem + ".meta.json"))
-                for p in paths:
+        # Read configurable retention from environment with safe defaults.
+        try:
+            keep_daily = max(0, int(os.environ.get("SCANNER_BACKUP_KEEP_DAILY", "2")))
+        except (TypeError, ValueError):
+            keep_daily = 2
+        try:
+            keep_weekly = max(0, int(os.environ.get("SCANNER_BACKUP_KEEP_WEEKLY", "1")))
+        except (TypeError, ValueError):
+            keep_weekly = 1
+
+        # Sweep orphaned leftovers from prior failed backups before starting a new one.
+        self._sweep_orphan_backups(folder)
+
+        # Estimate required space: database size + artifacts total, with 1.2x safety margin.
+        db_size = self.db.path.stat().st_size if self.db.path.exists() else 0
+        artifacts_dir = self.settings.runtime / "artifacts"
+        artifacts_size = sum(p.stat().st_size for p in artifacts_dir.rglob("*") if p.is_file()) if artifacts_dir.exists() else 0
+        needed = int((db_size + artifacts_size) * 1.2) + 1
+
+        def _free_space():
+            try:
+                return shutil.disk_usage(folder).free
+            except OSError:
+                return 0
+
+        # If not enough space, try to free room by enforcing retention early.
+        if _free_space() < needed:
+            self._enforce_retention(folder, keep_daily, keep_weekly)
+
+        if _free_space() < needed:
+            raise DomainError(
+                "BACKUP_NO_SPACE",
+                "磁盘剩余空间不足，无法完成备份",
+                status=507,
+                needed_bytes=needed,
+                free_bytes=_free_space(),
+            )
+
+        path = folder / (j["id"] + ".sqlite3")
+        archive = folder / (j["id"] + ".zip")
+        try:
+            source = self.db.connect()
+            target = sqlite3.connect(path)
+            try:
+                source.backup(target)
+                require(target.execute("PRAGMA integrity_check").fetchone()[0] == "ok", "BACKUP_INVALID")
+            finally:
+                source.close()
+                target.close()
+            os.chmod(path, 0o600)
+            # Preserve content-addressed referenced files and settings together, not only the SQLite main file.
+            manifest = dict(database=path.name, sha256=hashlib.sha256(path.read_bytes()).hexdigest(), files=[])
+            with zipfile.ZipFile(archive, "w", zipfile.ZIP_DEFLATED) as z:
+                z.write(path, "scanner.sqlite3")
+                for p in (self.settings.runtime / "artifacts").rglob("*.json"):
+                    ref = str(p.relative_to(self.settings.runtime))
                     data = p.read_bytes()
-                    if p.suffix == ".json":
-                        reject_credentials(json.loads(data))
-                    ref = "imports/" + p.name
-                    if not any(f["path"] == ref for f in manifest["files"]):
-                        z.writestr(ref, data)
-                        manifest["files"].append(dict(path=ref, sha256=hashlib.sha256(data).hexdigest()))
-            z.writestr("manifest.json", canonical(manifest))
-        os.chmod(archive, 0o600)
-        with zipfile.ZipFile(archive) as z:
-            require(z.testzip() is None, "BACKUP_INVALID")
+                    h = hashlib.sha256(data).hexdigest()
+                    require(h == p.stem, "BACKUP_INVALID", "被引用的内容文件已损坏")
+                    z.writestr(ref, data)
+                    manifest["files"].append(dict(path=ref, sha256=h))
+                with self.db.read() as cx:
+                    sources = [get_config(cx, key)["value"] for key in ("provider", "events")]
+                from src.services.signal_scanner.adapters.market import input_path
+                from src.services.signal_scanner.core import reject_credentials
+
+                for config in sources:
+                    if config["mode"] != "LOCAL_FILE":
+                        continue
+                    original = input_path(self.settings.runtime, config["file"])
+                    paths = [original]
+                    if original.suffix == ".csv":
+                        paths.append(input_path(self.settings.runtime, original.stem + ".meta.json"))
+                    for p in paths:
+                        data = p.read_bytes()
+                        if p.suffix == ".json":
+                            reject_credentials(json.loads(data))
+                        ref = "imports/" + p.name
+                        if not any(f["path"] == ref for f in manifest["files"]):
+                            z.writestr(ref, data)
+                            manifest["files"].append(dict(path=ref, sha256=hashlib.sha256(data).hexdigest()))
+                z.writestr("manifest.json", canonical(manifest))
+            os.chmod(archive, 0o600)
+            with zipfile.ZipFile(archive) as z:
+                require(z.testzip() is None, "BACKUP_INVALID")
+        except BaseException:
+            # Clean up half-written artifacts so they don't linger as orphans.
+            path.unlink(missing_ok=True)
+            path.with_name(path.name + "-journal").unlink(missing_ok=True)
+            archive.unlink(missing_ok=True)
+            raise
+
+        # The sqlite3 file is now inside the zip; remove the standalone copy to avoid double storage.
+        path.unlink(missing_ok=True)
+
         self.finish_artifact(j, dict(kind="BACKUP", archive=archive.name, manifest=manifest, verified=True))
-        archives = sorted(folder.glob("*.zip"), key=lambda p: p.stat().st_mtime, reverse=True)
-        keep = set(archives[:7])
-        weeks = set()
+        self._enforce_retention(folder, keep_daily, keep_weekly)
+
+    @staticmethod
+    def _sweep_orphan_backups(folder):
+        """Remove sqlite3 / sqlite3-journal files that have no matching .zip (leftovers from prior failures)."""
+        zips = {p.stem for p in folder.glob("*.zip")}
+        for orphan in folder.glob("*.sqlite3"):
+            if orphan.stem not in zips:
+                orphan.unlink(missing_ok=True)
+        for orphan in folder.glob("*.sqlite3-journal"):
+            # journal file shares the sqlite3 name, e.g. job_xxx.sqlite3-journal
+            base = orphan.name.rsplit("-journal", 1)[0]
+            stem = base.replace(".sqlite3", "")
+            if stem not in zips:
+                orphan.unlink(missing_ok=True)
+
+    @staticmethod
+    def _enforce_retention(folder, keep_daily, keep_weekly):
+        """Apply retention: keep the most recent *keep_daily* zips plus at most *keep_weekly* weekly snapshots (up to 4 weeks)."""
         from datetime import datetime
 
+        archives = sorted(folder.glob("*.zip"), key=lambda p: p.stat().st_mtime, reverse=True)
+        keep = set(archives[:keep_daily])
+        weeks = set()
         for item in archives:
             week = datetime.fromtimestamp(item.stat().st_mtime, tz=SG).strftime("%G-W%V")
-            if week not in weeks and len(weeks) < 4:
+            if week not in weeks and len(weeks) < min(keep_weekly, 4):
                 keep.add(item)
                 weeks.add(week)
         for item in archives:
             if item not in keep:
-                item.unlink()
+                item.unlink(missing_ok=True)
                 item.with_suffix(".sqlite3").unlink(missing_ok=True)
 
     def privacy_export(self, j):
