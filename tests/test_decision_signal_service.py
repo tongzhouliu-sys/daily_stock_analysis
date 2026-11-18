@@ -290,8 +290,15 @@ def test_service_defaults_lifecycle_and_preserves_explicit_values(isolated_db) -
     postmarket = service.create_signal(postmarket_payload)["item"]
     postmarket_expiry = datetime.fromisoformat(postmarket["expires_at"])
     assert postmarket["horizon"] == "3d"
-    assert before_postmarket + timedelta(days=3, seconds=-1) <= postmarket_expiry
-    assert postmarket_expiry <= utc_naive_now() + timedelta(days=3, seconds=1)
+    # The window is counted in trading sessions (E16), so its calendar length
+    # depends on the weekday. Take both the day count and the session rule
+    # from the service instead of restating "3 calendar days" here.
+    horizon_days = DecisionSignalService._horizon_days(postmarket["horizon"])
+    after_postmarket = utc_naive_now()
+    assert before_postmarket + timedelta(days=horizon_days, seconds=-1) <= postmarket_expiry
+    assert postmarket_expiry <= DecisionSignalService._add_trading_days(
+        after_postmarket, horizon_days, postmarket["market"],
+    ) + timedelta(seconds=1)
 
     null_lifecycle_payload = _payload(
         source_report_id=158,
