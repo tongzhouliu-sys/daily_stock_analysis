@@ -725,51 +725,39 @@ def slice_at_max_bytes(text: str, max_bytes: int) -> tuple[str, str]:
     return truncated, text[len(truncated):]
 
 
-def _format_feishu_markdown_unprotected(content: str) -> str:
-    lines = []
-    table_buffer: List[str] = []
+def strip_feishu_markup(content: str) -> str:
+    """去除飞书 lark_md 标记，用于纯文本兜底发送。
 
-    for raw_line in content.splitlines():
-        line = raw_line.rstrip()
+    去除的标记包括：
+    - ``**bold**`` -> ``bold``
+    - ``<font color='...'>...</font>`` -> 内容
+    - ``<text_tag ...>...</text_tag>`` -> 内容
+    - 其他 ``<...>`` HTML 风格标签
+    - ``▎`` ``·`` 前缀符号（保留文本内容）
 
-        # 处理表格行
-        if line.strip().startswith('|'):
-            table_buffer.append(line)
-            continue
+    Args:
+        content: 带 lark_md 标记的文本
 
-        # 刷新表格缓冲区
-        if table_buffer:
-            _flush_table_as_key_value_rows(table_buffer, lines, bullet="•")
-            table_buffer = []
-
-        # 转换标题（# ## ### 等）：飞书 lark_md 无标题语法，用加粗 + 前缀区分层级
-        title_match = re.match(r'^(#{1,6})\s+', line)
-        if title_match:
-            title = line[title_match.end():].strip()
-            if title:
-                level = len(title_match.group(1))
-                prefix = "" if level == 1 else ("▎ " if level == 2 else "· ")
-                line = f"{prefix}**{title}**"
-            else:
-                line = ""
-        # 转换引用块
-        elif line.startswith('> '):
-            quote = line[2:].strip()
-            line = f"<font color='grey'>💬 {quote}</font>" if quote else ""
-        # 转换分隔线
-        elif line.strip() == '---':
-            line = '────────'
-        # 转换列表项
-        elif line.startswith('- '):
-            line = f"• {line[2:].strip()}"
-
-        lines.append(line)
-
-    # 处理末尾的表格
-    if table_buffer:
-        _flush_table_as_key_value_rows(table_buffer, lines, bullet="•")
-
-    return re.sub(r'\n{3,}', '\n\n', "\n".join(lines)).strip()
+    Returns:
+        纯文本内容，适合 ``msg_type: text`` 发送
+    """
+    # 去除 HTML 风格标签，保留内容
+    result = re.sub(r"<font[^>]*>", "", content)
+    result = result.replace("</font>", "")
+    result = re.sub(r"<text_tag[^>]*>", "", result)
+    result = result.replace("</text_tag>", "")
+    result = re.sub(r"<[^>]+>", "", result)
+    # 去除加粗标记
+    result = re.sub(r"\*\*(.+?)\*\*", r"\1", result)
+    result = re.sub(r"\*(.+?)\*", r"\1", result)
+    # 去除行首装饰符号
+    result = re.sub(r"^▎\s*", "", result, flags=re.MULTILINE)
+    result = re.sub(r"^·\s*", "", result, flags=re.MULTILINE)
+    # 去除 bullet
+    result = re.sub(r"^•\s*", "", result, flags=re.MULTILINE)
+    # 压缩多余空行
+    result = re.sub(r"\n{3,}", "\n\n", result)
+    return result.strip()
 
 
 def format_feishu_markdown(content: str) -> str:

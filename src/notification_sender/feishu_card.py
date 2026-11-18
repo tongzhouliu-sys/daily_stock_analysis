@@ -612,10 +612,11 @@ def build_feishu_card(content: str, *, max_bytes: Optional[int] = None) -> Dict[
     Args:
         content: 已经过 ``format_feishu_markdown`` 转换的 lark_md 正文。
         max_bytes: 卡片 JSON 的字节预算；超限时按富卡片 -> 轻卡片 -> 紧凑卡片
-            逐级降级，避免被飞书拒绝。
+            逐级降级，避免被飞书拒绝。紧凑卡片也会校验大小，超限则返回 None
+            由发送层处理。
 
     Returns:
-        Card JSON 1.0 字典。任何情况下都不会丢弃正文信息。
+        Card JSON 1.0 字典。任何情况下都不会丢弃正文信息。紧凑卡片超限时返回 None。
     """
     body_lines, notes = _extract_footer(content.splitlines())
     sections = _parse_sections(body_lines)
@@ -636,10 +637,16 @@ def build_feishu_card(content: str, *, max_bytes: Optional[int] = None) -> Dict[
             if _fits(card, max_bytes):
                 return card
 
+    # 紧凑卡片
     compact_body = _strip_summary_line(_strip_title_line(content, title), summary)
     compact_elements = [_div(compact_body)] if compact_body.strip() else [_note([])]
-    return {
+    compact_card = {
         "config": _config(),
         "header": header,
         "elements": compact_elements,
     }
+    # 紧凑卡片也要校验大小
+    if _fits(compact_card, max_bytes):
+        return compact_card
+    # 超限返回 None，由发送层处理
+    return None

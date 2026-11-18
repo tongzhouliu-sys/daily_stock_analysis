@@ -27,6 +27,7 @@ from src.formatters import (
     PAGE_MARKER_SAFE_BYTES,
     chunk_content_by_max_bytes,
     format_feishu_markdown,
+    strip_feishu_markup,
     strip_hidden_markdown_metadata,
 )
 from src.notification_sender.feishu_card import build_feishu_card
@@ -77,9 +78,33 @@ except ImportError:
 _APP_SEND_RETRIES = 3
 _APP_SEND_BACKOFF_SECONDS = (1.0, 2.0, 4.0)
 _WEBHOOK_SEND_TIMEOUT_SECONDS = 30
+_WEBHOOK_RATE_LIMIT_RETRIES = 2
+_WEBHOOK_RATE_LIMIT_BACKOFF_SECONDS = (2.0, 5.0)
+_WEBHOOK_RATE_LIMIT_ERROR_CODES = (11232, 11233)  # 飞书限流错误码
 
 # Sentinel for "client not yet initialised".
 _NO_CLIENT = object()
+
+
+def _calculate_webhook_request_body_size(payload: Dict[str, Any]) -> int:
+    """计算 Webhook 实际请求体大小（字节）。
+
+    飞书 Webhook 使用 ``requests.post(json=...)`` 发送，requests 默认会将
+    非 ASCII 字符转义为 ``\\uXXXX``（6 字节/字符），而不是 UTF-8 的 3 字节。
+    因此必须按 JSON 序列化后的实际字节数计量，而不是 ``len(text.encode('utf-8'))``。
+
+    Args:
+        payload: 完整的请求体字典（包含 msg_type, card/text, timestamp, sign 等）
+
+    Returns:
+        序列化后的字节数
+    """
+    try:
+        # ensure_ascii=True 是 requests 的默认行为，中文会被转义为 \uXXXX
+        json_str = json.dumps(payload, ensure_ascii=True, separators=(",", ":"))
+        return len(json_str.encode("utf-8"))
+    except (TypeError, ValueError):
+        return 0
 
 
 class FeishuSender:
@@ -160,6 +185,36 @@ class FeishuSender:
             return content
         return f"{prefix}{content}" if content else self._feishu_keyword
 
+    @staticmethod
+    def _add_keyword_to_card_footer(card_body: Dict[str, Any], keyword: str) -> None:
+        """将关键词添加到卡片的页脚 note 组件中，用于通过飞书关键词校验。
+
+        关键词不再参与正文解析，避免破坏标题识别。
+
+        Args:
+            card_body: 卡片 JSON body（不含 msg_type）
+            keyword: 飞书机器人关键词
+        """
+        if not keyword or not card_body:
+            return
+        
+        elements = card_body.get("elements", [])
+        if not elements:
+            return
+        
+        # 查找最后一个 note 组件
+        last_element = elements[-1] if elements else None
+        if last_element and last_element.get("tag") == "note":
+            # 在现有 note 中添加关键词
+            note_elements = last_element.get("elements", [])
+            note_elements.insert(0, {"tag": "plain_text", "content": keyword})
+        else:
+            # 创建新的 note 组件
+            elements.append({
+                "tag": "note",
+                "elements": [{"tag": "plain_text", "content": keyword}],
+            })
+
     def _build_security_fields(self) -> Dict[str, str]:
         if not self._feishu_secret:
             return {}
@@ -218,8 +273,13 @@ class FeishuSender:
     # App Bot send helpers
     # ------------------------------------------------------------------
 
-    def _send_via_app_bot(self, content: str) -> bool:
-        """Send message through the Feishu App Bot, chunking if necessary."""
+    def _send_via_app_bot(self, content: str, render_context: Optional[Dict[str, Any]] = None) -> bool:
+        """Send message through the Feishu App Bot, chunking if necessary.
+        
+        Args:
+            content: 消息内容
+            render_context: 渲染上下文，用于结构化卡片渲染
+        """
         if not self._feishu_chat_id:
             logger.warning("FEISHU_CHAT_ID 未配置，跳过 App Bot 推送")
             return False
@@ -357,7 +417,13 @@ class FeishuSender:
     # Public API
     # ------------------------------------------------------------------
 
-    def send_to_feishu(self, content: str, *, timeout_seconds: Optional[float] = None) -> bool:
+    def send_to_feishu(
+        self,
+        content: str,
+        *,
+        timeout_seconds: Optional[float] = None,
+        render_context: Optional[Dict[str, Any]] = None,
+    ) -> bool:
         """
         Push a message to Feishu.
 
@@ -365,6 +431,13 @@ class FeishuSender:
           1. **Webhook** – when ``feishu_webhook_url`` is configured.
           2. **App Bot** – when ``feishu_app_id`` + ``feishu_app_secret``
              + ``feishu_chat_id`` are all configured and webhook is absent.
+
+        Args:
+            content: 消息内容（Markdown 格式）
+            timeout_seconds: Webhook 请求超时时间
+            render_context: 可选的渲染上下文，包含 route_type / severity /
+                report_type / results / structured_payload 等信息，用于
+                结构化卡片渲染。不传时行为与旧版一致。
 
         Returns:
             Whether the send succeeded.
@@ -374,8 +447,12 @@ class FeishuSender:
             return False
         sanitized_content = strip_hidden_markdown_metadata(content).strip()
         if self._feishu_url:
-            return self._send_via_webhook(sanitized_content, timeout_seconds=timeout_seconds)
-        return self._send_via_app_bot(sanitized_content)
+            return self._send_via_webhook(
+                sanitized_content,
+                timeout_seconds=timeout_seconds,
+                render_context=render_context,
+            )
+        return self._send_via_app_bot(sanitized_content, render_context=render_context)
 
     def send_feishu_file(self, file_path: str) -> bool:
         """
@@ -535,8 +612,20 @@ class FeishuSender:
     # Webhook path (legacy, unchanged)
     # ------------------------------------------------------------------
 
-    def _send_via_webhook(self, content: str, *, timeout_seconds: Optional[float] = None) -> bool:
-        """Legacy webhook send path."""
+    def _send_via_webhook(
+        self,
+        content: str,
+        *,
+        timeout_seconds: Optional[float] = None,
+        render_context: Optional[Dict[str, Any]] = None,
+    ) -> bool:
+        """Legacy webhook send path.
+        
+        Args:
+            content: 消息内容
+            timeout_seconds: 请求超时时间
+            render_context: 渲染上下文，用于结构化卡片渲染
+        """
         formatted_content = format_feishu_markdown(content)
 
         max_bytes = self._feishu_max_bytes
@@ -567,6 +656,15 @@ class FeishuSender:
             return False
 
     def _send_feishu_chunked(self, content: str, max_bytes: int) -> bool:
+        """分片发送超长内容，续页继承标题并加页码。
+
+        改进点（F1 热修）：
+        - 提取原始标题，续页在开头加上「标题 (N/M)」
+        - 避免续页因缺少一级标题而回退为通用标题
+        """
+        # 提取原始一级标题
+        title = self._extract_h1_title(content)
+
         try:
             chunks = chunk_content_by_max_bytes(content, max_bytes, add_page_marker=True)
         except ValueError as e:
@@ -578,6 +676,11 @@ class FeishuSender:
         logger.info("飞书分批发送：共 %d 批", total_chunks)
         for i, chunk in enumerate(chunks):
             try:
+                # 续页继承标题并加页码
+                if i > 0 and title:
+                    page_header = f"# {title} ({i + 1}/{total_chunks})\n\n"
+                    chunk = page_header + chunk
+
                 if self._send_feishu_message(chunk):
                     success_count += 1
                     logger.info("飞书第 %d/%d 批发送成功", i + 1, total_chunks)
@@ -589,60 +692,130 @@ class FeishuSender:
                 time.sleep(1)
         return success_count == total_chunks
 
+    @staticmethod
+    def _extract_h1_title(content: str) -> str:
+        """从内容中提取一级标题（# 开头）。"""
+        for line in content.splitlines():
+            stripped = line.strip()
+            if stripped.startswith("# ") and not stripped.startswith("## "):
+                # 去掉 # 前缀和可能的 emoji
+                title = stripped[2:].strip()
+                # 去掉 lark_md 格式后的前缀符号
+                title = title.lstrip("▎·").strip()
+                return title
+        return ""
+
     def _send_feishu_message(self, content: str, *, timeout_seconds: Optional[float] = None) -> bool:
-        """Send a single Feishu webhook message (interactive card, fallback text)."""
-        prepared_content = self._apply_keyword_prefix(content)
+        """Send a single Feishu webhook message (interactive card, fallback text).
+
+        改进点（F1 热修）：
+        1. 使用实际请求体大小计量，而不是 UTF-8 字节数
+        2. 纯文本兜底时去除 lark_md 标记
+        3. 限流错误时重试
+        4. 关键词不参与标题解析，而是添加到页脚
+        """
         security_fields = self._build_security_fields()
 
-        def _post_payload(payload: Dict[str, Any]) -> bool:
+        def _post_payload_with_retry(payload: Dict[str, Any]) -> bool:
+            """发送请求体，支持限流重试。"""
             request_payload = dict(payload)
             request_payload.update(security_fields)
-            try:
-                response = requests.post(
-                    self._feishu_url,
-                    json=request_payload,
-                    timeout=timeout_seconds or _WEBHOOK_SEND_TIMEOUT_SECONDS,
-                    verify=self._webhook_verify_ssl,
+
+            # 检查实际请求体大小
+            actual_size = _calculate_webhook_request_body_size(request_payload)
+            if actual_size > self._feishu_max_bytes:
+                logger.warning(
+                    "飞书请求体超限: %d 字节 > %d 字节限制，可能被拒绝",
+                    actual_size,
+                    self._feishu_max_bytes,
                 )
-            except (requests.exceptions.ConnectionError,
-                     requests.exceptions.Timeout,
-                     requests.exceptions.RequestException) as e:
-                logger.error("飞书 Webhook 网络请求异常: %s", e)
-                return False
-            if response.status_code == 200:
+
+            for attempt in range(_WEBHOOK_RATE_LIMIT_RETRIES + 1):
                 try:
-                    result = response.json()
-                except (ValueError, AttributeError):
-                    logger.error("飞书 Webhook 返回非 JSON 响应: %s", response.text[:200])
+                    response = requests.post(
+                        self._feishu_url,
+                        json=request_payload,
+                        timeout=timeout_seconds or _WEBHOOK_SEND_TIMEOUT_SECONDS,
+                        verify=self._webhook_verify_ssl,
+                    )
+                except (requests.exceptions.ConnectionError,
+                         requests.exceptions.Timeout,
+                         requests.exceptions.RequestException) as e:
+                    logger.error("飞书 Webhook 网络请求异常: %s", e)
                     return False
-                if not isinstance(result, dict):
-                    logger.error("飞书 Webhook 返回非预期格式: %s", type(result).__name__)
+
+                if response.status_code == 200:
+                    try:
+                        result = response.json()
+                    except (ValueError, AttributeError):
+                        logger.error("飞书 Webhook 返回非 JSON 响应: %s", response.text[:200])
+                        return False
+                    if not isinstance(result, dict):
+                        logger.error("飞书 Webhook 返回非预期格式: %s", type(result).__name__)
+                        return False
+                    code = result.get("code") if "code" in result else result.get("StatusCode")
+                    if code == 0:
+                        logger.info("飞书 Webhook 消息发送成功")
+                        return True
+                    # 检查是否为限流错误
+                    if code in _WEBHOOK_RATE_LIMIT_ERROR_CODES and attempt < _WEBHOOK_RATE_LIMIT_RETRIES:
+                        backoff = _WEBHOOK_RATE_LIMIT_BACKOFF_SECONDS[
+                            min(attempt, len(_WEBHOOK_RATE_LIMIT_BACKOFF_SECONDS) - 1)
+                        ]
+                        logger.warning(
+                            "飞书 Webhook 限流 [code=%s]，%0.1f 秒后重试 (%d/%d)",
+                            code,
+                            backoff,
+                            attempt + 1,
+                            _WEBHOOK_RATE_LIMIT_RETRIES,
+                        )
+                        time.sleep(backoff)
+                        continue
+                    logger.error(
+                        "飞书 Webhook 返回错误 [code=%s]: %s",
+                        code,
+                        result.get("msg") or result.get("StatusMessage", "未知错误"),
+                    )
                     return False
-                code = result.get("code") if "code" in result else result.get("StatusCode")
-                if code == 0:
-                    logger.info("飞书 Webhook 消息发送成功")
-                    return True
-                logger.error(
-                    "飞书 Webhook 返回错误 [code=%s]: %s",
-                    code,
-                    result.get("msg") or result.get("StatusMessage", "未知错误"),
-                )
-                return False
-            logger.error("飞书 Webhook 请求失败: HTTP %d", response.status_code)
+                elif response.status_code == 429 and attempt < _WEBHOOK_RATE_LIMIT_RETRIES:
+                    # HTTP 429 Too Many Requests
+                    backoff = _WEBHOOK_RATE_LIMIT_BACKOFF_SECONDS[
+                        min(attempt, len(_WEBHOOK_RATE_LIMIT_BACKOFF_SECONDS) - 1)
+                    ]
+                    logger.warning(
+                        "飞书 Webhook HTTP 429 限流，%0.1f 秒后重试 (%d/%d)",
+                        backoff,
+                        attempt + 1,
+                        _WEBHOOK_RATE_LIMIT_RETRIES,
+                    )
+                    time.sleep(backoff)
+                    continue
+                else:
+                    logger.error("飞书 Webhook 请求失败: HTTP %d", response.status_code)
+                    return False
             return False
 
-        card_payload = {
-            "msg_type": "interactive",
-            "card": self._build_card_body(
-                prepared_content, max_bytes=self._feishu_max_bytes
-            ),
-        }
+        # 尝试发送卡片（不带关键词前缀，关键词稍后添加到页脚）
+        card_body = self._build_card_body(content, max_bytes=self._feishu_max_bytes)
+        
+        if card_body is not None:
+            # 如果有配置关键词，添加到卡片的页脚
+            if self._feishu_keyword:
+                self._add_keyword_to_card_footer(card_body, self._feishu_keyword)
+            
+            card_payload = {
+                "msg_type": "interactive",
+                "card": card_body,
+            }
 
-        if _post_payload(card_payload):
-            return True
+            if _post_payload_with_retry(card_payload):
+                return True
 
+        # 卡片失败或超限，降级为纯文本（去除标记，带关键词前缀）
+        prepared_content = self._apply_keyword_prefix(content)
+        plain_text = strip_feishu_markup(prepared_content)
         text_payload = {
             "msg_type": "text",
-            "content": {"text": prepared_content},
+            "content": {"text": plain_text},
         }
-        return _post_payload(text_payload)
+        return _post_payload_with_retry(text_payload)

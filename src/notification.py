@@ -2664,6 +2664,7 @@ class NotificationService(
         email_send_to_all: bool,
         route_type: Optional[str] = None,
         email_receivers: Optional[List[str]] = None,
+        render_context: Optional[Dict[str, Any]] = None,
     ) -> bool:
         use_image = self._should_use_image_for_channel(channel, image_bytes)
         sanitized_content = strip_hidden_markdown_metadata(content).strip()
@@ -2678,7 +2679,7 @@ class NotificationService(
                     sanitized_content, filename=f"report_{date_str}.md"
                 )
                 return self.send_feishu_file(filepath)
-            return self.send_to_feishu(sanitized_content)
+            return self.send_to_feishu(sanitized_content, render_context=render_context)
         if channel == NotificationChannel.DINGTALK:
             return self.send_to_dingtalk(sanitized_content)
         if channel == NotificationChannel.TELEGRAM:
@@ -2902,6 +2903,17 @@ class NotificationService(
         channel_names = ', '.join(ChannelDetector.get_channel_name(ch) for ch in target_channels)
         logger.info(f"正在向 {len(target_channels)} 个渠道发送通知：{channel_names}")
 
+        # F2: 构建飞书渲染上下文，将结构化数据传递到飞书分支
+        render_context: Optional[Dict[str, Any]] = None
+        if any(ch == NotificationChannel.FEISHU for ch in target_channels):
+            render_context = {
+                "route_type": route_type,
+                "severity": severity,
+                "report_type": report_type,
+                "results": results,
+                "structured_payload": structured_payload,
+            }
+
         success_count = 0
         fail_count = 0
         channel_results: List[ChannelAttemptResult] = []
@@ -3013,6 +3025,7 @@ class NotificationService(
                             email_send_to_all=email_send_to_all,
                             route_type=route_type,
                             email_receivers=receivers,
+                            render_context=render_context,
                         ),
                         group_results,
                     )
@@ -3028,6 +3041,7 @@ class NotificationService(
                     email_stock_codes=email_stock_codes,
                     email_send_to_all=email_send_to_all,
                     route_type=route_type,
+                    render_context=render_context,
                 ),
             )
             _record_attempt_result(channel, ok, error, latency_ms)
@@ -3063,6 +3077,8 @@ class NotificationService(
         dedup_key: Optional[str] = None,
         cooldown_key: Optional[str] = None,
         structured_payload: Optional[Dict[str, Any]] = None,
+        results: Optional[List[Any]] = None,
+        report_type: Optional[str] = None,
     ) -> bool:
         """
         统一发送接口 - 向所有已配置的渠道发送。
@@ -3079,6 +3095,8 @@ class NotificationService(
             dedup_key=dedup_key,
             cooldown_key=cooldown_key,
             structured_payload=structured_payload,
+            results=results,
+            report_type=report_type,
         )
         return bool(result.success)
 
