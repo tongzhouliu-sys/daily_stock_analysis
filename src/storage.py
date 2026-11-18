@@ -1435,6 +1435,44 @@ class SkillOpinionOutcomeRecord(Base):
     )
 
 
+class LoginAuditLog(Base):
+    """Login audit log for authentication events.
+
+    Records login, password setup, auth enable/disable, and password change events.
+    Stores IP, location (from offline MMDB), client info (from UA parsing).
+    """
+    __tablename__ = 'login_audit_log'
+
+    id = Column(Integer, primary_key=True, autoincrement=True)
+    created_at = Column(DateTime, nullable=False, default=utc_naive_now)
+    event_type = Column(String(32), nullable=False)  # login, initial_setup, auth_enable, auth_disable, password_change
+    success = Column(Boolean, nullable=False)
+    failure_reason = Column(String(32), nullable=True)  # invalid_credentials, password_mismatch, password_rejected, current_password_invalid
+    username_matched = Column(Boolean, nullable=True)  # Only for login failures
+    ip = Column(String(64), nullable=False)
+    peer_ip = Column(String(64), nullable=True)  # TCP peer address when different from ip
+    ip_scope = Column(String(16), nullable=False)  # public, loopback, private, invalid
+    country_code = Column(String(8), nullable=True)
+    country_en = Column(String(128), nullable=True)
+    region_en = Column(String(128), nullable=True)
+    city_en = Column(String(128), nullable=True)
+    country_zh = Column(String(128), nullable=True)
+    region_zh = Column(String(128), nullable=True)
+    city_zh = Column(String(128), nullable=True)
+    geo_source = Column(String(32), nullable=True)  # mmdb:<type> or ip-api
+    geo_status = Column(String(16), nullable=False, default='not_configured')  # resolved, pending, unresolved, not_configured, skipped
+    user_agent = Column(String(512), nullable=True)
+    client_type = Column(String(16), nullable=False, default='unknown')  # browser, desktop, script, unknown
+    browser = Column(String(64), nullable=True)
+    browser_version = Column(String(32), nullable=True)
+    os = Column(String(32), nullable=True)
+    device_type = Column(String(16), nullable=False, default='unknown')  # desktop, mobile, tablet, unknown
+
+    __table_args__ = (
+        Index('ix_login_audit_log_created_at_success', 'created_at', 'success'),
+    )
+
+
 class _DatabaseManagerMeta(type):
     """Serialize DatabaseManager construction across __new__ and __init__."""
 

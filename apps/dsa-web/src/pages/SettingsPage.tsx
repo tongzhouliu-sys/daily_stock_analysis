@@ -14,6 +14,7 @@ import {
   AgentBackendStatusPanel,
   AuthSettingsCard,
   ChangePasswordCard,
+  LoginLogCard,
   GenerationBackendStatusPanel,
   IntelligentImport,
   LLMChannelEditor,
@@ -1634,6 +1635,9 @@ const SettingsPage: React.FC = () => {
             ) : null}
             {activeCategory === 'system' && passwordChangeable ? (
               <ChangePasswordCard />
+            ) : null}
+            {activeCategory === 'system' ? (
+              <LoginLogCard />
             ) : null}
             {activeCategory === 'notification' ? (
               <SettingsPanelErrorBoundary

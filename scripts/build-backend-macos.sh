@@ -76,6 +76,7 @@ hidden_imports=(
   "tiktoken"
   "tiktoken_ext"
   "tiktoken_ext.openai_public"
+  "maxminddb"
   "api"
   "api.app"
   "api.deps"
@@ -156,7 +157,7 @@ if ! "${packaged_entry}" --help >/tmp/dsa-packaged-help.log 2>&1; then
   exit 1
 fi
 
-for module in src.services.screening.pipeline futu orjson py_mini_racer; do
+for module in src.services.screening.pipeline futu orjson py_mini_racer maxminddb; do
   if DSA_PACKAGED_IMPORT_PROBE="${module}" "${packaged_entry}" >/tmp/dsa-packaged-import.log 2>&1; then
     cat /tmp/dsa-packaged-import.log
   else

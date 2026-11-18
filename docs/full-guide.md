@@ -515,6 +515,9 @@ daily_stock_analysis/
 | `GUARD_TRUSTED_PROXIES` | 仅在 `TRUST_X_FORWARDED_FOR=true` 时生效：可信反向代理地址，默认仅本机回环。只有来自这些地址的连接才采信 `X-Forwarded-For` 最右值，其它来源伪造的该首部被忽略（登录限流的 `get_client_ip()` 同样取最右值，但不校验代理来源）；`TRUST_X_FORWARDED_FOR` 为 `false` 时一律使用 TCP 对端地址。启用 guard 后，内置启动入口（`main.py`、`server.py`、`webui.py`）让 Uvicorn 只信任同一组代理，`TRUST_X_FORWARDED_FOR=false` 时关闭 Uvicorn 的代理头处理，因此反向代理后部署请设 `TRUST_X_FORWARDED_FOR=true`；启用 guard 且 `TRUST_X_FORWARDED_FOR=false` 时 Uvicorn 的代理头处理被关闭，HTTPS 反向代理后登录 cookie 会不带 `Secure` 标志（`_cookie_params()` 读取的是 `request.url.scheme`），因此 HTTPS 代理后请设 `TRUST_X_FORWARDED_FOR=true`；自行用 `uvicorn` 命令启动时，请让 `FORWARDED_ALLOW_IPS` 与本项一致或加 `--no-proxy-headers`。Docker 中代理不在回环时请填代理地址，否则所有用户会共用同一个限流 key | `127.0.0.1,::1` |
 | `GUARD_SCAN_BODY` | 是否同时扫描请求体（默认只检查路径、查询参数和请求头） | `false` |
 | `GUARD_PASSIVE_MODE` | 仅记录日志不拦截，便于先观察 | `false` |
+| `LOGIN_LOG_RETENTION_DAYS` | 登录日志保留天数（范围 1–3650），默认 90 天；详见 [登录日志](login-log.md) | `90` |
+| `LOGIN_LOG_GEOIP_DB_PATH` | 离线 IP 地理库 `.mmdb` 文件路径（DB-IP City Lite 或 MaxMind GeoLite2-City），用于显示登录位置；留空则不显示公网 IP 的位置；详见 [登录日志](login-log.md) | 空 |
+| `LOGIN_LOG_GEO_ONLINE_PROVIDER` | 在线查询登录 IP 位置（默认关闭）；目前只支持 `ip-api`，会把登录 IP 以 HTTP 明文发送给 ip-api.com，免费版仅限非商业用途；详见 [登录日志](login-log.md) | 空 |
 | `MARKET_REVIEW_ENABLED` | 启用大盘复盘 | `true` |
 | `DAILY_MARKET_CONTEXT_ENABLED` | 将当日大盘环境摘要注入个股分析 Prompt，并在高风险/退潮环境下软化激进买入建议；默认开启，设为 `false` 后仍可运行大盘复盘 | `true` |
 | `MARKET_REVIEW_REGION` | 大盘复盘市场区域：cn(A股)、hk(港股)、us(美股)、jp(日股)、kr(韩股)、tw(台股)、both(全部六市场)，支持逗号子集（如 cn,tw） | `cn` |

@@ -5,13 +5,17 @@ from __future__ import annotations
 
 import logging
 import os
+from typing import Literal
 
-from fastapi import APIRouter, Request
+from fastapi import APIRouter, Query, Request
+from fastapi.concurrency import run_in_threadpool
 from fastapi.responses import JSONResponse, Response
 from pydantic import BaseModel, Field
 
 from api.deps import get_system_config_service
+from api.v1.schemas.login_log import LoginLogResponse
 from src.auth import (
+    CHANGE_PASSWORD_ERROR_CURRENT_INVALID,
     COOKIE_NAME,
     SESSION_MAX_AGE_HOURS_DEFAULT,
     change_password,
@@ -34,6 +38,12 @@ from src.auth import (
 )
 from src.config import Config, setup_env
 from src.core.config_manager import ConfigManager
+from src.services.login_audit_service import (
+    LOGIN_LOG_MAX_ROWS,
+    LOGIN_LOG_RETENTION_DAYS_DEFAULT,
+    record_auth_event,
+)
+from src.services.ip_geo_resolver import get_offline_resolver
 
 logger = logging.getLogger(__name__)
 
@@ -282,6 +292,13 @@ async def auth_update_settings(request: Request, body: AuthSettingsRequest):
                     )
                 if not verify_stored_password(current_password):
                     record_login_failure(ip)
+                    await run_in_threadpool(
+                        record_auth_event,
+                        request,
+                        "auth_enable",
+                        False,
+                        failure_reason="current_password_invalid",
+                    )
                     return JSONResponse(
                         status_code=401,
                         content={"error": "invalid_password", "message": "当前密码错误"},
@@ -310,6 +327,13 @@ async def auth_update_settings(request: Request, body: AuthSettingsRequest):
                 )
             if not verify_stored_password(current_password):
                 record_login_failure(ip)
+                await run_in_threadpool(
+                    record_auth_event,
+                    request,
+                    "auth_disable",
+                    False,
+                    failure_reason="current_password_invalid",
+                )
                 return JSONResponse(
                     status_code=401,
                     content={"error": "invalid_password", "message": "当前密码错误"},
@@ -353,8 +377,10 @@ async def auth_update_settings(request: Request, body: AuthSettingsRequest):
         content["loggedIn"] = True
         resp = JSONResponse(content=content)
         _set_session_cookie(resp, session_val, request)
+        await run_in_threadpool(record_auth_event, request, "auth_enable", True)
         return resp
 
+    await run_in_threadpool(record_auth_event, request, "auth_disable", True)
     resp = JSONResponse(content=_get_auth_status_dict(request))
     resp.delete_cookie(key=COOKIE_NAME, path="/")
     return resp
@@ -402,6 +428,13 @@ async def auth_login(request: Request, body: LoginRequest):
         confirm = (body.password_confirm or "").strip()
         if password != confirm:
             record_login_failure(ip)
+            await run_in_threadpool(
+                record_auth_event,
+                request,
+                "initial_setup",
+                False,
+                failure_reason="password_mismatch",
+            )
             return JSONResponse(
                 status_code=400,
                 content={"error": "password_mismatch", "message": "Passwords do not match"},
@@ -409,12 +442,27 @@ async def auth_login(request: Request, body: LoginRequest):
         err = set_initial_password(password)
         if err:
             record_login_failure(ip)
+            await run_in_threadpool(
+                record_auth_event,
+                request,
+                "initial_setup",
+                False,
+                failure_reason="password_rejected",
+            )
             return JSONResponse(
                 status_code=400,
                 content={"error": "invalid_password", "message": err},
             )
     elif not verify_password(password) or not username_matches:
         record_login_failure(ip)
+        await run_in_threadpool(
+            record_auth_event,
+            request,
+            "login",
+            False,
+            failure_reason="invalid_credentials",
+            username_matched=username_matches,
+        )
         return JSONResponse(
             status_code=401,
             content={"error": "invalid_credentials", "message": "账号或密码错误"},
@@ -427,6 +475,10 @@ async def auth_login(request: Request, body: LoginRequest):
             status_code=500,
             content={"error": "internal_error", "message": "Failed to create session"},
         )
+
+    # Determine event type: initial_setup or login
+    event_type = "initial_setup" if not password_set else "login"
+    await run_in_threadpool(record_auth_event, request, event_type, True)
 
     resp = JSONResponse(content={"ok": True})
     _set_session_cookie(resp, session_val, request)
@@ -468,6 +520,14 @@ async def auth_change_password(request: Request, body: ChangePasswordRequest):
 
     err = change_password(current, new_pwd)
     if err:
+        if err == CHANGE_PASSWORD_ERROR_CURRENT_INVALID:
+            await run_in_threadpool(
+                record_auth_event,
+                request,
+                "password_change",
+                False,
+                failure_reason="current_password_invalid",
+            )
         return JSONResponse(
             status_code=400,
             content={"error": "invalid_password", "message": err},
@@ -476,6 +536,7 @@ async def auth_change_password(request: Request, body: ChangePasswordRequest):
     if is_auth_enabled() and not rotate_session_secret():
         logger.warning("Password changed but session secret rotation failed")
     session_val = create_session() if is_auth_enabled() else None
+    await run_in_threadpool(record_auth_event, request, "password_change", True)
     if not session_val:
         return Response(status_code=204)
     resp = JSONResponse(content={"ok": True, "sessions_invalidated": True})
@@ -498,3 +559,157 @@ async def auth_logout(request: Request):
     resp = Response(status_code=204)
     resp.delete_cookie(key=COOKIE_NAME, path="/")
     return resp
+
+
+def _build_geo_meta() -> dict:
+    """Build the ``geo`` metadata block for the login-logs response."""
+    resolver = get_offline_resolver()
+    configured = resolver.is_configured()
+    attribution = resolver.get_attribution() if configured else None
+
+    # Extract database type from the resolver internals
+    database_type = None
+    if configured:
+        database_type = getattr(resolver, "_db_type", None) or None
+
+    online_provider = os.getenv("LOGIN_LOG_GEO_ONLINE_PROVIDER", "").strip() or None
+
+    return {
+        "offline": {
+            "configured": configured,
+            "available": configured,
+            "databaseType": database_type,
+            "attribution": attribution,
+        },
+        "online": {
+            "provider": online_provider,
+        },
+    }
+
+
+def _row_to_item(row, *, resolver=None) -> dict:
+    """Convert a LoginAuditLog ORM row to a response dict (camelCase)."""
+    from src.storage import to_utc_isoformat
+
+    created_at_str = to_utc_isoformat(row.created_at) or ""
+
+    # Build location block
+    geo_status = row.geo_status or "not_configured"
+    location = {
+        "status": geo_status,
+        "source": row.geo_source,
+        "countryCode": row.country_code,
+        "en": {
+            "country": row.country_en,
+            "region": row.region_en,
+            "city": row.city_en,
+        },
+        "zh": {
+            "country": row.country_zh,
+            "region": row.region_zh,
+            "city": row.city_zh,
+        },
+    }
+
+    # On-the-fly resolution for not_configured rows when offline DB is now available
+    if geo_status == "not_configured" and row.ip_scope == "public" and resolver and resolver.is_configured():
+        geo_result = resolver.resolve(row.ip)
+        if geo_result["geo_status"] == "resolved":
+            location["status"] = "resolved"
+            location["source"] = geo_result["geo_source"]
+            location["countryCode"] = geo_result["country_code"]
+            location["en"] = {
+                "country": geo_result["country_en"],
+                "region": geo_result["region_en"],
+                "city": geo_result["city_en"],
+            }
+            location["zh"] = {
+                "country": geo_result["country_zh"],
+                "region": geo_result["region_zh"],
+                "city": geo_result["city_zh"],
+            }
+
+    client = {
+        "type": row.client_type or "unknown",
+        "browser": row.browser,
+        "browserVersion": row.browser_version,
+        "os": row.os,
+        "deviceType": row.device_type or "unknown",
+        "userAgent": row.user_agent,
+    }
+
+    return {
+        "id": row.id,
+        "createdAt": created_at_str,
+        "eventType": row.event_type,
+        "success": row.success,
+        "failureReason": row.failure_reason,
+        "usernameMatched": row.username_matched,
+        "ip": row.ip,
+        "peerIp": row.peer_ip,
+        "ipScope": row.ip_scope,
+        "location": location,
+        "client": client,
+    }
+
+
+@router.get(
+    "/login-logs",
+    summary="List login audit logs",
+    description="Return paginated login and authentication audit logs.",
+    response_model=LoginLogResponse,
+)
+async def auth_login_logs(
+    request: Request,
+    result: Literal["all", "success", "failure"] = Query(default="all"),
+    limit: int = Query(default=20, ge=1, le=100),
+    offset: int = Query(default=0, ge=0),
+):
+    """Return paginated login audit log entries.
+
+    Auth must be enabled; returns 403 when auth is off.
+    """
+    if not is_auth_enabled():
+        return JSONResponse(
+            status_code=403,
+            content={"error": "login_log_unavailable", "message": "Login log requires admin authentication to be enabled"},
+        )
+
+    try:
+        from src.repositories.login_audit_repo import LoginAuditRepository
+
+        filter_value = None if result == "all" else result
+        rows, total = await run_in_threadpool(
+            LoginAuditRepository().list_paginated,
+            result=filter_value,
+            limit=limit,
+            offset=offset,
+        )
+
+        resolver = get_offline_resolver()
+        items = [_row_to_item(row, resolver=resolver) for row in rows]
+
+        retention_days = LOGIN_LOG_RETENTION_DAYS_DEFAULT
+        try:
+            env_val = int(os.getenv("LOGIN_LOG_RETENTION_DAYS", str(retention_days)))
+            if 1 <= env_val <= 3650:
+                retention_days = env_val
+        except ValueError:
+            pass
+
+        geo_meta = _build_geo_meta()
+
+        return LoginLogResponse(
+            items=items,
+            total=total,
+            limit=limit,
+            offset=offset,
+            retentionDays=retention_days,
+            geo=geo_meta,
+        )
+    except Exception as exc:
+        logger.error("Failed to read login audit logs: %s", exc, exc_info=True)
+        return JSONResponse(
+            status_code=500,
+            content={"error": "internal_error", "message": "Failed to read login logs"},
+        )

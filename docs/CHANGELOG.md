@@ -8,6 +8,7 @@ and this project adheres to [Semantic Versioning](https://semver.org/).
 > For user-friendly release highlights, see the [GitHub Releases](https://github.com/ZhuLinsen/daily_stock_analysis/releases) page.
 
 ## [Unreleased]
+- [新功能] 记录管理员登录日志：在「系统设置 > 系统」新增登录日志卡片，记录登录、首次设置密码、开启/关闭认证、修改密码的成功与失败事件，包含 IP 地址、归属地（国家/省/城市）、客户端信息（浏览器/桌面端/脚本、操作系统、设备类型）、时间戳；支持离线 IP 地理库（DB-IP City Lite / MaxMind GeoLite2-City）和可选的在线查询（ip-api.com）；默认保留 90 天，上限 5000 行；详见 [登录日志](login-log.md)
 - [测试] 修复 `test_service_defaults_lifecycle_and_preserves_explicit_values` 随星期几波动：盘后信号 3d 有效期按交易日计（E16），周三发出时到期日是下周一（5 个自然日），旧断言写死“≤ 3 个自然日”，只在周日前后能过。改为从 `DecisionSignalService._horizon_days` / `_add_trading_days` 取窗口，不在测试里重复常量；生产代码无改动。
 - [chore] 删除 `src/agent/intake_questions.py` 中无任何调用方的 v2 规划函数 `plan_intake_v2` 与 `_build_brief_preview_v2`（约 210 行，引用的 `chat_intake_intent_resolver` 模块并不存在）。依据 AGENTS.md 1.2；v1 引导链路与对外行为不变。
 - [文档] 日线成交量“手→股”换算（乘 100）补测科创板、北交所、ETF：联网核对 688981、430047、510300 的“成交量 × 100 ÷（成交额 ÷ 收盘价）”均为 0.98–1.01，确认东财系日线对这些市场同样以“手”计，代码无需修改；同步 `docs/data-source-stability.md` 与 `docs/ai/STATUS.md`，关闭 R26 遗留项。

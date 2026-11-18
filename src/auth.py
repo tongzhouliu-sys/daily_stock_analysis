@@ -330,9 +330,16 @@ def verify_password(password: str) -> bool:
     return verify_stored_password(password)
 
 
+CHANGE_PASSWORD_ERROR_CURRENT_INVALID = "current_password_invalid"
+
+
 def change_password(current: str, new: str) -> Optional[str]:
     """
     Change password. Verifies current, writes new hash. Returns error message or None on success.
+
+    When the current password is wrong, returns the sentinel
+    ``CHANGE_PASSWORD_ERROR_CURRENT_INVALID`` so callers can distinguish it
+    from other validation errors without comparing localized strings.
     """
     if not is_auth_enabled():
         return "认证功能未启用"
@@ -342,7 +349,7 @@ def change_password(current: str, new: str) -> Optional[str]:
     if not current or not current.strip():
         return "请输入当前密码"
     if not _verify_password_hash(current, _password_hash_salt, _password_hash_stored):
-        return "当前密码错误"
+        return CHANGE_PASSWORD_ERROR_CURRENT_INVALID
 
     err = _validate_password(new)
     if err:

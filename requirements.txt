@@ -82,6 +82,7 @@ argon2-cffi>=25.1.0         # Scanner standalone CLI authentication and migratio
 uvicorn[standard]>=0.27.0   # ASGI server
 python-multipart>=0.0.6     # FastAPI File/Form upload support
 fastapi-guard>=8.1.1        # Optional security middleware (GUARD_ENABLED=true): rate limit, IP allowlist, request screening
+maxminddb>=2.0.0            # Offline IP geolocation database reader for login audit log
 
 # Public macroeconomic tools
 # Installed from a pinned GitHub release wheel (sha256 checked); if that release URL is

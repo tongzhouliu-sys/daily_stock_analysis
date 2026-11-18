@@ -86,7 +86,7 @@ def test_backend_build_collects_and_probes_miniracer(filename: str) -> None:
         assert "'orjson', 'py_mini_racer'" in script
         assert "-WindowStyle Hidden" in script
     else:
-        assert "futu orjson py_mini_racer; do" in script
+        assert "futu orjson py_mini_racer maxminddb; do" in script
 
 
 @pytest.mark.parametrize("filename", ["build-backend.ps1", "build-backend-macos.sh"])

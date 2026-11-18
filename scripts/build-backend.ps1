@@ -92,6 +92,7 @@ $hiddenImports = @(
   'tiktoken',
   'tiktoken_ext',
   'tiktoken_ext.openai_public',
+  'maxminddb',
   'api',
   'api.app',
   'api.deps',
