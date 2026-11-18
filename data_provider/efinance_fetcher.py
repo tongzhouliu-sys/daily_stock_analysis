@@ -639,7 +639,8 @@ class EfinanceFetcher(BaseFetcher):
 
         # R26: Eastmoney (efinance) reports daily A-share/ETF volume in lots
         # (手); the storage contract is shares. Verified against Tencent and
-        # Sina for SH main board, SZ main board, ChiNext, STAR and ETF.
+        # Sina for SH main board, SZ main board, ChiNext, STAR and ETF, and
+        # on 2026-11-18 by volume * 100 / (amount / close) ~= 1 for BSE too.
         df['volume'] = pd.to_numeric(df['volume'], errors='coerce').fillna(0) * 100
 
         

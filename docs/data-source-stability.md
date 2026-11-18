@@ -6,7 +6,7 @@
 
 ## 日线成交量口径
 
-入库的 `stock_daily.volume` 统一为“股”。东方财富系接口（efinance、AkShare 的 `stock_zh_a_hist` / `fund_etf_hist_em` / 实时快照）返回的是“手”，标准化时乘 100；新浪日线本身就是股；AkShare 的腾讯日线包装在不同板块间不一致（沪市已是股、深市主板仍是手），用 `成交额 / 收盘价` 选择原值或乘 100。港股、美股成交量本来就以股计，不做换算。
+入库的 `stock_daily.volume` 统一为“股”。东方财富系接口（efinance、AkShare 的 `stock_zh_a_hist` / `fund_etf_hist_em` / 实时快照）返回的是“手”，标准化时乘 100（沪深主板、创业板、科创板、北交所、ETF 均已用“成交量 × 100 ÷（成交额 ÷ 收盘价）≈ 1”联网核对）；新浪日线本身就是股；AkShare 的腾讯日线包装在不同板块间不一致（沪市已是股、深市主板仍是手），用 `成交额 / 收盘价` 选择原值或乘 100。港股、美股成交量本来就以股计，不做换算。
 
 历史数据由 `2026-11-15-daily-volume-shares` 迁移修正，只处理 `data_source` 为 `EfinanceFetcher` / `AkshareFetcher` 的 6 位 A 股与 ETF 代码，并用同样的成交额比值判断，避免把新浪来源的股数再放大 100 倍。迁移只执行一次；应用前可用 `python scripts/normalize_daily_volume.py` 先看影响行数，`--apply` 才会写入并自动备份 SQLite 文件。
 

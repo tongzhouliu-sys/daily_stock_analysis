@@ -17,7 +17,7 @@
 | `src/schemas/` | API / 报告数据结构定义 | 10 | 2107 |
 | `src/agent/` | 问股 Agent：意图解析、编排、工具与流式事件 | 64 | 26598 |
 | `src/llm/` | LLM 调用封装与本地 CLI 生成后端 | 12 | 6466 |
-| `data_provider/` | 多数据源适配、优先级与 fallback | 22 | 19244 |
+| `data_provider/` | 多数据源适配、优先级与 fallback | 22 | 19245 |
 | `api/` | FastAPI 应用与 v1 路由 | 44 | 13123 |
 | `bot/` | IM / 机器人接入 | 22 | 5524 |
 | `apps/dsa-web/src/` | Web 前端（React + Vite） | 336 | 111495 |
@@ -56,7 +56,7 @@
 | `src/services/run_flow.py` | 1504 | `build_task_run_flow_snapshot`:77, `build_history_run_flow_snapshot`:183, `_append_provider_runs`:371, `_append_context_blocks`:474, `_append_llm_runs`:536, `_append_history_runs`:611 | 7 |
 | `api/v1/endpoints/analysis.py` | 1472 | `_get_task_trace_id`:90, `_task_asset_type`:100, `_market_review_lock_path`:126, `_build_market_review_runtime`:130, `_with_request_report_language`:134, `_run_market_review_background`:145 | 17 |
 | `data_provider/tushare_fetcher.py` | 1432 | `_is_etf_code`:51, `_is_us_code`:63, `_resolve_tushare_http_url`:75, `_TushareHttpClient`:97, `TushareFetcher`:135 | 14 |
-| `data_provider/efinance_fetcher.py` | 1419 | `EfinanceRealtimeQuote`:80, `_lots_to_shares`:124, `_is_etf_code`:165, `_build_eastmoney_etf_secid`:182, `_is_us_code`:194, `_ef_call_with_timeout`:206 | 15 |
+| `data_provider/efinance_fetcher.py` | 1420 | `EfinanceRealtimeQuote`:80, `_lots_to_shares`:124, `_is_etf_code`:165, `_build_eastmoney_etf_secid`:182, `_is_us_code`:194, `_ef_call_with_timeout`:206 | 15 |
 | `api/v1/endpoints/agent.py` | 1403 | `ChatRequest`:73, `_intake_status_code`:120, `_public_answer_meta`:124, `_needs_object_intake`:135, `_reuse_session_brief`:142, `_build_agent_chat_context`:159 | 25 |
 | `src/services/decision_signal_service.py` | 1388 | `DecisionSignalNotFoundError`:75, `DecisionSignalStorageError`:79, `DecisionSignalWriteOutcome`:87, `DecisionSignalService`:110 | 35 |
 | `src/services/alert_service.py` | 1372 | `AlertServiceError`:87, `AlertNotFoundError`:93, `UnsupportedAlertTypeError`:99, `AlertService`:105 | 15 |
@@ -83,7 +83,7 @@
 
 ## 规模快照
 
-- Python 源码（不含测试）：497 个文件，230582 行
+- Python 源码（不含测试）：497 个文件，230583 行
 - Python 测试：367 个文件，189582 行
 - 前端 TS/TSX：328 个文件，102982 行
 - ≥400 行的 Python 文件：155 个
