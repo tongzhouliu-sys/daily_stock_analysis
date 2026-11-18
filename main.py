@@ -1327,7 +1327,15 @@ def run_full_analysis(
             if parts:
                 combined_content = "\n\n---\n\n".join(parts)
                 if pipeline.notifier.is_available():
-                    if pipeline.notifier.send(combined_content, email_send_to_all=True, route_type="report"):
+                    # F2: 传递 results 和 report_type 供飞书结构化渲染使用
+                    send_kwargs = {
+                        "email_send_to_all": True,
+                        "route_type": "report",
+                    }
+                    if results:
+                        send_kwargs["results"] = results
+                        send_kwargs["report_type"] = getattr(config, 'report_type', 'simple')
+                    if pipeline.notifier.send(combined_content, **send_kwargs):
                         logger.info("已合并推送（个股+大盘复盘）")
                     else:
                         logger.warning("合并推送失败")

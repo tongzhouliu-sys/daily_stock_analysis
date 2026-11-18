@@ -3962,6 +3962,12 @@ class StockAnalysisPipeline:
                 }
                 if _supports_explicit_keyword(self.notifier.send, "structured_payload"):
                     send_kwargs["structured_payload"] = _share_image_payload(result)
+                # F2: 单股推送传递 results 和 report_type，供飞书结构化渲染使用
+                # 注意：这会影响企业微信的 use_wechat_dashboard 判断
+                # use_wechat_dashboard = bool(results) and bool(report_type)
+                # 但单股推送时企业微信应该走仪表盘，所以这是预期行为
+                send_kwargs["results"] = [result]
+                send_kwargs["report_type"] = report_type.value
                 sent = self.notifier.send(report_content, **send_kwargs)
                 notification_run = self._build_notification_run_snapshot(
                     channel="report",

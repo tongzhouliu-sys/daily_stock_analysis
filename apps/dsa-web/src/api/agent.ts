@@ -110,7 +110,11 @@ export function decodeChatState(payload: unknown, source: 'detail' | 'accepted' 
   if (activeReport !== null && activeReport !== undefined) {
     if (!record(activeReport)
       || typeof activeReport.record_id !== 'number'
-      || (activeReport.status !== 'available' && activeReport.status !== 'unavailable')) {
+      || !Number.isSafeInteger(activeReport.record_id)
+      || activeReport.record_id <= 0
+      || (activeReport.status !== 'available' && activeReport.status !== 'unavailable')
+      || (activeReport.status === 'available'
+        && (typeof activeReport.stock_code !== 'string' || !activeReport.stock_code.trim()))) {
       throw invalid();
     }
     reportContext = {

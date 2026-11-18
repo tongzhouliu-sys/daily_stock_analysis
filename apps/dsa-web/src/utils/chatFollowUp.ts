@@ -4,25 +4,47 @@ import { looksLikeStockCode, validateStockCode } from './validation';
 import { normalizeStockCode, resolveRegisteredIndexCanonical } from './stockCode';
 import type { RegisteredIndexIdentity } from './stockCode';
 
+/**
+ * A follow-up hint is only a pre-accept draft. The server re-reads and
+ * re-validates the report by primary key before it commits a user turn;
+ * client-side history text is never sent as model material.
+ */
 export interface ChatFollowUpContext {
   stock_code: string;
   stock_name: string | null;
-  report_record_id?: number;
-  previous_analysis_summary?: unknown;
-  previous_strategy?: unknown;
-  previous_price?: number;
-  previous_change_pct?: number;
-  market_structure_context?: unknown;
+  report_record_id?: number | null;
 }
 
-type ResolveChatFollowUpContextParams = {
+export type ChatReportDraftErrorCode =
+  | 'report_unavailable'
+  | 'report_mismatch'
+  | 'report_not_supported';
+
+export class ChatFollowUpLoadError extends Error {
+  readonly code: ChatReportDraftErrorCode;
+
+  constructor(code: ChatReportDraftErrorCode) {
+    super(code);
+    this.name = 'ChatFollowUpLoadError';
+    this.code = code;
+  }
+}
+
+export interface ResolvedChatReport {
+  recordId: number;
   stockCode: string;
   stockName: string | null;
-  recordId?: number;
+  createdAt: string | null;
+}
+
+type ResolveChatReportDraftParams = {
+  stockCode: string;
+  recordId: number;
   index?: ReadonlyArray<RegisteredIndexIdentity>;
 };
 
 const MAX_FOLLOW_UP_NAME_LENGTH = 80;
+const SUPPORTED_REPORT_TYPES = new Set(['simple', 'detailed', 'full', 'brief']);
 
 function hasInvalidFollowUpNameCharacter(value: string): boolean {
   return Array.from(value).some((character) => {
@@ -56,43 +78,6 @@ export function sanitizeFollowUpStockName(stockName: string | null): string | nu
   return normalized;
 }
 
-function toSnakeCaseKey(value: string): string {
-  return value
-    .replace(/([a-z\d])([A-Z])/g, '$1_$2')
-    .replace(/-/g, '_')
-    .toLowerCase();
-}
-
-function convertMarketStructureToSnakeCase(value: unknown): unknown {
-  if (Array.isArray(value)) {
-    return value.map((item) => convertMarketStructureToSnakeCase(item));
-  }
-  if (value === null || typeof value !== 'object') {
-    return value;
-  }
-
-  return Object.fromEntries(
-    Object.entries(value as Record<string, unknown>).map(([key, item]) => [
-      toSnakeCaseKey(key),
-      convertMarketStructureToSnakeCase(item),
-    ]),
-  );
-}
-
-function getMarketStructureContextForAgent(report?: AnalysisReport | null): unknown | undefined {
-  const marketStructure = report?.details?.marketStructure;
-  if (marketStructure === null || typeof marketStructure !== 'object') {
-    return undefined;
-  }
-  if (Array.isArray(marketStructure)) {
-    return undefined;
-  }
-  if (!Object.keys(marketStructure).length) {
-    return undefined;
-  }
-  return convertMarketStructureToSnakeCase(marketStructure);
-}
-
 export function parseFollowUpRecordId(recordId: string | null): number | undefined {
   if (!recordId || !/^\d+$/.test(recordId)) {
     return undefined;
@@ -111,7 +96,19 @@ export function buildFollowUpPrompt(stockCode: string, stockName: string | null)
   return `请深入分析 ${displayName}`;
 }
 
-function reportIdentityKey(code: string, index: ReadonlyArray<RegisteredIndexIdentity>, type?: 'stock' | 'index'): string | null {
+export function buildReportFollowUpContext(
+  stockCode: string,
+  stockName: string | null,
+  recordId: number,
+): ChatFollowUpContext {
+  return { stock_code: stockCode, stock_name: stockName, report_record_id: recordId };
+}
+
+function reportIdentityKey(
+  code: string,
+  index: ReadonlyArray<RegisteredIndexIdentity>,
+  type?: 'stock' | 'index',
+): string | null {
   const trimmed = code.trim();
   if (!trimmed) return null;
   const registeredIndex = type !== 'stock' ? resolveRegisteredIndexCanonical(index, trimmed) : null;
@@ -143,65 +140,45 @@ function reportCodeForms(item: RegisteredIndexIdentity): string[] {
   return forms;
 }
 
-export function buildChatFollowUpContext(
-  stockCode: string,
-  stockName: string | null,
-  report?: AnalysisReport | null,
-  index: ReadonlyArray<RegisteredIndexIdentity> = [],
-  assetType?: 'stock' | 'index',
-  recordId?: number,
-): ChatFollowUpContext {
-  const context: ChatFollowUpContext = {
-    stock_code: stockCode,
-    stock_name: stockName,
-  };
-
-  if (recordId !== undefined) {
-    context.report_record_id = recordId;
-  }
-
-  const requestKey = reportIdentityKey(stockCode, index, assetType);
-  const reportKey = report?.meta?.stockCode
-    ? reportIdentityKey(report.meta.stockCode, index, report.meta.assetType) : null;
-  if (!report || !requestKey || requestKey !== reportKey) {
-    return context;
-  }
-
-  if (report.summary) {
-    context.previous_analysis_summary = report.summary;
-  }
-
-  if (report.strategy) {
-    context.previous_strategy = report.strategy;
-  }
-
-  if (report.meta) {
-    context.previous_price = report.meta.currentPrice;
-    context.previous_change_pct = report.meta.changePct;
-  }
-
-  const marketStructureContext = getMarketStructureContextForAgent(report);
-  if (marketStructureContext) {
-    context.market_structure_context = marketStructureContext;
-  }
-
-  return context;
-}
-
-export async function resolveChatFollowUpContext({
+/**
+ * Validate that a `recordId` from HomePage names a usable stock report before
+ * the UI allows a user turn to carry it. All failures share one display path;
+ * the server remains the only authority for the actual model input.
+ */
+export async function resolveChatReportDraft({
   stockCode,
-  stockName,
   recordId,
   index = [],
-}: ResolveChatFollowUpContextParams): Promise<ChatFollowUpContext> {
-  if (!recordId) {
-    return buildChatFollowUpContext(stockCode, stockName, undefined, index, undefined, undefined);
+}: ResolveChatReportDraftParams): Promise<ResolvedChatReport> {
+  let report: AnalysisReport;
+  try {
+    report = await historyApi.getDetail(recordId);
+  } catch {
+    throw new ChatFollowUpLoadError('report_unavailable');
   }
 
-  try {
-    const report = await historyApi.getDetail(recordId);
-    return buildChatFollowUpContext(stockCode, stockName, report, index, undefined, recordId);
-  } catch {
-    return buildChatFollowUpContext(stockCode, stockName, undefined, index, undefined, recordId);
+  const meta = report?.meta;
+  if (!meta) {
+    throw new ChatFollowUpLoadError('report_unavailable');
   }
+  const reportType = String(meta.reportType || '').toLowerCase();
+  if (!SUPPORTED_REPORT_TYPES.has(reportType)) {
+    throw new ChatFollowUpLoadError('report_not_supported');
+  }
+  if (!meta.stockCode || !meta.stockCode.trim()) {
+    throw new ChatFollowUpLoadError('report_unavailable');
+  }
+
+  const requestKey = reportIdentityKey(stockCode, index);
+  const reportKey = reportIdentityKey(meta.stockCode, index, meta.assetType);
+  if (requestKey && reportKey && requestKey !== reportKey) {
+    throw new ChatFollowUpLoadError('report_mismatch');
+  }
+
+  return {
+    recordId,
+    stockCode,
+    stockName: sanitizeFollowUpStockName(meta.stockName ?? null),
+    createdAt: meta.createdAt ?? null,
+  };
 }

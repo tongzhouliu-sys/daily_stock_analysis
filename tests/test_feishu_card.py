@@ -168,15 +168,13 @@ def test_header_template_follows_report_type():
     assert build_feishu_card(_formatted_report())["header"]["template"] == "blue"
 
 
-def test_card_over_budget_falls_back_to_compact_card_without_losing_text():
+def test_card_over_budget_returns_none_for_pagination():
+    """紧凑卡片超限时返回 None，由发送层处理分页或纯文本兜底。"""
     formatted = _formatted_report()
     card = build_feishu_card(formatted, max_bytes=1000)
-    text = _card_text(card)
 
-    assert len(card["elements"]) >= 1
-    assert not any("fields" in element for element in card["elements"])
-    for token in ("贵州茅台", "空仓者", "腾讯财经", "数据来源"):
-        assert token in text, token
+    # 当所有卡片类型都超限时，返回 None
+    assert card is None, "超限时应返回 None，由发送层处理"
 
 
 def test_page_marker_and_footer_metadata_move_to_note():
