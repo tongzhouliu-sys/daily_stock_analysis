@@ -291,3 +291,126 @@ def test_orphan_sqlite3_and_journal_are_swept(environment, monkeypatch):
     assert not (folder / (j["id"] + ".sqlite3")).exists()
     # But the .zip should exist.
     assert (folder / (j["id"] + ".zip")).exists()
+
+
+def test_backup_space_estimate_ignores_non_json_artifacts(environment, monkeypatch):
+    """Space estimate should not be inflated by non-json files in artifacts directory."""
+    s, w = environment
+    folder = s.runtime / "backups"
+    folder.mkdir(exist_ok=True, parents=True)
+    artifacts_dir = s.runtime / "artifacts"
+    artifacts_dir.mkdir(exist_ok=True, parents=True)
+
+    # Add large non-json files (e.g., .bin, .dat) to artifacts
+    for i in range(10):
+        (artifacts_dir / f"large_file_{i}.bin").write_bytes(b"x" * (100 * 1024 * 1024))  # 100MB each
+
+    # Track the estimated space calculation
+    import src.services.signal_scanner.worker.jobs as jobs_mod
+    original_disk_usage = jobs_mod.shutil.disk_usage
+
+    class _FakeUsage:
+        def __init__(self, free):
+            self.free = free
+
+    # Simulate 7GB free space - should be enough since we ignore non-json files
+    jobs_mod.shutil.disk_usage = lambda path: _FakeUsage(7 * 1024 * 1024 * 1024)
+
+    try:
+        j = run(w, "BACKUP")
+        assert j["status"] == "SUCCEEDED", f"Backup should succeed when non-json files are ignored, got {j['error_json']}"
+    finally:
+        jobs_mod.shutil.disk_usage = original_disk_usage
+
+    # Clean up test files
+    for i in range(10):
+        (artifacts_dir / f"large_file_{i}.bin").unlink(missing_ok=True)
+
+
+def test_backup_space_estimate_uses_latest_zip(environment, monkeypatch):
+    """When historical zip exists, estimate should be based on db_size*2 + latest_zip_size."""
+    s, w = environment
+    folder = s.runtime / "backups"
+    folder.mkdir(exist_ok=True, parents=True)
+
+    # Create a fake historical zip (simulating ~1.7GB backup)
+    historical_zip = folder / "old_backup.zip"
+    historical_zip.write_bytes(b"PK\x03\x04" + b"x" * (100 * 1024))  # Small for test, but represents large backup
+
+    # Track the calculation
+    import src.services.signal_scanner.worker.jobs as jobs_mod
+    original_disk_usage = jobs_mod.shutil.disk_usage
+
+    class _FakeUsage:
+        def __init__(self, free):
+            self.free = free
+
+    # Simulate 3GB free - should be enough with new estimate formula
+    jobs_mod.shutil.disk_usage = lambda path: _FakeUsage(3 * 1024 * 1024 * 1024)
+
+    try:
+        j = run(w, "BACKUP")
+        assert j["status"] == "SUCCEEDED", f"Backup should succeed with historical zip estimate, got {j['error_json']}"
+    finally:
+        jobs_mod.shutil.disk_usage = original_disk_usage
+
+    # Verify the new backup succeeded and old zip still exists (retention will handle cleanup)
+    assert (folder / (j["id"] + ".zip")).exists()
+
+
+def test_backup_removes_sqlite3_after_zip_creation(environment):
+    """After successful backup, standalone .sqlite3 should be deleted (only zip remains)."""
+    s, w = environment
+    folder = s.runtime / "backups"
+
+    j = run(w, "BACKUP")
+    assert j["status"] == "SUCCEEDED"
+
+    # Verify zip exists
+    zip_path = folder / (j["id"] + ".zip")
+    assert zip_path.exists(), "Backup zip should exist"
+
+    # Verify standalone sqlite3 does NOT exist
+    sqlite3_path = folder / (j["id"] + ".sqlite3")
+    assert not sqlite3_path.exists(), "Standalone .sqlite3 should be removed after zip creation"
+
+    # Verify no journal file remains
+    journal_path = folder / (j["id"] + ".sqlite3-journal")
+    assert not journal_path.exists(), "Journal file should not remain"
+
+
+def test_backup_no_space_error_includes_details(environment, monkeypatch):
+    """BACKUP_NO_SPACE error should include needed_bytes and free_bytes in error_json."""
+    s, w = environment
+    folder = s.runtime / "backups"
+    folder.mkdir(exist_ok=True, parents=True)
+
+    monkeypatch.setenv("SCANNER_BACKUP_KEEP_DAILY", "0")
+    monkeypatch.setenv("SCANNER_BACKUP_KEEP_WEEKLY", "0")
+
+    import src.services.signal_scanner.worker.jobs as jobs_mod
+    original_disk_usage = jobs_mod.shutil.disk_usage
+
+    class _FakeUsage:
+        def __init__(self, free):
+            self.free = free
+
+    # Simulate very low disk space (100 bytes)
+    jobs_mod.shutil.disk_usage = lambda path: _FakeUsage(100)
+
+    try:
+        with pytest.raises(DomainError) as exc_info:
+            with w.db.transaction() as cx:
+                jid = enqueue(cx, "BACKUP", "BACKUP:nospace:" + uid(), w.cal.last_completed(now()), {})
+            with w.db.read() as cx:
+                jj = one(cx, "SELECT * FROM job_runs WHERE id=?", (jid,))
+            w.backup(jj)
+
+        assert exc_info.value.code == "BACKUP_NO_SPACE"
+        # Verify error details are present
+        assert "needed_bytes" in exc_info.value.details
+        assert "free_bytes" in exc_info.value.details
+        assert exc_info.value.details["free_bytes"] == 100
+        assert exc_info.value.details["needed_bytes"] > 100
+    finally:
+        jobs_mod.shutil.disk_usage = original_disk_usage
