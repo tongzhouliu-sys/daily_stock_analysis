@@ -177,6 +177,12 @@ class Worker:
                 raise DomainError("UNSUPPORTED_JOB", status=422)
         except Exception as ex:
             # No external payload, secret or arbitrary exception text enters persisted logs.
+            error_payload = dict(
+                code=ex.code if isinstance(ex, DomainError) else "INTERNAL_JOB_ERROR",
+                exception_type=type(ex).__name__,
+            )
+            if isinstance(ex, DomainError) and ex.details:
+                error_payload.update(ex.details)
             with self.db.transaction() as cx:
                 update(
                     cx,
@@ -185,10 +191,7 @@ class Worker:
                     j["id"],
                     dict(
                         status="FAILED",
-                        error_json=dict(
-                            code=ex.code if isinstance(ex, DomainError) else "INTERNAL_JOB_ERROR",
-                            exception_type=type(ex).__name__,
-                        ),
+                        error_json=error_payload,
                     ),
                 )
             if not isinstance(ex, DomainError):
@@ -954,11 +957,19 @@ class Worker:
         # Sweep orphaned leftovers from prior failed backups before starting a new one.
         self._sweep_orphan_backups(folder)
 
-        # Estimate required space: database size + artifacts total, with 1.2x safety margin.
+        # Estimate required space with 1.2x safety margin.
+        # db_size * 2 because the backup contains both a .sqlite3 copy (inside zip) and the json artifacts.
+        # If a prior successful .zip exists, use its size as the best proxy for the new archive;
+        # otherwise fall back to db + only *.json files under artifacts (non-json files are not archived).
         db_size = self.db.path.stat().st_size if self.db.path.exists() else 0
-        artifacts_dir = self.settings.runtime / "artifacts"
-        artifacts_size = sum(p.stat().st_size for p in artifacts_dir.rglob("*") if p.is_file()) if artifacts_dir.exists() else 0
-        needed = int((db_size + artifacts_size) * 1.2) + 1
+        existing_zips = sorted(folder.glob("*.zip"), key=lambda p: p.stat().st_mtime, reverse=True)
+        if existing_zips:
+            latest_zip_size = existing_zips[0].stat().st_size
+            needed = int((db_size * 2 + latest_zip_size) * 1.2) + 1
+        else:
+            artifacts_dir = self.settings.runtime / "artifacts"
+            json_size = sum(p.stat().st_size for p in artifacts_dir.rglob("*.json") if p.is_file()) if artifacts_dir.exists() else 0
+            needed = int((db_size * 2 + json_size) * 1.2) + 1
 
         def _free_space():
             try:
