@@ -31,6 +31,7 @@ from src.formatters import (
     strip_hidden_markdown_metadata,
 )
 from src.notification_sender.feishu_card import build_feishu_card
+from src.report_language import ensure_report_disclaimer
 
 logger = logging.getLogger(__name__)
 
@@ -160,7 +161,12 @@ class FeishuSender:
     # ------------------------------------------------------------------
 
     @staticmethod
-    def _build_card_body(content: str, *, max_bytes: Optional[int] = None) -> dict:
+    def _build_card_body(
+        content: str,
+        *,
+        max_bytes: Optional[int] = None,
+        include_disclaimer: bool = False,
+    ) -> dict:
         """Build a Feishu interactive-card body (without the ``msg_type`` wrapper).
 
         Long reports are rendered as structured cards; short messages and cards
@@ -168,7 +174,9 @@ class FeishuSender:
         original content is never dropped, so the existing text fallback still
         works unchanged.
         """
-        return build_feishu_card(content, max_bytes=max_bytes)
+        return build_feishu_card(
+            content, max_bytes=max_bytes, include_disclaimer=include_disclaimer
+        )
 
     # ------------------------------------------------------------------
     # Webhook helpers (unchanged legacy path)
@@ -273,12 +281,19 @@ class FeishuSender:
     # App Bot send helpers
     # ------------------------------------------------------------------
 
-    def _send_via_app_bot(self, content: str, render_context: Optional[Dict[str, Any]] = None) -> bool:
+    def _send_via_app_bot(
+        self,
+        content: str,
+        render_context: Optional[Dict[str, Any]] = None,
+        *,
+        include_disclaimer: bool = False,
+    ) -> bool:
         """Send message through the Feishu App Bot, chunking if necessary.
-        
+
         Args:
             content: 消息内容
             render_context: 渲染上下文，用于结构化卡片渲染
+            include_disclaimer: 分析报告推送为 True，页脚补统一声明
         """
         if not self._feishu_chat_id:
             logger.warning("FEISHU_CHAT_ID 未配置，跳过 App Bot 推送")
@@ -295,11 +310,17 @@ class FeishuSender:
             logger.info(
                 "App Bot 消息超长 (%d 字节)，将分批发送", content_bytes
             )
-            return self._app_send_chunked(client, formatted)
+            return self._app_send_chunked(client, formatted, include_disclaimer=include_disclaimer)
 
-        return self._app_send_once(client, formatted)
+        return self._app_send_once(client, formatted, include_disclaimer=include_disclaimer)
 
-    def _app_send_chunked(self, client: Any, content: str) -> bool:
+    def _app_send_chunked(
+        self,
+        client: Any,
+        content: str,
+        *,
+        include_disclaimer: bool = False,
+    ) -> bool:
         """Chunk and send long content through App Bot."""
         try:
             chunks = chunk_content_by_max_bytes(
@@ -311,7 +332,7 @@ class FeishuSender:
 
         success = True
         for i, chunk in enumerate(chunks):
-            ok = self._app_send_once(client, chunk)
+            ok = self._app_send_once(client, chunk, include_disclaimer=include_disclaimer)
             if not ok:
                 logger.error("App Bot 第 %d/%d 批发送失败", i + 1, len(chunks))
                 success = False
@@ -319,7 +340,13 @@ class FeishuSender:
                 time.sleep(1)
         return success
 
-    def _app_send_once(self, client: Any, content: str) -> bool:
+    def _app_send_once(
+        self,
+        client: Any,
+        content: str,
+        *,
+        include_disclaimer: bool = False,
+    ) -> bool:
         """Single-shot send via App Bot with card-first / text-fallback.
 
         Content received here has already been through ``format_feishu_markdown``
@@ -327,7 +354,11 @@ class FeishuSender:
         The interactive card uses ``tag: lark_md`` for rendering.
         """
         card_payload = json.dumps(
-            self._build_card_body(content, max_bytes=self._feishu_max_bytes),
+            self._build_card_body(
+                content,
+                max_bytes=self._feishu_max_bytes,
+                include_disclaimer=include_disclaimer,
+            ),
             ensure_ascii=False,
         )
 
@@ -335,7 +366,8 @@ class FeishuSender:
             return True
 
         # Fallback to plain text.
-        text_payload = json.dumps({"text": content}, ensure_ascii=False)
+        text_content = ensure_report_disclaimer(content) if include_disclaimer else content
+        text_payload = json.dumps({"text": text_content}, ensure_ascii=False)
         return self._app_send_raw(client, "text", text_payload)
 
     def _app_send_raw(self, client: Any, msg_type: str, content_json: str) -> bool:
@@ -446,13 +478,22 @@ class FeishuSender:
             logger.error("send_to_feishu: content 不能为 None")
             return False
         sanitized_content = strip_hidden_markdown_metadata(content).strip()
+        # 仅分析报告推送补统一声明；告警、测试消息等保持原样。
+        include_disclaimer = bool(
+            render_context and render_context.get("route_type") == "report"
+        )
         if self._feishu_url:
             return self._send_via_webhook(
                 sanitized_content,
                 timeout_seconds=timeout_seconds,
                 render_context=render_context,
+                include_disclaimer=include_disclaimer,
             )
-        return self._send_via_app_bot(sanitized_content, render_context=render_context)
+        return self._send_via_app_bot(
+            sanitized_content,
+            render_context=render_context,
+            include_disclaimer=include_disclaimer,
+        )
 
     def send_feishu_file(self, file_path: str) -> bool:
         """
@@ -618,13 +659,15 @@ class FeishuSender:
         *,
         timeout_seconds: Optional[float] = None,
         render_context: Optional[Dict[str, Any]] = None,
+        include_disclaimer: bool = False,
     ) -> bool:
         """Legacy webhook send path.
-        
+
         Args:
             content: 消息内容
             timeout_seconds: 请求超时时间
             render_context: 渲染上下文，用于结构化卡片渲染
+            include_disclaimer: 分析报告推送为 True，页脚补统一声明
         """
         formatted_content = format_feishu_markdown(content)
 
@@ -647,15 +690,29 @@ class FeishuSender:
                 )
                 return False
             logger.info("飞书消息内容超长(%d字节/%d字符)，将分批发送", content_bytes, len(content))
-            return self._send_feishu_chunked(formatted_content, effective_max_bytes)
+            return self._send_feishu_chunked(
+                formatted_content,
+                effective_max_bytes,
+                include_disclaimer=include_disclaimer,
+            )
 
         try:
-            return self._send_feishu_message(formatted_content, timeout_seconds=timeout_seconds)
+            return self._send_feishu_message(
+                formatted_content,
+                timeout_seconds=timeout_seconds,
+                include_disclaimer=include_disclaimer,
+            )
         except Exception as e:
             logger.error("发送飞书消息失败: %s", e)
             return False
 
-    def _send_feishu_chunked(self, content: str, max_bytes: int) -> bool:
+    def _send_feishu_chunked(
+        self,
+        content: str,
+        max_bytes: int,
+        *,
+        include_disclaimer: bool = False,
+    ) -> bool:
         """分片发送超长内容，续页继承标题并加页码。
 
         改进点（F1 热修）：
@@ -681,7 +738,7 @@ class FeishuSender:
                     page_header = f"# {title} ({i + 1}/{total_chunks})\n\n"
                     chunk = page_header + chunk
 
-                if self._send_feishu_message(chunk):
+                if self._send_feishu_message(chunk, include_disclaimer=include_disclaimer):
                     success_count += 1
                     logger.info("飞书第 %d/%d 批发送成功", i + 1, total_chunks)
                 else:
@@ -705,7 +762,13 @@ class FeishuSender:
                 return title
         return ""
 
-    def _send_feishu_message(self, content: str, *, timeout_seconds: Optional[float] = None) -> bool:
+    def _send_feishu_message(
+        self,
+        content: str,
+        *,
+        timeout_seconds: Optional[float] = None,
+        include_disclaimer: bool = False,
+    ) -> bool:
         """Send a single Feishu webhook message (interactive card, fallback text).
 
         改进点（F1 热修）：
@@ -796,7 +859,11 @@ class FeishuSender:
             return False
 
         # 尝试发送卡片（不带关键词前缀，关键词稍后添加到页脚）
-        card_body = self._build_card_body(content, max_bytes=self._feishu_max_bytes)
+        card_body = self._build_card_body(
+            content,
+            max_bytes=self._feishu_max_bytes,
+            include_disclaimer=include_disclaimer,
+        )
         
         if card_body is not None:
             # 如果有配置关键词，添加到卡片的页脚
@@ -812,7 +879,8 @@ class FeishuSender:
                 return True
 
         # 卡片失败或超限，降级为纯文本（去除标记，带关键词前缀）
-        prepared_content = self._apply_keyword_prefix(content)
+        text_content = ensure_report_disclaimer(content) if include_disclaimer else content
+        prepared_content = self._apply_keyword_prefix(text_content)
         plain_text = strip_feishu_markup(prepared_content)
         text_payload = {
             "msg_type": "text",

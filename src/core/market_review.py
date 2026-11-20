@@ -21,7 +21,7 @@ import uuid
 from src.config import get_config
 from src.notification import NotificationService
 from src.market_analyzer import MarketAnalyzer
-from src.report_language import normalize_report_language
+from src.report_language import ensure_report_disclaimer, normalize_report_language
 from src.search_service import SearchService
 from src.analyzer import AnalysisResult, GeminiAnalyzer
 from src.llm.generation_backend import GenerationError
@@ -524,8 +524,10 @@ def _render_market_review_payload_markdown(
     metadata = _market_review_region_metadata(payload.get("region"))
     body = _render_market_review_payload_body(payload)
     if wrapper_title:
-        return f"{metadata}{wrapper_title}\n\n{body}".strip()
-    return f"{metadata}{body}".strip()
+        rendered = f"{metadata}{wrapper_title}\n\n{body}".strip()
+    else:
+        rendered = f"{metadata}{body}".strip()
+    return ensure_report_disclaimer(rendered)
 
 
 def _render_market_review_merge_markdown(
@@ -537,7 +539,9 @@ def _render_market_review_merge_markdown(
     markets = payload.get("markets")
     if isinstance(markets, dict) and markets:
         return _render_market_review_payload_markdown(payload)
-    return _append_missing_sector_payload_block(review_report, payload)
+    return ensure_report_disclaimer(
+        _append_missing_sector_payload_block(review_report, payload)
+    )
 
 
 def _render_market_review_payload_body(payload: Dict[str, Any]) -> str:

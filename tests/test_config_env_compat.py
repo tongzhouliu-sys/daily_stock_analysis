@@ -17,7 +17,7 @@ class ConfigEnvCompatibilityTestCase(unittest.TestCase):
     @patch("src.config.setup_env")
     @patch.object(Config, "_parse_litellm_yaml", return_value=[])
     @patch.object(Config, "_parse_stock_email_groups", return_value=[])
-    def test_share_image_social_branding_is_optional_and_configurable(
+    def test_removed_share_image_branding_env_is_ignored(
         self, _mock_parse_stock_email_groups, _mock_parse_litellm_yaml, _mock_setup_env
     ):
         with patch.dict(
@@ -32,18 +32,13 @@ class ConfigEnvCompatibilityTestCase(unittest.TestCase):
         ):
             configured = Config._load_from_env()
 
-        self.assertEqual(configured.share_image_xiaohongshu_url, "https://example.com/xhs")
-        self.assertEqual(configured.share_image_xiaohongshu_handle, "@自定义账号")
-        self.assertEqual(configured.share_image_xiaohongshu_id, "123456")
-        self.assertEqual(configured.share_image_xiaohongshu_qr_path, "assets/custom-xhs.png")
-
-        with patch.dict(os.environ, {}, clear=True):
-            disabled = Config._load_from_env()
-
-        self.assertIsNone(disabled.share_image_xiaohongshu_url)
-        self.assertIsNone(disabled.share_image_xiaohongshu_handle)
-        self.assertIsNone(disabled.share_image_xiaohongshu_id)
-        self.assertIsNone(disabled.share_image_xiaohongshu_qr_path)
+        for field_name in (
+            "share_image_xiaohongshu_url",
+            "share_image_xiaohongshu_handle",
+            "share_image_xiaohongshu_id",
+            "share_image_xiaohongshu_qr_path",
+        ):
+            self.assertFalse(hasattr(configured, field_name))
 
     @patch("src.config.setup_env")
     @patch.object(Config, "_parse_litellm_yaml", return_value=[])

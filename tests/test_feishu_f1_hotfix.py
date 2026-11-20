@@ -21,6 +21,7 @@ from src.notification_sender.feishu_sender import (
     FeishuSender,
     _calculate_webhook_request_body_size,
 )
+from src.report_language import REPORT_AI_DISCLAIMER
 
 
 def _config(**overrides):
@@ -300,6 +301,61 @@ class TestIntegration:
             assert result is True
             # 验证第二次请求是纯文本，没有标记
             assert call_count[0] == 2
+
+
+class TestReportDisclaimerScope:
+    """统一声明只出现在分析报告推送，覆盖卡片与纯文本兜底。"""
+
+    def test_report_route_adds_disclaimer_to_card_note(self):
+        config = _config()
+        sender = FeishuSender(config)
+        with mock.patch("requests.post") as mock_post:
+            mock_post.return_value = mock.Mock(status_code=200, json=lambda: {"code": 0})
+            assert sender.send_to_feishu(
+                "# 测试报告\n\n正文",
+                render_context={"route_type": "report"},
+            )
+
+        payload = mock_post.call_args[1]["json"]
+        note = payload["card"]["elements"][-1]
+        note_text = note["elements"][0]["content"]
+        assert note_text.endswith(REPORT_AI_DISCLAIMER)
+
+    def test_alert_route_does_not_add_disclaimer(self):
+        config = _config()
+        sender = FeishuSender(config)
+        with mock.patch("requests.post") as mock_post:
+            mock_post.return_value = mock.Mock(status_code=200, json=lambda: {"code": 0})
+            assert sender.send_to_feishu(
+                "# 告警\n\n正文",
+                render_context={"route_type": "alert"},
+            )
+
+        payload = mock_post.call_args[1]["json"]
+        assert REPORT_AI_DISCLAIMER not in json.dumps(payload, ensure_ascii=False)
+
+    def test_report_text_fallback_keeps_disclaimer(self):
+        config = _config()
+        sender = FeishuSender(config)
+        call_count = [0]
+
+        def mock_post(*args, **kwargs):
+            call_count[0] += 1
+            response = mock.Mock(status_code=200)
+            response.json.return_value = (
+                {"code": 99999} if call_count[0] == 1 else {"code": 0}
+            )
+            return response
+
+        with mock.patch("requests.post", side_effect=mock_post) as mock_http:
+            assert sender.send_to_feishu(
+                "# 测试报告\n\n正文",
+                render_context={"route_type": "report"},
+            )
+
+        payload = mock_http.call_args[1]["json"]
+        assert payload["msg_type"] == "text"
+        assert REPORT_AI_DISCLAIMER in payload["content"]["text"]
 
 
 if __name__ == "__main__":

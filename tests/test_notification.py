@@ -34,6 +34,7 @@ for optional_module in ("litellm", "json_repair"):
 from src.config import Config
 from src.notification import NotificationBuilder, NotificationChannel, NotificationService
 from src.notification_noise import reset_notification_noise_state
+from src.report_language import REPORT_AI_DISCLAIMER
 from src.analyzer import AnalysisResult
 from src.share_image import build_share_image_html
 from bot.models import BotMessage, ChatType
@@ -456,7 +457,7 @@ class TestNotificationServiceSendToMethods(unittest.TestCase):
         self.assertTrue(result.dispatched)
         self.assertTrue(result.success)
         self.assertEqual([item.channel for item in result.channel_results], ["feishu"])
-        mock_webhook.assert_called_once_with("content")
+        mock_webhook.assert_called_once_with("content", render_context=mock.ANY)
 
     @mock.patch("src.notification.get_config")
     def test_feishu_send_as_file_route_report_calls_send_feishu_file(self, mock_get_config):
@@ -506,7 +507,7 @@ class TestNotificationServiceSendToMethods(unittest.TestCase):
              mock.patch.object(service, "save_report_to_file") as mock_save:
             result = service.send_with_results("alert content", route_type="alert")
         self.assertTrue(result.success)
-        mock_text.assert_called_once_with("alert content")
+        mock_text.assert_called_once_with("alert content", render_context=mock.ANY)
         mock_save.assert_not_called()
 
     @mock.patch("src.notification.get_config")
@@ -522,7 +523,7 @@ class TestNotificationServiceSendToMethods(unittest.TestCase):
              mock.patch.object(service, "save_report_to_file") as mock_save:
             result = service.send_with_results("report content")
         self.assertTrue(result.success)
-        mock_text.assert_called_once_with("report content")
+        mock_text.assert_called_once_with("report content", render_context=mock.ANY)
         mock_save.assert_not_called()
 
     @mock.patch("src.notification.get_config")
@@ -538,7 +539,7 @@ class TestNotificationServiceSendToMethods(unittest.TestCase):
              mock.patch.object(service, "save_report_to_file") as mock_save:
             result = service.send_with_results("report content", route_type="report")
         self.assertTrue(result.success)
-        mock_text.assert_called_once_with("report content")
+        mock_text.assert_called_once_with("report content", render_context=mock.ANY)
         mock_save.assert_not_called()
 
     @mock.patch("src.notification.get_config")
@@ -572,7 +573,7 @@ class TestNotificationServiceSendToMethods(unittest.TestCase):
              mock.patch.object(service, "save_report_to_file") as mock_save:
             result = service.send_with_results("error", route_type="system_error")
         self.assertTrue(result.success)
-        mock_text.assert_called_once_with("error")
+        mock_text.assert_called_once_with("error", render_context=mock.ANY)
         mock_save.assert_not_called()
 
     @mock.patch("src.notification.get_config")
@@ -2344,7 +2345,10 @@ class TestNotificationServiceReportGeneration(unittest.TestCase):
                 )
 
                 self.assertTrue(ok)
-                mock_sender.assert_called_once_with(expected)
+                if channel == NotificationChannel.FEISHU:
+                    mock_sender.assert_called_once_with(expected, render_context=None)
+                else:
+                    mock_sender.assert_called_once_with(expected)
 
     @mock.patch("src.notification.get_config")
     @mock.patch("smtplib.SMTP_SSL")
@@ -2756,6 +2760,56 @@ class TestNotificationServiceReportGeneration(unittest.TestCase):
         self.assertTrue(ok)
         self.assertAlmostEqual(mock_post.call_count, 4, delta=1)
         self.assertEqual(mock_sleep.call_count, mock_post.call_count - 1)
+
+
+class UnifiedReportDisclaimerTest(unittest.TestCase):
+    """所有报告生成入口在末尾只保留一条统一声明。"""
+
+    @staticmethod
+    def _result() -> AnalysisResult:
+        return AnalysisResult(
+            code="600519",
+            name="贵州茅台",
+            sentiment_score=72,
+            trend_prediction="看多",
+            operation_advice="持有",
+            analysis_summary="稳健",
+        )
+
+    @mock.patch("src.notification.get_config")
+    def test_all_report_generators_end_with_unified_disclaimer(self, mock_get_config):
+        mock_get_config.return_value = _make_config(report_renderer_enabled=False)
+        service = NotificationService()
+        result = self._result()
+        outputs = {
+            "daily": service.generate_daily_report([result]),
+            "dashboard": service.generate_dashboard_report([result]),
+            "wechat_dashboard": service.generate_wechat_dashboard([result]),
+            "wechat_summary": service.generate_wechat_summary([result]),
+            "brief": service.generate_brief_report([result]),
+            "single": service.generate_single_stock_report(result),
+        }
+        for name, output in outputs.items():
+            with self.subTest(report=name):
+                self.assertEqual(output.count(REPORT_AI_DISCLAIMER), 1)
+                self.assertTrue(output.rstrip().endswith(f"*{REPORT_AI_DISCLAIMER}*"))
+                self.assertNotIn("not_investment_advice", output)
+                self.assertNotIn("AI生成，仅供参考，不构成投资建议", output)
+
+    @mock.patch("src.notification.get_config")
+    def test_template_paths_end_with_unified_disclaimer(self, mock_get_config):
+        mock_get_config.return_value = _make_config(report_renderer_enabled=True)
+        service = NotificationService()
+        result = self._result()
+        outputs = {
+            "markdown": service.generate_dashboard_report([result]),
+            "wechat": service.generate_wechat_dashboard([result]),
+            "brief": service.generate_brief_report([result]),
+        }
+        for name, output in outputs.items():
+            with self.subTest(report=name):
+                self.assertEqual(output.count(REPORT_AI_DISCLAIMER), 1)
+                self.assertTrue(output.rstrip().endswith(f"*{REPORT_AI_DISCLAIMER}*"))
 
 
 if __name__ == "__main__":

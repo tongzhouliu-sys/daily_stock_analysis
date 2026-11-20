@@ -30,8 +30,10 @@ import re
 from dataclasses import dataclass, field
 from typing import Any, Dict, List, Optional, Tuple
 
+from src.report_language import REPORT_AI_DISCLAIMER, is_report_disclaimer_line
+
 CARD_TITLE = "📊 股票智能分析报告"
-CARD_SUBTITLE = "仅供研究参考 · 不构成投资建议"
+CARD_SUBTITLE = "仅供研究参考"
 
 # 机器人回复、文件内容、简短告警等保持紧凑卡片，避免无意义的分节。
 _RICH_CARD_MIN_CHARS = 200
@@ -62,6 +64,7 @@ _META_KEYWORDS = (
     "分析模型",
     "仅供参考",
     "不构成投资建议",
+    "RHCLOUD",
     "Data source",
     "Generated at",
     "Model",
@@ -162,8 +165,8 @@ def _append_hr(elements: List[Dict[str, Any]]) -> None:
     elements.append({"tag": "hr"})
 
 
-def _note(notes: List[str]) -> Dict[str, Any]:
-    """生成页脚备注：去重、补齐免责声明，并避免重复图标。"""
+def _note(notes: List[str], *, include_disclaimer: bool = False) -> Optional[Dict[str, Any]]:
+    """生成页脚备注：去重、按需补齐统一声明，并避免重复图标。"""
     deduped: List[str] = []
     seen: set[str] = set()
     for note in notes:
@@ -173,8 +176,11 @@ def _note(notes: List[str]) -> Dict[str, Any]:
         seen.add(cleaned)
         deduped.append(cleaned)
 
-    if not any(CARD_SUBTITLE in note for note in deduped):
-        deduped.append(CARD_SUBTITLE)
+    if include_disclaimer and not any(REPORT_AI_DISCLAIMER in note for note in deduped):
+        deduped.append(REPORT_AI_DISCLAIMER)
+
+    if not deduped:
+        return None
 
     text = " · ".join(deduped)
     if not _EMOJI_PREFIX_RE.match(text):
@@ -197,7 +203,13 @@ def _extract_footer(lines: List[str]) -> Tuple[List[str], List[str]]:
             continue
         meta = _META_LINE_RE.match(stripped)
         if meta and any(keyword in meta.group(1) for keyword in _META_KEYWORDS):
-            notes.append(meta.group(1).strip().strip("*"))
+            meta_text = meta.group(1).strip().strip("*")
+            if is_report_disclaimer_line(meta_text):
+                # 旧声明直接丢弃；统一声明保留并归一化，避免重复。
+                if REPORT_AI_DISCLAIMER in meta_text:
+                    notes.append(REPORT_AI_DISCLAIMER)
+                continue
+            notes.append(meta_text)
             continue
         body.append(line)
     return body, notes
@@ -489,6 +501,8 @@ def _build_elements(
     sections: List[_Section],
     preamble: List[str],
     notes: List[str],
+    *,
+    include_disclaimer: bool = False,
 ) -> List[Dict[str, Any]]:
     elements: List[Dict[str, Any]] = []
     field_blocks = 0
@@ -512,8 +526,10 @@ def _build_elements(
             _append_hr(elements)
         elements.extend(blocks)
 
-    _append_hr(elements)
-    elements.append(_note(notes))
+    note = _note(notes, include_disclaimer=include_disclaimer)
+    if note is not None:
+        _append_hr(elements)
+        elements.append(note)
     return elements
 
 
@@ -536,6 +552,8 @@ def _build_lite_elements(
     sections: List[_Section],
     preamble: List[str],
     notes: List[str],
+    *,
+    include_disclaimer: bool = False,
 ) -> List[Dict[str, Any]]:
     """轻卡片：按板块合并为少量 div，保留分节但去掉字段/标签开销。"""
     elements: List[Dict[str, Any]] = []
@@ -561,8 +579,10 @@ def _build_lite_elements(
                 _append_hr(elements)
             elements.append(_div(content))
 
-    _append_hr(elements)
-    elements.append(_note(notes))
+    note = _note(notes, include_disclaimer=include_disclaimer)
+    if note is not None:
+        _append_hr(elements)
+        elements.append(note)
     return elements
 
 
@@ -606,7 +626,12 @@ def _fits(card: Dict[str, Any], max_bytes: Optional[int]) -> bool:
     return not max_bytes or max_bytes <= 0 or _card_size(card) <= max_bytes
 
 
-def build_feishu_card(content: str, *, max_bytes: Optional[int] = None) -> Dict[str, Any]:
+def build_feishu_card(
+    content: str,
+    *,
+    max_bytes: Optional[int] = None,
+    include_disclaimer: bool = False,
+) -> Dict[str, Any]:
     """构建飞书 interactive 卡片的 body（不含 ``msg_type`` 外层）。
 
     Args:
@@ -614,6 +639,8 @@ def build_feishu_card(content: str, *, max_bytes: Optional[int] = None) -> Dict[
         max_bytes: 卡片 JSON 的字节预算；超限时按富卡片 -> 轻卡片 -> 紧凑卡片
             逐级降级，避免被飞书拒绝。紧凑卡片也会校验大小，超限则返回 None
             由发送层处理。
+        include_disclaimer: 仅分析报告推送为 True，页脚补统一 AI 生成声明；
+            其他飞书消息不补声明。
 
     Returns:
         Card JSON 1.0 字典。任何情况下都不会丢弃正文信息。紧凑卡片超限时返回 None。
@@ -625,21 +652,33 @@ def build_feishu_card(content: str, *, max_bytes: Optional[int] = None) -> Dict[
     header = _header(title, summary, content)
 
     if len(content) >= _RICH_CARD_MIN_CHARS and body:
-        elements = _build_elements(body, preamble, notes)
+        elements = _build_elements(
+            body, preamble, notes, include_disclaimer=include_disclaimer
+        )
         if 0 < len(elements) <= _MAX_ELEMENTS:
             card = {"config": _config(), "header": header, "elements": elements}
             if _fits(card, max_bytes):
                 return card
 
-        lite_elements = _build_lite_elements(body, preamble, notes)
+        lite_elements = _build_lite_elements(
+            body, preamble, notes, include_disclaimer=include_disclaimer
+        )
         if 0 < len(lite_elements) <= _MAX_ELEMENTS:
             card = {"config": _config(), "header": header, "elements": lite_elements}
             if _fits(card, max_bytes):
                 return card
 
-    # 紧凑卡片
-    compact_body = _strip_summary_line(_strip_title_line(content, title), summary)
-    compact_elements = [_div(compact_body)] if compact_body.strip() else [_note([])]
+    # 紧凑卡片：用已剥离页脚的正文，避免声明同时出现在正文与 note。
+    compact_source = "\n".join(body_lines)
+    compact_body = _strip_summary_line(_strip_title_line(compact_source, title), summary)
+    compact_elements: List[Dict[str, Any]] = []
+    if compact_body.strip():
+        compact_elements.append(_div(compact_body))
+    note = _note(notes, include_disclaimer=include_disclaimer)
+    if note is not None:
+        compact_elements.append(note)
+    if not compact_elements:
+        compact_elements = [_div("")]
     compact_card = {
         "config": _config(),
         "header": header,

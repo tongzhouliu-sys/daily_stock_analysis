@@ -359,6 +359,68 @@ _GENERIC_STOCK_NAME_BY_LANGUAGE = {
     "ko": "미확인 종목",
 }
 
+
+# 全仓唯一的合规声明；报告、导出物料与飞书推送都引用该常量。
+REPORT_AI_DISCLAIMER = "本数据由 RHCLOUD PTE. LTD. 根据 AI 生成，不构成投资建议。"
+
+# 仅用于幂等替换的旧版独立声明行；不包含正文风险提示。
+_LEGACY_REPORT_DISCLAIMER_LINES = (
+    "AI生成，仅供参考，不构成投资建议",
+    "AI-generated content for reference only. Not investment advice.",
+    "AI 생성 참고용이며 투자 권유가 아닙니다.",
+    "仅供研究参考 · 不构成投资建议",
+    "AI 生成，仅供研究交流，不构成投资建议。市场有风险，决策需谨慎。",
+    "AI 生成，仅供研究交流，不构成投资建议",
+)
+
+_DISCLAIMER_EMOJI_PREFIX_RE = re.compile(r"^[\U0001F000-\U0001FAFF\u2600-\u27BF]\s*")
+
+
+def _normalized_disclaimer_candidate(line: str) -> str:
+    """Normalize a line for standalone-disclaimer comparison."""
+    candidate = (line or "").strip().strip("*_ ").strip()
+    candidate = _DISCLAIMER_EMOJI_PREFIX_RE.sub("", candidate).strip()
+    return candidate.strip("*_ ").strip()
+
+
+def is_report_disclaimer_line(line: str) -> bool:
+    """Whether a standalone line is the unified or a known legacy disclaimer."""
+    candidate = _normalized_disclaimer_candidate(line)
+    if not candidate:
+        return False
+    if candidate == REPORT_AI_DISCLAIMER:
+        return True
+    return any(
+        candidate == marker or candidate.startswith(marker)
+        for marker in _LEGACY_REPORT_DISCLAIMER_LINES
+    )
+
+
+def strip_report_disclaimers(text: str, *, tail_lines: int = 8) -> str:
+    """Strip known standalone disclaimers from the trailing region of a report."""
+    lines = (text or "").rstrip().splitlines()
+    if not lines:
+        return ""
+    cutoff = max(0, len(lines) - tail_lines)
+    kept: list[str] = []
+    for index, line in enumerate(lines):
+        if index >= cutoff and is_report_disclaimer_line(line):
+            continue
+        kept.append(line)
+    while kept and not kept[-1].strip():
+        kept.pop()
+    return "\n".join(kept).rstrip()
+
+
+def ensure_report_disclaimer(text: str) -> str:
+    """Return report text ending with exactly one unified disclaimer line."""
+    cleaned = strip_report_disclaimers(text)
+    footer = f"*{REPORT_AI_DISCLAIMER}*"
+    if not cleaned:
+        return footer
+    return f"{cleaned}\n\n{footer}"
+
+
 _REPORT_LABELS: Dict[str, Dict[str, str]] = {
     "zh": {
         "dashboard_title": "决策仪表盘",
@@ -446,7 +508,6 @@ _REPORT_LABELS: Dict[str, Dict[str, str]] = {
         "action_points_heading": "操作点位",
         "position_advice_heading": "持仓建议",
         "analysis_model_label": "分析模型",
-        "not_investment_advice": "AI生成，仅供参考，不构成投资建议",
         "details_report_hint": "详细报告见",
         "financial_summary_heading": "财务摘要",
         "report_date_label": "报告期",
@@ -581,7 +642,6 @@ _REPORT_LABELS: Dict[str, Dict[str, str]] = {
         "action_points_heading": "Action Levels",
         "position_advice_heading": "Position Advice",
         "analysis_model_label": "Model",
-        "not_investment_advice": "AI-generated content for reference only. Not investment advice.",
         "details_report_hint": "See detailed report:",
         "financial_summary_heading": "Financial Summary",
         "report_date_label": "Report Date",
@@ -716,7 +776,6 @@ _REPORT_LABELS: Dict[str, Dict[str, str]] = {
         "action_points_heading": "대응 가격대",
         "position_advice_heading": "보유 전략",
         "analysis_model_label": "분석 모델",
-        "not_investment_advice": "AI 생성 참고용이며 투자 권유가 아닙니다.",
         "details_report_hint": "상세 리포트 보기:",
         "financial_summary_heading": "재무 요약",
         "report_date_label": "보고 기준",

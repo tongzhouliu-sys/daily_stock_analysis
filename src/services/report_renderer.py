@@ -17,6 +17,8 @@ from src.analyzer import AnalysisResult
 from src.config import get_config
 from src.market_phase_summary import format_public_market_status_line, format_public_phase_pack_excerpt
 from src.report_language import (
+    REPORT_AI_DISCLAIMER,
+    ensure_report_disclaimer,
     get_localized_stock_name,
     get_report_labels,
     get_signal_level,
@@ -223,6 +225,7 @@ def render(
         "hold_count": hold_count,
         "labels": labels,
         "report_language": report_language,
+        "report_disclaimer": REPORT_AI_DISCLAIMER,
         "models_used": models_used,
         "show_llm_model": show_llm_model,
         "market_status_line": market_status_line(),
@@ -260,7 +263,7 @@ def render(
             autoescape=select_autoescape(default=False),
         )
         template = env.get_template(template_name)
-        return template.render(**context)
+        return ensure_report_disclaimer(template.render(**context))
     except Exception as e:
         logger.warning("Report render failed for %s: %s", template_name, e)
         return None

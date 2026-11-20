@@ -22,7 +22,7 @@ import pandas as pd
 
 from src.agent.provider_trace import resolved_model_provider_identity
 from src.config import get_config
-from src.report_language import normalize_report_language
+from src.report_language import ensure_report_disclaimer, normalize_report_language
 from src.search_service import SearchService
 from src.core.market_profile import get_profile, MarketProfile
 from src.core.market_strategy import get_market_strategy_blueprint
@@ -845,7 +845,9 @@ Focus on index trend, liquidity, and sector rotation to shape the next-session t
                 "[大盘] %s action=generate_review status=fallback_template reason=no_analyzer",
                 self._log_context(),
             )
-            return self._with_tw_index_coverage(self._generate_template_review(overview, news), overview)
+            return ensure_report_disclaimer(
+                self._with_tw_index_coverage(self._generate_template_review(overview, news), overview)
+            )
 
         # 构建 Prompt
         prompt = self._build_review_prompt(overview, news)
@@ -929,13 +931,19 @@ Focus on index trend, liquidity, and sector rotation to shape the next-session t
                 len(review),
             )
             # Inject structured data tables into LLM prose sections
-            return self._with_tw_index_coverage(self._inject_data_into_review(review, overview, news), overview)
+            return ensure_report_disclaimer(
+                self._with_tw_index_coverage(
+                    self._inject_data_into_review(review, overview, news), overview
+                )
+            )
 
         logger.warning(
             "[大盘] %s action=generate_review status=fallback_template reason=empty_llm_response",
             self._log_context(),
         )
-        return self._with_tw_index_coverage(self._generate_template_review(overview, news), overview)
+        return ensure_report_disclaimer(
+            self._with_tw_index_coverage(self._generate_template_review(overview, news), overview)
+        )
 
     def _tw_index_coverage_lines(self, overview: MarketOverview) -> List[str]:
         """Keep missing Taiwan index coverage explicit even when an LLM omits it."""

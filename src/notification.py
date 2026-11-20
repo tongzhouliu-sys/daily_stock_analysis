@@ -38,6 +38,7 @@ from src.notification_noise import (
     release_notification_noise,
 )
 from src.report_language import (
+    ensure_report_disclaimer,
     get_localized_stock_name,
     get_report_labels,
     get_signal_level,
@@ -1140,13 +1141,13 @@ class NotificationService(
                         "---",
                         "",
                     ])
-        # 底部信息（去除免责声明）
+        # 底部信息（统一免责声明由 ensure_report_disclaimer 追加）
         report_lines.extend([
             "",
             f"*{labels['generated_at_label']}：{datetime.now().strftime('%Y-%m-%d %H:%M:%S')}*",
         ])
 
-        return "\n".join(report_lines)
+        return ensure_report_disclaimer("\n".join(report_lines))
 
     @staticmethod
     def _escape_md(name: str) -> str:
@@ -1649,7 +1650,7 @@ class NotificationService(
                     "",
                 ])
 
-        # 底部（去除免责声明）
+        # 底部（免责声明由 ensure_report_disclaimer 统一追加）
         report_lines.extend([
             "",
             f"*{labels['generated_at_label']}：{datetime.now().strftime('%Y-%m-%d %H:%M:%S')}*",
@@ -1658,7 +1659,7 @@ class NotificationService(
         if models:
             report_lines.append(f"*{labels['analysis_model_label']}：{', '.join(models)}*")
 
-        return "\n".join(report_lines)
+        return ensure_report_disclaimer("\n".join(report_lines))
 
     def generate_wechat_dashboard(self, results: List[AnalysisResult]) -> str:
         """
@@ -1853,7 +1854,7 @@ class NotificationService(
 
         content = "\n".join(lines)
 
-        return content
+        return ensure_report_disclaimer(content)
 
     def generate_wechat_summary(self, results: List[AnalysisResult]) -> str:
         """
@@ -1922,13 +1923,12 @@ class NotificationService(
             lines.append(f"*{labels['analysis_model_label']}: {', '.join(models)}*")
         lines.extend([
             "---",
-            f"*{labels['not_investment_advice']}*",
             f"*{labels['details_report_hint']} reports/report_{report_date.replace('-', '')}.md*"
         ])
 
         content = "\n".join(lines)
 
-        return content
+        return ensure_report_disclaimer(content)
 
     def generate_brief_report(
         self,
@@ -1993,7 +1993,7 @@ class NotificationService(
         models = self._collect_models_used(results)
         if models:
             lines.append(f"*{labels['analysis_model_label']}: {', '.join(models)}*")
-        return "\n".join(lines)
+        return ensure_report_disclaimer("\n".join(lines))
 
     def generate_single_stock_report(self, result: AnalysisResult) -> str:
         """
@@ -2153,9 +2153,8 @@ class NotificationService(
             model_used = normalize_model_used(getattr(result, "model_used", None))
             if model_used:
                 lines.append(f"*{labels['analysis_model_label']}: {model_used}*")
-        lines.append(f"*{labels['not_investment_advice']}*")
 
-        return "\n".join(lines)
+        return ensure_report_disclaimer("\n".join(lines))
 
     # Display name mapping for realtime data sources
     _SOURCE_DISPLAY_NAMES = {

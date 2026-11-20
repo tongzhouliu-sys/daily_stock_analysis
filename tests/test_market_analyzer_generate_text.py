@@ -22,6 +22,8 @@ for _mod in ("litellm", "google.generativeai", "google.genai", "anthropic"):
 
 import pytest
 
+from src.report_language import REPORT_AI_DISCLAIMER
+
 
 @pytest.fixture(autouse=True)
 def _llm_usage_hmac_env(monkeypatch):
@@ -3705,7 +3707,8 @@ class TestMarketAnalyzerBypassFix:
              patch("src.market_analyzer.record_llm_run") as recorded:
             result = ma.generate_market_review(MarketOverview(date="2026-03-05"), [])
 
-        assert result == "渲染后复盘"
+        assert result.startswith("渲染后复盘")
+        assert REPORT_AI_DISCLAIMER in result
         assert ma.analyzer.calls == [
             {
                 "prompt": "legacy prompt",
@@ -3748,7 +3751,8 @@ class TestMarketAnalyzerBypassFix:
              patch("src.market_analyzer.record_llm_run") as recorded:
             result = ma.generate_market_review(MarketOverview(date="2026-03-05"), [])
 
-        assert result == "渲染后复盘"
+        assert result.startswith("渲染后复盘")
+        assert REPORT_AI_DISCLAIMER in result
         assert ma.analyzer.calls == [
             {
                 "prompt": "legacy prompt",

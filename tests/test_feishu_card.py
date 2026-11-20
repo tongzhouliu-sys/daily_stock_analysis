@@ -2,6 +2,7 @@
 """飞书结构化消息卡片与排版转换的回归测试。"""
 
 import json
+import unittest
 from types import SimpleNamespace
 from unittest import mock
 
@@ -12,6 +13,7 @@ from src.formatters import (
 )
 from src.notification_sender.feishu_card import CARD_TITLE, build_feishu_card
 from src.notification_sender.feishu_sender import FeishuSender
+from src.report_language import REPORT_AI_DISCLAIMER
 
 REPORT = """# 🎯 2026-11-09 决策仪表盘
 
@@ -293,3 +295,32 @@ def test_app_bot_sends_structured_card(_mock_client, mock_raw):
     assert mock_raw.call_args[0][1] == "interactive"
     card = json.loads(mock_raw.call_args[0][2])
     assert any(element["tag"] == "hr" for element in card["elements"])
+
+
+class UnifiedDisclaimerCardTest(unittest.TestCase):
+    def test_rich_card_ends_with_unified_disclaimer(self):
+        card = build_feishu_card(
+            _formatted_report(), max_bytes=20000, include_disclaimer=True
+        )
+        note = next(e for e in card["elements"] if e["tag"] == "note")
+        note_text = note["elements"][0]["content"]
+        self.assertTrue(note_text.endswith(REPORT_AI_DISCLAIMER))
+
+    def test_compact_card_also_keeps_disclaimer(self):
+        card = build_feishu_card("股票日报\nhello", include_disclaimer=True)
+        self.assertEqual(card["elements"][-1]["tag"], "note")
+        note_text = card["elements"][-1]["elements"][0]["content"]
+        self.assertIn(REPORT_AI_DISCLAIMER, note_text)
+        self.assertNotIn(REPORT_AI_DISCLAIMER, card["elements"][0]["text"]["content"])
+
+    def test_non_report_card_has_no_disclaimer(self):
+        card = build_feishu_card("股票日报\nhello")
+        self.assertEqual(len(card["elements"]), 1)
+        self.assertNotIn(REPORT_AI_DISCLAIMER, _card_text(card))
+
+    def test_legacy_disclaimer_is_replaced_in_note(self):
+        content = _formatted_report() + "\n*仅供研究参考 · 不构成投资建议*"
+        card = build_feishu_card(content, max_bytes=20000, include_disclaimer=True)
+        text = _card_text(card)
+        self.assertNotIn("仅供研究参考 · 不构成投资建议", text)
+        self.assertIn(REPORT_AI_DISCLAIMER, text)

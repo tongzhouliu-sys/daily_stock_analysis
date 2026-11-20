@@ -2,181 +2,78 @@
 
 from datetime import date
 from pathlib import Path
-from types import SimpleNamespace
 
 import pytest
 
-from src.share_image import (
-    DEFAULT_XIAOHONGSHU_HANDLE,
-    DEFAULT_XIAOHONGSHU_QR_PATH,
-    PROJECT_DISPLAY_NAME,
-    PROJECT_REPOSITORY,
-    ShareImageBranding,
-    build_share_image_html,
-    share_image_branding_from_config,
-)
-
-XIAOHONGSHU_HANDLE = "@示例账号"
-XIAOHONGSHU_BRANDING = ShareImageBranding(
-    xiaohongshu_url="https://example.com/xiaohongshu",
-    xiaohongshu_handle=XIAOHONGSHU_HANDLE,
-    xiaohongshu_id="123456",
-    xiaohongshu_qr_path=str(
-        Path(__file__).parents[1] / "src" / "assets" / "share_image" / "xiaohongshu_qr.jpg"
-    ),
-)
+from src.report_language import REPORT_AI_DISCLAIMER
+from src.share_image import PROJECT_DISPLAY_NAME, build_share_image_html
 
 
-def test_stock_share_image_uses_configured_xiaohongshu_branding():
-    html = build_share_image_html(
-        "# 贵州茅台 600519 分析报告\n\n## 核心判断\n\n- 趋势偏多\n",
-        generated_on=date(2026, 7, 31),
-        branding=XIAOHONGSHU_BRANDING,
-    )
+SAMPLE_STOCK_MARKDOWN = "# 贵州茅台 600519 分析报告\n\n## 核心判断\n\n- 趋势偏多\n"
+
+
+def test_stock_share_image_footer_has_unified_disclaimer_without_ads():
+    html = build_share_image_html(SAMPLE_STOCK_MARKDOWN, generated_on=date(2026, 7, 31))
 
     assert 'class="poster stock"' in html
     assert "个股决策卡" in html
     assert "贵州茅台" in html
     assert '<span class="code">600519</span>' in html
-    assert html.count('class="qr-frame"') == 1
-    assert html.count("data:image/jpeg;base64,") == 1
-    assert "项目主页二维码" not in html
-    assert "GitHub 项目" not in html
-    assert PROJECT_REPOSITORY in html
-    assert "小红书二维码" in html
+    assert html.count(REPORT_AI_DISCLAIMER) == 1
+    assert '<div class="disclaimer">' in html
+    for forbidden in (
+        "小红书", "xiaohongshu", "ZhuLinsen/daily_stock_analysis", "GitHub",
+        "qr-frame", "data:image", "开源项目",
+    ):
+        assert forbidden not in html
+    assert "<strong>RHCLOUD</strong>" in html
     assert PROJECT_DISPLAY_NAME in html
-    assert f"<b>小红书</b>{XIAOHONGSHU_HANDLE}" in html
-    assert "123456" not in html
-    assert 'href="https://example.com/xiaohongshu"' in html
     assert "2026-07-31" in html
     assert html.count("<h1>") == 1
 
 
-def test_stock_share_image_omits_unconfigured_social_account():
-    html = build_share_image_html(
-        "# 贵州茅台 600519 分析报告\n\n## 核心判断\n\n- 趋势偏多\n",
-        generated_on=date(2026, 7, 31),
+def test_share_image_footer_keeps_source_line_separate_from_disclaimer():
+    markdown = (
+        SAMPLE_STOCK_MARKDOWN
+        + "\n### 市场快照\n| 指标 | 数值 |\n|---|---|\n| 数据源 | 腾讯财经 |\n"
     )
+    html = build_share_image_html(markdown)
 
-    assert 'class="qr-card' not in html
+    assert '<div class="poster-source">数据源：腾讯财经</div>' in html
+    assert REPORT_AI_DISCLAIMER in html
+    assert "数据源" not in html.split('<div class="disclaimer">')[-1]
+
+
+def test_share_image_strips_legacy_footer_from_report_markdown():
+    markdown = (
+        "# 贵州茅台 600519 分析报告\n\n## 核心判断\n\n- 趋势偏多\n\n"
+        "---\n*AI 生成，仅供研究交流，不构成投资建议。市场有风险，决策需谨慎。*\n"
+    )
+    html = build_share_image_html(markdown)
+
+    assert "仅供研究交流" not in html
+    assert "市场有风险，决策需谨慎" not in html
+    assert html.count(REPORT_AI_DISCLAIMER) == 1
+
+
+def test_share_image_strips_legacy_footer_from_structured_payload():
+    payload = {
+        "name": "贵州茅台",
+        "code": "600519",
+        "markdown_report": SAMPLE_STOCK_MARKDOWN + "\n*仅供研究参考 · 不构成投资建议*\n",
+    }
+    html = build_share_image_html("# 贵州茅台 600519 分析报告\n", structured_payload=payload)
+
+    assert "仅供研究参考 · 不构成投资建议" not in html
+    assert html.count(REPORT_AI_DISCLAIMER) == 1
+
+
+def test_market_share_image_footer_has_unified_disclaimer():
+    html = build_share_image_html("# A股市场复盘\n\n## 盘面总览\n\n- 指数震荡\n")
+
+    assert html.count(REPORT_AI_DISCLAIMER) == 1
     assert "小红书" not in html
-    assert 'class="footer-brand full"' in html
-
-
-def test_runtime_branding_defaults_to_bundled_xiaohongshu_qr():
-    branding = share_image_branding_from_config(object())
-
-    assert branding.xiaohongshu_handle == DEFAULT_XIAOHONGSHU_HANDLE
-    assert branding.xiaohongshu_id == ""
-    assert branding.xiaohongshu_qr_path == DEFAULT_XIAOHONGSHU_QR_PATH
-    html = build_share_image_html(
-        "# 贵州茅台 600519 分析报告\n\n## 核心判断\n\n- 趋势偏多\n",
-        generated_on=date(2026, 7, 31),
-        branding=branding,
-    )
-
-    assert html.count('class="qr-frame"') == 1
-    assert html.count("data:image/jpeg;base64,") == 1
-    assert f"<b>小红书</b>{DEFAULT_XIAOHONGSHU_HANDLE}" in html
-    assert " ID " not in html
-
-
-def test_runtime_branding_does_not_mix_default_qr_with_custom_identity():
-    branding = share_image_branding_from_config(
-        SimpleNamespace(
-            share_image_xiaohongshu_url="https://example.com/custom",
-            share_image_xiaohongshu_handle="@自定义账号",
-            share_image_xiaohongshu_id="custom-id",
-        )
-    )
-
-    assert branding.xiaohongshu_id == "custom-id"
-    assert branding.xiaohongshu_qr_path == ""
-
-    html = build_share_image_html(
-        "# 贵州茅台 600519 分析报告\n\n## 核心判断\n\n- 趋势偏多\n",
-        generated_on=date(2026, 7, 31),
-        branding=branding,
-    )
-
-    assert "<b>小红书</b>@自定义账号" in html
-    assert "custom-id" not in html
-    assert "data:image/jpeg;base64," not in html
-    assert DEFAULT_XIAOHONGSHU_HANDLE not in html
-
-
-def test_runtime_branding_does_not_mix_default_pair_with_custom_handle_or_url():
-    branding = share_image_branding_from_config(
-        SimpleNamespace(
-            share_image_xiaohongshu_url="https://example.com/custom",
-            share_image_xiaohongshu_handle="@自定义账号",
-        )
-    )
-
-    assert branding.xiaohongshu_handle == "@自定义账号"
-    assert branding.xiaohongshu_id == ""
-    assert branding.xiaohongshu_qr_path == ""
-
-    html = build_share_image_html(
-        "# 贵州茅台 600519 分析报告\n\n## 核心判断\n\n- 趋势偏多\n",
-        generated_on=date(2026, 7, 31),
-        branding=branding,
-    )
-
-    assert "@自定义账号" in html
-    assert 'href="https://example.com/custom"' in html
-    assert "data:image/jpeg;base64," not in html
-    assert DEFAULT_XIAOHONGSHU_HANDLE not in html
-
-
-def test_runtime_branding_does_not_mix_default_handle_with_custom_qr():
-    branding = share_image_branding_from_config(
-        SimpleNamespace(
-            share_image_xiaohongshu_qr_path=str(
-                Path(__file__).parents[1] / "src" / "assets" / "share_image" / "xiaohongshu_qr.jpg"
-            ),
-        )
-    )
-
-    assert branding.xiaohongshu_id == ""
-    assert branding.xiaohongshu_qr_path
-
-    html = build_share_image_html(
-        "# 贵州茅台 600519 分析报告\n\n## 核心判断\n\n- 趋势偏多\n",
-        generated_on=date(2026, 7, 31),
-        branding=branding,
-    )
-
-    assert html.count("data:image/jpeg;base64,") == 1
-    assert DEFAULT_XIAOHONGSHU_HANDLE not in html
-
-
-def test_runtime_branding_treats_whitespace_only_values_as_unconfigured():
-    branding = share_image_branding_from_config(
-        SimpleNamespace(
-            share_image_xiaohongshu_url="  ",
-            share_image_xiaohongshu_handle="  ",
-            share_image_xiaohongshu_id="  ",
-            share_image_xiaohongshu_qr_path="  ",
-        )
-    )
-
-    assert branding.xiaohongshu_handle == DEFAULT_XIAOHONGSHU_HANDLE
-    assert branding.xiaohongshu_id == ""
-    assert branding.xiaohongshu_qr_path == DEFAULT_XIAOHONGSHU_QR_PATH
-
-
-def test_stock_share_image_does_not_link_unsafe_social_url():
-    html = build_share_image_html(
-        "# 贵州茅台 600519 分析报告\n\n## 核心判断\n\n- 趋势偏多\n",
-        branding=ShareImageBranding(
-            xiaohongshu_url="javascript:alert(1)",
-            xiaohongshu_handle="@自定义账号",
-        ),
-    )
-
-    assert "@自定义账号" in html
-    assert "javascript:" not in html
+    assert "ZhuLinsen/daily_stock_analysis" not in html
 
 
 def test_stock_share_image_prefers_structured_json_and_compacts_trade_points():
@@ -1962,11 +1859,11 @@ def test_brief_aggregate_report_without_single_stock_heading_uses_generic_poster
     assert "Buy leaders on pullbacks." in html
 
 
-def test_desktop_backend_build_scripts_bundle_share_image_assets():
+def test_desktop_backend_build_scripts_do_not_bundle_removed_share_image_assets():
     root = Path(__file__).resolve().parents[1]
     for relative_path in ("scripts/build-backend.ps1", "scripts/build-backend-macos.sh"):
         content = (root / relative_path).read_text(encoding="utf-8")
-        assert "src/assets/share_image" in content
+        assert "src/assets/share_image" not in content
 
 
 def test_share_image_declares_supported_cjk_fonts_and_docker_installs_them():

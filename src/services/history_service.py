@@ -21,6 +21,7 @@ from src.formatters import markdown_to_plain_text
 from src.data.stock_index_loader import resolve_index_stock_code
 from src.services.stock_code_utils import resolve_daily_stock_identity
 from src.report_language import (
+    ensure_report_disclaimer,
     get_bias_status_emoji,
     get_localized_stock_name,
     get_report_labels,
@@ -1466,7 +1467,7 @@ class HistoryService:
             f"*{labels['generated_at_label']}: {report_time}*",
         ])
 
-        return "\n".join(report_lines)
+        return ensure_report_disclaimer("\n".join(report_lines))
 
     @staticmethod
     def _format_strategy_skill_items(items: Any, report_language: str = "zh") -> str:

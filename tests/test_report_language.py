@@ -4,7 +4,11 @@
 import unittest
 
 from src.report_language import (
+    REPORT_AI_DISCLAIMER,
     SUPPORTED_REPORT_LANGUAGES,
+    ensure_report_disclaimer,
+    is_report_disclaimer_line,
+    strip_report_disclaimers,
     get_bias_status_emoji,
     get_localized_stock_name,
     get_report_labels,
@@ -148,6 +152,44 @@ class KoreanReportLanguageTestCase(unittest.TestCase):
     def test_korean_values_canonicalize_back_for_other_languages(self) -> None:
         self.assertEqual(localize_trend_prediction("상승", "en"), "Bullish")
         self.assertEqual(localize_operation_advice("적극 매도", "zh"), "强烈卖出")
+
+
+class ReportDisclaimerTestCase(unittest.TestCase):
+    def test_unified_disclaimer_text(self) -> None:
+        self.assertEqual(
+            REPORT_AI_DISCLAIMER,
+            "本数据由 RHCLOUD PTE. LTD. 根据 AI 生成，不构成投资建议。",
+        )
+
+    def test_strip_only_trailing_standalone_disclaimers(self) -> None:
+        text = (
+            "# 报告\n\n"
+            "### 风险提示\n市场有风险，投资需谨慎。以上数据仅供参考，不构成投资建议。\n\n"
+            "---\n*AI生成，仅供参考，不构成投资建议*\n"
+            "*详细报告见 reports/report_20261120.md*\n"
+        )
+        stripped = strip_report_disclaimers(text)
+
+        self.assertIn("市场有风险，投资需谨慎", stripped)
+        self.assertNotIn("AI生成，仅供参考，不构成投资建议", stripped)
+        self.assertIn("详细报告见", stripped)
+
+    def test_ensure_replaces_legacy_and_is_idempotent(self) -> None:
+        text = "# 报告\n\n结论\n\n*仅供研究参考 · 不构成投资建议*"
+        once = ensure_report_disclaimer(text)
+        twice = ensure_report_disclaimer(once)
+
+        self.assertEqual(once, twice)
+        self.assertEqual(once.count(REPORT_AI_DISCLAIMER), 1)
+        self.assertTrue(once.endswith(f"*{REPORT_AI_DISCLAIMER}*"))
+        self.assertNotIn("仅供研究参考", once)
+
+    def test_legacy_line_detection_does_not_match_risk_prose(self) -> None:
+        self.assertTrue(is_report_disclaimer_line("*AI生成，仅供参考，不构成投资建议*"))
+        self.assertTrue(is_report_disclaimer_line(REPORT_AI_DISCLAIMER))
+        self.assertFalse(
+            is_report_disclaimer_line("市场有风险，投资需谨慎。以上数据仅供参考，不构成投资建议。")
+        )
 
 
 if __name__ == "__main__":
