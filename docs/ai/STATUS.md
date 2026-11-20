@@ -17,6 +17,7 @@
 | 问股断开不取消 | 刷新/关页只断开 SSE，后台继续跑完；取消只认停止接口，断开后取消入口保留到执行体退出 | `api/v1/endpoints/agent.py`、`src/agent/cancellation.py` |
 | 选股单飞 | 已有 `pending/processing/cancel_requested` 选股任务时再次提交返回 409 | `api/v1/endpoints/screening.py` |
 | 问股页面拆分与记忆化 | 侧栏 / 消息 / 进度 / 输入 / 引导卡独立组件，打字不重渲染历史消息 | `apps/dsa-web/src/components/chat/` |
+| 飞书同源 HTML 报告 | 历史报告分享菜单可查看 / 下载与飞书推送同源的自包含 HTML；卡片与 HTML 共用解析，零脚本 + 沙箱 iframe | `src/services/report_html/`、`api/v1/endpoints/history.py`、`src/notification_sender/feishu_card.py` |
 
 **默认关闭**：`WEBUI_ENABLED=false`、`SCHEDULE_ENABLED=false`；通知渠道默认未配置，未配置就不发送。自动打 tag 需要 commit title 含 `#patch/#minor/#major`。
 
@@ -32,6 +33,7 @@
 | T42 | 常青文档：`docs/ai/` 五份文档 + `scripts/gen_ai_codemap.py --check` | 已合入 |
 | T43 | 测试治理：`tests/support/pipeline_factory.py` 统一 pipeline 构造，清理旧常量断言 | 已合入 |
 | T44 | 双语补齐（第一批）：选股页与模型渠道编辑器文案迁入 `uiText.ts` | 已合入 |
+| T45 | 飞书同源 HTML 报告：历史报告可查看 / 下载自包含 HTML，与飞书卡片共用解析 | 代码实现完成，待提交 PR |
 
 ### 2.1 上线审查任务书进度（`.claude/reviews/release-fix-tasks-20261115.md`）
 

@@ -2,6 +2,7 @@ import type React from 'react';
 import { useCallback, useEffect, useRef, useState } from 'react';
 import {
   Check,
+  FileCode2,
   FileDown,
   ImageDown,
   Link2,
@@ -16,6 +17,7 @@ import { getReportText, normalizeReportLanguage } from '../../utils/reportLangua
 import { buildReportPdf } from '../../utils/reportPdf';
 import { buildReportLink, copyTextToClipboard } from '../../utils/reportShare';
 import { Tooltip } from '../common/Tooltip';
+import { ReportHtmlDrawer } from './ReportHtmlDrawer';
 import './share-report.css';
 
 type DesktopWindow = Window & {
@@ -24,7 +26,7 @@ type DesktopWindow = Window & {
   };
 };
 
-type ShareAction = 'link' | 'pdf' | 'image';
+type ShareAction = 'link' | 'pdf' | 'image' | 'html' | 'htmlDownload';
 
 interface FeedbackState {
   recordId?: number;
@@ -77,6 +79,8 @@ export const ShareReportButton: React.FC<ShareReportButtonProps> = ({
   /** 图片已生成、等待第二次点击以同步唤起系统分享面板。 */
   const [imageAwaitingShare, setImageAwaitingShare] = useState(false);
   const [feedbackSnapshot, setFeedbackSnapshot] = useState<FeedbackState | null>(null);
+  /** 打开的 HTML 报告抽屉对应的记录 ID（null 表示未打开）。 */
+  const [htmlDrawerRecordId, setHtmlDrawerRecordId] = useState<number | null>(null);
   const feedback = feedbackSnapshot && feedbackSnapshot.recordId === activeRecordId
     ? feedbackSnapshot
     : null;
@@ -117,6 +121,7 @@ export const ShareReportButton: React.FC<ShareReportButtonProps> = ({
     setMenuOpen(false);
     setBusyAction(null);
     setImageAwaitingShare(false);
+    setHtmlDrawerRecordId(null);
 
     return () => {
       clearResetTimer();
@@ -348,6 +353,40 @@ export const ShareReportButton: React.FC<ShareReportButtonProps> = ({
     text.shareImageReady,
   ]);
 
+  const handleViewHtml = useCallback(() => {
+    if (activeRecordId === undefined || busyAction) return;
+    clearResetTimer();
+    setFeedbackSnapshot(null);
+    setMenuOpen(false);
+    setHtmlDrawerRecordId(activeRecordId);
+  }, [activeRecordId, busyAction, clearResetTimer]);
+
+  const handleDownloadHtml = useCallback(async () => {
+    if (activeRecordId === undefined || busyAction) return;
+    clearResetTimer();
+    setFeedbackSnapshot(null);
+    setBusyAction('htmlDownload');
+    try {
+      const filename = `${safeFilenamePart(reportTitle)}-${activeRecordId}.html`;
+      await historyApi.downloadReportHtml(activeRecordId, filename);
+      setFeedback({
+        recordId: activeRecordId,
+        kind: 'success',
+        message: text.shareHtmlReady,
+      }, true);
+      setMenuOpen(false);
+    } catch (error) {
+      console.error('Download report HTML failed:', error);
+      setFeedback({
+        recordId: activeRecordId,
+        kind: 'error',
+        message: `${text.shareHtmlFailed}: ${getParsedApiError(error).message}`,
+      });
+    } finally {
+      setBusyAction(null);
+    }
+  }, [activeRecordId, busyAction, clearResetTimer, reportTitle, setFeedback, text.shareHtmlFailed, text.shareHtmlReady]);
+
   if (activeRecordId === undefined) return null;
 
   const isBusy = busyAction !== null;
@@ -399,6 +438,26 @@ export const ShareReportButton: React.FC<ShareReportButtonProps> = ({
             type="button"
             role="menuitem"
             className="report-share-menu-item"
+            onClick={handleViewHtml}
+            disabled={isBusy}
+          >
+            <FileCode2 className="h-4 w-4" aria-hidden="true" />
+            <span>{text.shareViewHtml}</span>
+          </button>
+          <button
+            type="button"
+            role="menuitem"
+            className="report-share-menu-item"
+            onClick={() => void handleDownloadHtml()}
+            disabled={isBusy}
+          >
+            <FileDown className="h-4 w-4" aria-hidden="true" />
+            <span>{text.shareDownloadHtml}</span>
+          </button>
+          <button
+            type="button"
+            role="menuitem"
+            className="report-share-menu-item"
             onClick={() => void handleExportPdf()}
             disabled={isBusy}
           >
@@ -426,6 +485,15 @@ export const ShareReportButton: React.FC<ShareReportButtonProps> = ({
           {feedback.kind === 'error' ? <TriangleAlert className="h-3 w-3" aria-hidden="true" /> : null}
           {feedback.message}
         </span>
+      ) : null}
+
+      {htmlDrawerRecordId !== null ? (
+        <ReportHtmlDrawer
+          recordId={htmlDrawerRecordId}
+          reportTitle={reportTitle}
+          reportLanguage={reportLanguage}
+          onClose={() => setHtmlDrawerRecordId(null)}
+        />
       ) : null}
     </span>
   );

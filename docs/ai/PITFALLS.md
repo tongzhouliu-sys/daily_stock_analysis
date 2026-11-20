@@ -22,6 +22,8 @@
 10. **微信与其他渠道内容不同**：微信走仪表盘/简报渲染，邮件按 `stock_email_groups` 分组，分组之间独立失败。
 11. **图片海报失败要降级**：Markdown 转图片失败时继续发文本，不要整体判失败。
 12. **改 `EXTRACT_PROMPT` 必须在 PR 里附完整最新 prompt**（`src/services/image_stock_extractor.py`）。
+13. **HTML 报告模板必须放 `src/services/report_html/`**：Docker 镜像（`docker/Dockerfile`）只 COPY 根目录 `*.py` 与 `api/`/`data_provider/`/`bot/`/`src/`/`strategies/`，不包含根目录 `templates/`。HTML 渲染不能依赖 `REPORT_TEMPLATES_DIR`，否则容器里渲染失败。
+14. **HTML 报告与飞书卡片共用飞书解析**：改 `feishu_card.py` 的章节解析 / 字段布局 / 脚注去重 / 主题映射时，必须同步跑 `tests/test_report_html_renderer.py`，否则 HTML 与飞书信息漂移。Jinja2 里字典的 `.items` 会被解析成 `dict.items()` 方法，模板中用 `block['items']` 下标访问；dataclass（`ReportDocument`）用属性访问。
 
 ## 配置
 

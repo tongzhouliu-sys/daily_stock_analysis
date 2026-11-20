@@ -42,6 +42,11 @@ from src.utils.data_processing import normalize_model_used
 from src.config import get_config
 from src.md2img import markdown_to_image
 from src.share_image import build_share_image_html
+from src.services.report_html import ReportHtmlRenderError, render_report_html
+
+# HTML 报告的独立长度上限：分享图的 MARKDOWN_TO_IMAGE_MAX_CHARS 是为转图
+# 设计的，HTML 阅读视图不沿用该上限，但仍设一个防滥用阈值。
+_REPORT_HTML_MAX_CHARS = 500_000
 
 logger = logging.getLogger(__name__)
 
@@ -801,6 +806,67 @@ def get_history_share_image_html(
             "X-Content-Type-Options": "nosniff",
         },
     )
+
+
+def _history_report_language(result: Mapping[str, Any]) -> str:
+    """从持久化结果中解析报告语言，缺失时回退全局配置，再回退 zh。"""
+    raw_result = result.get("raw_result")
+    candidate = raw_result.get("report_language") if isinstance(raw_result, Mapping) else None
+    if not candidate:
+        candidate = getattr(get_config(), "report_language", None)
+    return normalize_report_language(candidate)
+
+
+@router.get(
+    "/{record_id}/report-html",
+    response_class=HTMLResponse,
+    responses={
+        200: {"description": "与飞书推送同源的自包含 HTML 报告"},
+        404: {"description": "报告不存在", "model": ErrorResponse},
+        413: {"description": "报告内容超过 HTML 报告长度上限", "model": ErrorResponse},
+        500: {"description": "报告生成失败", "model": ErrorResponse},
+    },
+    summary="获取历史报告的 HTML 版本",
+    description="根据历史报告生成与飞书推送同源的精美 HTML，支持在线查看与下载",
+)
+def get_history_report_html(
+    record_id: str,
+    download: int = Query(0, ge=0, le=1, description="为 1 时以附件形式下载"),
+    db_manager: DatabaseManager = Depends(get_database_manager),
+) -> HTMLResponse:
+    result, markdown_content = _history_share_image_input(record_id, db_manager)
+
+    if len(markdown_content) > _REPORT_HTML_MAX_CHARS:
+        raise HTTPException(
+            status_code=413,
+            detail={
+                "error": "report_html_too_large",
+                "message": f"报告内容超过 HTML 报告上限 {_REPORT_HTML_MAX_CHARS} 字符",
+            },
+        )
+
+    try:
+        html = render_report_html(
+            markdown_content,
+            report_language=_history_report_language(result),
+        )
+    except ReportHtmlRenderError as exc:
+        logger.error("Report HTML generation failed for %s: %s", record_id, exc)
+        raise HTTPException(
+            status_code=500,
+            detail={"error": "generation_failed", "message": "生成 HTML 报告失败"},
+        ) from exc
+
+    headers = {
+        "Cache-Control": "no-store",
+        "Content-Security-Policy": "default-src 'none'; img-src data:; style-src 'unsafe-inline'",
+        "X-Content-Type-Options": "nosniff",
+    }
+    if download:
+        safe_id = str(result.get("id") or record_id)
+        safe_id = "".join(ch for ch in safe_id if ch.isalnum() or ch in "-_")
+        headers["Content-Disposition"] = f'attachment; filename="dsa-report-{safe_id}.html"'
+    return HTMLResponse(content=html, headers=headers)
 
 
 @router.get(

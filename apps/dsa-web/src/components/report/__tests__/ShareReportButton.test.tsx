@@ -7,6 +7,8 @@ import { ShareReportButton } from '../ShareReportButton';
 vi.mock('../../../api/history', () => ({
   historyApi: {
     getShareImage: vi.fn(),
+    getReportHtml: vi.fn(),
+    downloadReportHtml: vi.fn(),
   },
 }));
 
@@ -15,6 +17,8 @@ vi.mock('../../../utils/reportPdf', () => ({
 }));
 
 const mockedGetShareImage = vi.mocked(historyApi.getShareImage);
+const mockedGetReportHtml = vi.mocked(historyApi.getReportHtml);
+const mockedDownloadReportHtml = vi.mocked(historyApi.downloadReportHtml);
 const mockedBuildReportPdf = vi.mocked(buildReportPdf);
 
 const openMenu = () => fireEvent.click(screen.getByRole('button', { name: '分享报告' }));
@@ -24,6 +28,8 @@ describe('ShareReportButton', () => {
   beforeEach(() => {
     vi.useRealTimers();
     mockedGetShareImage.mockReset();
+    mockedGetReportHtml.mockReset();
+    mockedDownloadReportHtml.mockReset();
     mockedBuildReportPdf.mockReset();
     vi.spyOn(URL, 'createObjectURL').mockReturnValue('blob:share-image');
     vi.spyOn(URL, 'revokeObjectURL').mockImplementation(() => undefined);
@@ -51,9 +57,13 @@ describe('ShareReportButton', () => {
     openMenu();
 
     expect(menuItem('复制链接')).toBeInTheDocument();
+    expect(menuItem('查看 HTML 报告')).toBeInTheDocument();
+    expect(menuItem('下载 HTML')).toBeInTheDocument();
     expect(menuItem('导出 PDF')).toBeInTheDocument();
     expect(menuItem('分享图片')).toBeInTheDocument();
     expect(mockedGetShareImage).not.toHaveBeenCalled();
+    expect(mockedGetReportHtml).not.toHaveBeenCalled();
+    expect(mockedDownloadReportHtml).not.toHaveBeenCalled();
   });
 
   it('copies the report deep link without calling the image backend', async () => {
@@ -250,12 +260,39 @@ describe('ShareReportButton', () => {
     expect(menuItem('复制链接')).toHaveFocus();
 
     fireEvent.keyDown(screen.getByRole('menu'), { key: 'ArrowDown' });
-    expect(menuItem('导出 PDF')).toHaveFocus();
+    expect(menuItem('查看 HTML 报告')).toHaveFocus();
 
     fireEvent.keyDown(screen.getByRole('menu'), { key: 'End' });
     expect(menuItem('分享图片')).toHaveFocus();
 
     fireEvent.keyDown(screen.getByRole('menu'), { key: 'ArrowDown' });
     expect(menuItem('复制链接')).toHaveFocus();
+  });
+
+  it('opens the HTML drawer and loads HTML only on demand', async () => {
+    mockedGetReportHtml.mockResolvedValue('<!doctype html><html><body>报告</body></html>');
+    render(<ShareReportButton recordId={17} reportTitle="中钨高新" reportLanguage="zh" />);
+    expect(mockedGetReportHtml).not.toHaveBeenCalled();
+
+    openMenu();
+    fireEvent.click(menuItem('查看 HTML 报告'));
+
+    await waitFor(() => expect(mockedGetReportHtml).toHaveBeenCalledWith(17));
+    const iframe = await screen.findByTitle('HTML 报告');
+    expect(iframe).toBeInTheDocument();
+    expect(iframe.getAttribute('sandbox')).toContain('allow-popups');
+    expect(iframe.getAttribute('sandbox')).not.toContain('allow-scripts');
+    expect(iframe.getAttribute('sandbox')).not.toContain('allow-same-origin');
+  });
+
+  it('downloads HTML with a safe filename', async () => {
+    render(<ShareReportButton recordId={17} reportTitle="中钨高新-000657" reportLanguage="zh" />);
+    openMenu();
+    fireEvent.click(menuItem('下载 HTML'));
+
+    await waitFor(() => expect(mockedDownloadReportHtml).toHaveBeenCalledWith(
+      17,
+      '中钨高新-000657-17.html',
+    ));
   });
 });
