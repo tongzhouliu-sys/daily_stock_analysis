@@ -165,8 +165,8 @@ def _append_hr(elements: List[Dict[str, Any]]) -> None:
     elements.append({"tag": "hr"})
 
 
-def _note(notes: List[str], *, include_disclaimer: bool = False) -> Optional[Dict[str, Any]]:
-    """生成页脚备注：去重、按需补齐统一声明，并避免重复图标。"""
+def _dedupe_notes(notes: List[str], *, include_disclaimer: bool = False) -> List[str]:
+    """脚注去重与统一声明补齐；卡片页脚与 HTML 报告共用同一口径。"""
     deduped: List[str] = []
     seen: set[str] = set()
     for note in notes:
@@ -178,6 +178,12 @@ def _note(notes: List[str], *, include_disclaimer: bool = False) -> Optional[Dic
 
     if include_disclaimer and not any(REPORT_AI_DISCLAIMER in note for note in deduped):
         deduped.append(REPORT_AI_DISCLAIMER)
+    return deduped
+
+
+def _note(notes: List[str], *, include_disclaimer: bool = False) -> Optional[Dict[str, Any]]:
+    """生成页脚备注：去重、按需补齐统一声明，并避免重复图标。"""
+    deduped = _dedupe_notes(notes, include_disclaimer=include_disclaimer)
 
     if not deduped:
         return None
@@ -361,13 +367,18 @@ def _is_short_field(
     return len(value) <= limit and len(key) <= key_limit and "\n" not in value
 
 
-def _fields_element(
+def plan_field_grid(
     cells: List[Tuple[str, str]],
     *,
     force_full: bool = False,
     short_limit: int = 28,
     short_key_limit: int = 12,
-) -> Dict[str, Any]:
+) -> List[Dict[str, Any]]:
+    """规划字段网格的短/全宽布局；卡片 fields 与 HTML 报告共用同一规则。
+
+    同一组字段保持对齐：只要有一项需要全宽，整组都按全宽展示；奇数个
+    双列字段把最后一项拉成全宽，避免半行空白。
+    """
     short_flags = [
         (not force_full)
         and _is_short_field(key, value, limit=short_limit, key_limit=short_key_limit)
@@ -379,13 +390,32 @@ def _fields_element(
     # 奇数个双列字段会留下半行空白，把最后一个也拉成全宽以保持对齐。
     elif short_flags and len(short_flags) % 2 == 1:
         short_flags[-1] = False
+    return [
+        {"key": key, "value": value, "full": not is_short}
+        for (key, value), is_short in zip(cells, short_flags)
+    ]
 
-    fields = []
-    for (key, value), is_short in zip(cells, short_flags):
-        fields.append({
-            "is_short": is_short,
-            "text": {"tag": "lark_md", "content": f"**{key}**\n{value}"},
-        })
+
+def _fields_element(
+    cells: List[Tuple[str, str]],
+    *,
+    force_full: bool = False,
+    short_limit: int = 28,
+    short_key_limit: int = 12,
+) -> Dict[str, Any]:
+    grid = plan_field_grid(
+        cells,
+        force_full=force_full,
+        short_limit=short_limit,
+        short_key_limit=short_key_limit,
+    )
+    fields = [
+        {
+            "is_short": not item["full"],
+            "text": {"tag": "lark_md", "content": f"**{item['key']}**\n{item['value']}"},
+        }
+        for item in grid
+    ]
     return {"tag": "div", "fields": fields}
 
 
@@ -689,3 +719,81 @@ def build_feishu_card(
         return compact_card
     # 超限返回 None，由发送层处理
     return None
+
+
+# ----------------------------------------------------------------------
+# 公开只读 API：HTML 报告渲染（src/services/report_html）与飞书卡片
+# 共用同一份解析，保证两处输出的信息一致。以下入口只读不写，
+# 不改变 build_feishu_card 的任何行为。
+# ----------------------------------------------------------------------
+
+
+@dataclass(frozen=True)
+class ReportDocument:
+    """飞书推送内容的中间模型：标题 / 摘要 / 章节结构 / 脚注。
+
+    输入必须是已经过 ``format_feishu_markdown`` 转换的 lark_md 正文，
+    与 ``build_feishu_card`` 的输入完全一致。
+    """
+
+    title: str
+    summary: str
+    theme: str
+    preamble: List[str]
+    sections: List[_Section]
+    notes: List[str]
+
+
+def parse_report_document(
+    content: str,
+    *,
+    include_disclaimer: bool = False,
+) -> ReportDocument:
+    """按 ``build_feishu_card`` 同一顺序解析文档结构，返回只读模型。
+
+    Args:
+        content: 已经过 ``format_feishu_markdown`` 转换的 lark_md 正文。
+        include_disclaimer: 与报告路由推送保持一致时传 True，
+            脚注会按需补齐统一 AI 生成声明。
+
+    Returns:
+        ReportDocument。解析逻辑全部复用卡片内部函数，不复制实现。
+    """
+    body_lines, notes = _extract_footer((content or "").splitlines())
+    sections = _parse_sections(body_lines)
+    title, preamble, body = _split_document(sections)
+    summary, preamble = _extract_summary(preamble)
+    deduped_notes = _dedupe_notes(notes, include_disclaimer=include_disclaimer)
+    return ReportDocument(
+        title=title,
+        summary=summary,
+        theme=_template_for(title, content or ""),
+        preamble=preamble,
+        sections=body,
+        notes=deduped_notes,
+    )
+
+
+def section_tone(title: str) -> str:
+    """章节标题的语义色；卡片 ``text_tag`` 与 HTML 报告共用。"""
+    return _color_for_title(title)
+
+
+def parse_field_row(line: str) -> Optional[List[Tuple[str, str]]]:
+    """解析「• 键：值 | 键：值」紧凑行；解析不了返回 None。"""
+    return _parse_field_cells(line)
+
+
+def parse_stock_summary(line: str) -> Optional[Tuple[str, str]]:
+    """解析「⚪ **名称(代码)**: 摘要」的个股摘要行。"""
+    return _parse_stock_summary(line)
+
+
+def is_summary_section(title: str) -> bool:
+    """判断章节是否为「摘要 / Summary / 概览」类板块。"""
+    return _is_summary_section(title)
+
+
+def format_quote_line(line: str) -> str:
+    """引用行的分类结果：灰色引用 / 💡 决策高亮 / 原文不变。"""
+    return _format_quote(line)
