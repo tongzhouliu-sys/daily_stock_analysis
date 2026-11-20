@@ -39,6 +39,7 @@
 | [LiteLLM YAML 示例](examples/litellm_config.example.yaml) | LiteLLM 多渠道配置示例 |
 | [Grok Bot Skill 示例](examples/grok_bot/README.md) | 给 Grok Bot 粘贴的最小 Skill，调用现有 REST |
 | [通知能力基线](notifications.md) | 企业微信、飞书、Telegram、Discord、Slack、邮件等通知渠道配置 |
+| [飞书同源 HTML 报告](report-html.md) | 在报告中查看/下载与飞书推送同源的自包含 HTML：数据流、接口、安全边界与回滚 |
 | [Tushare 股票列表指南](TUSHARE_STOCK_LIST_GUIDE.md) | Tushare 股票列表相关配置和使用说明 |
 | [配置单一声明源（方案）](config-single-source.md) | `config.py` / `config_registry.py` / `system_config_service.py` 三处配置声明的收敛方案与迁移路径 |
 

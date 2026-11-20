@@ -8,6 +8,8 @@ and this project adheres to [Semantic Versioning](https://semver.org/).
 > For user-friendly release highlights, see the [GitHub Releases](https://github.com/ZhuLinsen/daily_stock_analysis/releases) page.
 
 ## [Unreleased]
+- [新功能] 历史报告新增「飞书同源 HTML 报告」：分享菜单可在抽屉内查看或下载一份与飞书推送同源的自包含 HTML，视觉支持系统深浅色与打印；新增 `GET /api/v1/history/{id}/report-html`，零脚本、全量转义、沙箱 iframe 展示，详见 [飞书同源 HTML 报告](report-html.md)。
+- [改进] `feishu_card` 新增 `parse_report_document()` 等公开只读解析入口，脚注去重抽为 `_dedupe_notes()`、字段网格布局抽为 `plan_field_grid()`，飞书卡片输出逐字节不变，HTML 报告与之共用同一份解析。
 - [改进] 报告导出与飞书消息底部统一展示 RHCLOUD PTE. LTD. AI 生成声明：分享图/PDF 移除小红书二维码与 GitHub 仓库地址，改为 RHCLOUD 品牌区与统一声明；所有 Markdown 报告末尾追加该声明；飞书仅分析报告推送的富/轻/紧凑卡片与纯文本兜底追加声明；删除 `SHARE_IMAGE_XIAOHONGSHU_*` 配置、二维码资产和相关打包参数。
 - [文档] 新增报告导出与飞书消息底部统一 AI 声明开发任务书（`docs/tasks/report-footer-ai-disclaimer.md`）：移除分享图/PDF 的小红书二维码与 GitHub 仓库地址，改为 RHCLOUD PTE. LTD. AI 生成声明；覆盖 Markdown 报告、飞书卡片与纯文本兜底、历史报告幂等处理、配置/资产清理和验收矩阵。功能待实施。
 - [新功能] 记录管理员登录日志：在「系统设置 > 系统」新增登录日志卡片，记录登录、首次设置密码、开启/关闭认证、修改密码的成功与失败事件，包含 IP 地址、归属地（国家/省/城市）、客户端信息（浏览器/桌面端/脚本、操作系统、设备类型）、时间戳；支持离线 IP 地理库（DB-IP City Lite / MaxMind GeoLite2-City）和可选的在线查询（ip-api.com）；默认保留 90 天，上限 5000 行；详见 [登录日志](login-log.md)

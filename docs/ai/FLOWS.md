@@ -64,3 +64,4 @@ SettingsPage → PUT /api/v1/system-config/config
 
 - 选股 / 筛选：`api/v1/endpoints/screening.py` → `src/services/screening_service.py`，热点与日线在 `src/services/screening/`。
 - 回测：`api/v1/endpoints/backtest.py` → `src/services/backtest_service.py`，输入转换脚本 `scripts/signal_scanner/build_rebound_input.py`，报告写 `local/backtests/`。
+- 飞书同源 HTML 报告：历史报告 Markdown → `src/formatters.py format_feishu_markdown()` → `src/notification_sender/feishu_card.py parse_report_document()`（与飞书卡片共用解析）→ `src/services/report_html/renderer.py render_report_html()` → `GET /api/v1/history/{id}/report-html`；Web 分享菜单用沙箱 iframe 展示。修改飞书章节解析 / 字段布局 / 脚注去重 / 主题映射时，必须同步评估该链路。详见 `docs/report-html.md`。

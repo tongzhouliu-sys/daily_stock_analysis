@@ -92,6 +92,35 @@ export const historyApi = {
   },
 
   /**
+   * 获取与飞书推送同源的 HTML 报告（用于抽屉内预览）
+   */
+  getReportHtml: async (recordId: number): Promise<string> => {
+    const response = await apiClient.get<string>(`/api/v1/history/${recordId}/report-html`, {
+      responseType: 'text',
+    });
+    return response.data;
+  },
+
+  /**
+   * 以附件形式下载 HTML 报告。
+   * 使用 blob + 前端 download 而非 window.location，避免触发 SPA 路由与鉴权跳转。
+   */
+  downloadReportHtml: async (recordId: number, filename: string): Promise<void> => {
+    const response = await apiClient.get<Blob>(
+      `/api/v1/history/${recordId}/report-html?download=1`,
+      { responseType: 'blob' },
+    );
+    const objectUrl = URL.createObjectURL(response.data);
+    const anchor = document.createElement('a');
+    anchor.href = objectUrl;
+    anchor.download = filename;
+    document.body.appendChild(anchor);
+    anchor.click();
+    document.body.removeChild(anchor);
+    window.setTimeout(() => URL.revokeObjectURL(objectUrl), 0);
+  },
+
+  /**
    * 生成历史报告分享图片
    * @param recordId 分析历史记录主键 ID
    */

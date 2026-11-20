@@ -64,6 +64,7 @@ Telegram 文本消息遇到 HTTP 429 时，优先按 [Bot API 的 `parameters.re
 - 降级路径按信息密度逐级收敛：富卡片（分节 + 语义色 + 字段布局）→ 轻卡片（按 `##` 板块合并为少量 `div`）→ 紧凑卡片（标题栏 + 完整正文）。短通知、无章节标题的内容、元素过多或卡片 JSON 超过 `FEISHU_MAX_BYTES` 预算时逐级降级；任何降级路径都不丢正文信息，飞书拒绝卡片时仍按原逻辑回退纯文本。
 - `format_feishu_markdown()` 现在用 `▎ **标题**` / `· **标题**` 保留 `##` / `###` 层级，引用块改为灰色 `<font>` 小字，并压缩连续空行；两列表格按「行首单元格：单元格值」转换（例如 `• 当前价：1453.00`），三列及以上仍按「列名：值 | 列名：值」展开；`_chunk_by_separators()` 同步识别两种标题前缀作为分片边界。Stream Bot 复用同一转换函数，因此纯文本回复也获得层级前缀与更自然的两列表格。
 - 回归测试：`tests/test_feishu_card.py`（标题栏 / 摘要提升、语义色、字段布局、页脚去重、引用高亮、字节降级、标题层级、分片边界、Webhook / App Bot 两条链路）；`tests/test_formatters.py` 与 `tests/test_notification_sender.py` 同步覆盖两列表格和卡片降级断言。
+- 飞书卡片与报告 HTML 共用 `parse_report_document()` 解析和 `plan_field_grid()` 字段布局。修改本节涉及的章节解析、字段布局、脚注去重或主题映射时，需同步评估 HTML 报告并跑 `tests/test_report_html_renderer.py`；HTML 报告的用法见 [飞书同源 HTML 报告](report-html.md)。
 
 ## GitHub Actions 映射
 
