@@ -1,0 +1,39 @@
+{%- macro render_inline(text) -%}
+  {# text 已在 Python 侧完成白名单转换与安全转义，这里直接输出片段 #}
+  {{- text | safe -}}
+{%- endmacro -%}
+
+{%- macro render_field(field) -%}
+  <div class="field{% if field['full'] %} full{% endif %}">
+    <span class="key">{{ render_inline(field['key']) }}</span>
+    <span class="value">{{ render_inline(field['value']) }}</span>
+  </div>
+{%- endmacro -%}
+
+{%- macro render_item(item) -%}
+  {%- if item['kind'] == 'fields' -%}
+    <div class="fields">
+      {%- for field in item['fields'] -%}
+        {{ render_field(field) }}
+      {%- endfor -%}
+    </div>
+  {%- elif item['kind'] == 'quote' -%}
+    <blockquote class="quote">{{ render_inline(item['text']) }}</blockquote>
+  {%- elif item['kind'] == 'note' -%}
+    <blockquote class="note">{{ render_inline(item['text']) }}</blockquote>
+  {%- elif item['kind'] == 'list' -%}
+    <ul class="plain">
+      {%- for line in item['lines'] -%}
+        <li>{{ render_inline(line) }}</li>
+      {%- endfor -%}
+    </ul>
+  {%- elif item['kind'] == 'code' -%}
+    <pre class="code">{{ item['text'] | e }}</pre>
+  {%- elif item['kind'] == 'hr' -%}
+    <hr>
+  {%- elif item['kind'] == 'heading3' -%}
+    <h3{% if item['tone'] %} class="tone-{{ item['tone'] }}"{% endif %}>{{ render_inline(item['text']) }}</h3>
+  {%- else -%}
+    <p>{{ render_inline(item['text']) }}</p>
+  {%- endif -%}
+{%- endmacro -%}

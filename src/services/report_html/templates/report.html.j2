@@ -1,0 +1,42 @@
+<!doctype html>
+<html lang="{{ lang }}">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width, initial-scale=1">
+<title>{{ page_title | e }}</title>
+<style>
+{{ styles }}
+</style>
+</head>
+<body>
+<main class="page">
+{% if doc.title or doc.summary %}
+  <header class="hero theme-{{ doc.theme }}">
+    {% if doc.title %}<h1>{{ doc.title | e }}</h1>{% endif %}
+    {% if doc.summary %}<p class="subtitle">{{ doc.summary | e }}</p>{% endif %}
+    {% if kpis %}
+    <ul class="kpis">
+      {% for kpi in kpis %}<li>{{ kpi | e }}</li>{% endfor %}
+    </ul>
+    {% endif %}
+  </header>
+{% endif %}
+
+<div class="blocks">
+{% for block in blocks %}
+  <section class="block">
+    {% if block['title'] %}<h2 class="tone-{{ block['tone'] }}">{{ block['title'] | e }}</h2>{% endif %}
+    {% for item in block['items'] %}{{ render_item(item) }}{% endfor %}
+  </section>
+{% endfor %}
+</div>
+
+{% if doc.notes or generated_at %}
+<footer class="notes">
+  {% for note in doc.notes %}<div{% if 'RHCLOUD' in note or '不构成投资建议' in note or 'investment' in note.lower() %} class="disclaimer"{% endif %}>{{ note | e }}</div>{% endfor %}
+  {% if generated_at %}<div>{{ generated_at | e }}</div>{% endif %}
+</footer>
+{% endif %}
+</main>
+</body>
+</html>
