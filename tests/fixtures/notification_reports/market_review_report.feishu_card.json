@@ -1,0 +1,26 @@
+{
+  "config": {
+    "enable_forward": true,
+    "wide_screen_mode": true
+  },
+  "elements": [
+    {
+      "tag": "div",
+      "text": {
+        "content": "▎ **指数表现**\n\n• 指数：上证指数 | 涨跌幅：+0.8% | 量能：放量\n• 指数：创业板指 | 涨跌幅：-0.2% | 量能：缩量\n\n▎ **资金方向**\n\n• 北向资金小幅净流入。\n• 高股息、半导体、消费电子轮动活跃。\n\n▎ **明日观察**\n\n关注成交额能否维持在万亿附近，以及权重板块是否继续承接。",
+        "tag": "lark_md"
+      }
+    }
+  ],
+  "header": {
+    "subtitle": {
+      "content": "仅供研究参考",
+      "tag": "plain_text"
+    },
+    "template": "indigo",
+    "title": {
+      "content": "大盘复盘",
+      "tag": "plain_text"
+    }
+  }
+}

@@ -1,0 +1,102 @@
+{
+  "config": {
+    "enable_forward": true,
+    "wide_screen_mode": true
+  },
+  "elements": [
+    {
+      "tag": "div",
+      "text": {
+        "content": "<text_tag color='orange'>核心判断</text_tag>",
+        "tag": "lark_md"
+      }
+    },
+    {
+      "fields": [
+        {
+          "is_short": true,
+          "text": {
+            "content": "**技术面**\n均线多头排列，成交量温和放大。",
+            "tag": "lark_md"
+          }
+        },
+        {
+          "is_short": true,
+          "text": {
+            "content": "**基本面**\n盈利质量稳定，估值处于历史中位附近。",
+            "tag": "lark_md"
+          }
+        }
+      ],
+      "tag": "div"
+    },
+    {
+      "fields": [
+        {
+          "is_short": true,
+          "text": {
+            "content": "**指标**\nRSI",
+            "tag": "lark_md"
+          }
+        },
+        {
+          "is_short": true,
+          "text": {
+            "content": "**当前值**\n58",
+            "tag": "lark_md"
+          }
+        },
+        {
+          "is_short": true,
+          "text": {
+            "content": "**解释**\n中性偏强",
+            "tag": "lark_md"
+          }
+        },
+        {
+          "is_short": true,
+          "text": {
+            "content": "**指标**\nMACD",
+            "tag": "lark_md"
+          }
+        },
+        {
+          "is_short": true,
+          "text": {
+            "content": "**当前值**\n金叉",
+            "tag": "lark_md"
+          }
+        },
+        {
+          "is_short": true,
+          "text": {
+            "content": "**解释**\n动能改善",
+            "tag": "lark_md"
+          }
+        }
+      ],
+      "tag": "div"
+    },
+    {
+      "tag": "hr"
+    },
+    {
+      "tag": "div",
+      "text": {
+        "content": "<text_tag color='indigo'>操作计划</text_tag>\n\n1. 回踩关键均线不破时观察。\n2. 跌破风控位时降低仓位。\n\n`risk_level = medium`",
+        "tag": "lark_md"
+      }
+    }
+  ],
+  "header": {
+    "subtitle": {
+      "content": "仅供研究参考",
+      "tag": "plain_text"
+    },
+    "template": "blue",
+    "title": {
+      "content": "贵州茅台 600519 分析报告",
+      "tag": "plain_text"
+    }
+  }
+}
