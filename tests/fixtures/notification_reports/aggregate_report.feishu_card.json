@@ -1,0 +1,83 @@
+{
+  "config": {
+    "enable_forward": true,
+    "wide_screen_mode": true
+  },
+  "elements": [
+    {
+      "tag": "div",
+      "text": {
+        "content": "<text_tag color='orange'>今日结论</text_tag>\n\n• 市场风险偏好回升，短线资金偏向高股息与 AI 算力。\n• 默认仍发送完整报告，本样例用于验证不同通知渠道的格式化保真。",
+        "tag": "lark_md"
+      }
+    },
+    {
+      "fields": [
+        {
+          "is_short": false,
+          "text": {
+            "content": "**股票**\n600519",
+            "tag": "lark_md"
+          }
+        },
+        {
+          "is_short": false,
+          "text": {
+            "content": "**信号**\n趋势强势",
+            "tag": "lark_md"
+          }
+        },
+        {
+          "is_short": false,
+          "text": {
+            "content": "**建议**\n逢低关注",
+            "tag": "lark_md"
+          }
+        },
+        {
+          "is_short": false,
+          "text": {
+            "content": "**股票**\nAAPL",
+            "tag": "lark_md"
+          }
+        },
+        {
+          "is_short": false,
+          "text": {
+            "content": "**信号**\n震荡整理",
+            "tag": "lark_md"
+          }
+        },
+        {
+          "is_short": false,
+          "text": {
+            "content": "**建议**\n等待放量",
+            "tag": "lark_md"
+          }
+        }
+      ],
+      "tag": "div"
+    },
+    {
+      "tag": "hr"
+    },
+    {
+      "tag": "div",
+      "text": {
+        "content": "<text_tag color='red'>风险提示</text_tag>\n\n💡 样例不构成投资建议。\n\n```text\nvolume_signal = \"watch\"\n```\n\n[查看完整报告](https://example.com/reports/daily-stock-analysis)",
+        "tag": "lark_md"
+      }
+    }
+  ],
+  "header": {
+    "subtitle": {
+      "content": "仅供研究参考",
+      "tag": "plain_text"
+    },
+    "template": "blue",
+    "title": {
+      "content": "A股智能分析日报",
+      "tag": "plain_text"
+    }
+  }
+}

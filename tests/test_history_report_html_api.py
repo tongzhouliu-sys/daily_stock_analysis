@@ -134,3 +134,30 @@ def test_report_html_500_does_not_leak_error_detail(monkeypatch):
     assert exc.value.status_code == 500
     assert exc.value.detail == {"error": "generation_failed", "message": "生成 HTML 报告失败"}
     assert "secret" not in str(exc.value.detail)
+
+
+def test_report_html_requires_session_when_auth_enabled():
+    """鉴权开启时，未带会话访问 report-html 必须返回 401。"""
+    import asyncio
+    from unittest.mock import AsyncMock, MagicMock, patch
+
+    from fastapi import Request, Response
+    from api.middlewares.auth import AuthMiddleware
+
+    scope = {
+        "type": "http",
+        "method": "GET",
+        "path": "/api/v1/history/17/report-html",
+        "headers": [],
+        "query_string": b"",
+        "scheme": "http",
+        "client": ("127.0.0.1", 1234),
+        "server": ("testserver", 80),
+        "root_path": "",
+    }
+    middleware = AuthMiddleware(app=MagicMock())
+    with patch("api.middlewares.auth.is_auth_enabled", return_value=True):
+        response = asyncio.run(
+            middleware.dispatch(Request(scope), AsyncMock(return_value=Response(status_code=200)))
+        )
+    assert response.status_code == 401

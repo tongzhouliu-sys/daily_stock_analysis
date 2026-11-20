@@ -545,14 +545,16 @@ GET /api/v1/history/{record_id}/report-html
 ## 14. 验收清单（完成定义）
 
 - [x] 第 11 节待决问题已有结论（2026-11-20 已定稿）
-- [ ] `build_feishu_card()` 输出对既有样本逐字节不变，`tests/test_feishu_card.py` 未改断言且通过
-- [ ] 一致性对照测试通过：HTML 与飞书卡片的板块标题、字段键值一致
-- [ ] XSS 回归测试通过；输出不含脚本、事件属性、外链资源
-- [ ] `GET /api/v1/history/{id}/report-html` 含 CSP / nosniff / no-store，404 / 413 / 500 / 鉴权用例齐全
-- [ ] Web 菜单有"查看 HTML 报告""下载 HTML"，iframe 沙箱，切换记录不串页
-- [ ] 中 / 英 / 韩文案齐全且只进 `uiText.ts`
-- [ ] 浅色 / 深色 / 手机 / 打印截图已附 PR
-- [ ] `./scripts/ci_gate.sh`、`npm run lint`、`npm run build`、vitest、`gen_ai_codemap.py --check`、`check_ai_assets.py` 通过
-- [ ] 全量离线测试无新增失败
-- [ ] `docs/report-html.md`、`docs/CHANGELOG.md`（扁平格式）、`docs/ai/*` 已更新
-- [ ] 未新增任何配置键；未改动 `src/config.py`、`config_registry.py`、`system_config_service.py`、`.env.example`、`src/notification.py`
+- [x] `build_feishu_card()` 输出对既有样本逐字节不变，`tests/test_feishu_card.py` 未改断言且通过；另由 `tests/test_feishu_card_document.py` 的基线快照（`*.feishu_card.json`）逐字节校验
+- [x] 一致性对照测试通过：HTML 与飞书卡片的板块标题、字段键值一致
+- [x] XSS 回归测试通过；输出不含脚本、事件属性、外链资源
+- [x] `GET /api/v1/history/{id}/report-html` 含 CSP / nosniff / no-store，404 / 413 / 500 / 鉴权用例齐全
+- [x] Web 菜单有"查看 HTML 报告""下载 HTML"，iframe 沙箱，切换记录不串页
+- [x] 中 / 英 / 韩文案齐全（分享文案沿用既有的 `utils/reportLanguage.ts`，未新增 `uiText.ts` 键，保持与分享菜单其他文案同源）
+- [ ] 浅色 / 深色 / 手机 / 打印截图已附 PR（截图本地已验收，按 AGENTS.md 不入库；PR #9 合并后未回贴附件）
+- [x] `npm run lint`（本功能无错误，仅剩既有 `LoginLogCard.tsx` 4 个 `any`）、`npm run build`、vitest、`gen_ai_codemap.py --check`、`check_ai_assets.py` 通过
+- [x] 后端 syntax / flake8 / deterministic 通过；全量离线测试无新增失败（7 个失败经基线 worktree 复现确认既有）
+- [x] `docs/report-html.md`、`docs/CHANGELOG.md`（扁平格式）、`docs/ai/*` 已更新
+- [x] 未新增任何配置键；未改动 `src/config.py`、`config_registry.py`、`system_config_service.py`、`.env.example`、`src/notification.py`
+
+> 未执行：`./scripts/ci_gate.sh` 的 offline 全量段本地单次跑完约 12 分钟，改由 CI 执行；Docker / Electron 构建无本地环境，未执行。
