@@ -5,8 +5,8 @@ This module defines all strategy parameters, filters, and constraints
 as specified in the requirements document.
 """
 
-from dataclasses import dataclass, field
-from typing import Optional, Dict, Any
+from dataclasses import dataclass
+from typing import Dict, Any
 
 
 @dataclass

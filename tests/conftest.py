@@ -80,6 +80,26 @@ def isolated_application_environment():
         for key in ("_auth_enabled", "_session_secret", "_password_hash_salt", "_password_hash_stored"):
             setattr(auth, key, None)
 
+
+@pytest.fixture(autouse=True)
+def offline_network_guard(request):
+    """Optionally block outbound sockets in tests that are not marked ``network``.
+
+    Default off so the full suite keeps its current runtime; CI runs a curated
+    job with ``DSA_OFFLINE_GUARD=enforce``. See tests/support/network_guard.py.
+    """
+    from tests.support import network_guard
+
+    mode = os.getenv("DSA_OFFLINE_GUARD", "").strip().lower()
+    if mode not in {"warn", "enforce"} or network_guard.is_exempt(request.node):
+        yield
+        return
+    token = network_guard.enable(enforce=mode == "enforce")
+    try:
+        yield
+    finally:
+        network_guard.disable(token)
+
 _original_call_soon_threadsafe = asyncio.BaseEventLoop.call_soon_threadsafe
 
 

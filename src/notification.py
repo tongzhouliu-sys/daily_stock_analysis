@@ -3262,7 +3262,6 @@ def send_daily_report(results: List[AnalysisResult]) -> bool:
 if __name__ == "__main__":
     # 测试代码
     logging.basicConfig(level=logging.DEBUG)
-    from src.analyzer import AnalysisResult
 
     # 模拟分析结果
     test_results = [

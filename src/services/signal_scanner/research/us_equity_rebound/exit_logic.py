@@ -2,7 +2,7 @@
 
 from __future__ import annotations
 
-from typing import Optional, Dict, Any
+from typing import Optional
 from .indicators import sma
 from .config import ReboundConfig
 

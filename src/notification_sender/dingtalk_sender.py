@@ -6,7 +6,6 @@ import base64
 import urllib.parse
 import requests
 import logging
-from typing import Optional
 
 from src.config import Config
 from src.formatters import chunk_content_by_max_bytes, strip_hidden_markdown_metadata  # <-- 引入项目内置的切片器

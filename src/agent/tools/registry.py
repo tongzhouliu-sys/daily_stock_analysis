@@ -8,7 +8,6 @@ Provides:
 - @tool decorator for easy tool registration
 """
 
-import json
 import inspect
 import logging
 from dataclasses import dataclass, field

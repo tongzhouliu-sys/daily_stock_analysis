@@ -9,7 +9,7 @@ snapshots, diagnostics or provider configuration.
 
 from __future__ import annotations
 
-from typing import Any, Dict, List, Optional
+from typing import Any, List
 
 from src.market_structure_prompt import format_market_structure_prompt_section
 from src.report_language import normalize_report_language

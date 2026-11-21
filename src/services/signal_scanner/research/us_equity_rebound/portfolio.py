@@ -3,8 +3,7 @@
 from __future__ import annotations
 
 from typing import List, Dict, Optional, Any
-from dataclasses import dataclass, field
-from decimal import Decimal
+from dataclasses import dataclass
 from .config import ReboundConfig
 
 

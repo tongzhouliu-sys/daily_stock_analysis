@@ -1,13 +1,44 @@
 import type React from 'react';
 import { useState, useEffect, useCallback } from 'react';
 import { useUiLanguage } from '../../contexts/UiLanguageContext';
+import type { UiTextKey } from '../../i18n/uiText';
 import { authApi, type LoginLogItem, type LoginLogResponse } from '../../api/auth';
-import { Button, Badge } from '../common';
+import { Button, Badge, Tooltip } from '../common';
 import { SettingsAlert } from './SettingsAlert';
 import { SettingsSectionCard } from './SettingsSectionCard';
 import { useAuth } from '../../hooks';
 
 type FilterType = 'all' | 'success' | 'failure';
+
+const EVENT_LABEL_KEYS: Record<string, UiTextKey> = {
+  login: 'settings.loginLogEventLogin',
+  initial_setup: 'settings.loginLogEventInitialSetup',
+  auth_enable: 'settings.loginLogEventAuthEnable',
+  auth_disable: 'settings.loginLogEventAuthDisable',
+  password_change: 'settings.loginLogEventPasswordChange',
+};
+
+const FAILURE_LABEL_KEYS: Record<string, UiTextKey> = {
+  invalid_credentials: 'settings.loginLogFailureInvalidCredentials',
+  password_mismatch: 'settings.loginLogFailurePasswordMismatch',
+  password_rejected: 'settings.loginLogFailurePasswordRejected',
+  current_password_invalid: 'settings.loginLogFailureCurrentPasswordInvalid',
+  setup_token_invalid: 'settings.loginLogFailureSetupTokenInvalid',
+};
+
+const CLIENT_LABEL_KEYS: Record<string, UiTextKey> = {
+  browser: 'settings.loginLogClientBrowser',
+  desktop: 'settings.loginLogClientDesktop',
+  script: 'settings.loginLogClientScript',
+  unknown: 'settings.loginLogClientUnknown',
+};
+
+const DEVICE_LABEL_KEYS: Record<string, UiTextKey> = {
+  desktop: 'settings.loginLogDeviceDesktop',
+  mobile: 'settings.loginLogDeviceMobile',
+  tablet: 'settings.loginLogDeviceTablet',
+  unknown: 'settings.loginLogDeviceUnknown',
+};
 
 export const LoginLogCard: React.FC = () => {
   const { t, language } = useUiLanguage();
@@ -63,20 +94,20 @@ export const LoginLogCard: React.FC = () => {
   };
 
   const getEventLabel = (eventType: string) => {
-    const key = `settings.loginLogEvent${eventType.charAt(0).toUpperCase() + eventType.slice(1).replace(/_([a-z])/g, (_, l) => l.toUpperCase())}`;
-    return t(key as any) || eventType;
+    const key = EVENT_LABEL_KEYS[eventType];
+    return key ? t(key) || eventType : eventType;
   };
 
   const getFailureLabel = (reason?: string) => {
     if (!reason) return '';
-    const key = `settings.loginLogFailure${reason.charAt(0).toUpperCase() + reason.slice(1).replace(/_([a-z])/g, (_, l) => l.toUpperCase())}`;
-    return t(key as any) || reason;
+    const key = FAILURE_LABEL_KEYS[reason];
+    return key ? t(key) || reason : reason;
   };
 
   const getClientLabel = (item: LoginLogItem) => {
     const clientType = item.client.type;
-    const typeKey = `settings.loginLogClient${clientType.charAt(0).toUpperCase() + clientType.slice(1)}`;
-    const typeLabel = t(typeKey as any) || clientType;
+    const typeKey = CLIENT_LABEL_KEYS[clientType];
+    const typeLabel = typeKey ? t(typeKey) || clientType : clientType;
     
     let detail = '';
     if (clientType === 'browser' && item.client.browser) {
@@ -92,8 +123,8 @@ export const LoginLogCard: React.FC = () => {
   };
 
   const getDeviceLabel = (deviceType: string) => {
-    const key = `settings.loginLogDevice${deviceType.charAt(0).toUpperCase() + deviceType.slice(1)}`;
-    return t(key as any) || deviceType;
+    const key = DEVICE_LABEL_KEYS[deviceType];
+    return key ? t(key) || deviceType : deviceType;
   };
 
   const getLocationText = (item: LoginLogItem) => {
@@ -247,9 +278,9 @@ export const LoginLogCard: React.FC = () => {
                 {data.items.map((item) => (
                   <tr key={item.id} className="border-b border-gray-100 hover:bg-gray-50">
                     <td className="py-3 px-3 text-gray-600">
-                      <div title={item.createdAt}>
-                        {formatTime(item.createdAt)}
-                      </div>
+                      <Tooltip content={item.createdAt}>
+                        <div>{formatTime(item.createdAt)}</div>
+                      </Tooltip>
                     </td>
                     <td className="py-3 px-3 text-gray-900">
                       {getEventLabel(item.eventType)}
@@ -263,9 +294,11 @@ export const LoginLogCard: React.FC = () => {
                       <div>
                         {item.ip}
                         {item.peerIp && (
-                          <span className="ml-1 text-xs text-gray-400" title={`Peer: ${item.peerIp}`}>
-                            ({t('settings.loginLogViaProxy')})
-                          </span>
+                          <Tooltip content={`Peer: ${item.peerIp}`}>
+                            <span className="ml-1 text-xs text-gray-400">
+                              ({t('settings.loginLogViaProxy')})
+                            </span>
+                          </Tooltip>
                         )}
                       </div>
                       <div className="text-xs text-gray-500">

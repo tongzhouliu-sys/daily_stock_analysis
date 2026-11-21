@@ -128,8 +128,12 @@ def test_heavy_ci_jobs_are_path_filtered_and_backend_tests_are_sharded() -> None
         "changes",
         "ai-governance",
         "backend-tests",
+        "offline-network-guard",
     ]
     assert backend_gate_job["if"] == "always()"
+    offline_guard_job = ci["jobs"]["offline-network-guard"]
+    assert offline_guard_job["needs"] == ["changes", "ai-governance"]
+    assert offline_guard_job["if"] == "needs.changes.outputs.backend == 'true'"
     assert docker_job["needs"] == ["changes", "ai-governance"]
     assert docker_job["if"] == "needs.changes.outputs.docker == 'true'"
 

@@ -70,7 +70,7 @@ class StockIdentity:
 
     @classmethod
     def from_code(cls, token: str, registry: Any) -> "StockIdentity":
-        from src.services.stock_list_parser import ParseStatus, parse_analysis_target
+        from src.services.stock_list_parser import parse_analysis_target
 
         if registry is None:
             raise ValueError("Chat stock identity registry is unavailable")

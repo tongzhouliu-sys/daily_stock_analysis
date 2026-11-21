@@ -5,7 +5,7 @@ from __future__ import annotations
 
 import logging
 import os
-from typing import Literal
+from typing import Literal, Optional
 
 from fastapi import APIRouter, Query, Request
 from fastapi.concurrency import run_in_threadpool
@@ -31,15 +31,16 @@ from src.auth import (
     refresh_auth_state,
     rotate_session_secret,
     set_initial_password,
+    setup_token_required,
     verify_admin_username,
     verify_password,
+    verify_setup_token,
     verify_stored_password,
     verify_session,
 )
 from src.config import Config, setup_env
 from src.core.config_manager import ConfigManager
 from src.services.login_audit_service import (
-    LOGIN_LOG_MAX_ROWS,
     LOGIN_LOG_RETENTION_DAYS_DEFAULT,
     record_auth_event,
 )
@@ -58,6 +59,7 @@ class LoginRequest(BaseModel):
     username: str = Field(default="", description="Required administrator username")
     password: str = Field(default="", description="Admin password")
     password_confirm: str | None = Field(default=None, alias="passwordConfirm", description="Confirm (first-time)")
+    setup_token: str | None = Field(default=None, alias="setupToken", description="First-time setup token")
 
 
 class ChangePasswordRequest(BaseModel):
@@ -79,6 +81,7 @@ class AuthSettingsRequest(BaseModel):
     password: str = Field(default="")
     password_confirm: str | None = Field(default=None, alias="passwordConfirm")
     current_password: str = Field(default="", alias="currentPassword")
+    setup_token: str | None = Field(default=None, alias="setupToken", description="First-time setup token")
 
 
 def _cookie_params(request: Request) -> dict:
@@ -166,6 +169,55 @@ def _set_session_cookie(response: Response, session_value: str, request: Request
     )
 
 
+def _request_client_host(request: Request) -> Optional[str]:
+    """Return the transport-level client host (not a forwarded header)."""
+    return request.client.host if request and request.client else None
+
+
+async def _reject_invalid_setup_token(
+    request: Request,
+    submitted: Optional[str],
+    *,
+    event_type: str,
+    ip: str,
+    missing_reason: str = "setup_token_missing",
+    invalid_reason: str = "setup_token_invalid",
+) -> Optional[JSONResponse]:
+    """Return a 403 response when first-time setup lacks a valid token."""
+    if not setup_token_required(_request_client_host(request)):
+        return None
+    if not submitted:
+        record_login_failure(ip)
+        await run_in_threadpool(
+            record_auth_event,
+            request,
+            event_type,
+            False,
+            failure_reason=missing_reason,
+        )
+        return JSONResponse(
+            status_code=403,
+            content={
+                "error": "setup_token_required",
+                "message": "First-time setup requires ADMIN_SETUP_TOKEN",
+            },
+        )
+    if not verify_setup_token(submitted):
+        record_login_failure(ip)
+        await run_in_threadpool(
+            record_auth_event,
+            request,
+            event_type,
+            False,
+            failure_reason=invalid_reason,
+        )
+        return JSONResponse(
+            status_code=403,
+            content={"error": "setup_token_invalid", "message": "Invalid setup token"},
+        )
+    return None
+
+
 def _get_auth_status_dict(request: Request | None = None) -> dict:
     """Helper to build consistent auth status response body."""
     auth_enabled = is_auth_enabled()
@@ -191,6 +243,9 @@ def _get_auth_status_dict(request: Request | None = None) -> dict:
         "passwordSet": _password_set_for_response(auth_enabled),
         "passwordChangeable": is_password_changeable() if auth_enabled else False,
         "setupState": setup_state,
+        "setupTokenRequired": setup_token_required(
+            _request_client_host(request) if request is not None else None
+        ),
     }
 
 
@@ -226,9 +281,18 @@ async def auth_update_settings(request: Request, body: AuthSettingsRequest):
     password = (body.password or "").strip()
     confirm = (body.password_confirm or "").strip()
     current_password = (body.current_password or "").strip()
+    client_ip = get_client_ip(request)
 
     if target_enabled:
         if password or confirm:
+            guard = await _reject_invalid_setup_token(
+                request,
+                getattr(body, "setup_token", None),
+                event_type="initial_setup",
+                ip=client_ip,
+            )
+            if guard is not None:
+                return guard
             if stored_password_exists:
                 return JSONResponse(
                     status_code=400,
@@ -424,6 +488,14 @@ async def auth_login(request: Request, body: LoginRequest):
     username_matches = verify_admin_username(body.username)
 
     if not password_set and username_matches:
+        guard = await _reject_invalid_setup_token(
+            request,
+            getattr(body, "setup_token", None),
+            event_type="initial_setup",
+            ip=ip,
+        )
+        if guard is not None:
+            return guard
         # First-time setup: require passwordConfirm
         confirm = (body.password_confirm or "").strip()
         if password != confirm:
@@ -572,7 +644,9 @@ def _build_geo_meta() -> dict:
     if configured:
         database_type = getattr(resolver, "_db_type", None) or None
 
-    online_provider = os.getenv("LOGIN_LOG_GEO_ONLINE_PROVIDER", "").strip() or None
+    # Online lookup is intentionally not implemented; the response keeps the
+    # block for API compatibility and reports no provider.
+    online_provider = None
 
     return {
         "offline": {

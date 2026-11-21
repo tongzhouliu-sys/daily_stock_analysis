@@ -6,7 +6,6 @@ import argparse
 import json
 import sys
 from pathlib import Path
-from typing import Dict, Any
 
 from .config import ReboundConfig
 from .engine import BacktestEngine

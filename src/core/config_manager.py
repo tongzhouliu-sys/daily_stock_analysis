@@ -309,6 +309,12 @@ class ConfigManager:
             file_obj.flush()
             os.fsync(file_obj.fileno())
 
+        # .env carries API keys and webhook secrets; do not rely on umask.
+        try:
+            os.chmod(temp_path, 0o600)
+        except OSError:
+            logger.debug("chmod 0600 on temporary .env failed", exc_info=True)
+
         try:
             os.replace(temp_path, self._env_path)
         except OSError as exc:
@@ -330,6 +336,10 @@ class ConfigManager:
             file_obj.write(content)
             file_obj.flush()
             os.fsync(file_obj.fileno())
+        try:
+            os.chmod(self._env_path, 0o600)
+        except OSError:
+            logger.debug("chmod 0600 on in-place .env failed", exc_info=True)
 
     def _read_entries(self) -> List[ConfigLineEntry]:
         if not self._env_path.exists():

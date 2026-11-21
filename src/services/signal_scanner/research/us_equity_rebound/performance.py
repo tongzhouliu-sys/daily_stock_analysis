@@ -3,7 +3,6 @@
 from __future__ import annotations
 
 from typing import List, Dict, Any
-from decimal import Decimal
 from .portfolio import Portfolio, Trade
 
 
@@ -214,7 +213,6 @@ def calculate_annual_returns(portfolio: Portfolio) -> List[Dict[str, Any]]:
 
 def generate_performance_report(portfolio: Portfolio, config: Any) -> Dict[str, Any]:
     """Generate complete performance report."""
-    from .config import ReboundConfig
     
     trades = portfolio.closed_trades
     

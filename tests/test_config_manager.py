@@ -211,6 +211,19 @@ class ConfigManagerTestCase(unittest.TestCase):
             self.env_path.read_text(encoding="utf-8"),
         )
 
+    @unittest.skipIf(os.name == "nt", "POSIX file mode assertions")
+    def test_apply_updates_writes_env_with_owner_only_permissions(self) -> None:
+        self.env_path.write_text("STOCK_LIST=600519\n", encoding="utf-8")
+        os.chmod(self.env_path, 0o644)
+
+        self.manager.apply_updates(
+            updates=[("GEMINI_API_KEY", "secret-value")],
+            sensitive_keys={"GEMINI_API_KEY"},
+            mask_token="******",
+        )
+
+        self.assertEqual(self.env_path.stat().st_mode & 0o777, 0o600)
+
 
 if __name__ == "__main__":
     unittest.main()

@@ -46,7 +46,7 @@ import os
 from dataclasses import dataclass
 from datetime import date, datetime
 from pathlib import Path
-from typing import Any, Iterable, List, Optional
+from typing import Any, Iterable, Optional
 
 logger = logging.getLogger(__name__)
 

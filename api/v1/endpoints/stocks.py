@@ -50,6 +50,8 @@ from data_provider.base import normalize_stock_code
 
 logger = logging.getLogger(__name__)
 
+MAX_IMPORT_TEXT_BYTES = 100 * 1024
+
 router = APIRouter()
 
 # Watchlist add/remove is read-modify-write over a single config key. Two
@@ -230,6 +232,19 @@ async def parse_import(request: Request) -> ExtractFromImageResponse:
     content_type = (request.headers.get("content-type") or "").lower()
 
     if "application/json" in content_type:
+        declared_length = request.headers.get("content-length")
+        if declared_length:
+            try:
+                if int(declared_length) > MAX_IMPORT_TEXT_BYTES * 2:
+                    raise HTTPException(
+                        status_code=400,
+                        detail={
+                            "error": "text_too_large",
+                            "message": f"文本超过 {MAX_IMPORT_TEXT_BYTES // 1024}KB 限制",
+                        },
+                    )
+            except ValueError:
+                pass
         try:
             body = await request.json()
         except Exception as e:
@@ -243,6 +258,14 @@ async def parse_import(request: Request) -> ExtractFromImageResponse:
             raise HTTPException(
                 status_code=400,
                 detail={"error": "bad_request", "message": "未提供 text，请使用 {\"text\": \"...\"}"},
+            )
+        if len(text.encode("utf-8")) > MAX_IMPORT_TEXT_BYTES:
+            raise HTTPException(
+                status_code=400,
+                detail={
+                    "error": "text_too_large",
+                    "message": f"文本超过 {MAX_IMPORT_TEXT_BYTES // 1024}KB 限制",
+                },
             )
         try:
             # Excel/CSV parsing and per-row name matching are CPU-bound; keep

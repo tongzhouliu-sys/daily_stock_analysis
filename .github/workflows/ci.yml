@@ -3,12 +3,34 @@ name: CI
 on:
   pull_request:
     branches: [main]
+  # Keep main verifiable even when a change lands without a PR (branch
+  # protection can be disabled by the owner; see docs/ai/STATUS.md).
+  push:
+    branches: [main]
 
 concurrency:
   group: ci-${{ github.event.pull_request.number || github.ref }}
   cancel-in-progress: true
 
 jobs:
+  dependency-audit:
+    name: dependency-audit
+    runs-on: ubuntu-latest
+    # Observational first: keep it visible without blocking while the baseline
+    # is triaged. Promote to blocking once the report is clean for two weeks.
+    continue-on-error: true
+    steps:
+      - name: 📥 Checkout
+        uses: actions/checkout@v5
+      - name: 🐍 Setup Python
+        uses: actions/setup-python@v6
+        with:
+          python-version: '3.11'
+      - name: 🔐 Audit locked dependencies
+        run: |
+          python -m pip install --upgrade pip pip-audit
+          pip-audit -r requirements.lock
+
   changes:
     name: 🔎 Change Detection
     runs-on: ubuntu-latest
@@ -22,7 +44,7 @@ jobs:
         uses: actions/checkout@v5
       - name: 🧭 Filter paths
         id: filter
-        uses: dorny/paths-filter@v3
+        uses: dorny/paths-filter@0e4a8c6effa4802afeda77dc8d303f8176d7dfad # v3
         with:
           predicate-quantifier: every
           filters: |
@@ -43,7 +65,7 @@ jobs:
               - '!**/*.md'
       - name: 🧭 Filter backend-safe frontend paths
         id: backend-filter
-        uses: dorny/paths-filter@v3
+        uses: dorny/paths-filter@0e4a8c6effa4802afeda77dc8d303f8176d7dfad # v3
         with:
           predicate-quantifier: every
           filters: |
@@ -55,7 +77,7 @@ jobs:
               - '!LICENSE'
       - name: 🧭 Filter frontend code paths
         id: frontend-filter
-        uses: dorny/paths-filter@v3
+        uses: dorny/paths-filter@0e4a8c6effa4802afeda77dc8d303f8176d7dfad # v3
         with:
           predicate-quantifier: every
           filters: |
@@ -131,10 +153,42 @@ jobs:
           PYTEST_FIRST_SHARD_OVERHEAD: '20'
         run: ./scripts/ci_gate.sh offline-tests
 
+  offline-network-guard:
+    name: offline-network-guard
+    runs-on: ubuntu-latest
+    needs: [changes, ai-governance]
+    if: needs.changes.outputs.backend == 'true'
+    steps:
+      - name: 📥 Checkout
+        uses: actions/checkout@v5
+      - name: 🐍 Setup Python
+        uses: actions/setup-python@v6
+        with:
+          python-version: '3.11'
+          cache: 'pip'
+          cache-dependency-path: |
+            requirements.txt
+            .github/requirements-ci.txt
+      - name: 📦 Install dependencies
+        run: |
+          python -m pip install --upgrade pip
+          pip install -r .github/requirements-ci.txt
+      - name: 🚫 Enforce offline sockets on core paths
+        env:
+          DSA_OFFLINE_GUARD: enforce
+        run: |
+          python -m pytest -q \
+            tests/test_auth.py tests/test_auth_api.py tests/test_auth_login_log_api.py \
+            tests/test_auth_setup_token.py tests/test_auth_status_setup_state.py \
+            tests/test_config_manager.py tests/test_config_registry.py \
+            tests/test_report_html_renderer.py tests/test_history_report_html_api.py \
+            tests/test_parse_import_api.py tests/test_search_url_guard.py \
+            tests/test_network_guard.py
+
   backend-gate:
     name: backend-gate
     runs-on: ubuntu-latest
-    needs: [changes, ai-governance, backend-tests]
+    needs: [changes, ai-governance, backend-tests, offline-network-guard]
     if: always()
     steps:
       - name: ✅ Summarize backend gate
@@ -143,6 +197,7 @@ jobs:
           AI_GOVERNANCE_RESULT: ${{ needs.ai-governance.result }}
           BACKEND_REQUIRED: ${{ needs.changes.outputs.backend }}
           BACKEND_TESTS_RESULT: ${{ needs.backend-tests.result }}
+          OFFLINE_GUARD_RESULT: ${{ needs.offline-network-guard.result }}
         run: |
           if [ "$CHANGES_RESULT" != "success" ] || [ "$AI_GOVERNANCE_RESULT" != "success" ]; then
             echo "Prerequisite failed: changes=$CHANGES_RESULT ai-governance=$AI_GOVERNANCE_RESULT" >&2
@@ -150,6 +205,10 @@ jobs:
           fi
           if [ "$BACKEND_REQUIRED" = "true" ] && [ "$BACKEND_TESTS_RESULT" != "success" ]; then
             echo "Backend shards did not all pass: $BACKEND_TESTS_RESULT" >&2
+            exit 1
+          fi
+          if [ "$BACKEND_REQUIRED" = "true" ] && [ "$OFFLINE_GUARD_RESULT" != "success" ]; then
+            echo "Offline network guard failed: $OFFLINE_GUARD_RESULT" >&2
             exit 1
           fi
           echo "backend-gate passed (required=$BACKEND_REQUIRED, shards=$BACKEND_TESTS_RESULT)"
@@ -163,9 +222,9 @@ jobs:
       - name: 📥 Checkout
         uses: actions/checkout@v5
       - name: 🛠️ Setup Docker Buildx
-        uses: docker/setup-buildx-action@v3
+        uses: docker/setup-buildx-action@8d2750c68a42422c14e847fe6c8ac0403b4cbd6f # v3
       - name: 🐳 Build image
-        uses: docker/build-push-action@v6
+        uses: docker/build-push-action@10e90e3645eae34f1e60eeb005ba3a3d33f178e8 # v6
         env:
           DOCKER_BUILD_RECORD_RETENTION_DAYS: '7'
         with:
@@ -267,6 +326,11 @@ jobs:
         run: npm ci
       - name: 🔎 Lint
         run: npm run lint
+      - name: 🧪 Unit tests
+        # ChatPage has 3 pre-existing stale follow-up-context assertions
+        # (tracked as T76 in .claude/reviews/full-repo-audit-tasks-20261121.md);
+        # keep the rest of the suite blocking until that file is updated.
+        run: npm test -- --exclude 'src/pages/__tests__/ChatPage.test.tsx'
       - name: 🏗️ Build
         run: npm run build
       - name: 📦 Check first-screen bundle

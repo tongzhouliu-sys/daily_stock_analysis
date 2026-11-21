@@ -49,3 +49,11 @@
 
 24. **`AGENTS.md` 是唯一真源**：`CLAUDE.md` 是软链接，`.github/copilot-instructions.md` 与 `.github/instructions/` 是镜像；改治理规则后跑 `python scripts/check_ai_assets.py`。
 25. **`docs/ai/CODEMAP.md` 是生成文件**：手改会在 CI 的 `--check` 里失败，改完源码跑 `python scripts/gen_ai_codemap.py`。
+
+## 测试与日志
+
+26. **离线测试守卫**：`tests/support/network_guard.py` 提供 `DSA_OFFLINE_GUARD=enforce|warn` 模式；CI 的 `offline-network-guard` 作业用 `enforce` 跑核心路径，全量套件默认不启用（避免旧用例整体变慢）。本地调试需要真实网络时用 `DSA_ALLOW_NETWORK=1`。
+27. **日志用 `%s` 惰性格式化**：`logger.info(f"...")` 关闭级别也会先拼字符串；外部文本（新闻标题、模型输出、URL）进日志前要清洗换行，避免日志注入。
+28. **时间字段有两套约定**：`src/storage.py` 同时存在本地 naive 与 UTC naive，新增表必须在 `tests/test_time_basis_contract.py` 登记，并同步 `docs/ai/DATA-FLOW.md`。
+29. **文档与实现一致性**：改配置键、接口上限、能力开关时，同时检查 `.env.example`、`config_registry`、接口 description、专题文档和 CHANGELOG；不要出现“文档已宣称、代码未实现”或“CHANGELOG 已删除、文件仍在”。
+30. **全量离线套件成本**：约 12 分钟、峰值内存约 2.2GB；本地改动优先跑目标文件测试，全量留给 M0 收尾或最终验收。

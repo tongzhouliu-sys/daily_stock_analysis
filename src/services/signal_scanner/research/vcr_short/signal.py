@@ -16,7 +16,6 @@ from src.services.signal_scanner.research.vcr_short.config import VCRShortConfig
 from src.services.signal_scanner.research.vcr_short.indicators import (
     sma,
     atr_wilder,
-    rolling_max,
     find_lowest_close_index,
 )
 

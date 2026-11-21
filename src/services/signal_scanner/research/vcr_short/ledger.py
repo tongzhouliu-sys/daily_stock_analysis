@@ -6,8 +6,7 @@ as specified in the requirements.
 """
 
 from dataclasses import dataclass, field
-from typing import Dict, List, Optional, Any
-from datetime import datetime, timedelta
+from typing import Dict, List, Any
 from src.services.signal_scanner.research.vcr_short.config import VCRShortConfig
 
 

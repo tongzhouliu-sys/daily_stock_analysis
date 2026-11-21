@@ -438,7 +438,6 @@ def _load_active_index_rows() -> list:
         # by mtime), and its index rows must pass semantic validation before
         # they become the baseline.
         bundled_path = _get_bundled_stock_index_path(candidate_paths, remote_path)
-        bundled_rows: list | None = None
         bundled_canonicals: set[str] | None = None
         if bundled_path is not None:
             try:
@@ -449,7 +448,6 @@ def _load_active_index_rows() -> list:
                     _validate_index_rows_semantics(
                         rows, _extract_active_non_index_rows(raw_items)
                     )
-                    bundled_rows = rows
                     bundled_canonicals = {str(r[0]) for r in rows}
             except (OSError, TypeError, ValueError) as exc:
                 logger.debug("[股票索引] 解析 bundled 指数行失败 %s: %s", bundled_path, exc)

@@ -1660,3 +1660,16 @@ test('stopBackend uses taskkill on Windows and clears after backend exit', async
   ]);
   assert.equal(mainModule.__getBackendProcessForTest(), null);
 });
+
+test('isAllowedExternalUrl only allows browser-safe protocols', (t) => {
+  const mainModule = loadMainModule(t);
+
+  assert.equal(mainModule.isAllowedExternalUrl('https://example.com/a'), true);
+  assert.equal(mainModule.isAllowedExternalUrl('http://127.0.0.1:8000/x'), true);
+  assert.equal(mainModule.isAllowedExternalUrl('mailto:admin@example.com'), true);
+  assert.equal(mainModule.isAllowedExternalUrl('file:///etc/passwd'), false);
+  assert.equal(mainModule.isAllowedExternalUrl('javascript:alert(1)'), false);
+  assert.equal(mainModule.isAllowedExternalUrl('ms-msdt:/id'), false);
+  assert.equal(mainModule.isAllowedExternalUrl('not a url'), false);
+  assert.equal(mainModule.isAllowedExternalUrl(''), false);
+});

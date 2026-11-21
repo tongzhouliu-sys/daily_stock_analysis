@@ -43,8 +43,10 @@
 | --- | --- | --- |
 | `invalid_credentials` | 账号或密码错误 | 登录时账号或密码错误 |
 | `password_mismatch` | 两次输入的密码不一致 | 首次设置密码时两次输入不一致 |
-| `password_rejected` | 密码不符合要求 | 密码太短或不符合其他要求 |
+| `password_rejected` | 密码不符合要求 | 少于 10 位或不符合其他要求 |
 | `current_password_invalid` | 当前密码错误 | 修改密码、开启/关闭认证时当前密码错误 |
+| `setup_token_missing` | 缺少初始化令牌 | 首次设置时公网客户端未提供 `ADMIN_SETUP_TOKEN` |
+| `setup_token_invalid` | 初始化令牌无效 | 首次设置时提供的令牌不匹配 |
 
 ## 离线 IP 地理库配置
 
@@ -100,26 +102,9 @@ LOGIN_LOG_GEOIP_DB_PATH=./data/geoip/dbip-city-lite.mmdb
 - **DB-IP**：前端会自动显示 "IP Geolocation by DB-IP" 链接到 https://db-ip.com
 - **MaxMind**：前端会自动显示 GeoLite2 署名
 
-## 在线查询（可选）
+## 在线查询
 
-系统支持使用 ip-api.com 在线查询 IP 位置，但**默认关闭**。
-
-### 注意事项
-
-- **隐私风险**：开启后会将登录 IP 以 HTTP 明文发送给 ip-api.com
-- **许可限制**：免费版仅限非商业用途
-- **速率限制**：每分钟最多 45 次请求
-- **无 SSL**：免费版不支持 HTTPS
-
-### 启用方式
-
-在 `.env` 中配置：
-
-```bash
-LOGIN_LOG_GEO_ONLINE_PROVIDER=ip-api
-```
-
-在线查询只在离线库未配置或查不到时使用。
+当前版本只支持离线 `.mmdb` 地理库，不提供在线 IP 查询（避免把登录 IP 以明文发送给第三方）。`LOGIN_LOG_GEO_ONLINE_PROVIDER` 已移除；如未来引入，需单独评估隐私与许可。
 
 ## 反向代理下的 IP 准确性
 

@@ -10,7 +10,7 @@ snapshots, diagnostics and provider configuration never leave this module.
 from __future__ import annotations
 
 from dataclasses import dataclass
-from typing import Any, Dict, Optional, Tuple
+from typing import Any, Dict, Optional
 
 from src.agent.stock_scope import StockIdentity
 from src.services.history_service import HistoryService

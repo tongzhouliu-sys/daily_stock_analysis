@@ -27,8 +27,7 @@ import re
 import threading
 import time
 from concurrent.futures import ThreadPoolExecutor, TimeoutError as FuturesTimeoutError
-from dataclasses import dataclass, field
-from datetime import datetime
+from dataclasses import dataclass
 from typing import Optional, Dict, Any, List, Tuple
 
 import pandas as pd
@@ -51,6 +50,22 @@ except (ValueError, TypeError):
         "EFINANCE_CALL_TIMEOUT is not a valid integer, using default 30s"
     )
     _EF_CALL_TIMEOUT = 30
+
+# A hung efinance call cannot be killed (Python threads). Reuse one bounded
+# pool so repeated timeouts cannot keep spawning worker threads, and open a
+# short circuit after consecutive timeouts so callers fail fast.
+try:
+    _EF_MAX_WORKERS = max(1, int(os.environ.get("EFINANCE_MAX_WORKERS", "4")))
+except (ValueError, TypeError):
+    _EF_MAX_WORKERS = 4
+_EF_TIMEOUT_THRESHOLD = 3
+_EF_CIRCUIT_SECONDS = 60.0
+_ef_executor: Optional[ThreadPoolExecutor] = None
+_ef_executor_lock = threading.Lock()
+_ef_inflight = threading.BoundedSemaphore(_EF_MAX_WORKERS)
+_ef_consecutive_timeouts = 0
+_ef_circuit_until = 0.0
+_ef_state_lock = threading.Lock()
 
 from src.patches.eastmoney_patch import eastmoney_patch
 from src.config import get_config
@@ -203,27 +218,60 @@ def _is_us_code(stock_code: str) -> bool:
     return bool(re.match(r'^[A-Z]{1,5}(\.[A-Z])?$', code))
 
 
+def _get_ef_executor() -> ThreadPoolExecutor:
+    global _ef_executor
+    if _ef_executor is None:
+        with _ef_executor_lock:
+            if _ef_executor is None:
+                _ef_executor = ThreadPoolExecutor(
+                    max_workers=_EF_MAX_WORKERS,
+                    thread_name_prefix="efinance-call",
+                )
+    return _ef_executor
+
+
 def _ef_call_with_timeout(func, *args, timeout=None, **kwargs):
-    """Run an efinance library call in a thread with a timeout.
+    """Run an efinance library call in a bounded shared pool with a timeout.
 
     efinance internally uses requests/urllib3 with no timeout, so when
-    eastmoney hosts are unreachable the call can hang for many minutes.
-    This helper caps the *calling thread's* wait time.  Note: Python threads
-    cannot be forcibly killed, so the worker thread may continue running in
-    the background until the OS-level TCP timeout fires or the process exits.
-    This is acceptable — the calling thread returns promptly on timeout.
+    eastmoney hosts are unreachable the call can hang for many minutes. Python
+    threads cannot be killed, so the pool is deliberately bounded and a short
+    circuit breaker avoids piling up hung callers.
     """
+    global _ef_consecutive_timeouts, _ef_circuit_until
+
     if timeout is None:
         timeout = _EF_CALL_TIMEOUT
-    # Do NOT use 'with ThreadPoolExecutor(...)' here: the context manager calls
-    # shutdown(wait=True) on __exit__, which would re-block on the hung thread.
-    executor = ThreadPoolExecutor(max_workers=1)
+
+    with _ef_state_lock:
+        if time.time() < _ef_circuit_until:
+            raise TimeoutError(
+                "efinance circuit open after repeated timeouts; retry later"
+            )
+
+    if not _ef_inflight.acquire(timeout=max(1.0, float(timeout))):
+        raise TimeoutError("efinance call pool is busy; retry later")
+
     try:
-        future = executor.submit(func, *args, **kwargs)
-        return future.result(timeout=timeout)
+        future = _get_ef_executor().submit(func, *args, **kwargs)
+        try:
+            result = future.result(timeout=timeout)
+        except FuturesTimeoutError as exc:
+            with _ef_state_lock:
+                _ef_consecutive_timeouts += 1
+                if _ef_consecutive_timeouts >= _EF_TIMEOUT_THRESHOLD:
+                    _ef_circuit_until = time.time() + _EF_CIRCUIT_SECONDS
+                    logger.warning(
+                        "efinance consecutive timeouts=%s; circuit open for %.0fs",
+                        _ef_consecutive_timeouts,
+                        _EF_CIRCUIT_SECONDS,
+                    )
+            raise TimeoutError("efinance call timed out") from exc
+        with _ef_state_lock:
+            _ef_consecutive_timeouts = 0
+        return result
     finally:
-        # wait=False: calling thread returns immediately; worker cleans up later
-        executor.shutdown(wait=False)
+        _ef_inflight.release()
 
 
 def _classify_eastmoney_error(exc: Exception) -> Tuple[str, str]:

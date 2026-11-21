@@ -8,6 +8,26 @@ and this project adheres to [Semantic Versioning](https://semver.org/).
 > For user-friendly release highlights, see the [GitHub Releases](https://github.com/ZhuLinsen/daily_stock_analysis/releases) page.
 
 ## [Unreleased]
+- [修复] 恢复主干离线测试绿灯：`SCANNER_BACKUP_KEEP_DAILY/WEEKLY` 归入扫描器隐藏配置，飞书 sender 断言同步关键词页脚与 `render_context/include_disclaimer` 契约，单股通知测试替身补齐 `results/report_type` 形参；`pytest -m "not network"` 恢复 0 失败。
+- [修复] 修复前端 lint：`LoginLogCard` 用显式 i18n key 映射替代 `t(key as any)`，`npm run lint` 恢复 0 error。
+- [修复] Docker 健康检查不再恒真：移除 `|| python -c "sys.exit(0)"`，改用 Python `urllib` 探活；API 不可用时容器会标记 unhealthy。
+- [改进] 首次设置管理员密码新增初始化令牌保护：未设密码时，公网客户端必须在登录页/设置页填写 `ADMIN_SETUP_TOKEN` 或启动日志中的随机令牌；`/auth/login` 与 `/auth/settings` 两条路径都覆盖；回环与私有网络保持零配置初始化。新增可选 `DSA_REQUIRE_AUTH_FOR_PUBLIC=true`，非回环且未开启认证时拒绝启动（默认 false）。
+- [修复] 桌面端外链改为协议白名单（仅 http/https/mailto），并为应用主窗口补 `will-navigate` 守卫；`file:`、自定义协议等不再交给系统默认处理器。
+- [修复] `.env` 写入后显式 `chmod 0600`，`.session_secret` 以 `O_EXCL + 0600` 一次创建，避免依赖 umask。
+- [改进] 管理员密码最小长度从 6 位提升到 10 位；已有旧密码仍可登录，下次改密时按新下限校验。
+- [修复] `POST /api/v1/stocks/parse-import` 的 JSON 文本路径补齐 100KB 上限（声明长度预检 + 解析后二次校验），与接口描述一致。
+- [修复] `fetch_url_content()` 增加 http/https、内网/回环/链路本地地址与 URL 凭据校验，降低 SSRF 与本地探测风险。
+- [chore] 删除零调用的 `chat_intake_object_resolver.py`（1,406 行）与 `chat_intake_intent_resolver.py`（342 行），并修正 CHANGELOG 中“已删除”的历史描述。
+- [测试] 新增 `tests/support/network_guard.py` 离线网络守卫与 CI `offline-network-guard` 作业：核心认证/配置/报告路径在 `DSA_OFFLINE_GUARD=enforce` 下禁止外网连接。
+- [修复] efinance 超时调用改为共享有界线程池 + 连续超时熔断，避免行情源持续超时时线程无限累积。
+- [修复] HTML 报告链接不再双重转义：先抽取 URL 再整体转义，`?a=1&b=2` 的 href 与文本恢复正确。
+- [测试] 新增时间基准契约测试：扫描 `src/storage.py` 的 `DateTime` 默认值，新增表必须显式登记本地 naive 或 UTC naive，并在 `docs/ai/DATA-FLOW.md` 记录。
+- [chore] 删除 `src/scheduler.py` 中重复定义且无调用的 `_refresh_daily_schedule_if_needed` 与 `_configure_daily_task`。
+- [chore] flake8 门禁新增生产代码 `F401/F811/F841`（`__init__.py` 的再导出豁免），并清理全仓未使用 import/变量。
+- [chore] 配置与文档对齐：`LOGIN_LOG_RETENTION_DAYS` / `LOGIN_LOG_GEOIP_DB_PATH` 纳入注册表/隐藏部署键；移除未实现的 `LOGIN_LOG_GEO_ONLINE_PROVIDER` 及其文档描述。
+- [chore] 新增 `requirements.lock`（`uv pip compile --universal`），Docker 构建改用锁定依赖；新增 Dependabot 与观测型 `dependency-audit` 作业。
+- [ci] `web-gate` 增加 `npm test`（vitest）；第三方 Actions 固定到 commit SHA；新增 `push: [main]` 触发与离线网络守卫作业。
+- [chore] 删除从未注册的 `ErrorHandlerMiddleware` 死代码；PR 模板新增“文档与实现一致性”检查项。
 - [新功能] 历史报告新增「飞书同源 HTML 报告」：分享菜单可在抽屉内查看或下载一份与飞书推送同源的自包含 HTML，视觉支持系统深浅色与打印；新增 `GET /api/v1/history/{id}/report-html`，零脚本、全量转义、沙箱 iframe 展示，详见 [飞书同源 HTML 报告](report-html.md)。
 - [改进] `feishu_card` 新增 `parse_report_document()` 等公开只读解析入口，脚注去重抽为 `_dedupe_notes()`、字段网格布局抽为 `plan_field_grid()`，飞书卡片输出逐字节不变，HTML 报告与之共用同一份解析。
 - [改进] 报告导出与飞书消息底部统一展示 RHCLOUD PTE. LTD. AI 生成声明：分享图/PDF 移除小红书二维码与 GitHub 仓库地址，改为 RHCLOUD 品牌区与统一声明；所有 Markdown 报告末尾追加该声明；飞书仅分析报告推送的富/轻/紧凑卡片与纯文本兜底追加声明；删除 `SHARE_IMAGE_XIAOHONGSHU_*` 配置、二维码资产和相关打包参数。

@@ -343,7 +343,26 @@ class TestFeishuSender(unittest.TestCase):
         result = sender.send_to_feishu("[dsa-market-region]: # (us)\n\n# 🎯 Market Review\n\nBody")
 
         self.assertTrue(result)
-        mock_send.assert_called_once_with("# 🎯 Market Review\n\nBody", timeout_seconds=None)
+        mock_send.assert_called_once_with(
+            "# 🎯 Market Review\n\nBody",
+            timeout_seconds=None,
+            render_context=None,
+            include_disclaimer=False,
+        )
+
+    @mock.patch.object(FeishuSender, "_send_via_webhook", return_value=True)
+    def test_send_adds_disclaimer_context_for_report_route(self, mock_send):
+        cfg = _config(feishu_webhook_url="https://feishu.example/hook")
+        sender = FeishuSender(cfg)
+        context = {"route_type": "report"}
+
+        self.assertTrue(sender.send_to_feishu("Body", render_context=context))
+        mock_send.assert_called_once_with(
+            "Body",
+            timeout_seconds=None,
+            render_context=context,
+            include_disclaimer=True,
+        )
 
     @mock.patch("src.notification_sender.feishu_sender.requests.post")
     def test_send_http_error_returns_false(self, mock_post):
@@ -379,8 +398,22 @@ class TestFeishuSender(unittest.TestCase):
         self.assertEqual(payload["sign"], expected_sign)
         self.assertEqual(
             payload["card"]["elements"][0]["text"]["content"],
-            "股票日报\nhello",
+            "hello",
         )
+        # 卡片路径不把关键词塞进正文：关键词放在页脚 note，避免破坏标题解析。
+        last_element = payload["card"]["elements"][-1]
+        self.assertEqual(last_element["tag"], "note")
+        self.assertEqual(last_element["elements"][0]["content"], "股票日报")
+
+    @mock.patch("src.notification_sender.feishu_sender.requests.post")
+    def test_send_without_keyword_does_not_prefix_content(self, mock_post):
+        mock_post.return_value = _response(200, {"code": 0})
+        cfg = _config(feishu_webhook_url="https://feishu.example/hook")
+        sender = FeishuSender(cfg)
+
+        self.assertTrue(sender.send_to_feishu("hello"))
+        payload = mock_post.call_args.kwargs["json"]
+        self.assertEqual(payload["card"]["elements"][0]["text"]["content"], "hello")
 
     @mock.patch("src.notification_sender.feishu_sender.requests.post")
     def test_send_uses_legacy_feishu_report_formatter(self, mock_post):

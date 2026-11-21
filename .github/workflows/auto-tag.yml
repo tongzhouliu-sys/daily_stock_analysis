@@ -49,7 +49,7 @@ jobs:
 
       - name: Bump version and push tag
         if: steps.release.outputs.enabled == 'true'
-        uses: anothrNick/github-tag-action@v1
+        uses: anothrNick/github-tag-action@4ed44965e0db8dab2b466a16da04aec3cc312fd8 # v1
         env:
           GITHUB_TOKEN: ${{ secrets.GITHUB_TOKEN }}
           WITH_V: true

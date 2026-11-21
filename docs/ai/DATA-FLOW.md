@@ -54,7 +54,18 @@
 | 分析 API | `api/v1/endpoints/analysis.py`（同步分析 / 任务状态） | 任务状态回退同样走 `build_analysis_report()` |
 | Web 前端 | `apps/dsa-web/src/pages/`、`src/components/` | 首页、历史、持仓、筛选、问股 |
 
-## 6. 缓存与降级
+## 6. 时间字段约定
+
+数据库里有两套 naive 时间，**不要混用**：
+
+| 约定 | 默认值 | 使用表 | 序列化 |
+| --- | --- | --- | --- |
+| 服务器本地时间 | `datetime.now` | 行情、分析历史、持仓、告警、会话、用量等老表 | `HistoryService._serialize_created_at` → `value.astimezone().isoformat()` |
+| UTC 时间 | `utc_naive_now` | `screening_runs`、决策信号、技能观点、`login_audit_log` | `storage.to_utc_isoformat()`（假定 naive=UTC） |
+
+新增 `DateTime` 字段时必须选择其一，并在 `tests/test_time_basis_contract.py` 的 `LOCAL_TIME_TABLES` / `UTC_TIME_TABLES` 登记；跨表比较前先确认两边基准一致（例如决策信号会把历史时间显式转成 UTC-naive）。
+
+## 7. 缓存与降级
 
 - 历史 K 线缓存：`data_source='cache'` 在进度事件里显式标注，前端显示「历史缓存」。
 - 实时行情失败：降级到最近收盘数据，并在报告里标注数据时间。

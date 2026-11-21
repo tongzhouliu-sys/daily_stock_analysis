@@ -156,6 +156,7 @@ vi.mock('../../components/settings', async () => {
   const { LLMChannelEditor: RealLLMChannelEditor } = await vi.importActual<typeof import('../../components/settings/LLMChannelEditor')>('../../components/settings/LLMChannelEditor');
   return ({
   AuthSettingsCard: () => <div>认证与登录保护</div>,
+  LoginLogCard: () => <div>登录日志</div>,
   ChangePasswordCard: () => <div>修改密码</div>,
   IntelligentImport: ({ onMerged }: { onMerged: (value: string) => void }) => (
     <button type="button" onClick={() => onMerged('SZ000001,SZ000002')}>

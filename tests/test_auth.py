@@ -36,7 +36,8 @@ class AuthValidationTestCase(unittest.TestCase):
         self.assertIsNotNone(auth._validate_password("12345"))
 
     def test_validate_password_valid(self) -> None:
-        self.assertIsNone(auth._validate_password("123456"))
+        self.assertIsNotNone(auth._validate_password("123456789"))
+        self.assertIsNone(auth._validate_password("1234567890"))
         self.assertIsNone(auth._validate_password("password123"))
 
 
@@ -357,11 +358,11 @@ class AuthSetPasswordTestCase(unittest.TestCase):
 
     def test_overwrite_password_cli_style(self) -> None:
         def run():
-            auth.set_initial_password("original")
-            err = auth.overwrite_password("resetpass")
+            auth.set_initial_password("originalpass")
+            err = auth.overwrite_password("resetpass12")
             self.assertIsNone(err)
-            self.assertFalse(auth.verify_password("original"))
-            self.assertTrue(auth.verify_password("resetpass"))
+            self.assertFalse(auth.verify_password("originalpass"))
+            self.assertTrue(auth.verify_password("resetpass12"))
 
         self._run_with_patch(run)
 

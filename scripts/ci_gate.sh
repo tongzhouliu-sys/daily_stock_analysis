@@ -13,6 +13,11 @@ syntax_check() {
 flake8_checks() {
   echo "==> backend-gate: flake8 critical checks"
   flake8 . --count --select=E9,F63,F7,F82 --show-source --statistics
+  # T65: production hygiene gate (unused imports, redefinitions, unused locals).
+  # __init__.py files intentionally re-export names.
+  flake8 src api bot data_provider main.py server.py --count \
+    --select=E9,F63,F7,F82,F401,F811,F841 \
+    --per-file-ignores="__init__.py:F401" --show-source --statistics
 }
 
 deterministic_checks() {

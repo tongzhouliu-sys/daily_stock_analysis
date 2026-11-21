@@ -32,6 +32,8 @@ class _TrackingNotifier:
         self.thread_names = []
         self.email_stock_codes = []
         self.sent_reports = []
+        self.sent_results = []
+        self.sent_report_types = []
         self.saved_reports = []
         self._lock = threading.Lock()
         self._inflight = 0
@@ -61,6 +63,9 @@ class _TrackingNotifier:
         severity=None,
         dedup_key=None,
         cooldown_key=None,
+        results=None,
+        report_type=None,
+        structured_payload=None,
     ):
         with self._lock:
             self._inflight += 1
@@ -69,6 +74,8 @@ class _TrackingNotifier:
         self.thread_names.append(threading.current_thread().name)
         self.email_stock_codes.append(email_stock_codes)
         self.sent_reports.append(content)
+        self.sent_results.append(results)
+        self.sent_report_types.append(report_type)
         time.sleep(0.01)
 
         with self._lock:
@@ -172,7 +179,11 @@ class TestPipelineSingleStockNotify(unittest.TestCase):
             severity="info",
             dedup_key="report:single:600519:brief",
             cooldown_key="report:single:600519:brief",
+            results=[result],
+            report_type="brief",
         )
+        self.assertEqual(pipeline.notifier.sent_results, [[result]])
+        self.assertEqual(pipeline.notifier.sent_report_types, ["brief"])
 
     def test_process_single_stock_saves_report_even_when_notifier_is_unavailable(self):
         pipeline = make_pipeline()

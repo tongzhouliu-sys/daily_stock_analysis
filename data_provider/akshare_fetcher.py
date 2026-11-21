@@ -29,7 +29,6 @@ import os
 import random
 import threading
 import time
-from dataclasses import dataclass, field
 from datetime import datetime
 from typing import Optional, Dict, Any, List, Tuple
 
@@ -49,10 +48,10 @@ from src.services.stock_list_parser import ParseStatus, parse_analysis_target
 from .base import BaseFetcher, DataFetchError, RateLimitError, STANDARD_COLUMNS, is_bse_code, is_st_stock, is_kc_cy_stock, normalize_stock_code, INTERACTIVE_MODE
 from .realtime_types import (
     UnifiedRealtimeQuote, ChipDistribution, RealtimeSource,
-    get_realtime_circuit_breaker, get_chip_circuit_breaker,
+    get_realtime_circuit_breaker,
     safe_float, safe_int  # 使用统一的类型转换函数
 )
-from .us_index_mapping import is_us_index_code, is_us_stock_code
+from .us_index_mapping import is_us_stock_code
 
 
 # 保留旧的 RealtimeQuote 别名，用于向后兼容
@@ -492,7 +491,7 @@ class AkshareFetcher(BaseFetcher):
         这是关键的反爬策略之一
         """
         try:
-            import akshare as ak
+            pass
             # akshare 内部使用 requests，我们通过环境变量或直接设置来影响
             # 实际上 akshare 可能不直接暴露 session，这里通过 fake_useragent 作为补充
             random_ua = random.choice(USER_AGENTS)

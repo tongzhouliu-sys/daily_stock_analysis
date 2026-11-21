@@ -49,7 +49,6 @@ from src.services.empty_news import (
     persisted_news_result_state,
 )
 from src.market_phase_summary import (
-    extract_market_phase_summary,
     rebuild_market_phase_summary_for_stock_code,
 )
 from src.schemas.decision_action import (

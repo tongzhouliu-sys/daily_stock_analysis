@@ -66,6 +66,9 @@ class _CriticalSectionTrackingNotifier:
         severity=None,
         dedup_key=None,
         cooldown_key=None,
+        results=None,
+        report_type=None,
+        structured_payload=None,
     ) -> bool:
         stock_code = (email_stock_codes or ["unknown"])[0]
         self._enter("send", stock_code)

@@ -3,8 +3,6 @@
 from __future__ import annotations
 
 import pytest
-from datetime import datetime
-from typing import List, Dict
 
 from .indicators import (
     calculate_sma,

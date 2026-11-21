@@ -27,7 +27,7 @@ from typing import Optional, Dict, List, Any, TYPE_CHECKING, Tuple, Literal, Cal
 if TYPE_CHECKING:
     from asyncio import Queue as AsyncQueue
 
-from data_provider.base import canonical_stock_code, normalize_stock_code
+from data_provider.base import normalize_stock_code
 # 取消信号的定义在 src/core/task_cancellation.py：pipeline/analyzer 需要捕获它，
 # 又不应依赖服务层。这里重新导出以保持既有导入路径。
 from src.core.task_cancellation import TaskCancelledError

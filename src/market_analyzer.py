@@ -18,7 +18,6 @@ from datetime import datetime
 from inspect import getattr_static
 from typing import Optional, Dict, Any, List
 
-import pandas as pd
 
 from src.agent.provider_trace import resolved_model_provider_identity
 from src.config import get_config

@@ -29,7 +29,7 @@ PBKDF2_ITERATIONS = 100_000
 RATE_LIMIT_WINDOW_SEC = 300
 RATE_LIMIT_MAX_FAILURES = 5
 SESSION_MAX_AGE_HOURS_DEFAULT = 24
-MIN_PASSWORD_LEN = 6
+MIN_PASSWORD_LEN = 10
 
 # Lazy-loaded state
 _auth_enabled: Optional[bool] = None
@@ -90,14 +90,130 @@ def _is_auth_enabled_from_env() -> bool:
 
 _LOOPBACK_BIND_HOSTS = frozenset({"127.0.0.1", "localhost", "::1", "[::1]"})
 
+# Generated once per process when ADMIN_SETUP_TOKEN is not configured. It is
+# only used while no admin password exists; see setup_token_required().
+_setup_token: Optional[str] = None
+
 
 def is_loopback_bind_host(host: str) -> bool:
     """Return whether the Web/API bind address only accepts local connections."""
     return (host or "").strip().lower() in _LOOPBACK_BIND_HOSTS
 
 
+def get_setup_token() -> str:
+    """Return the first-time setup token.
+
+    ``ADMIN_SETUP_TOKEN`` wins when configured (recommended for reverse-proxy
+    deployments). Otherwise a random token is generated per process and only
+    printed in the startup log.
+    """
+    configured = (os.getenv("ADMIN_SETUP_TOKEN") or "").strip()
+    if configured:
+        return configured
+    global _setup_token
+    if not _setup_token:
+        _setup_token = secrets.token_urlsafe(24)
+    return _setup_token
+
+
+def reset_setup_token() -> None:
+    """Clear the generated setup token (tests / configuration reload)."""
+    global _setup_token
+    _setup_token = None
+
+
+def is_local_client(host: Optional[str]) -> bool:
+    """Return whether *host* is loopback, private/LAN or the local test client."""
+    if not host:
+        return False
+    candidate = host.strip()
+    if candidate.startswith("[") and candidate.endswith("]"):
+        candidate = candidate[1:-1]
+    if candidate in {"localhost", "testclient"}:
+        return True
+    try:
+        import ipaddress
+
+        address = ipaddress.ip_address(candidate)
+        return bool(address.is_loopback or address.is_private or address.is_link_local)
+    except ValueError:
+        return False
+
+
+def setup_token_required(client_host: Optional[str]) -> bool:
+    """Return whether first-time setup must present ADMIN_SETUP_TOKEN.
+
+    No password set + a publicly routable client means the instance is
+    claimable by anyone who can reach it, so require the token. Loopback,
+    private-LAN clients and the in-process test client keep the
+    zero-configuration bootstrap.
+    """
+    if has_stored_password():
+        return False
+    return not is_local_client(client_host)
+
+
+def verify_setup_token(submitted: Optional[str]) -> bool:
+    """Constant-time check of a submitted first-time setup token."""
+    expected = get_setup_token()
+    provided = str(submitted or "")
+    if not provided:
+        return False
+    return hmac.compare_digest(provided, expected)
+
+
+class InsecurePublicBindError(RuntimeError):
+    """Raised when auth is disabled on a non-loopback bind and policy forbids it."""
+
+
+def _truthy_env(name: str) -> bool:
+    return (os.getenv(name) or "").strip().lower() in {"1", "true", "yes", "on"}
+
+
+def _enforce_public_auth_policy(host: str) -> None:
+    """Refuse an unauthenticated public bind when DSA_REQUIRE_AUTH_FOR_PUBLIC=true."""
+    if not _truthy_env("DSA_REQUIRE_AUTH_FOR_PUBLIC"):
+        return
+    if is_auth_enabled() or is_loopback_bind_host(host):
+        return
+    raise InsecurePublicBindError(
+        "ADMIN_AUTH_ENABLED=false while binding to %s and "
+        "DSA_REQUIRE_AUTH_FOR_PUBLIC=true. Enable admin auth or set "
+        "DSA_REQUIRE_AUTH_FOR_PUBLIC=false." % host
+    )
+
+
+def _setup_token_hint() -> str:
+    """Return a log-safe description of the effective setup token."""
+    if os.getenv("ADMIN_SETUP_TOKEN"):
+        return "ADMIN_SETUP_TOKEN is configured"
+    return f"this process generated: {get_setup_token()}"
+
+
+_setup_token_logged = False
+
+
+def log_setup_token_if_needed(host: str) -> None:
+    """Log the generated setup token once for non-loopback, password-less boots.
+
+    ``main.py`` already includes the token in its startup warning; this covers
+    deployments that start uvicorn directly (``uvicorn server:app``).
+    """
+    global _setup_token_logged
+    if _setup_token_logged or os.getenv("ADMIN_SETUP_TOKEN"):
+        return
+    if is_loopback_bind_host(host) or has_stored_password():
+        return
+    logger.warning(
+        "Admin password is not set. First-time setup from public clients requires this token: %s",
+        get_setup_token(),
+    )
+    _setup_token_logged = True
+
+
 def log_auth_startup_state(host: str, port: Optional[int] = None) -> None:
     """Log the effective auth state and bind address once at startup."""
+    _enforce_public_auth_policy(host)
     enabled = is_auth_enabled()
     bind_address = f"{host}:{port}" if port is not None else str(host)
     logger.info(
@@ -105,15 +221,29 @@ def log_auth_startup_state(host: str, port: Optional[int] = None) -> None:
         "enabled" if enabled else "disabled",
         bind_address,
     )
-    if enabled or is_loopback_bind_host(host):
+    no_password = not has_stored_password()
+    loopback = is_loopback_bind_host(host)
+    if enabled:
+        if no_password and not loopback:
+            logger.warning(
+                "Admin password is not set; first-time setup from non-loopback clients "
+                "requires ADMIN_SETUP_TOKEN (%s)",
+                _setup_token_hint(),
+            )
         return
-    logger.warning(
+    if loopback:
+        return
+    message = (
         "ADMIN_AUTH_ENABLED=false while the Web/API is bound to %s, which is "
         "reachable beyond this machine. Anyone who can reach this address can "
         "read and change the configuration. Set ADMIN_AUTH_ENABLED=true or keep "
-        "the service behind a trusted network boundary.",
-        bind_address,
+        "the service behind a trusted network boundary."
     )
+    if no_password:
+        message += " First-time setup also requires ADMIN_SETUP_TOKEN (%s)."
+        logger.warning(message, bind_address, _setup_token_hint())
+    else:
+        logger.warning(message, bind_address)
 
 
 def rotate_session_secret() -> bool:
@@ -159,9 +289,9 @@ def _load_session_secret() -> Optional[bytes]:
         data_dir.mkdir(parents=True, exist_ok=True)
         new_secret = secrets.token_bytes(32)
         try:
-            with open(secret_path, "xb") as f:
+            fd = os.open(secret_path, os.O_WRONLY | os.O_CREAT | os.O_EXCL, 0o600)
+            with os.fdopen(fd, "wb") as f:
                 f.write(new_secret)
-            secret_path.chmod(0o600)
         except FileExistsError:
             _session_secret = secret_path.read_bytes()
         else:

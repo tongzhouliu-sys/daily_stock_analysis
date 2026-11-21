@@ -65,7 +65,7 @@ def resolve_agent_litellm_route(config: Any) -> AgentLiteLLMRouteResolution:
     model_list = list(getattr(config, "llm_model_list", []) or [])
     provenance = build_route_provenance_map(model_list)
     filtered_model_list = filter_non_hermes_deployments(model_list)
-    configured_models = set(get_configured_llm_models(model_list))
+    set(get_configured_llm_models(model_list))
     configured_agent_model = bool((getattr(config, "agent_litellm_model", "") or "").strip())
 
     primary_route = route_deployment_origins(model_list, primary)

@@ -436,7 +436,6 @@ For the notification baseline, diagnostics, and deployment notes, see [Notificat
 | `GUARD_PASSIVE_MODE` | Log only, never block; useful for a trial run | `false` |
 | `LOGIN_LOG_RETENTION_DAYS` | Login log retention in days (range 1–3650), default 90 days; see [Login Log](login-log.md) | `90` |
 | `LOGIN_LOG_GEOIP_DB_PATH` | Offline IP geolocation database `.mmdb` file path (DB-IP City Lite or MaxMind GeoLite2-City) for showing login location; leave empty to skip; see [Login Log](login-log.md) | empty |
-| `LOGIN_LOG_GEO_ONLINE_PROVIDER` | Online lookup for login IP location (off by default); currently only supports `ip-api`, which sends login IPs to ip-api.com over plain HTTP; free tier is non-commercial only; see [Login Log](login-log.md) | empty |
 | `MARKET_REVIEW_ENABLED` | Enable market review | `true` |
 | `DAILY_MARKET_CONTEXT_ENABLED` | Inject the daily market context into stock-analysis prompts and soften aggressive buy advice in high-risk/risk-off markets; enabled by default, and market review can still run when this is set to `false` | `true` |
 | `MARKET_REVIEW_REGION` | Market review region: cn (A-shares), hk (HK stocks), us (US stocks), jp (JP stocks), kr (KR stocks), tw (Taiwan), both (all six markets) | `cn` |

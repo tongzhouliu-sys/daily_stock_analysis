@@ -11,9 +11,11 @@ A股自选股智能分析系统 - 搜索服务模块
 4. 搜索结果缓存和格式化
 """
 
+import ipaddress
 import logging
 import multiprocessing
 import re
+import socket
 import threading
 import time
 from abc import ABC, abstractmethod
@@ -202,10 +204,47 @@ def _get_with_retry(
     return requests.get(url, headers=headers, params=params, timeout=timeout)
 
 
+def _is_public_http_url(url: str) -> bool:
+    """Return whether *url* is http(s) and resolves only to public addresses."""
+    try:
+        parsed = urlparse(url)
+    except ValueError:
+        return False
+    if parsed.scheme not in {"http", "https"} or not parsed.hostname:
+        return False
+    if parsed.username or parsed.password:
+        return False
+    try:
+        infos = socket.getaddrinfo(parsed.hostname, None)
+    except OSError:
+        return False
+    if not infos:
+        return False
+    for info in infos:
+        address = str(info[4][0]).split("%", 1)[0]
+        try:
+            ip = ipaddress.ip_address(address)
+        except ValueError:
+            return False
+        if (
+            ip.is_private
+            or ip.is_loopback
+            or ip.is_link_local
+            or ip.is_multicast
+            or ip.is_reserved
+            or ip.is_unspecified
+        ):
+            return False
+    return True
+
+
 def fetch_url_content(url: str, timeout: int = 5) -> str:
     """
     获取 URL 网页正文内容 (使用 newspaper3k)
     """
+    if not _is_public_http_url(url):
+        logger.debug("Fetch content skipped for non-public/non-http url: %s", url)
+        return ""
     try:
         # 配置 newspaper3k
         config = Config()
@@ -355,7 +394,6 @@ class BaseSearchProvider(ABC):
     @abstractmethod
     def _do_search(self, query: str, api_key: str, max_results: int, days: int = 7) -> SearchResponse:
         """执行搜索（子类实现）"""
-        pass
     
     def _execute_search(
         self,

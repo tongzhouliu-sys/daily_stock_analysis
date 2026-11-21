@@ -1516,6 +1516,28 @@ function buildElectronUpdaterState(status, updateInfo = {}, extraState = {}) {
   });
 }
 
+const ALLOWED_EXTERNAL_PROTOCOLS = new Set(['http:', 'https:', 'mailto:']);
+
+function isAllowedExternalUrl(candidateUrl) {
+  if (typeof candidateUrl !== 'string' || !candidateUrl.trim()) {
+    return false;
+  }
+  try {
+    return ALLOWED_EXTERNAL_PROTOCOLS.has(new URL(candidateUrl.trim()).protocol);
+  } catch (_error) {
+    return false;
+  }
+}
+
+function openExternalUrlSafely(candidateUrl) {
+  if (!isAllowedExternalUrl(candidateUrl)) {
+    logLine(`[security] blocked external url protocol: ${String(candidateUrl).slice(0, 120)}`);
+    return false;
+  }
+  shell.openExternal(candidateUrl.trim());
+  return true;
+}
+
 function sanitizeReleaseUrl(candidateUrl) {
   if (typeof candidateUrl !== 'string' || !candidateUrl.trim()) {
     return RELEASES_PAGE_URL;
@@ -1965,8 +1987,22 @@ async function createWindow() {
   );
 
   mainWindow.webContents.setWindowOpenHandler(({ url }) => {
-    shell.openExternal(url);
+    openExternalUrlSafely(url);
     return { action: 'deny' };
+  });
+
+  // Keep the app window on the local backend origin. External links are opened
+  // in the default browser only after the protocol allowlist check.
+  mainWindow.webContents.on('will-navigate', (event, navigationUrl) => {
+    const currentOrigin = desktopBackendOrigin;
+    if (currentOrigin && navigationUrl.startsWith(`${currentOrigin}/`)) {
+      return;
+    }
+    if (navigationUrl === currentOrigin) {
+      return;
+    }
+    event.preventDefault();
+    openExternalUrlSafely(navigationUrl);
   });
 
   const appDir = resolveAppDir();
@@ -2121,6 +2157,7 @@ module.exports = {
   findAvailablePort,
   buildMainPageUrl,
   buildDesktopShareImageUrl,
+  isAllowedExternalUrl,
   migrateMacPackagedRuntimeState,
   normalizeVersionString,
   parseSemver,

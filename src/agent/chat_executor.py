@@ -226,7 +226,7 @@ class AgentChatExecutor:
                         _delta_buffer.clear()
                         _last_emit_time[0] = now
                 
-                def _content_callback(chunk: str) -> None:
+                def _content_callback(chunk: str) -> None:  # noqa: F811
                     """Buffer and throttle content_delta events."""
                     try:
                         _emit_delta(chunk)
@@ -321,7 +321,7 @@ class AgentChatExecutor:
                             and edited_content != result.content):
                         # Retract the raw draft and re-emit the final body so
                         # deltas after the reset concatenate to done.content.
-                        from src.agent.stream_events import content_delta_event, content_reset_event
+                        from src.agent.stream_events import content_reset_event
                         progress_callback(content_reset_event(0, "answer_edited"))
                         progress_callback(content_delta_event(0, edited_content))
                     result.content = edited_content

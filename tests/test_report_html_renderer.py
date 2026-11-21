@@ -87,6 +87,21 @@ def test_safe_external_links_only():
     assert 'target="_blank"' in html
 
 
+def test_link_query_string_is_escaped_once():
+    from src.services.report_html.renderer import _safe_inline
+
+    html = _safe_inline("https://example.org/a?x=1&b=2")
+    assert 'href="https://example.org/a?x=1&amp;b=2"' in html
+    assert "&amp;amp;" not in html
+
+
+def test_url_placeholder_injection_is_plain_text():
+    from src.services.report_html.renderer import _safe_inline
+
+    assert "LINK0" in _safe_inline("\x00LINK0\x00")
+    assert "<a " not in _safe_inline("\x00LINK0\x00")
+
+
 def test_deterministic():
     markdown = _sample("single_stock_report")
     assert render_report_html(markdown) == render_report_html(markdown)

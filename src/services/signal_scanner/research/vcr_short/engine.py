@@ -23,7 +23,6 @@ from src.services.signal_scanner.research.vcr_short.matching import OrderMatcher
 from src.services.signal_scanner.research.vcr_short.ledger import Ledger
 from src.services.signal_scanner.research.vcr_short.performance import PerformanceCalculator
 from src.services.signal_scanner.research.vcr_short.sensitivity import SensitivityAnalyzer
-from src.services.signal_scanner.research.vcr_short.report import ReportGenerator
 
 
 class VCRShortBacktestEngine:

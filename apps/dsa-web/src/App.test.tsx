@@ -83,6 +83,7 @@ function makeAuthState(overrides: Partial<AuthState> = {}): AuthState {
     passwordSet: false,
     passwordChangeable: false,
     setupState: 'no_password',
+    setupTokenRequired: false,
     isLoading: false,
     loadError: null,
     login: vi.fn().mockResolvedValue({ success: true }),

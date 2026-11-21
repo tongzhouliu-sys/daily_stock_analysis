@@ -20,17 +20,18 @@ function createNextModeLabel(authEnabled: boolean, desiredEnabled: boolean, t: (
 }
 
 export const AuthSettingsCard: React.FC = () => {
-  const { authEnabled, setupState, refreshStatus } = useAuth();
+  const { authEnabled, setupState, setupTokenRequired, refreshStatus } = useAuth();
   const { t } = useUiLanguage();
   const [desiredEnabled, setDesiredEnabled] = useState(authEnabled);
   const [currentPassword, setCurrentPassword] = useState('');
   const [password, setPassword] = useState('');
   const [passwordConfirm, setPasswordConfirm] = useState('');
+  const [setupToken, setSetupToken] = useState('');
   const [isSubmitting, setIsSubmitting] = useState(false);
   const [error, setError] = useState<string | ParsedApiError | null>(null);
   const [successMessage, setSuccessMessage] = useState<string | null>(null);
 
-  const isDirty = desiredEnabled !== authEnabled || currentPassword || password || passwordConfirm;
+  const isDirty = desiredEnabled !== authEnabled || currentPassword || password || passwordConfirm || setupToken;
   const targetActionLabel = createNextModeLabel(authEnabled, desiredEnabled, t);
 
   const helperText = useMemo(() => {
@@ -56,6 +57,7 @@ export const AuthSettingsCard: React.FC = () => {
     setCurrentPassword('');
     setPassword('');
     setPasswordConfirm('');
+    setSetupToken('');
   };
 
   const handleSubmit = async (event: React.FormEvent) => {
@@ -71,6 +73,10 @@ export const AuthSettingsCard: React.FC = () => {
       }
       if (password !== passwordConfirm) {
         setError(t('login.passwordMismatch'));
+        return;
+      }
+      if (setupTokenRequired && !setupToken.trim()) {
+        setError(t('login.setupTokenRequired'));
         return;
       }
     }
@@ -91,6 +97,7 @@ export const AuthSettingsCard: React.FC = () => {
         password.trim() || undefined,
         passwordConfirm.trim() || undefined,
         currentPassword.trim() || undefined,
+        setupToken.trim() || undefined,
       );
       await refreshStatus();
       setSuccessMessage(desiredEnabled ? t('settings.authSuccessUpdated') : t('settings.authSuccessDisabled'));
@@ -184,6 +191,21 @@ export const AuthSettingsCard: React.FC = () => {
                     placeholder={t('settings.changePasswordConfirmPlaceholder')}
                   />
                 </div>
+                {setupTokenRequired ? (
+                  <div className="space-y-3 md:col-span-2">
+                    <Input
+                      label={t('login.setupToken')}
+                      type="password"
+                      allowTogglePassword
+                      iconType="password"
+                      value={setupToken}
+                      onChange={(event) => setSetupToken(event.target.value)}
+                      autoComplete="off"
+                      disabled={isSubmitting}
+                      placeholder={t('login.setupTokenPlaceholder')}
+                    />
+                  </div>
+                ) : null}
               </>
             ) : null}
           </div>

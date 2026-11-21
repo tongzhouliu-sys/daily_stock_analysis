@@ -14,7 +14,7 @@ import { SettingsAlert } from '../components/settings';
 import { resolveLoginRedirect } from '../utils/loginRedirect';
 
 const LoginPage: React.FC = () => {
-  const { login, passwordSet, setupState } = useAuth();
+  const { login, passwordSet, setupState, setupTokenRequired } = useAuth();
   const { t } = useUiLanguage();
   const navigate = useNavigate();
 
@@ -28,6 +28,7 @@ const LoginPage: React.FC = () => {
   const [username, setUsername] = useState('');
   const [password, setPassword] = useState('');
   const [passwordConfirm, setPasswordConfirm] = useState('');
+  const [setupToken, setSetupToken] = useState('');
   const [isSubmitting, setIsSubmitting] = useState(false);
   const [error, setError] = useState<string | ParsedApiError | null>(null);
 
@@ -40,9 +41,18 @@ const LoginPage: React.FC = () => {
       setError(t('login.passwordMismatch'));
       return;
     }
+    if (setupTokenRequired && !setupToken.trim()) {
+      setError(t('login.setupTokenRequired'));
+      return;
+    }
     setIsSubmitting(true);
     try {
-      const result = await login(username, password, isFirstTime ? passwordConfirm : undefined);
+      const result = await login(
+        username,
+        password,
+        isFirstTime ? passwordConfirm : undefined,
+        setupTokenRequired ? setupToken.trim() : undefined
+      );
       if (result.success) {
         navigate(redirect, { replace: true });
       } else {
@@ -120,6 +130,23 @@ const LoginPage: React.FC = () => {
                 onChange={(e) => setPasswordConfirm(e.target.value)}
                 disabled={isSubmitting}
                 autoComplete="new-password"
+                required
+              />
+            ) : null}
+
+            {isFirstTime && setupTokenRequired ? (
+              <Input
+                id="setupToken"
+                type="password"
+                appearance="login"
+                allowTogglePassword
+                iconType="password"
+                label={t('login.setupToken')}
+                placeholder={t('login.setupTokenPlaceholder')}
+                value={setupToken}
+                onChange={(e) => setSetupToken(e.target.value)}
+                disabled={isSubmitting}
+                autoComplete="off"
                 required
               />
             ) : null}

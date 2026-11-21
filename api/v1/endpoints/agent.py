@@ -19,7 +19,7 @@ from pydantic import AliasChoices, BaseModel, ConfigDict, Field
 from api.deps import get_agent_chat_intake_service, get_agent_chat_session_service
 from api.v1.schemas.system_config import AgentBackendStatusResponse
 from src.config import get_config
-from src.schemas.agent_domain_guard import DomainAction, DomainGuardMeta
+from src.schemas.agent_domain_guard import DomainAction
 from src.services.agent_chat_session_service import AgentChatSessionService
 from src.services.agent_domain_guard_service import AgentDomainGuardService
 from src.services.agent_model_service import list_agent_model_deployments

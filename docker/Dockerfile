@@ -45,10 +45,10 @@ RUN groupadd -g 1000 dsa && \
     useradd -u 1000 -g dsa -m dsa
 
 # 复制依赖文件
-COPY requirements.txt .
+COPY requirements.txt requirements.lock ./
 
-# 安装 Python 依赖
-RUN --mount=type=cache,target=/root/.cache/pip pip install -r requirements.txt
+# 安装 Python 依赖（优先使用锁定版本，保证构建可复现）
+RUN --mount=type=cache,target=/root/.cache/pip pip install -r requirements.lock
 
 # 复制应用代码
 COPY *.py ./
@@ -98,9 +98,8 @@ EXPOSE 8000
 VOLUME ["/app/data", "/app/logs", "/app/reports"]
 
 # 健康检查（FastAPI 模式）
-HEALTHCHECK --interval=30s --timeout=10s --start-period=10s --retries=3 \
-    CMD curl -f http://localhost:8000/api/health || curl -f http://localhost:8000/health \
-    || python -c "import sys; sys.exit(0)"
+HEALTHCHECK --interval=30s --timeout=10s --start-period=20s --retries=3 \
+    CMD python -c "import sys,urllib.request; urllib.request.urlopen('http://127.0.0.1:8000/api/health', timeout=3); sys.exit(0)"
 
 # 启动入口先修复 bind mount 目录权限，再降权为 dsa 执行应用；
 # 文档化 docker-compose exec 命令需显式使用 -u dsa，避免手动进程写入 root-owned 文件。

@@ -29,7 +29,8 @@ def test_dockerfile_bundles_builtin_screening_engine() -> None:
     requirements = (REPO_ROOT / "requirements.txt").read_text(encoding="utf-8")
 
     assert "screening.git" not in requirements.lower()
-    assert "pip install -r requirements.txt" in dockerfile
+    assert "pip install -r requirements.lock" in dockerfile
+    assert (REPO_ROOT / "requirements.lock").is_file()
     assert "--mount=type=cache,target=/root/.cache/pip" in dockerfile
     assert "import src.services.screening.pipeline" in dockerfile
 

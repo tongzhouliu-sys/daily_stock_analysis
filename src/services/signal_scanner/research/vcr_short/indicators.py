@@ -5,7 +5,7 @@ Implements SMA, ATR (Wilder smoothing), and other technical calculations
 needed for signal generation.
 """
 
-from typing import List, Optional, Tuple
+from typing import List, Optional
 
 
 def sma(values: List[float], period: int) -> List[Optional[float]]:

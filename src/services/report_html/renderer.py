@@ -70,7 +70,18 @@ def _safe_inline(text: str) -> str:
     """转义后按白名单还原少量行内标记，返回可安全输出的 HTML 片段。"""
     if not text:
         return ""
-    escaped = html.escape(str(text), quote=True)
+    raw = str(text).replace("\x00", "")
+    links: List[str] = []
+
+    def repl_url(match: re.Match[str]) -> str:
+        url = match.group(0)
+        token = f"\x00LINK{len(links)}\x00"
+        links.append(url)
+        return token
+
+    # Extract URLs before escaping so & in query strings is escaped once.
+    tokenized = _URL_RE.sub(repl_url, raw)
+    escaped = html.escape(tokenized, quote=True)
 
     # <font color=...> 只允许白名单颜色，其余丢弃标签留文字。
     def repl_font(match: re.Match[str]) -> str:
@@ -83,17 +94,6 @@ def _safe_inline(text: str) -> str:
         return inner
 
     escaped = _FONT_TAG_RE.sub(repl_font, escaped)
-
-    # 链接：仅把 http/https 文本渲染成安全链接，先占位避免后续标记误伤。
-    links: List[str] = []
-
-    def repl_url(match: re.Match[str]) -> str:
-        url = match.group(0)
-        token = f"\x00LINK{len(links)}\x00"
-        links.append(url)
-        return token
-
-    escaped = _URL_RE.sub(repl_url, escaped)
 
     escaped = _BOLD_RE.sub(r"<strong>\1</strong>", escaped)
     escaped = _ITALIC_RE.sub(r"<em>\1</em>", escaped)
@@ -132,7 +132,6 @@ def _build_items(lines: List[str], *, summary_mode: bool) -> List[Dict[str, Any]
     paragraph: List[str] = []
     in_code = False
     code_lines: List[str] = []
-    code_lang = ""
 
     def flush_fields() -> None:
         if not field_buffer:
@@ -170,12 +169,11 @@ def _build_items(lines: List[str], *, summary_mode: bool) -> List[Dict[str, Any]
                 items.append({"kind": "code", "text": "\n".join(code_lines)})
                 in_code = False
                 code_lines = []
-                code_lang = ""
             else:
                 flush_fields()
                 flush_paragraph()
                 in_code = True
-                code_lang = fence.group(1) if fence else ""
+                fence.group(1) if fence else ""
             continue
         if in_code:
             code_lines.append(raw.rstrip())

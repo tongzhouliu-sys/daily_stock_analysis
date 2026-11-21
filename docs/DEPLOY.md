@@ -144,6 +144,10 @@ vim .env  # 填入配置
 ```
 
 > Web 管理界面的登录开关 `ADMIN_AUTH_ENABLED` 从活跃 `.env` 文件或进程环境变量读取：文件里有这个键时以文件为准，否则回退到环境变量。使用 `python main.py --webui-only` 对外监听前，请先设置 `ADMIN_AUTH_ENABLED=true`，再执行 `python -m src.auth reset_password` 设置初始密码。服务启动时会打印最终认证状态和监听地址；认证关闭且监听地址不是回环地址时会额外打印警告。
+>
+> **首次设置保护**：当还没有管理员密码时，回环与私有网络客户端可以直接在登录页/设置页初始化；公网客户端必须提供初始化令牌。令牌来源二选一：设置 `ADMIN_SETUP_TOKEN`，或使用服务启动日志中打印的随机令牌（每次进程启动重新生成）。这样可避免“谁先访问谁成为管理员”。**反向代理部署请显式设置 `ADMIN_SETUP_TOKEN`**：代理转发时应用看到的客户端地址通常是回环地址，无法据此区分公网来源。
+>
+> **可选 fail-closed**：设置 `DSA_REQUIRE_AUTH_FOR_PUBLIC=true` 后，若 `ADMIN_AUTH_ENABLED=false` 且监听地址不是回环地址，服务会拒绝启动。默认 `false`（只打印警告），不会改变现有部署行为。
 
 ### 4. 运行
 

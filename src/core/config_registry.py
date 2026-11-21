@@ -95,6 +95,15 @@ WEB_SETTINGS_HIDDEN_FROM_UI = {
     "SCANNER_HTTPS",
     "SCANNER_DAILY_MARKET",
     "SCANNER_WEBHOOK_URL",
+    # Scanner backup retention is read by the scanner worker process; not a
+    # main-app settings field.
+    "SCANNER_BACKUP_KEEP_DAILY",
+    "SCANNER_BACKUP_KEEP_WEEKLY",
+    "LOGIN_LOG_GEOIP_DB_PATH",
+    "LOGIN_LOG_RETENTION_DAYS",
+    # First-time setup token / public-bind policy are deployment settings.
+    "ADMIN_SETUP_TOKEN",
+    "DSA_REQUIRE_AUTH_FOR_PUBLIC",
     "TIINGO_API_KEY",
     "TIINGO_API_KEYS",
     "ALPHAVANTAGE_API_KEYS",

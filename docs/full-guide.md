@@ -514,7 +514,6 @@ daily_stock_analysis/
 | `GUARD_PASSIVE_MODE` | 仅记录日志不拦截，便于先观察 | `false` |
 | `LOGIN_LOG_RETENTION_DAYS` | 登录日志保留天数（范围 1–3650），默认 90 天；详见 [登录日志](login-log.md) | `90` |
 | `LOGIN_LOG_GEOIP_DB_PATH` | 离线 IP 地理库 `.mmdb` 文件路径（DB-IP City Lite 或 MaxMind GeoLite2-City），用于显示登录位置；留空则不显示公网 IP 的位置；详见 [登录日志](login-log.md) | 空 |
-| `LOGIN_LOG_GEO_ONLINE_PROVIDER` | 在线查询登录 IP 位置（默认关闭）；目前只支持 `ip-api`，会把登录 IP 以 HTTP 明文发送给 ip-api.com，免费版仅限非商业用途；详见 [登录日志](login-log.md) | 空 |
 | `MARKET_REVIEW_ENABLED` | 启用大盘复盘 | `true` |
 | `DAILY_MARKET_CONTEXT_ENABLED` | 将当日大盘环境摘要注入个股分析 Prompt，并在高风险/退潮环境下软化激进买入建议；默认开启，设为 `false` 后仍可运行大盘复盘 | `true` |
 | `MARKET_REVIEW_REGION` | 大盘复盘市场区域：cn(A股)、hk(港股)、us(美股)、jp(日股)、kr(韩股)、tw(台股)、both(全部六市场)，支持逗号子集（如 cn,tw） | `cn` |

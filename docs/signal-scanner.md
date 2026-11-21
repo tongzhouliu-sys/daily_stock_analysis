@@ -23,6 +23,7 @@ DSA 左侧导航“信号扫描器”进入 `/scanner`。页面沿用 DSA 登录
 - `SCANNER_LEGACY_HOST`：可选原扫描器域名，配合 `SCANNER_ORIGIN` 将旧网页跳转到统一入口；旧域名上的写请求明确拒绝，不转发旧密码。
 - `TIINGO_API_KEY` / `TIINGO_API_KEYS`、`ALPHAVANTAGE_API_KEYS`、已有 `FINNHUB_API_KEY`、`ALPACA_API_KEY` / `ALPACA_SECRET_KEY`：相应行情/事件适配器的凭据；密钥池使用 JSON 数组，仅在私有配置中设置。
 - `SCANNER_WEBHOOK_URL`：可选外部通知地址；域内偏好默认 `external_channel=NONE`，迁移不会自动启用推送。
+- `SCANNER_BACKUP_KEEP_DAILY` / `SCANNER_BACKUP_KEEP_WEEKLY`：扫描器备份保留份数（默认 2 / 1），由扫描器 worker 进程读取，不在主设置页展示；修改后需重启 worker 生效。
 - `RULE_VALIDATION_WEB_ENABLED`：默认 `true`。
 - `RULE_VALIDATION_WEB_ROOT`：独立研究控制目录，默认在扫描运行目录下。
 - `RULE_VALIDATION_INPUT_ROOTS`：允许登记的冻结输入目录，多个目录使用操作系统路径分隔符。

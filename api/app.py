@@ -298,6 +298,9 @@ async def app_lifespan(app: FastAPI):
     app.state.system_config_service = SystemConfigService(
         runtime_scheduler=app.state.runtime_scheduler_service,
     )
+    from src.auth import log_setup_token_if_needed
+
+    log_setup_token_if_needed(os.getenv("WEBUI_HOST", "127.0.0.1"))
     _schedule_stock_index_background_refresh(app, "startup")
     # 名称解析器的 AkShare 缓存预热：命中磁盘缓存则零网络加载，否则发起
     # 后台单飞拉取。把冷启动等待从首个用户请求挪到进程启动窗口。

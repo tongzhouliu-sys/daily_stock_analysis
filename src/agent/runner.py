@@ -35,8 +35,6 @@ from src.agent.stream_events import (
     tool_done_event,
     content_reset_event,
     reset_event_sequence,
-    TOOL_DISPLAY_LABELS,
-    TOOL_CATEGORIES,
 )
 from src.agent.tools.registry import ToolRegistry
 from src.agent.tools.execution import (
@@ -311,7 +309,6 @@ def _build_budget_guard_result(
     remaining_timeout_s: float,
     min_step_budget_s: float,
 ) -> RunLoopResult:
-    elapsed = time.time() - start_time
     return RunLoopResult(
         success=False,
         content="",
@@ -512,7 +509,7 @@ def run_agent_loop(
         _generating_emitted = False
 
         if content_callback is not None:
-            def _stream_cb(chunk_text: str) -> None:
+            def _stream_cb(chunk_text: str) -> None:  # noqa: F811
                 nonlocal _streamed_any, _generating_emitted
                 if progress_callback and not _generating_emitted:
                     _generating_emitted = True
@@ -529,7 +526,7 @@ def run_agent_loop(
                 except Exception:
                     logger.debug("content_callback failed", exc_info=True)
 
-            def _stream_reset_cb(reason: str) -> None:
+            def _stream_reset_cb(reason: str) -> None:  # noqa: F811
                 nonlocal _streamed_any, _generating_emitted
                 if progress_callback:
                     progress_callback(content_reset_event(step + 1, reason=reason))
