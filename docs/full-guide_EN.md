@@ -343,6 +343,7 @@ For the notification baseline, diagnostics, and deployment notes, see [Notificat
 | Variable | Description | Required |
 |--------|------|:----:|
 | `SERPAPI_API_KEYS` | SerpAPI search-engine results for realtime financial news | Recommended |
+| `SERPAPI_KEY_USAGE_LIMIT` | Per-key monthly usage soft limit for SerpAPI, default `200` (the free plan allows 250/month, leaving headroom). Rotates to the next key once reached; `0` disables the limit. Usage is accumulated per calendar month in `data/cache/serpapi_key_usage.json` | Optional |
 | `ANSPIRE_API_KEYS` | [Anspire](https://open.anspire.cn/dsa?share_code=QFBC0FYC) API key (optional; shared by LLM and search; availability depends on account permissions) | Optional |
 | `TAVILY_API_KEYS` | Tavily Search API Key | Optional |
 | `BOCHA_API_KEYS` | Bocha Search API Key (Chinese optimized) | Optional |

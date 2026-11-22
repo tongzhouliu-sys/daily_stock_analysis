@@ -83,6 +83,9 @@ WEB_SETTINGS_HIDDEN_FROM_UI = {
     "PROXY_HOST",
     "PROXY_PORT",
     "SEARXNG_TIMEOUT_SECONDS",
+    # Per-key SerpAPI monthly usage cap is read at search-provider construction;
+    # it is an env-only tuning knob, not a Web settings field.
+    "SERPAPI_KEY_USAGE_LIMIT",
     # CLI-only schedule-mode behavior (python main.py --schedule); the WebUI
     # runtime scheduler does not consult the startup dedup gate.
     "SCHEDULE_STARTUP_DEDUP",

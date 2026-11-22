@@ -380,6 +380,7 @@ daily_stock_analysis/
 | 变量名 | 说明 | 必填 |
 |--------|------|:----:|
 | `SERPAPI_API_KEYS` | SerpAPI 搜索引擎结果补强，适合实时金融新闻；支持逗号分隔多个 Key，当前 Key 鉴权失败或配额用尽时自动切换下一个 | 推荐 |
+| `SERPAPI_KEY_USAGE_LIMIT` | 单个 SerpAPI Key 每月用量软上限，默认 `200`（免费版每月 250 次，留出缓冲）；达到后主动切换到下一个 Key，`0` 表示不限制。用量按自然月累计并保存在 `data/cache/serpapi_key_usage.json` | 可选 |
 | `ANSPIRE_API_KEYS` | [Anspire](https://open.anspire.cn/dsa?share_code=QFBC0FYC) API Key（可选，模型与搜索共用；可用性以账号权限为准） | 可选 |
 | `TAVILY_API_KEYS` | Tavily 搜索 API Key | 可选 |
 | `BOCHA_API_KEYS` | 博查搜索 API Key（中文优化） | 可选 |

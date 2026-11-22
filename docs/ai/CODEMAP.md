@@ -11,7 +11,7 @@
 
 | 目录 | 职责 | 文件数 | 行数 |
 | --- | --- | --- | --- |
-| `src/core/` | 主流程编排：pipeline、配置装配、调度入口 | 14 | 14207 |
+| `src/core/` | 主流程编排：pipeline、配置装配、调度入口 | 14 | 14212 |
 | `src/services/` | 业务服务层：分析、筛选、通知、系统配置、任务与诊断 | 215 | 85598 |
 | `src/repositories/` | 数据访问层：数据库读写封装 | 12 | 4040 |
 | `src/schemas/` | API / 报告数据结构定义 | 10 | 2107 |
@@ -24,7 +24,7 @@
 | `apps/dsa-desktop/` | Electron 桌面端壳与打包配置 | 8 | 8519 |
 | `scripts/` | 本地与 CI 脚本 | 52 | 10795 |
 | `.github/scripts/` | GitHub Actions 专用脚本 | 2 | 652 |
-| `tests/` | pytest 测试 | 391 | 193580 |
+| `tests/` | pytest 测试 | 391 | 193697 |
 
 ## 大文件（Python，≥400 行）
 
@@ -35,12 +35,12 @@
 | `src/services/system_config_service.py` | 6088 | `ConfigValidationError`:123, `ConfigConflictError`:131, `ConfigImportError`:139, `_LLMDiagnostic`:148, `SystemConfigService`:158 | 31 |
 | `src/analyzer.py` | 6071 | `_describe_llm_result_model`:115, `_localized_text`:129, `_normalize_risk_warning_values`:139, `_today_has_realtime_overlay`:164, `_today_looks_complete_daily_bar`:177, `_phase_aware_quote_labels`:210 | 239 |
 | `src/storage.py` | 5553 | `utc_naive_now`:81, `to_utc_naive_datetime`:86, `to_utc_isoformat`:93, `DatabaseSchemaMigration`:111, `StockDaily`:121, `NewsIntel`:201 | 385 |
-| `src/core/config_registry.py` | 5368 | `get_category_definitions`:5192, `get_registered_field_keys`:5197, `_extract_option_values`:5202, `get_field_definition`:5216, `build_schema_response`:5251, `_is_sensitive_key`:5274 | 24 |
+| `src/core/config_registry.py` | 5371 | `get_category_definitions`:5195, `get_registered_field_keys`:5200, `_extract_option_values`:5205, `get_field_definition`:5219, `build_schema_response`:5254, `_is_sensitive_key`:5277 | 24 |
+| `src/search_service.py` | 5269 | `_terminate_search_process`:61, `_search_topic_news_process_worker`:72, `_call_topic_news_in_subprocess`:100, `_post_with_retry`:191, `_get_with_retry`:203, `_is_public_http_url`:210 | 73 |
 | `data_provider/base.py` | 5210 | `_resolve_fundamental_timeout_worker_limit`:58, `interactive_mode`:82, `unwrap_exception`:99, `summarize_exception`:116, `normalize_stock_code`:126, `_is_us_market`:211 | 243 |
-| `src/search_service.py` | 5053 | `_terminate_search_process`:58, `_search_topic_news_process_worker`:69, `_call_topic_news_in_subprocess`:97, `_post_with_retry`:188, `_get_with_retry`:200, `_is_public_http_url`:207 | 73 |
 | `src/services/screening_service.py` | 4384 | `_safe_float`:97, `_utc_now_iso`:109, `_resolve_screening_data_dir`:113, `_screening_hotspot_cache_path`:120, `_screening_hotspot_history_path`:126, `_screening_hotspot_detail_cache_dir`:132 | 23 |
-| `src/core/pipeline.py` | 4268 | `_share_image_payload`:132, `_coerce_context_date`:146, `_supports_explicit_keyword`:160, `_symbol_scope_lookup_values`:175, `_measure_fetch_step`:246, `_format_fetch_timings`:261 | 71 |
-| `src/config.py` | 3986 | `ConfigIssue`:81, `_has_ntfy_topic_endpoint`:146, `_has_gotify_base_url`:157, `normalize_tickflow_kline_adjust`:171, `parse_prompt_cache_diagnostics_level`:183, `AgentContextCompressionPreset`:211 | 356 |
+| `src/core/pipeline.py` | 4269 | `_share_image_payload`:132, `_coerce_context_date`:146, `_supports_explicit_keyword`:160, `_symbol_scope_lookup_values`:175, `_measure_fetch_step`:246, `_format_fetch_timings`:261 | 71 |
+| `src/config.py` | 3993 | `ConfigIssue`:81, `_has_ntfy_topic_endpoint`:146, `_has_gotify_base_url`:157, `normalize_tickflow_kline_adjust`:171, `parse_prompt_cache_diagnostics_level`:183, `AgentContextCompressionPreset`:211 | 356 |
 | `src/notification.py` | 3324 | `_share_image_payload`:95, `_structured_payload_for`:109, `_safe_float`:117, `_format_strategy_skill_items`:137, `_append_strategy_synthesis_block`:157, `NotificationChannel`:208 | 85 |
 | `src/llm/local_cli_backend.py` | 2966 | `_diagnostic_field_name_pattern`:256, `_diagnostic_field_assignment_pattern`:286, `_diagnostic_json_assignment_pattern`:301, `_diagnostic_line_field_pattern`:315, `_diagnostic_double_quoted_yaml_line_pattern`:337, `_diagnostic_yaml_explicit_key_pattern`:357 | 25 |
 | `data_provider/akshare_fetcher.py` | 2640 | `_lots_to_shares`:64, `_is_etf_code`:120, `_is_hk_code`:139, `_normalize_tencent_volume`:171, `_normalize_cn_daily_volume`:203, `_parse_tencent_amount`:240 | 52 |
@@ -83,8 +83,8 @@
 
 ## 规模快照
 
-- Python 源码（不含测试）：508 个文件，233167 行
-- Python 测试：382 个文件，193190 行
+- Python 源码（不含测试）：508 个文件，233395 行
+- Python 测试：382 个文件，193307 行
 - 前端 TS/TSX：332 个文件，104463 行
 - ≥400 行的 Python 文件：156 个
 
