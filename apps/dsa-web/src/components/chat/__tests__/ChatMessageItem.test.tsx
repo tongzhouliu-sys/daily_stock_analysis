@@ -28,6 +28,7 @@ function buildProps() {
     thinkingExpanded: false,
     expandedCategories: new Set<string>(),
     onToggleCategory: vi.fn(),
+    onCollapseThinking: vi.fn(),
     onFollowUp: vi.fn(),
     clarification: null,
     clarificationAutoConfirmEnabled: false,

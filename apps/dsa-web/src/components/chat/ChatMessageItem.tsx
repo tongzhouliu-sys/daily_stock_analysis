@@ -17,6 +17,7 @@ interface ChatMessageItemProps {
   thinkingExpanded: boolean;
   expandedCategories: Set<string>;
   onToggleCategory: (messageId: string, category: string) => void;
+  onCollapseThinking: (messageId: string) => void;
   onFollowUp: (question: string) => void;
   clarification: StockClarification | null;
   clarificationAutoConfirmEnabled: boolean;
@@ -48,6 +49,7 @@ function ChatMessageItem({
   thinkingExpanded,
   expandedCategories,
   onToggleCategory,
+  onCollapseThinking,
   onFollowUp,
   clarification,
   clarificationAutoConfirmEnabled,
@@ -89,6 +91,7 @@ function ChatMessageItem({
           expanded={thinkingExpanded}
           expandedCategories={expandedCategories}
           onToggleCategory={onToggleCategory}
+          onCollapse={onCollapseThinking}
           language={language}
         />
       )}
