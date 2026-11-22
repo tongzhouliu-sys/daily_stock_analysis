@@ -8,6 +8,7 @@ vi.mock('../../../api/history', () => ({
   historyApi: {
     getShareImage: vi.fn(),
     getReportHtml: vi.fn(),
+    ensureReportZhVariant: vi.fn(),
     downloadReportHtml: vi.fn(),
   },
 }));
@@ -18,6 +19,7 @@ vi.mock('../../../utils/reportPdf', () => ({
 
 const mockedGetShareImage = vi.mocked(historyApi.getShareImage);
 const mockedGetReportHtml = vi.mocked(historyApi.getReportHtml);
+const mockedEnsureReportZhVariant = vi.mocked(historyApi.ensureReportZhVariant);
 const mockedDownloadReportHtml = vi.mocked(historyApi.downloadReportHtml);
 const mockedBuildReportPdf = vi.mocked(buildReportPdf);
 
@@ -29,6 +31,7 @@ describe('ShareReportButton', () => {
     vi.useRealTimers();
     mockedGetShareImage.mockReset();
     mockedGetReportHtml.mockReset();
+    mockedEnsureReportZhVariant.mockReset();
     mockedDownloadReportHtml.mockReset();
     mockedBuildReportPdf.mockReset();
     vi.spyOn(URL, 'createObjectURL').mockReturnValue('blob:share-image');
@@ -301,6 +304,7 @@ describe('ShareReportButton', () => {
     openMenu();
     fireEvent.click(menuItem('下载 HTML'));
 
+    await waitFor(() => expect(mockedEnsureReportZhVariant).toHaveBeenCalledWith(17));
     await waitFor(() => expect(mockedDownloadReportHtml).toHaveBeenCalledWith(
       17,
       '中钨高新-000657-17.html',

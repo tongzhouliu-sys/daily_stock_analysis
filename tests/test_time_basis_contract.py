@@ -27,6 +27,7 @@ LOCAL_TIME_TABLES = {
     "IntelligenceItem",
     "FundamentalSnapshot",
     "AnalysisHistory",
+    "ReportTextVariant",
     "BacktestResult",
     "BacktestSummary",
     "PortfolioAccount",

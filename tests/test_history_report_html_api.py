@@ -11,21 +11,34 @@ from src.services.report_html import ReportHtmlRenderError
 
 
 class _FakeHistoryService:
-    def __init__(self, result, markdown="# 中钨高新 000657 分析报告"):
+    def __init__(self, result, markdown="# 中钨高新 000657 分析报告", *, missing=False):
         self.result = result
         self.markdown = markdown
-        self.report_language_calls = []
+        self.missing = missing
+        self.zh_calls = 0
+        self.ensure_calls = []
 
     def resolve_and_get_detail(self, record_id):
         return self.result
 
     def get_markdown_report(self, record_id, *, report_language=None):
-        self.report_language_calls.append(report_language)
         return self.markdown
 
+    def get_markdown_report_zh(self, record_id):
+        self.zh_calls += 1
+        if self.missing:
+            from src.services.history_service import ReportChineseVariantMissing
 
-def _patch_service(monkeypatch, result, markdown="# 中钨高新 000657 分析报告"):
-    service = _FakeHistoryService(result, markdown)
+            raise ReportChineseVariantMissing(str(record_id), reason="missing")
+        return self.markdown
+
+    def ensure_chinese_variant(self, record_id, *, force=False):
+        self.ensure_calls.append(bool(force))
+        return {"record_id": record_id, "status": "ready", "variant_kind": "single_stock_overlay"}
+
+
+def _patch_service(monkeypatch, result, markdown="# 中钨高新 000657 分析报告", *, missing=False):
+    service = _FakeHistoryService(result, markdown, missing=missing)
     monkeypatch.setattr(history_endpoint, "HistoryService", lambda _db: service)
     monkeypatch.setattr(
         history_endpoint,
@@ -81,8 +94,24 @@ def test_report_html_forces_chinese_report_generation(monkeypatch):
 
     monkeypatch.setattr(history_endpoint, "render_report_html", fake_render)
     history_endpoint.get_history_report_html("17", db_manager=object())
-    assert service.report_language_calls == ["zh"]
+    assert service.zh_calls == 1
     assert "report_language" not in captured
+
+
+def test_report_html_409_when_chinese_variant_missing(monkeypatch):
+    _patch_service(monkeypatch, _result(raw_result={"report_language": "en"}), missing=True)
+    with pytest.raises(HTTPException) as exc:
+        history_endpoint.get_history_report_html("17", db_manager=object())
+    assert exc.value.status_code == 409
+    assert exc.value.detail["error"] == "zh_variant_missing"
+    assert exc.value.detail["record_id"] == "17"
+
+
+def test_ensure_report_zh_variant_endpoint(monkeypatch):
+    service = _patch_service(monkeypatch, _result(raw_result={"report_language": "en"}))
+    payload = history_endpoint.ensure_history_report_zh_variant("17", force=1, db_manager=object())
+    assert payload["status"] == "ready"
+    assert service.ensure_calls == [True]
 
 
 def test_report_html_uses_chinese_frame_for_english_markdown(monkeypatch):

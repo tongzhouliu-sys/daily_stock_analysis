@@ -1279,6 +1279,12 @@ class Config:
     report_type: str = "simple"
     report_language: str = "zh"
 
+    # T78: fully Chinese HTML report variant
+    report_zh_variant_enabled: bool = True
+    report_zh_variant_on_demand: bool = True
+    report_zh_variant_timeout_seconds: int = 60
+    report_zh_variant_max_chars: int = 200_000
+
     # 仅分析结果摘要：true 时只推送汇总，不含个股详情（Issue #262）
     report_summary_only: bool = False
     report_show_llm_model: bool = True
@@ -2351,6 +2357,20 @@ class Config:
             single_stock_notify=os.getenv('SINGLE_STOCK_NOTIFY', 'false').lower() == 'true',
             report_type=cls._parse_report_type(os.getenv('REPORT_TYPE', 'simple')),
             report_language=cls._parse_report_language(report_language_raw),
+            report_zh_variant_enabled=os.getenv('REPORT_ZH_VARIANT_ENABLED', 'true').lower() == 'true',
+            report_zh_variant_on_demand=os.getenv('REPORT_ZH_VARIANT_ON_DEMAND', 'true').lower() == 'true',
+            report_zh_variant_timeout_seconds=parse_env_int(
+                os.getenv('REPORT_ZH_VARIANT_TIMEOUT_SECONDS'),
+                60,
+                field_name='REPORT_ZH_VARIANT_TIMEOUT_SECONDS',
+                minimum=1,
+            ),
+            report_zh_variant_max_chars=parse_env_int(
+                os.getenv('REPORT_ZH_VARIANT_MAX_CHARS'),
+                200_000,
+                field_name='REPORT_ZH_VARIANT_MAX_CHARS',
+                minimum=1000,
+            ),
             report_summary_only=os.getenv('REPORT_SUMMARY_ONLY', 'false').lower() == 'true',
             report_show_llm_model=report_show_llm_model,
             report_templates_dir=os.getenv('REPORT_TEMPLATES_DIR', 'templates'),
