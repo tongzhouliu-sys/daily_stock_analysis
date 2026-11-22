@@ -541,7 +541,8 @@ def _handle_get_stock_info(stock_code: str) -> dict:
 
 get_stock_info_tool = ToolDefinition(
     name="get_stock_info",
-    description="Get stock fundamental information: valuation, growth, earnings, institution flow, "
+    description="Get stock fundamental information: valuation, growth, earnings (incl. the "
+                "next earnings disclosure date under earnings.calendar), institution flow, "
                 "stock sector membership (belong_boards; boards is compatibility alias) and "
                 "sector rankings. Returns a compact fundamental_context to reduce token usage.",
     parameters=[

@@ -101,18 +101,19 @@ class TestFundamentalAdapter(unittest.TestCase):
             }
         )
 
-        with patch.object(
-            adapter,
-            "_call_df_candidates",
-            side_effect=[
-                (fin_df, "stock_financial_abstract", []),
-                (forecast_df, "stock_yjyg_em", []),
-                (quick_df, "stock_yjkb_em", []),
-                (dividend_df, "stock_fhps_detail_em", []),
-                (None, None, []),
-                (None, None, []),
-            ],
-        ):
+        def fake_candidates(candidates, **kwargs):
+            func_name = candidates[0][0]
+            if func_name == "stock_financial_abstract":
+                return fin_df, func_name, []
+            if func_name == "stock_yjyg_em":
+                return forecast_df, func_name, []
+            if func_name == "stock_yjkb_em":
+                return quick_df, func_name, []
+            if func_name == "stock_fhps_detail_em":
+                return dividend_df, func_name, []
+            return None, None, []
+
+        with patch.object(adapter, "_call_df_candidates", side_effect=fake_candidates):
             result = adapter.get_fundamental_bundle("600519")
 
         financial_report = result["earnings"].get("financial_report", {})

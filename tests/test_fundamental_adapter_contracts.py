@@ -296,11 +296,14 @@ def test_installed_akshare_receives_valid_parameters_at_http_boundary(monkeypatc
 
     calls = []
 
-    def stop_at_http(url, **kwargs):
-        calls.append((url, dict(kwargs.get("params", {}))))
-        raise RuntimeError("offline transport boundary")
+    def stop_at_http(method):
+        def _stop(url, **kwargs):
+            calls.append((method, url, dict(kwargs.get("params", {}))))
+            raise RuntimeError("offline transport boundary")
+        return _stop
 
-    monkeypatch.setattr(requests, "get", stop_at_http)
+    monkeypatch.setattr(requests, "get", stop_at_http("GET"))
+    monkeypatch.setattr(requests, "post", stop_at_http("POST"))
     for name in (
         "stock_financial_abstract", "stock_financial_analysis_indicator",
         "stock_fhps_detail_em", "stock_history_dividend_detail", "stock_dividend_cninfo",
@@ -310,22 +313,36 @@ def test_installed_akshare_receives_valid_parameters_at_http_boundary(monkeypatc
         "data_provider.fundamental_adapter._recent_report_dates",
         lambda: ["20260630", "20260331"],
     )
+    monkeypatch.setattr(
+        "data_provider.fundamental_adapter._earnings_calendar_periods",
+        lambda now=None: ["20260930", "20261231"],
+    )
     result = AkshareFundamentalAdapter().get_fundamental_bundle("000001")
 
-    assert len(calls) == 8  # two bounded periods per endpoint, no no-arg calls
+    # 8 base calls (forecast/quick/institution/top10 x 2 periods) + 4 calendar
+    # calls (report_disclosure POST + yysj fallback GET x 2 periods).
+    assert len(calls) == 12
     assert not any("TypeError" in error for error in result["errors"])
-    period_filters = [params["filter"] for _, params in calls if "filter" in params]
-    assert len(period_filters) == 4
-    assert all("2026-06-30" in value or "2026-03-31" in value for value in period_filters)
-    shareholder_calls = [params for url, params in calls if "PageSDGD" in url]
+    recent_filters = [
+        params["filter"] for method, _, params in calls
+        if method == "GET"
+        and "filter" in params
+        and "RPT_PUBLIC_BS_APPOIN" not in str(params.get("reportName"))
+    ]
+    assert len(recent_filters) == 4
+    assert all("2026-06-30" in value or "2026-03-31" in value for value in recent_filters)
+    shareholder_calls = [params for _, url, params in calls if "PageSDGD" in url]
     assert shareholder_calls == [
         {"code": "SZ000001", "date": "2026-06-30"},
         {"code": "SZ000001", "date": "2026-03-31"},
     ]
-    institution_calls = [params for _, params in calls if "reportdate" in params]
+    institution_calls = [params for _, _, params in calls if "reportdate" in params]
     assert [(params["reportdate"], params["quarter"]) for params in institution_calls] == [
         ("2026", "2"), ("2026", "1"),
     ]
+    disclosure_calls = [params for method, _, params in calls if method == "POST"]
+    assert len(disclosure_calls) == 2
+    assert {params.get("sectionTime") for params in disclosure_calls} == {"2026-09-30", "2026-12-31"}
 
 
 def _quick_report_row():
