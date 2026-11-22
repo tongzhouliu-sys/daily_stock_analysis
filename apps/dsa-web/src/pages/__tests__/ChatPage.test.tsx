@@ -96,6 +96,7 @@ const {
 });
 
 const mockLoadSessions = vi.fn();
+const mockSetSessionPinned = vi.fn();
 const mockLoadInitialSession = vi.fn();
 const mockSwitchSession = vi.fn();
 const mockStartStream = vi.fn();
@@ -135,12 +136,14 @@ const mockStoreState = {
       message_count: 2,
       created_at: '2026-03-15T09:00:00Z',
       last_active: '2026-03-15T09:05:00Z',
+      is_pinned: false,
     },
   ],
   sessionsLoading: false,
   chatError: null as ReturnType<typeof createParsedApiError> | null,
   terminalStatus: null as 'timeout' | null,
   loadSessions: mockLoadSessions,
+  setSessionPinned: mockSetSessionPinned,
   loadInitialSession: mockLoadInitialSession,
   switchSession: mockSwitchSession,
   stopStream: mockStopStream,
@@ -255,6 +258,7 @@ beforeEach(() => {
   vi.clearAllMocks();
   localStorage.removeItem('dsa.chat.sidebarCollapsed');
   mockRenameChatSession.mockResolvedValue(undefined);
+  mockSetSessionPinned.mockResolvedValue(undefined);
   window.localStorage.removeItem(UI_LANGUAGE_STORAGE_KEY);
   mockGetStatus.mockReset();
   mockStoreState.messages = [];
@@ -274,6 +278,7 @@ beforeEach(() => {
       message_count: 2,
       created_at: '2026-03-15T09:00:00Z',
       last_active: '2026-03-15T09:05:00Z',
+      is_pinned: false,
     },
   ];
   mockStoreState.intakeDraft = null;
@@ -361,6 +366,61 @@ describe('ChatPage', () => {
     fireEvent.click(screen.getByRole('button', { name: '折叠历史对话' }));
     expect(localStorage.getItem('dsa.chat.sidebarCollapsed')).toBe('true');
     expect(screen.getByRole('button', { name: '展开历史对话' })).toBeInTheDocument();
+  });
+
+  it('pins a session from the row menu without switching sessions', async () => {
+    render(<MemoryRouter initialEntries={['/chat']}><ChatPage /></MemoryRouter>);
+    fireEvent.click(screen.getByRole('button', { name: '更多操作 请简要分析 600519' }));
+    fireEvent.click(screen.getByRole('menuitem', { name: '置顶对话' }));
+    await waitFor(() => expect(mockSetSessionPinned).toHaveBeenCalledWith('session-1', true));
+    expect(mockSwitchSession).not.toHaveBeenCalled();
+  });
+
+  it('unpins an already pinned session from the row menu', async () => {
+    mockStoreState.sessions = [
+      {
+        session_id: 'session-1',
+        title: '请简要分析 600519',
+        message_count: 2,
+        created_at: '2026-03-15T09:00:00Z',
+        last_active: '2026-03-15T09:05:00Z',
+        is_pinned: true,
+      },
+    ];
+
+    render(<MemoryRouter initialEntries={['/chat']}><ChatPage /></MemoryRouter>);
+    fireEvent.click(screen.getByRole('button', { name: '更多操作 请简要分析 600519' }));
+    fireEvent.click(screen.getByRole('menuitem', { name: '取消置顶' }));
+    await waitFor(() => expect(mockSetSessionPinned).toHaveBeenCalledWith('session-1', false));
+  });
+
+  it('renders pinned conversations in a separate top group', async () => {
+    mockStoreState.sessions = [
+      {
+        session_id: 'session-pinned',
+        title: '长期跟踪的茅台',
+        message_count: 6,
+        created_at: '2026-01-02T09:00:00Z',
+        last_active: '2026-01-02T09:05:00Z',
+        is_pinned: true,
+      },
+      {
+        session_id: 'session-1',
+        title: '请简要分析 600519',
+        message_count: 2,
+        created_at: new Date().toISOString(),
+        last_active: new Date().toISOString(),
+        is_pinned: false,
+      },
+    ];
+
+    render(<MemoryRouter initialEntries={['/chat']}><ChatPage /></MemoryRouter>);
+
+    expect(await screen.findByText('长期跟踪的茅台')).toBeInTheDocument();
+    const groupLabels = Array.from(document.querySelectorAll('.chat-session-group-label'))
+      .map((element) => element.textContent);
+    expect(groupLabels).toEqual(['置顶', '今天']);
+    expect(document.querySelectorAll('.chat-session-pin')).toHaveLength(1);
   });
 
   it('finishes the compatibility check when React Strict Mode remounts effects', async () => {

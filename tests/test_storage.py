@@ -6,6 +6,7 @@ import shutil
 import sqlite3
 import tempfile
 import threading
+import time
 from datetime import date
 from unittest.mock import patch
 
@@ -908,6 +909,52 @@ class TestStorage(unittest.TestCase):
         )
 
         self.assertEqual({item["session_id"] for item in sessions}, {"feishu_u1", "feishu_u1:ask_600519"})
+
+        DatabaseManager.reset_instance()
+
+    def test_pinned_chat_sessions_sort_first_and_survive_the_limit(self):
+        DatabaseManager.reset_instance()
+        db = DatabaseManager(db_url="sqlite:///:memory:")
+
+        db.save_conversation_message("chat-older", "user", "older question")
+        time.sleep(0.01)
+        db.save_conversation_message("chat-newer", "user", "newer question")
+
+        self.assertTrue(db.set_conversation_session_pinned("chat-older", True))
+
+        sessions = db.get_chat_sessions()
+        self.assertEqual([item["session_id"] for item in sessions], ["chat-older", "chat-newer"])
+        self.assertTrue(sessions[0]["is_pinned"])
+        self.assertFalse(sessions[1]["is_pinned"])
+
+        # A pinned session older than the limit window must still be listed.
+        self.assertEqual(
+            [item["session_id"] for item in db.get_chat_sessions(limit=1)],
+            ["chat-older"],
+        )
+
+        self.assertTrue(db.set_conversation_session_pinned("chat-older", False))
+        sessions = db.get_chat_sessions()
+        self.assertEqual([item["session_id"] for item in sessions], ["chat-newer", "chat-older"])
+        self.assertFalse(any(item["is_pinned"] for item in sessions))
+
+        # Sessions without messages cannot be pinned.
+        self.assertFalse(db.set_conversation_session_pinned("chat-missing", True))
+
+        DatabaseManager.reset_instance()
+
+    def test_deleting_a_chat_session_clears_its_pin(self):
+        DatabaseManager.reset_instance()
+        db = DatabaseManager(db_url="sqlite:///:memory:")
+
+        db.save_conversation_message("chat-pinned", "user", "pin me")
+        self.assertTrue(db.set_conversation_session_pinned("chat-pinned", True))
+        self.assertEqual(db.delete_conversation_session("chat-pinned"), 1)
+
+        db.save_conversation_message("chat-pinned", "user", "recreated session")
+        sessions = db.get_chat_sessions()
+        self.assertEqual([item["session_id"] for item in sessions], ["chat-pinned"])
+        self.assertFalse(sessions[0]["is_pinned"])
 
         DatabaseManager.reset_instance()
 

@@ -8,6 +8,7 @@ and this project adheres to [Semantic Versioning](https://semver.org/).
 > For user-friendly release highlights, see the [GitHub Releases](https://github.com/ZhuLinsen/daily_stock_analysis/releases) page.
 
 ## [Unreleased]
+- [新功能] 问股对话列表支持置顶：会话菜单新增「置顶对话 / 取消置顶」，置顶会话在列表顶部独立成组并持久化到新表 `conversation_session_pins`；`GET /api/v1/agent/chat/sessions` 新增 `is_pinned`，新增 `PUT /api/v1/agent/chat/sessions/{session_id}/pin`；置顶排序在 SQL 层先于 `limit` 截断执行，删除会话同步清理置顶记录，失败时前端回滚乐观更新并提示。详见 [开发任务书](tasks/chat-session-pin.md)。
 - [新功能] 数据中心数据源运行时探测：对 YFinance、Finnhub、Alpha Vantage、efinance、AkShare、Tencent、Baostock 等按次调用数据源，后台默认每 30 分钟发一次最小请求并把 `ok` / `unavailable`、检测时间、脱敏错误摘要写入进程内缓存；真实业务调用成功或失败也会更新同一份缓存，近期有真实调用时不重复探测。页面只读缓存，打开时不发外部请求；缓存超过 2 个探测周期回到 `unknown` 并标记 `probe_stale`。Alpha Vantage 探测只使用 Key 池主 Key，并计入扫描器 `alphavantage-quota.json` 与日常分析 Key 池，24 小时额度不足时保持 `ok` 并标记 `quota_limited`。新增 `DATA_PROVIDER_PROBE_INTERVAL_MINUTES`（默认 30，0 关闭）。
 - [修复] 扫描器财报校验复用 Finnhub 多 Key 池：`FINNHUB_API_KEY=key_a,key_b` 时按 Key 池顺序发起财报日历请求，鉴权失败、配额用尽或限流（401/403/429）切换下一个 Key，网络错误不切换；单个 Key 与未配置时的行为不变，日志不再输出 Key 片段。
 - [改进] 美股数据源 Finnhub / AlphaVantage 支持多 Key：`FINNHUB_API_KEY` / `ALPHAVANTAGE_API_KEY` 可用英文逗号分隔多个账号 Key，鉴权失败、配额用尽或限流时在同一次请求内自动切换到下一个 Key，连续失败的 Key 冷却 5 分钟后恢复；请求错误日志改为不含 Key 的 URL 摘要。

@@ -8,6 +8,8 @@ import {
   MoreHorizontal,
   PanelLeftOpen,
   Pencil,
+  Pin,
+  PinOff,
   Send,
   Trash2,
   X,
@@ -94,10 +96,11 @@ type SessionListItem = {
   message_count: number;
   created_at: string | null;
   last_active: string | null;
+  is_pinned: boolean;
 };
 
 type SessionBucket = {
-  key: 'today' | 'yesterday' | 'earlier';
+  key: 'pinned' | 'today' | 'yesterday' | 'earlier';
   label: string;
   items: SessionListItem[];
 };
@@ -108,7 +111,7 @@ type SessionMenuOrigin = 'sidebar' | 'header';
 
 const groupSessionsByDate = (
   sessions: SessionListItem[],
-  labels: { today: string; yesterday: string; earlier: string },
+  labels: { pinned: string; today: string; yesterday: string; earlier: string },
 ): SessionBucket[] => {
   const startOfToday = new Date();
   startOfToday.setHours(0, 0, 0, 0);
@@ -116,19 +119,26 @@ const groupSessionsByDate = (
   const yesterdayTimestamp = todayTimestamp - 24 * 60 * 60 * 1000;
 
   const buckets: SessionBucket[] = [
+    { key: 'pinned', label: labels.pinned, items: [] },
     { key: 'today', label: labels.today, items: [] },
     { key: 'yesterday', label: labels.yesterday, items: [] },
     { key: 'earlier', label: labels.earlier, items: [] },
   ];
 
   sessions.forEach((session) => {
+    // Pinned conversations keep their own top group and never fall into the
+    // date buckets, even when their last activity is months old.
+    if (session.is_pinned) {
+      buckets[0].items.push(session);
+      return;
+    }
     const rawTimestamp = session.last_active || session.created_at;
     const timestamp = rawTimestamp ? new Date(rawTimestamp).getTime() : 0;
     const bucket = timestamp >= todayTimestamp
-      ? buckets[0]
+      ? buckets[1]
       : timestamp >= yesterdayTimestamp
-        ? buckets[1]
-        : buckets[2];
+        ? buckets[2]
+        : buckets[3];
     bucket.items.push(session);
   });
 
@@ -335,6 +345,7 @@ const ChatPage: React.FC = () => {
     cancelIntake,
     setSelectedSkillIds,
     loadSessions,
+    setSessionPinned,
     loadInitialSession,
     switchSession,
     refreshSession,
@@ -367,6 +378,7 @@ const ChatPage: React.FC = () => {
     cancelIntake: state.cancelIntake,
     setSelectedSkillIds: state.setSelectedSkillIds,
     loadSessions: state.loadSessions,
+    setSessionPinned: state.setSessionPinned,
     loadInitialSession: state.loadInitialSession,
     switchSession: state.switchSession,
     refreshSession: state.refreshSession,
@@ -406,6 +418,7 @@ const ChatPage: React.FC = () => {
 
   const sessionGroups = useMemo(
     () => groupSessionsByDate(sessions, {
+      pinned: t('chat.groupPinned'),
       today: t('chat.groupToday'),
       yesterday: t('chat.groupYesterday'),
       earlier: t('chat.groupEarlier'),
@@ -1107,6 +1120,16 @@ const ChatPage: React.FC = () => {
     }, durationMs);
   }, []);
 
+  const handleToggleSessionPin = useCallback(async (session: SessionListItem, pinned: boolean) => {
+    setSessionMenu(null);
+    try {
+      await setSessionPinned(session.session_id, pinned);
+    } catch {
+      // The optimistic list is already rolled back; tell the user why.
+      showSendFeedback({ type: 'error', message: t('chat.pinSaveFailed') }, 4000);
+    }
+  }, [setSessionPinned, showSendFeedback, t]);
+
   const toggleCategory = useCallback((msgId: string, category: string) => {
     const key = `${msgId}:${category}`;
     setExpandedCategories((prev) => {
@@ -1246,6 +1269,17 @@ const ChatPage: React.FC = () => {
             aria-label={t('chat.moreActions')}
             style={{ top: sessionMenu.top, left: sessionMenu.left }}
           >
+            <button
+              type="button"
+              role="menuitem"
+              className="chat-session-menu-item"
+              onClick={() => { void handleToggleSessionPin(sessionMenuTarget, !sessionMenuTarget.is_pinned); }}
+            >
+              {sessionMenuTarget.is_pinned
+                ? <PinOff size={13} aria-hidden="true" />
+                : <Pin size={13} aria-hidden="true" />}
+              {t(sessionMenuTarget.is_pinned ? 'chat.unpinSession' : 'chat.pinSession')}
+            </button>
             <button
               type="button"
               role="menuitem"

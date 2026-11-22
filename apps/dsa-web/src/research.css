@@ -694,6 +694,14 @@
   transition: background-color 150ms ease, color 150ms ease;
 }
 
+.chat-session-pin {
+  display: inline-flex;
+  flex: none;
+  align-items: center;
+  margin-inline-end: 6px;
+  color: var(--text-muted-text);
+}
+
 .chat-session-title {
   display: block;
   min-width: 0;

@@ -229,6 +229,7 @@ interface AgentChatActions {
   setCurrentRoute: (path: string) => void;
   clearCompletionBadge: () => void;
   loadSessions: () => Promise<void>;
+  setSessionPinned: (sessionId: string, pinned: boolean) => Promise<void>;
   loadInitialSession: () => Promise<void>;
   switchSession: (targetSessionId: string) => Promise<void>;
   refreshSession: () => Promise<void>;
@@ -599,6 +600,23 @@ export const useAgentChatStore = create<AgentChatState & AgentChatActions>((set,
     }
   },
 
+  setSessionPinned: async (targetSessionId, pinned) => {
+    const previous = get().sessions;
+    set({
+      sessions: previous.map((session) => (
+        session.session_id === targetSessionId ? { ...session, is_pinned: pinned } : session
+      )),
+    });
+    try {
+      await agentApi.pinChatSession(targetSessionId, pinned);
+      // The server owns pinned ordering, so re-read instead of sorting locally.
+      await get().loadSessions();
+    } catch (error) {
+      set({ sessions: previous });
+      throw error;
+    }
+  },
+
   loadInitialSession: async () => {
     const { hasInitialLoad, sessionEpoch, instanceBindingEpoch, activeRequestId, sessionId } = get();
     if (hasInitialLoad) return;
@@ -802,6 +820,7 @@ export const useAgentChatStore = create<AgentChatState & AgentChatActions>((set,
                     message_count: 1,
                     created_at: new Date().toISOString(),
                     last_active: new Date().toISOString(),
+                    is_pinned: false,
                   },
                   ...s.sessions,
                 ],
