@@ -21,7 +21,7 @@ DSA 左侧导航“信号扫描器”进入 `/scanner`。页面沿用 DSA 登录
 - `SCANNER_DAILY_MARKET`：默认 `false`。开启后运行增量行情采集；同时该配置会取消懒启动：服务启动即刻拉起含 market 的 worker 组，因为部署健康检查会在容器启动后核对 `signal_scanner.host_worker market` 进程；还需要已配置的数据源、证券池和合法凭据。
 - `SCANNER_ORIGIN`：可选浏览器 Origin。正常同源部署无需设置；开发代理或特殊反向代理应设置为实际浏览器地址。写请求需要合法 Origin 和会话对应的 CSRF token。
 - `SCANNER_LEGACY_HOST`：可选原扫描器域名，配合 `SCANNER_ORIGIN` 将旧网页跳转到统一入口；旧域名上的写请求明确拒绝，不转发旧密码。
-- `TIINGO_API_KEY` / `TIINGO_API_KEYS`、`ALPHAVANTAGE_API_KEYS`、已有 `FINNHUB_API_KEY`、`ALPACA_API_KEY` / `ALPACA_SECRET_KEY`：相应行情/事件适配器的凭据；密钥池使用 JSON 数组，仅在私有配置中设置。
+- `TIINGO_API_KEY` / `TIINGO_API_KEYS`、`ALPHAVANTAGE_API_KEYS`、已有 `FINNHUB_API_KEY`、`ALPACA_API_KEY` / `ALPACA_SECRET_KEY`：相应行情/事件适配器的凭据；密钥池使用 JSON 数组，仅在私有配置中设置。财报适配器与美股数据源共用 `FINNHUB_API_KEY`，该变量可用英文逗号分隔多个 Key（`FINNHUB_API_KEY=key_a,key_b`）；鉴权失败、配额用尽或限流（401/403/429）时同一次请求内切换到下一个 Key，网络错误不切换。
 - `SCANNER_WEBHOOK_URL`：可选外部通知地址；域内偏好默认 `external_channel=NONE`，迁移不会自动启用推送。
 - `SCANNER_BACKUP_KEEP_DAILY` / `SCANNER_BACKUP_KEEP_WEEKLY`：扫描器备份保留份数（默认 2 / 1），由扫描器 worker 进程读取，不在主设置页展示；修改后需重启 worker 生效。
 - `RULE_VALIDATION_WEB_ENABLED`：默认 `true`。

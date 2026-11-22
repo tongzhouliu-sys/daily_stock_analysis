@@ -35,6 +35,12 @@ from src.services.stock_list_parser import AnalysisTarget, ParseStatus, parse_an
 from .fundamental_adapter import AkshareFundamentalAdapter
 from .yfinance_fundamental_adapter import YfinanceFundamentalAdapter
 from .realtime_types import CircuitBreaker
+from .runtime_status_cache import (
+    is_quota_limited_error,
+    provider_token_for_fetcher,
+    record_runtime_result,
+    sanitize_error_summary,
+)
 
 # 配置日志
 logger = logging.getLogger(__name__)
@@ -601,11 +607,13 @@ class BaseFetcher(ABC):
             # Step 4: 计算技术指标
             df = self._calculate_indicators(df)
 
+            self._record_runtime_result(True)
             elapsed = time.time() - request_start
             logger.info('[%s] %s 获取成功: 范围=%s ~ %s, rows=%s, elapsed=%.2fs', self.name, stock_code, start_date, end_date, len(df), elapsed)
             return df
             
         except Exception as e:
+            self._record_runtime_result(False, e)
             elapsed = time.time() - request_start
             error_type, error_reason = summarize_exception(e)
             # 单一数据源失败仍可能由下一数据源兜底；全部失败时由 manager 记录 [数据源终止] ERROR
@@ -693,6 +701,37 @@ class BaseFetcher(ABC):
         except (TypeError, ValueError):
             return 0.0
         return random.uniform(low, high)
+
+    def _runtime_secrets(self) -> List[str]:
+        pool = getattr(self, "_key_pool", None)
+        keys = getattr(pool, "keys", None)
+        return [str(key) for key in keys] if isinstance(keys, list) else []
+
+    def _record_runtime_result(self, ok: bool, error: Any = None) -> None:
+        """Update the shared runtime-status cache from a real business call."""
+
+        provider = provider_token_for_fetcher(self)
+        if not provider:
+            return
+        if not ok and self._is_unsupported_runtime_failure(error):
+            return
+        quota_limited = (not ok) and is_quota_limited_error(error)
+        record_runtime_result(
+            provider,
+            ok=ok or quota_limited,
+            error=error,
+            quota_limited=quota_limited,
+            source="runtime",
+            secrets=self._runtime_secrets(),
+        )
+
+    @staticmethod
+    def _is_unsupported_runtime_failure(error: Any) -> bool:
+        text = sanitize_error_summary(error).lower()
+        return any(
+            marker in text
+            for marker in ("不支持", "unsupported", "not supported", "not support")
+        )
 
 
 class DataFetcherManager:
@@ -2969,6 +3008,9 @@ class DataFetcherManager:
                     latency_ms=int((time.time() - attempt_start) * 1000),
                     record_count=1,
                 )
+                recorder = getattr(fetcher, "_record_runtime_result", None)
+                if callable(recorder):
+                    recorder(True)
                 return q
             record_provider_run(
                 data_type="realtime_quote",
@@ -2991,6 +3033,9 @@ class DataFetcherManager:
                 error_type=error_type,
                 error_message=error_reason,
             )
+            recorder = getattr(fetcher, "_record_runtime_result", None)
+            if callable(recorder):
+                recorder(False, e)
             logger.debug('[实时行情] %s %s 获取失败: %s', stock_code, fetcher_name, e)
         return None
 
