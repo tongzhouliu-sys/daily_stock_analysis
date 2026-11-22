@@ -175,8 +175,13 @@ def _needs_translation(text: Any) -> bool:
     if value.lower() in _SINGLE_WORD_GLOSSARY:
         return True
     if len(words) == 1 and _CODE_LIKE_RE.match(value) and not value.endswith((".", "!", "?")):
-        # Indicator / enum values such as RSI, MACD, AAPL.
-        return False
+        # Uppercase abbreviations / tickers (RSI, MACD, AAPL, MA5) stay as-is;
+        # ordinary single words such as "Excellent" still need Chinese.
+        if re.fullmatch(r"[A-Z0-9]{2,8}", value):
+            return False
+        return True
+    if len(words) >= 2 and value.endswith((".", "!", "?")):
+        return True
     return True
 
 
@@ -240,6 +245,34 @@ def apply_overlay(raw_result: Dict[str, Any], overlay: Dict[str, str]) -> Dict[s
         except (KeyError, IndexError, TypeError):
             logger.warning("Skip invalid translation overlay path: %s", path)
     return result
+
+
+def markdown_needs_translation(markdown: str) -> bool:
+    """Return True when a Markdown body still contains non-Chinese prose."""
+    if not markdown or not markdown.strip():
+        return False
+    if _HANGUL_RE.search(markdown):
+        return True
+    for line in markdown.splitlines():
+        stripped = line.strip()
+        if stripped.startswith(("```", "    ")):
+            continue
+        if not _has_cjk(line) and stripped.startswith(("#", "|", "-", "*")) and _ASCII_WORD_RE.search(line):
+            return True
+        cleaned = _URL_RE.sub(" ", line)
+        words = _ASCII_WORD_RE.findall(cleaned)
+        if len(words) >= 2 and line.rstrip().endswith((".", "!", "?")):
+            return True
+        consecutive = 0
+        for word in words:
+            lowered = word.lower()
+            if len(word) <= 2 or lowered in _SINGLE_WORD_GLOSSARY:
+                consecutive = 0
+                continue
+            consecutive += 1
+            if consecutive >= 3:
+                return True
+    return False
 
 
 def source_hash_for_record(raw_result: Dict[str, Any], market_markdown: Optional[str] = None) -> str:

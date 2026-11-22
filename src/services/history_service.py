@@ -48,6 +48,7 @@ from src.services.report_translation_service import (
     ReportTranslationService,
     apply_overlay,
     collect_translatable_texts,
+    markdown_needs_translation,
     source_hash_for_record,
 )
 from src.services.run_diagnostics import build_run_diagnostic_summary
@@ -1076,12 +1077,29 @@ class HistoryService:
                 record_id=record_id
             ) from e
 
-    @staticmethod
-    def _record_report_language(record, raw_result: Dict[str, Any]) -> str:
-        candidate = raw_result.get("report_language")
-        if not candidate:
-            candidate = getattr(record, "report_language", None) or getattr(get_config(), "report_language", "zh")
-        return normalize_report_language(candidate)
+    @classmethod
+    def _record_report_language(cls, record, raw_result: Dict[str, Any]) -> str:
+        """Return the language that the record actually needs for HTML rendering.
+
+        Historical records may omit ``report_language`` while containing English
+        or Korean prose. Falling back to the global config in that case caused
+        legacy English records to be treated as Chinese and rendered as a mixed
+        page. Detect non-Chinese content first, then use the explicit language (if
+        any) only to choose between en/ko semantics.
+        """
+        explicit = raw_result.get("report_language") or getattr(record, "report_language", None)
+        normalized = normalize_report_language(explicit) if explicit else ""
+        market_markdown = None
+        if getattr(record, "report_type", None) == "market_review":
+            market_markdown = cls._extract_market_review_content(record, raw_result)
+        has_non_chinese = bool(collect_translatable_texts(raw_result)) or bool(
+            market_markdown and markdown_needs_translation(market_markdown)
+        )
+        if not has_non_chinese:
+            return "zh"
+        if normalized in ("en", "ko"):
+            return normalized
+        return "en"
 
     @staticmethod
     def _variant_kind_for_record(record) -> str:

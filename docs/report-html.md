@@ -47,7 +47,7 @@ POST /api/v1/history/{record_id}/report-zh-variant
 - 409：en/ko 记录尚未生成中文变体（`zh_variant_missing`），Web 端据此展示「生成中文版本」按钮并调用 POST 接口。
 - 413：报告超过 500,000 字符（独立上限，不沿用分享图的 `MARKDOWN_TO_IMAGE_MAX_CHARS`）。
 - 500 / 503：渲染失败或中文变体生成失败，返回通用错误体，响应不含异常细节。
-- 中文记录直接使用正常中文链路；en/ko 记录必须命中已就绪且 `source_hash` 一致的中文变体。
+- 中文记录直接使用正常中文链路；en/ko 记录必须命中已就绪且 `source_hash` 一致的中文变体。缺少 `report_language` 的历史记录按正文内容检测（英文/韩文/英文标题、表格、短句），不会回退成中英混排。
 - 下载文件名 `dsa-report-{id}.html`，ID 经字符白名单过滤，避免路径注入。
 - 鉴权与同 router 其他历史接口一致，不新增例外。
 

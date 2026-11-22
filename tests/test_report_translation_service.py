@@ -136,6 +136,22 @@ def test_collect_detects_korean_text():
     assert texts["analysis_summary"] == "모멘텀이 여전히 긍정적입니다."
 
 
+def test_collect_detects_ordinary_single_word_but_skips_tickers():
+    texts = collect_translatable_texts({
+        "dashboard.battle_plan.action_checklist": ["Excellent", "AAPL", "RSI"],
+    })
+    assert texts == {"dashboard.battle_plan.action_checklist[0]": "Excellent"}
+
+
+def test_markdown_detection_catches_headings_tables_and_short_sentences():
+    from src.services.report_translation_service import markdown_needs_translation
+
+    assert markdown_needs_translation("# Market Review\n\n| Index | Change |\n| --- | --- |")
+    assert markdown_needs_translation("Stocks rallied.")
+    assert not markdown_needs_translation("# 大盘复盘\n\n| 指数 | 涨跌 |\n| --- | --- |")
+    assert not markdown_needs_translation("核心结论：回调买入。")
+
+
 def test_parse_json_payload_accepts_fenced_json():
     from src.services.report_translation_service import _parse_json_payload
 

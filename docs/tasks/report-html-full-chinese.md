@@ -410,6 +410,7 @@ class ReportTranslationService:
 - Web 抽屉：409 → 「生成中文版本」按钮 → 生成完成后自动重载；`getParsedApiError` 通用分支保留错误码。
 - `scripts/backfill_report_zh_variants.py`：dry-run / apply / limit / since / record-id / force。
 - `scripts/check_html_chinese.py`：按文本节点扫描英文句子，白名单保留代码、指标、专名与 URL，接入 pytest。
+- 无 `report_language` 的历史记录按正文内容检测非中文（英文/韩文/英文标题、表格、短句），不再回退全局配置导致中英混排。
 - `REPORT_ZH_VARIANT_ENABLED`、`REPORT_ZH_VARIANT_ON_DEMAND`、`REPORT_ZH_VARIANT_TIMEOUT_SECONDS`、`REPORT_ZH_VARIANT_MAX_CHARS` 四个可选配置。
 - 单测覆盖：翻译字段选择、覆盖表、缓存、缺变体 409、中文记录直通、大盘复盘、Web 生成流程。
 

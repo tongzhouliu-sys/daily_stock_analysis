@@ -12,7 +12,7 @@
 | 目录 | 职责 | 文件数 | 行数 |
 | --- | --- | --- | --- |
 | `src/core/` | 主流程编排：pipeline、配置装配、调度入口 | 14 | 14411 |
-| `src/services/` | 业务服务层：分析、筛选、通知、系统配置、任务与诊断 | 218 | 86846 |
+| `src/services/` | 业务服务层：分析、筛选、通知、系统配置、任务与诊断 | 218 | 86897 |
 | `src/repositories/` | 数据访问层：数据库读写封装 | 14 | 4268 |
 | `src/schemas/` | API / 报告数据结构定义 | 10 | 2114 |
 | `src/agent/` | 问股 Agent：意图解析、编排、工具与流式事件 | 66 | 26920 |
@@ -24,7 +24,7 @@
 | `apps/dsa-desktop/` | Electron 桌面端壳与打包配置 | 8 | 8519 |
 | `scripts/` | 本地与 CI 脚本 | 54 | 10995 |
 | `.github/scripts/` | GitHub Actions 专用脚本 | 2 | 652 |
-| `tests/` | pytest 测试 | 400 | 195522 |
+| `tests/` | pytest 测试 | 400 | 195609 |
 
 ## 大文件（Python，≥400 行）
 
@@ -49,7 +49,7 @@
 | `main.py` | 2186 | `_get_active_env_path`:137, `_log_startup_auth_state`:144, `_resolve_web_service_bind`:151, `_read_active_env_values`:158, `_bootstrap_environment`:186, `_setup_bootstrap_logging`:210 | 14 |
 | `src/agent/web_intent_resolver.py` | 2176 | `_dedup_stocks`:218, `_stock_payload`:225, `_stock_from_payload`:229, `_payload_stocks`:239, `_group_payload`:243, `_group_codes`:255 | 30 |
 | `src/share_image.py` | 2067 | `Table`:146, `StockPoster`:153, `MarketPoster`:178, `MarketSegment`:202, `_plain`:207, `_clean_value`:217 | 10 |
-| `src/services/history_service.py` | 1858 | `MarkdownReportGenerationError`:84, `ReportChineseVariantMissing`:93, `HistoryService`:102 | 38 |
+| `src/services/history_service.py` | 1876 | `MarkdownReportGenerationError`:85, `ReportChineseVariantMissing`:94, `HistoryService`:103 | 38 |
 | `src/services/portfolio_service.py` | 1846 | `_portfolio_limitations_for_market`:52, `_merge_portfolio_limitations`:64, `PortfolioConflictError`:75, `PortfolioOversellError`:79, `_AvgState`:103, `_ResolvedPositionPrice`:109 | 30 |
 | `src/services/screening/hotspot.py` | 1741 | `HotspotSummary`:40, `HotspotStock`:69, `HotspotTopicResolution`:88, `TimelineEvent`:98, `HotspotRouteItem`:111, `HotspotDetail`:124 | 1 |
 | `src/services/run_diagnostics.py` | 1536 | `build_trace_id`:81, `sanitize_diagnostic_text`:86, `safe_diagnostic_key`:106, `sanitize_diagnostic_metadata`:112, `ProviderRun`:143, `LLMRun`:182 | 95 |
@@ -83,8 +83,8 @@
 
 ## 规模快照
 
-- Python 源码（不含测试）：520 个文件，237850 行
-- Python 测试：391 个文件，195132 行
+- Python 源码（不含测试）：520 个文件，237901 行
+- Python 测试：391 个文件，195219 行
 - 前端 TS/TSX：349 个文件，107162 行
 - ≥400 行的 Python 文件：161 个
 

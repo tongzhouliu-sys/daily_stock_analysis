@@ -118,6 +118,77 @@ class ReportChineseVariantTest(unittest.TestCase):
         with self.assertRaises(ReportChineseVariantMissing):
             self.service.get_markdown_report_zh(str(record_id))
 
+    def _insert_legacy_record(self, query_id: str, raw_result: dict, *, report_type: str = "full", content: str = "news") -> int:
+        import json
+
+        with self.db.session_scope() as session:
+            row = AnalysisHistory(
+                query_id=query_id,
+                code=str(raw_result.get("code") or "MSFT"),
+                name=str(raw_result.get("name") or "Microsoft"),
+                report_type=report_type,
+                raw_result=json.dumps(raw_result, ensure_ascii=False),
+                news_content=content,
+            )
+            session.add(row)
+            session.flush()
+            return row.id
+
+    def test_legacy_english_record_without_report_language_is_detected(self):
+        record_id = self._insert_legacy_record(
+            "query_legacy_en_no_lang",
+            {
+                "code": "MSFT",
+                "name": "Microsoft",
+                "analysis_summary": "Cloud growth remains strong.",
+                "dashboard": {"core_conclusion": {"one_sentence": "Buy on dips."}},
+            },
+        )
+        with self.assertRaises(ReportChineseVariantMissing):
+            self.service.get_markdown_report_zh(str(record_id))
+
+        translation = ReportTranslationService(
+            translator=lambda batch, _timeout: ({"dashboard.core_conclusion.one_sentence": "回调买入。"}, "fake", "fake")
+        )
+        ensured = self.service.ensure_chinese_variant(str(record_id), translation_service=translation)
+        self.assertEqual(ensured["status"], "ready")
+        markdown = self.service.get_markdown_report_zh(str(record_id))
+        self.assertIn("回调买入。", markdown)
+        self.assertNotIn("Buy on dips.", markdown)
+
+    def test_legacy_chinese_record_without_report_language_needs_no_variant(self):
+        record_id = self._insert_legacy_record(
+            "query_legacy_zh_no_lang",
+            {
+                "code": "600519",
+                "name": "贵州茅台",
+                "analysis_summary": "基本面稳健。",
+                "dashboard": {"core_conclusion": {"one_sentence": "回调买入。"}},
+            },
+        )
+        ensured = self.service.ensure_chinese_variant(str(record_id))
+        self.assertEqual(ensured["status"], "not_needed")
+        markdown = self.service.get_markdown_report_zh(str(record_id))
+        self.assertIn("回调买入。", markdown)
+
+    def test_legacy_market_review_without_report_language_is_detected(self):
+        english_markdown = "# Market Review\n\n## Index Performance\n\nStocks rallied."
+        record_id = self._insert_legacy_record(
+            "query_legacy_market_en_no_lang",
+            {"raw_response": english_markdown},
+            report_type="market_review",
+            content=english_markdown,
+        )
+        with self.assertRaises(ReportChineseVariantMissing):
+            self.service.get_markdown_report_zh(str(record_id))
+
+        translation = ReportTranslationService(
+            markdown_translator=lambda _text, _timeout: ("# 大盘复盘\n\n## 指数表现\n\n股票上涨。", "fake", "fake")
+        )
+        ensured = self.service.ensure_chinese_variant(str(record_id), translation_service=translation)
+        self.assertEqual(ensured["status"], "ready")
+        self.assertIn("大盘复盘", self.service.get_markdown_report_zh(str(record_id)))
+
     def test_translation_failure_is_persisted_and_reported(self):
         record_id = self._save_english_record("query_zh_variant_failed")
 
