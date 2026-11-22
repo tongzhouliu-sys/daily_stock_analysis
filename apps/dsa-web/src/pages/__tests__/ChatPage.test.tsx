@@ -924,10 +924,10 @@ describe('ChatPage', () => {
       </MemoryRouter>
     );
 
-    expect(await screen.findAllByText('风险 Agent failed')).toHaveLength(2);
+    const livePanel = await screen.findByTestId('chat-live-progress');
+    expect(livePanel).toHaveTextContent('risk');
 
     // The thinking block uses category tags; click the matching tag to expand it.
-    // The thinking block uses category tags; expand every relevant tag.
     screen.getAllByRole('button')
       .filter((button) => /分析步骤|Agent 协作|工具调用/.test(button.textContent || ''))
       .forEach((button) => fireEvent.click(button));
@@ -962,11 +962,11 @@ describe('ChatPage', () => {
       </MemoryRouter>
     );
 
-    expect(await screen.findAllByText('decision skipped: insufficient budget')).toHaveLength(1);
+    const livePanel = await screen.findByTestId('chat-live-progress');
+    expect(livePanel).toHaveTextContent('decision');
     expect(screen.queryByText('decision timed out')).not.toBeInTheDocument();
 
     // The thinking block uses category tags; click the matching tag to expand it.
-    // The thinking block uses category tags; expand every relevant tag.
     screen.getAllByRole('button')
       .filter((button) => /分析步骤|Agent 协作|工具调用/.test(button.textContent || ''))
       .forEach((button) => fireEvent.click(button));

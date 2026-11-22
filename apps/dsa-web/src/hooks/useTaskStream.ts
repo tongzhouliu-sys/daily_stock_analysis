@@ -70,6 +70,8 @@ export interface UseTaskStreamResult {
   reconnect: () => void;
   /** Disconnect manually */
   disconnect: () => void;
+  /** Server-reported heartbeat interval, used by silence watchdogs */
+  heartbeatIntervalMs: number;
 }
 
 type TaskStreamCallbacks = Pick<
@@ -94,13 +96,23 @@ type ParsedTaskStreamPayload = {
 type TaskStreamSubscriber = {
   callbacksRef: MutableRefObject<TaskStreamCallbacks>;
   setIsConnected: (value: boolean) => void;
+  setHeartbeatIntervalMs: (value: number) => void;
   autoReconnect: boolean;
   reconnectDelay: number;
 };
 
+/** Server sends a heartbeat every 30 s; the value arrives on `connected`. */
+const DEFAULT_HEARTBEAT_INTERVAL_MS = 30_000;
+/** Reconnect when no event (heartbeat included) arrived for this many intervals. */
+const SILENCE_INTERVAL_MULTIPLIER = 2.5;
+const WATCHDOG_TICK_MS = 5_000;
+
 let sharedEventSource: EventSource | null = null;
 let sharedReconnectTimeout: ReturnType<typeof setTimeout> | null = null;
+let sharedWatchdogTimer: ReturnType<typeof setInterval> | null = null;
 let sharedConnected = false;
+let sharedHeartbeatIntervalMs = DEFAULT_HEARTBEAT_INTERVAL_MS;
+let sharedLastActivityAt = 0;
 let nextSubscriberId = 1;
 const subscribers = new Map<number, TaskStreamSubscriber>();
 
@@ -131,11 +143,18 @@ const toTaskInfo = (data: Record<string, unknown>): TaskInfo => {
   if (typeof data.region === 'string' && data.region.trim()) {
     task.region = data.region;
   }
+  if (typeof data.stage === 'string' && data.stage.trim()) {
+    task.stage = data.stage as TaskInfo['stage'];
+  }
+  if (typeof data.progress_updated_at === 'string' && data.progress_updated_at.trim()) {
+    task.progressUpdatedAt = data.progress_updated_at;
+  }
 
   return task;
 };
 
 const parseEventData = (eventData: string): ParsedTaskStreamPayload | null => {
+  markStreamActivity();
   try {
     const data = JSON.parse(eventData);
     const task = toTaskInfo(data);
@@ -154,6 +173,42 @@ const notifyConnectionState = (connected: boolean) => {
   subscribers.forEach((subscriber) => subscriber.setIsConnected(connected));
 };
 
+const notifyHeartbeatInterval = () => {
+  subscribers.forEach((subscriber) => (
+    subscriber.setHeartbeatIntervalMs(sharedHeartbeatIntervalMs)
+  ));
+};
+
+/** Any server byte (business event or heartbeat) proves the stream is alive. */
+const markStreamActivity = () => {
+  sharedLastActivityAt = Date.now();
+};
+
+const stopSharedWatchdog = () => {
+  if (sharedWatchdogTimer !== null) {
+    clearInterval(sharedWatchdogTimer);
+    sharedWatchdogTimer = null;
+  }
+};
+
+const startSharedWatchdog = () => {
+  stopSharedWatchdog();
+  sharedWatchdogTimer = setInterval(() => {
+    if (!sharedEventSource || subscribers.size === 0) {
+      return;
+    }
+    const silenceLimit = sharedHeartbeatIntervalMs * SILENCE_INTERVAL_MULTIPLIER;
+    if (Date.now() - sharedLastActivityAt <= silenceLimit) {
+      return;
+    }
+    // A half-open connection never fires `onerror`; reconnect instead of
+    // leaving the panel frozen behind a dead socket (H7).
+    console.warn('[task-stream] no heartbeat for too long, reconnecting');
+    closeSharedConnection();
+    connectSharedStream();
+  }, WATCHDOG_TICK_MS);
+};
+
 const forEachSubscriber = (notify: (callbacks: TaskStreamCallbacks) => void) => {
   subscribers.forEach((subscriber) => notify(subscriber.callbacksRef.current));
 };
@@ -167,6 +222,7 @@ const clearSharedReconnect = () => {
 
 const closeSharedConnection = () => {
   clearSharedReconnect();
+  stopSharedWatchdog();
   if (sharedEventSource) {
     sharedEventSource.close();
     sharedEventSource = null;
@@ -204,8 +260,22 @@ function connectSharedStream() {
   const url = analysisApi.getTaskStreamUrl();
   const eventSource = new window.EventSource(url, { withCredentials: true });
   sharedEventSource = eventSource;
+  sharedLastActivityAt = Date.now();
+  startSharedWatchdog();
 
-  eventSource.addEventListener('connected', () => {
+  eventSource.addEventListener('connected', (e) => {
+    markStreamActivity();
+    try {
+      const payload = JSON.parse((e as MessageEvent<string>).data) as {
+        heartbeat_interval_s?: number;
+      };
+      if (typeof payload?.heartbeat_interval_s === 'number' && payload.heartbeat_interval_s > 0) {
+        sharedHeartbeatIntervalMs = payload.heartbeat_interval_s * 1000;
+        notifyHeartbeatInterval();
+      }
+    } catch {
+      // Legacy servers send a plain message; keep the default interval.
+    }
     notifyConnectionState(true);
     forEachSubscriber((callbacks) => callbacks.onConnected?.());
   });
@@ -265,10 +335,11 @@ function connectSharedStream() {
   });
 
   eventSource.addEventListener('heartbeat', () => {
-    // Optional place to record the latest heartbeat timestamp.
+    markStreamActivity();
   });
 
   eventSource.onerror = (error) => {
+    stopSharedWatchdog();
     notifyConnectionState(false);
     forEachSubscriber((callbacks) => callbacks.onError?.(error));
     if (sharedEventSource === eventSource) {
@@ -305,6 +376,9 @@ export function useTaskStream(options: UseTaskStreamOptions = {}): UseTaskStream
   } = options;
 
   const [isConnected, setIsConnected] = useState(false);
+  const [heartbeatIntervalMs, setHeartbeatIntervalMs] = useState(
+    DEFAULT_HEARTBEAT_INTERVAL_MS,
+  );
   const subscriberIdRef = useRef<number | null>(null);
   const connectTimerRef = useRef<number | null>(null);
 
@@ -362,6 +436,7 @@ export function useTaskStream(options: UseTaskStreamOptions = {}): UseTaskStream
       subscribers.set(subscriberId, {
         callbacksRef,
         setIsConnected,
+        setHeartbeatIntervalMs,
         autoReconnect,
         reconnectDelay,
       });
@@ -377,10 +452,12 @@ export function useTaskStream(options: UseTaskStreamOptions = {}): UseTaskStream
       subscribers.set(subscriberId, {
         callbacksRef,
         setIsConnected,
+        setHeartbeatIntervalMs,
         autoReconnect,
         reconnectDelay,
       });
       setIsConnected(sharedConnected);
+      setHeartbeatIntervalMs(sharedHeartbeatIntervalMs);
       connectTimerRef.current = window.setTimeout(() => {
         connectTimerRef.current = null;
         connectSharedStream();
@@ -400,6 +477,7 @@ export function useTaskStream(options: UseTaskStreamOptions = {}): UseTaskStream
     isConnected,
     reconnect,
     disconnect,
+    heartbeatIntervalMs,
   };
 }
 

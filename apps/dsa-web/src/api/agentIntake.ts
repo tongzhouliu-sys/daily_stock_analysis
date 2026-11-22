@@ -15,10 +15,37 @@ export type QuestionDimension =
   | 'research_focus'
   | 'reading_style';
 
+export interface ObjectIdentity {
+  stock_code: string;
+  stock_name?: string | null;
+  canonical_id: string;
+  asset_type: string;
+  market: string;
+  market_label: string;
+}
+
+export type ResolutionStatus = 'resolved' | 'ambiguous' | 'missing' | 'unsupported' | 'not_required';
+
+export interface ObjectResolution {
+  status: ResolutionStatus;
+  scope: string;
+  identity?: ObjectIdentity | null;
+  candidates: ObjectIdentity[];
+  recommended_option_id?: string | null;
+  reason?: string | null;
+}
+
+export interface IntakePlan {
+  auto_start: boolean;
+  blocking_reason?: string | null;
+  question_count: number;
+}
+
 export interface QuestionOption {
   id: string;
   label: string;
   is_unknown?: boolean;
+  identity?: ObjectIdentity | null;
 }
 
 export interface Question {
@@ -31,6 +58,10 @@ export interface Question {
   required?: boolean;
   depends_on?: string | null;
   max_selections?: number | null;
+  kind?: 'object_choice' | 'object_search' | 'scope_clarify' | 'info_confirm' | null;
+  recommended_option_id?: string | null;
+  allow_free_text?: boolean;
+  free_text_kind?: string | null;
 }
 
 export interface Answer {
@@ -49,6 +80,10 @@ export interface AnalysisBrief {
   focus_areas?: string[];
   reading_style?: string | null;
   unknown_fields?: string[];
+  object?: ObjectIdentity | null;
+  sources?: Record<string, string>;
+  evidence?: Record<string, string>;
+  auto_confirmed?: boolean;
 }
 
 export type IntakeStatus = 'pending' | 'confirmed' | 'skipped' | 'invalidated';
@@ -66,6 +101,12 @@ export interface IntakeDraft {
   status: IntakeStatus;
   created_at?: string | null;
   updated_at?: string | null;
+  /** v2: server-side object resolution. */
+  resolution?: ObjectResolution | null;
+  /** v2: background inferred from the question. */
+  brief_preview?: AnalysisBrief | null;
+  /** v2: whether the first run can start without confirmation. */
+  plan?: IntakePlan | null;
 }
 
 export interface IntentHints {
@@ -84,6 +125,8 @@ export interface IntakeCreateRequest {
   skills?: string[] | null;
   context?: Record<string, unknown> | null;
   intent_hints?: IntentHints | null;
+  /** 1 = guided intake, 2 = smart intake (resolve first, auto-start). */
+  interaction_version?: number;
 }
 
 export interface IntakeCreateResponse {
@@ -95,6 +138,9 @@ export interface IntakeCreateResponse {
   status: IntakeStatus;
   questions: Question[];
   answers: Answer[];
+  resolution?: ObjectResolution | null;
+  brief_preview?: AnalysisBrief | null;
+  plan?: IntakePlan | null;
 }
 
 export interface IntakeUpdateRequest {

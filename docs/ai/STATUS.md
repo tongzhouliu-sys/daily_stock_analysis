@@ -11,7 +11,9 @@
 | 通知统一分发 | 所有渠道走 `send_with_results()`，逐渠道隔离失败并写诊断 | `src/notification.py` |
 | 问股守卫规则层 | 规则判不出时直接放行，不再默认调模型分类 | `api/v1/endpoints/agent.py`（`_check_domain_guard`） |
 | 问股标的绑定 | 会话已有标的时，只有显式切换词、股票代码或「名称 + 提问谓语」（如「宁德时代怎么样」）才触发切换确认；仅提及其他名称按对比对象处理，不替换当前标的。口径已定（R9），由 `tests/test_agent_active_stock_integration.py::test_established_object_subject_question_contract` 固定 | `src/agent/chat_object_decision.py` |
-| 首问引导（intake） | 新会话首问生成 1–5 个受控选项；后端不支持时前端回退 legacy 提示 | `api/v1/endpoints/agent.py:1121` |
+| 首问引导（intake v2） | 新会话首问在创建草稿时用本地索引解析标的、推断背景；标的明确或不需要标的时直接开流，只有标的不明确才问一道带候选的题；旧页面仍可发 `interaction_version=1` | `api/v1/endpoints/agent.py` `/chat/intake`、`src/agent/object_resolution.py`、`src/agent/intake_questions.py` |
+| 首页运行反馈 | 主阅读区运行卡 + 任务面板：五阶段、当前步骤、已用时、取消；失败停留可重试，断线提示并加密轮询 | `apps/dsa-web/src/components/tasks/AnalysisRunCard.tsx`、`src/services/analysis_progress.py` |
+| 问股运行反馈 | 发送即上屏；进行中面板三阶段 + 步骤时间线 + 停止；心跳静默 3 个周期转入进度恢复 | `apps/dsa-web/src/components/chat/ChatLiveProgress.tsx`、`src/stores/agentChatStore.ts` |
 | 数据新鲜度标注 | 日线落后时报告写「截至 X（落后 N 个交易日）」并降级数据块 | `src/analyzer.py`、`src/core/pipeline.py` |
 | 分析任务取消 | `POST /api/v1/analysis/tasks/{task_id}/cancel`，排队即取消、运行中在进度检查点中止 | `api/v1/endpoints/analysis.py` |
 | 问股断开不取消 | 刷新/关页只断开 SSE，后台继续跑完；取消只认停止接口，断开后取消入口保留到执行体退出 | `api/v1/endpoints/agent.py`、`src/agent/cancellation.py` |
@@ -58,6 +60,7 @@
 | 本地 CLI 生成后端 | `codex_cli` / `claude_code_cli` / `opencode_cli` 标注 experimental | 按 Q3：不删、不再新增维护投入；故障按上游同步处理 |
 | 微信仪表盘图片渲染 | 依赖 Pillow 与中文字体，缺字体时降级文本 | 排障见 `docs/alerts.md`、`docs/FAQ.md` |
 | 前端双语文案 | 选股页与渠道编辑器已迁入 `uiText.ts`；扫描器整页、告警页、持仓页仍中英混排，`uiText.ts` 与 `report_language.py` 各维护一套 | 改文案时两边评估；新增页面文案只进 `uiText.ts`，旧页面按 T44 后续批次迁移 |
+| 首问 v1 兼容路径 | `interaction_version=1` 的旧 questionnaire（`select_questions` / `_confirmation_question`）与 v2 并存一个版本，供缓存页面回退 | 下一个版本评估移除 `create_intake` 旧路径与 `_confirmation_question` |
 | 测试治理 | 部分大测试文件数千行、跨层 mock | 新建 pipeline 测试统一用 `tests/support/pipeline_factory.make_pipeline()`；旧断言不再为现状拍照 |
 | 登录限流 | 限流计数保存在进程内字典：重启清零，多 worker/多副本各自计数 | 当前部署模型为单进程；扩容到多 worker 前需改为共享存储（SQLite/Redis），详见 `docs/DEPLOY.md` |
 

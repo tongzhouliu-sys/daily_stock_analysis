@@ -387,8 +387,11 @@ class IntakeCreateRequest(BaseModel):
     interaction_version: int = Field(
         default=1,
         ge=0,
-        le=1,
-        description="Interaction version: 0 = direct chat, 1 = intake flow",
+        le=2,
+        description=(
+            "Interaction version: 0 = direct chat, 1 = guided intake, "
+            "2 = smart intake (server-side resolution, auto-start)"
+        ),
     )
 
 

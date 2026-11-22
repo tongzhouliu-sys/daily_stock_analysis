@@ -716,12 +716,20 @@ class AgentExecutor:
         self.max_steps = max_steps
         self.timeout_seconds = timeout_seconds
 
-    def run(self, task: str, context: Optional[Dict[str, Any]] = None) -> AgentResult:
+    def run(
+        self,
+        task: str,
+        context: Optional[Dict[str, Any]] = None,
+        progress_callback: Optional[Callable[[Dict[str, Any]], None]] = None,
+    ) -> AgentResult:
         """Execute the agent loop for a given task.
 
         Args:
             task: The user task / analysis request.
             context: Optional context dict (e.g., {"stock_code": "600519"}).
+            progress_callback: Optional progress-event sink. Pipeline callers
+                use it to bridge tool/stage events into task progress; Bot and
+                CLI callers leave it unset.
 
         Returns:
             AgentResult with parsed dashboard or error.
@@ -759,7 +767,10 @@ class AgentExecutor:
             {"role": "user", "content": self._build_user_message(task, context)},
         ]
 
-        return self._run_loop(messages, tool_decls, parse_dashboard=True)
+        return self._run_loop(
+            messages, tool_decls, parse_dashboard=True,
+            progress_callback=progress_callback,
+        )
 
     def chat(self, message: str, session_id: str, progress_callback: Optional[Callable] = None, context: Optional[Dict[str, Any]] = None) -> AgentResult:
         """Execute the agent loop for a free-form chat message.

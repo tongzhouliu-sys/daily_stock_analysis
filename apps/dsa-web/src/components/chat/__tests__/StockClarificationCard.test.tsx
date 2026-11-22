@@ -53,13 +53,6 @@ const advance = (ms: number) => act(() => {
   vi.advanceTimersByTime(ms);
 });
 
-const resolveTarget = () => {
-  for (let step = 0; step < 4; step += 1) {
-    advance(400);
-  }
-  advance(300);
-};
-
 describe('StockClarificationCard', () => {
   beforeEach(() => {
     vi.useFakeTimers();
@@ -69,16 +62,12 @@ describe('StockClarificationCard', () => {
     vi.useRealTimers();
   });
 
-  it('resolves the target before showing the default reply timer', () => {
+  it('renders the resolved target immediately without a fake parsing phase', () => {
     renderCard();
 
-    expect(screen.getByText('先确认要分析的对象')).toBeInTheDocument();
-    expect(screen.queryByText(/默认回复/)).not.toBeInTheDocument();
-    expect(screen.getByRole('button', { name: /解析中/ })).toBeDisabled();
-
-    resolveTarget();
-
+    // The conclusion is already known server-side: no "resolving" delay.
     expect(screen.getByText('已锁定新的分析标的')).toBeInTheDocument();
+    expect(screen.queryByText(/解析中/)).not.toBeInTheDocument();
     expect(screen.getByText(new RegExp(`${STOCK_CLARIFICATION_AUTO_CONFIRM_SECONDS}s 后自动发送`)))
       .toBeInTheDocument();
     expect(screen.getAllByText('中芯国际').length).toBeGreaterThan(0);
@@ -88,7 +77,6 @@ describe('StockClarificationCard', () => {
   it('auto-confirms the recommended switch after the 10 second default reply', () => {
     const { onConfirm } = renderCard();
 
-    resolveTarget();
     expect(onConfirm).not.toHaveBeenCalled();
 
     for (let second = 0; second < 10; second += 1) {
@@ -119,7 +107,6 @@ describe('StockClarificationCard', () => {
       },
     });
 
-    resolveTarget();
     fireEvent.click(screen.getByRole('button', { name: '继续分析' }));
 
     expect(onConfirm).toHaveBeenCalledWith('keep', null);
@@ -136,7 +123,6 @@ describe('StockClarificationCard', () => {
       },
     });
 
-    resolveTarget();
     fireEvent.click(screen.getByRole('button', { name: /HK00981/ }));
 
     expect(onConfirm).toHaveBeenCalledWith('switch', smicHk);
@@ -145,7 +131,6 @@ describe('StockClarificationCard', () => {
   it('pauses the default reply when the user asks to type a code', () => {
     const { onConfirm, onRequestInput } = renderCard();
 
-    resolveTarget();
     fireEvent.click(screen.getByRole('button', { name: '输入股票代码' }));
     expect(onRequestInput).toHaveBeenCalledTimes(1);
 

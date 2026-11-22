@@ -91,6 +91,8 @@ export interface StockPoolState {
   stockHistoryError: ParsedApiError | null;
   stockHistoryFilters: StockHistoryFilters;
   activeTasks: TaskInfo[];
+  /** Task the home run card follows: the most recent submission. */
+  focusedTaskId: string | null;
   markdownDrawerOpen: boolean;
   stockBarItems: StockBarItem[];
   isLoadingStockBar: boolean;
@@ -118,7 +120,7 @@ export interface StockPoolState {
   toggleMarketReviewHistorySelection: (recordId: number) => void;
   toggleSelectAllVisibleMarketReviewHistory: () => void;
   deleteSelectedMarketReviewHistory: () => Promise<void>;
-  submitAnalysis: (options?: SubmitAnalysisOptions) => Promise<void>;
+  submitAnalysis: (options?: SubmitAnalysisOptions) => Promise<string | null>;
   setNotify: (notify: boolean) => void;
   syncTaskCreated: (task: TaskInfo) => void;
   syncTaskUpdated: (task: TaskInfo) => void;
@@ -126,6 +128,9 @@ export interface StockPoolState {
   refreshActiveTasks: () => Promise<void>;
   cancelTask: (taskId: string) => Promise<void>;
   removeTask: (taskId: string) => void;
+  /** Retire a failed/completed task from the panel without dropping its record. */
+  dismissTask: (taskId: string) => void;
+  setFocusedTaskId: (taskId: string | null) => void;
   resetDashboardState: () => void;
   loadStockBar: () => Promise<void>;
   refreshStockBar: (silent?: boolean) => Promise<void>;
@@ -169,6 +174,7 @@ const initialState = {
     sort: 'desc' as const,
   },
   activeTasks: [] as TaskInfo[],
+  focusedTaskId: null as string | null,
   markdownDrawerOpen: false,
   stockBarItems: [] as StockBarItem[],
   isLoadingStockBar: false,
@@ -903,12 +909,12 @@ export const useStockPoolStore = create<StockPoolState>((set, get) => ({
 
     if (!stockCodeInput) {
       set({ inputError: '请输入股票代码', duplicateError: null });
-      return;
+      return null;
     }
 
     if (selectionSource !== 'autocomplete' && isObviouslyInvalidStockQuery(stockCodeInput)) {
       set({ inputError: '请输入有效的股票代码或股票名称', duplicateError: null });
-      return;
+      return null;
     }
 
     let normalizedStockCode = stockCodeInput;
@@ -916,7 +922,7 @@ export const useStockPoolStore = create<StockPoolState>((set, get) => ({
       const { valid, message, normalized } = validateStockCode(stockCodeInput);
       if (!valid) {
         set({ inputError: message, duplicateError: null });
-        return;
+        return null;
       }
       normalizedStockCode = normalized;
     }
@@ -930,7 +936,7 @@ export const useStockPoolStore = create<StockPoolState>((set, get) => ({
 
     const requestId = ++analyzeRequestSeq;
     try {
-      await analysisApi.analyzeAsync({
+      const response = await analysisApi.analyzeAsync({
         stockCode: normalizedStockCode,
         reportType: 'detailed',
         stockName,
@@ -943,26 +949,35 @@ export const useStockPoolStore = create<StockPoolState>((set, get) => ({
       });
 
       if (requestId !== analyzeRequestSeq) {
-        return;
+        return null;
       }
+
+      // The run card follows this task immediately; waiting for the SSE
+      // `task_created` event would leave a visible gap on slow connections.
+      const acceptedTaskId = 'accepted' in response
+        ? (response.accepted[0]?.taskId ?? null)
+        : (response.taskId ?? null);
 
       set({
         query: '',
         selectionSource: 'manual',
+        ...(acceptedTaskId ? { focusedTaskId: acceptedTaskId } : {}),
       });
+      return acceptedTaskId;
     } catch (error) {
       if (requestId !== analyzeRequestSeq) {
-        return;
+        return null;
       }
 
       if (error instanceof DuplicateTaskError) {
         set({
           duplicateError: `股票 ${error.stockCode} 正在分析中，请等待完成`,
         });
-        return;
+        return null;
       }
 
       set({ error: getParsedApiError(error) });
+      return null;
     } finally {
       if (requestId === analyzeRequestSeq) {
         set({ isAnalyzing: false });
@@ -1025,7 +1040,12 @@ export const useStockPoolStore = create<StockPoolState>((set, get) => ({
       const currentTasks = get().activeTasks;
       const nextTasks = currentTasks
         .filter((task) => !dismissedTaskIds.has(task.taskId))
-        .filter((task) => !canPruneLocalTasks || remoteTaskIds.has(task.taskId))
+        // A failed task stays until the user dismisses it: the run card and
+        // the panel are the only place to retry from, and the remote snapshot
+        // never lists terminal tasks (H8).
+        .filter((task) => task.status === 'failed'
+          || !canPruneLocalTasks
+          || remoteTaskIds.has(task.taskId))
         .map((task) => remoteTaskById.get(task.taskId) ?? task);
 
       const localTaskIds = new Set(nextTasks.map((task) => task.taskId));
@@ -1074,7 +1094,18 @@ export const useStockPoolStore = create<StockPoolState>((set, get) => ({
     if (nextTasks.length !== currentTasks.length) {
       activeTaskLocalRevision += 1;
     }
-    set({ activeTasks: nextTasks });
+    set({
+      activeTasks: nextTasks,
+      ...(get().focusedTaskId === taskId ? { focusedTaskId: null } : {}),
+    });
+  },
+
+  dismissTask: (taskId) => {
+    get().removeTask(taskId);
+  },
+
+  setFocusedTaskId: (taskId) => {
+    set({ focusedTaskId: taskId });
   },
 
   resetDashboardState: () => {

@@ -115,6 +115,39 @@ export const summarizeProgressSteps = (steps: ProgressStep[]): SummarizedProgres
   return collapsed;
 };
 
+export type ChatPhase = 'understanding' | 'analyzing' | 'generating';
+
+const BUSINESS_STEP_TYPES = new Set([
+  'stage_start',
+  'stage_done',
+  'tool_start',
+  'tool_done',
+  'thinking',
+]);
+
+/**
+ * Derive the chat phase from events. Phases only move forward, except an
+ * explicit `content_reset` (the model chose a tool after streaming text).
+ */
+export const deriveChatPhase = (steps: ProgressStep[]): ChatPhase => {
+  const order: ChatPhase[] = ['understanding', 'analyzing', 'generating'];
+  let index = 0;
+  steps.forEach((step) => {
+    if (step.type === 'content_reset') {
+      if (index === 2) index = 1;
+      return;
+    }
+    if (step.type === 'generating' || step.type === 'content_delta') {
+      index = 2;
+      return;
+    }
+    if (BUSINESS_STEP_TYPES.has(step.type) && index < 1) {
+      index = 1;
+    }
+  });
+  return order[index];
+};
+
 export const isStageDoneSuccessful = (status?: string): boolean => {
   if (!status) return true;
   const normalized = status.trim().toLowerCase();
@@ -131,54 +164,4 @@ export const getStageDoneLabel = (step: ProgressStep): string => {
 export const getPipelineBudgetSkippedLabel = (step: ProgressStep): string => {
   if (step.message) return step.message;
   return `${step.stage || 'pipeline'} skipped: insufficient budget`;
-};
-
-const STAGE_AGENT_NAMES: Record<string, [string, string]> = {
-  technical: ['技术分析 Agent', 'Technical agent'],
-  intel: ['情报 Agent', 'Intelligence agent'],
-  risk: ['风险 Agent', 'Risk agent'],
-  decision: ['决策 Agent', 'Decision agent'],
-  portfolio: ['组合 Agent', 'Portfolio agent'],
-  agent_loop: ['分析 Agent', 'Analysis agent'],
-  answer_editing: ['回答润色', 'Answer editing'],
-};
-
-/**
- * Human readable label for the newest progress step (T40).
- *
- * Extracted from `ChatPage.getCurrentStage` so both the page and the live
- * progress component share one implementation.
- */
-export const describeProgressStage = (
-  steps: ProgressStep[],
-  language: 'zh' | 'en',
-): string => {
-  if (steps.length === 0) return '正在连接...';
-  const last = steps[steps.length - 1];
-  if (last.type === 'thinking') return last.message || 'AI 正在思考...';
-  if (last.type === 'tool_start') return `${last.display_name || last.tool}...`;
-  if (last.type === 'tool_done') return `${last.display_name || last.tool} 完成`;
-  if (last.type === 'stage_start' || last.type === 'stage_done') {
-    const agent = STAGE_AGENT_NAMES[last.stage || '']?.[language === 'en' ? 1 : 0]
-      || last.stage
-      || 'Agent';
-    if (last.type === 'stage_start') {
-      return language === 'en' ? `${agent} is working` : `${agent} 正在分析`;
-    }
-    const success = isStageDoneSuccessful(last.status);
-    return language === 'en'
-      ? `${agent} ${success ? 'completed' : (last.status || 'finished')}`
-      : `${agent} ${success ? '已完成' : (last.status || '已结束')}`;
-  }
-  if (last.type === 'pipeline_timeout') {
-    return last.message || `${last.stage || 'pipeline'} timed out`;
-  }
-  if (last.type === 'pipeline_budget_skipped') return getPipelineBudgetSkippedLabel(last);
-  if (last.type === 'recovering') {
-    return language === 'en'
-      ? 'Analysis is still running in the background...'
-      : '后台任务仍在运行，正在等待最新进度...';
-  }
-  if (last.type === 'generating') return last.message || '正在生成最终分析...';
-  return '处理中...';
 };

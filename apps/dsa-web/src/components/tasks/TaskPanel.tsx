@@ -1,10 +1,12 @@
 import type React from 'react';
 import { useId, useState } from 'react';
-import { ChevronDown, RefreshCw, Workflow, XCircle } from 'lucide-react';
+import { ChevronDown, RefreshCw, RotateCcw, Workflow, X, XCircle } from 'lucide-react';
 import { Badge, Button, Card, StatusDot, Tooltip } from '../common';
 import { DashboardPanelHeader } from '../dashboard';
+import { ElapsedTime } from '../run-status';
 import type { TaskInfo } from '../../types/analysis';
 import { getRequestedPhaseLabel } from '../../utils/marketPhase';
+import { RUN_STAGE_LABEL_KEYS } from '../../utils/runStatus';
 import { useUiLanguage } from '../../contexts/UiLanguageContext';
 
 /**
@@ -12,14 +14,20 @@ import { useUiLanguage } from '../../contexts/UiLanguageContext';
  */
 interface TaskItemProps {
   task: TaskInfo;
+  /** How many queued tasks were created before this one. */
+  queuedPosition?: number;
   onOpenRunFlow?: (task: TaskInfo) => void;
   onCancelTask?: (taskId: string) => void;
+  onRetryTask?: (task: TaskInfo) => void;
+  onDismissTask?: (taskId: string) => void;
 }
 
 /**
  * 单个任务项
  */
-const TaskItem: React.FC<TaskItemProps> = ({ task, onOpenRunFlow, onCancelTask }) => {
+const TaskItem: React.FC<TaskItemProps> = ({
+  task, queuedPosition, onOpenRunFlow, onCancelTask, onRetryTask, onDismissTask,
+}) => {
   const { language, t } = useUiLanguage();
   const isPending = task.status === 'pending';
   const isProcessing = task.status === 'processing';
@@ -86,6 +94,47 @@ const TaskItem: React.FC<TaskItemProps> = ({ task, onOpenRunFlow, onCancelTask }
               </span>
             </Tooltip>
           ) : null}
+          {task.status === 'failed' && onRetryTask ? (
+            <Tooltip content={t('runCard.retry')}>
+              <span className="inline-flex">
+                <Button
+                  type="button"
+                  variant="ghost"
+                  size="xsm"
+                  className="h-8 w-8 px-0"
+                  data-testid="task-panel-retry"
+                  onClick={(event) => {
+                    event.stopPropagation();
+                    onRetryTask(task);
+                  }}
+                  aria-label={`${t('runCard.retry')} ${task.stockName || task.stockCode}`}
+                >
+                  <RotateCcw className="h-4 w-4" aria-hidden="true" />
+                </Button>
+              </span>
+            </Tooltip>
+          ) : null}
+          {(task.status === 'failed' || task.status === 'cancelled' || task.status === 'completed')
+            && onDismissTask ? (
+            <Tooltip content={t('runCard.close')}>
+              <span className="inline-flex">
+                <Button
+                  type="button"
+                  variant="ghost"
+                  size="xsm"
+                  className="h-8 w-8 px-0"
+                  data-testid="task-panel-dismiss"
+                  onClick={(event) => {
+                    event.stopPropagation();
+                    onDismissTask(task.taskId);
+                  }}
+                  aria-label={t('runCard.close')}
+                >
+                  <X className="h-4 w-4" aria-hidden="true" />
+                </Button>
+              </span>
+            </Tooltip>
+          ) : null}
           {onOpenRunFlow ? (
             <Tooltip content={t('taskPanel.openRunFlow')}>
               <span className="inline-flex">
@@ -122,6 +171,23 @@ const TaskItem: React.FC<TaskItemProps> = ({ task, onOpenRunFlow, onCancelTask }
         <p className="min-w-0 truncate text-xs text-secondary-text">
           {task.message}
         </p>
+      ) : null}
+
+      {isPending && (queuedPosition ?? 0) > 0 ? (
+        <p className="min-w-0 truncate text-xs text-muted-text" data-testid="task-panel-queue-position">
+          {t('runStatus.queuedPosition', { count: queuedPosition ?? 0 })}
+        </p>
+      ) : null}
+
+      {isProcessing && (task.stage || task.startedAt) ? (
+        <div className="flex min-w-0 flex-wrap items-center gap-x-2 gap-y-1 text-xs text-muted-text">
+          {task.stage && RUN_STAGE_LABEL_KEYS[task.stage as keyof typeof RUN_STAGE_LABEL_KEYS] ? (
+            <span className="truncate" data-testid="task-panel-stage">
+              {t(RUN_STAGE_LABEL_KEYS[task.stage as keyof typeof RUN_STAGE_LABEL_KEYS])}
+            </span>
+          ) : null}
+          <ElapsedTime startedAt={task.startedAt ?? task.createdAt} />
+        </div>
       ) : null}
 
       {requestedPhaseLabel ? (
@@ -184,6 +250,10 @@ interface TaskPanelProps {
   onOpenRunFlow?: (task: TaskInfo) => void;
   /** 取消排队中或运行中的任务 */
   onCancelTask?: (taskId: string) => void;
+  /** 失败任务重试 */
+  onRetryTask?: (task: TaskInfo) => void;
+  /** 关闭失败/已取消/已完成的任务项 */
+  onDismissTask?: (taskId: string) => void;
   /** 是否折叠 */
   collapsed?: boolean;
   /** 折叠状态变化 */
@@ -201,15 +271,21 @@ export const TaskPanel: React.FC<TaskPanelProps> = ({
   className = '',
   onOpenRunFlow,
   onCancelTask,
+  onRetryTask,
+  onDismissTask,
   collapsed,
   onCollapsedChange,
 }) => {
   const { t } = useUiLanguage();
   const contentId = useId();
   const [internalCollapsed, setInternalCollapsed] = useState(false);
-  // 筛选活跃任务（pending / processing / cancel requested）
+  // 活跃任务（pending / processing / cancel requested）。失败任务继续留在面板里，
+  // 直到用户点关闭或重试，否则失败原因和重试入口会一起消失。
   const activeTasks = tasks.filter(
-    (t) => t.status === 'pending' || t.status === 'processing' || t.status === 'cancel_requested'
+    (t) => t.status === 'pending'
+      || t.status === 'processing'
+      || t.status === 'cancel_requested'
+      || t.status === 'failed',
   );
   const isCollapsed = collapsed ?? internalCollapsed;
 
@@ -221,6 +297,13 @@ export const TaskPanel: React.FC<TaskPanelProps> = ({
   const pendingCount = activeTasks.filter((t) => t.status === 'pending').length;
   const processingCount = activeTasks.filter((t) => t.status === 'processing').length;
   const cancelRequestedCount = activeTasks.filter((t) => t.status === 'cancel_requested').length;
+  const failedCount = activeTasks.filter((t) => t.status === 'failed').length;
+  const queuedPositionById = new Map<string, number>();
+  activeTasks
+    .filter((t) => t.status === 'pending')
+    .slice()
+    .sort((left, right) => Date.parse(left.createdAt) - Date.parse(right.createdAt))
+    .forEach((task, index) => queuedPositionById.set(task.taskId, index));
   const averageProgress = processingCount > 0
     ? Math.round(
       activeTasks
@@ -304,6 +387,9 @@ export const TaskPanel: React.FC<TaskPanelProps> = ({
             {cancelRequestedCount > 0 ? (
               <span>{t('taskPanel.cancelRequestedTasks', { count: cancelRequestedCount })}</span>
             ) : null}
+            {failedCount > 0 ? (
+              <span>{t('runStatus.state.failed')} {failedCount}</span>
+            ) : null}
             {processingCount > 0 ? (
               <span>{t('taskPanel.averageProgress', { progress: averageProgress })}</span>
             ) : null}
@@ -316,8 +402,11 @@ export const TaskPanel: React.FC<TaskPanelProps> = ({
               <TaskItem
                 key={task.taskId}
                 task={task}
+                queuedPosition={queuedPositionById.get(task.taskId)}
                 onOpenRunFlow={onOpenRunFlow}
                 onCancelTask={onCancelTask}
+                onRetryTask={onRetryTask}
+                onDismissTask={onDismissTask}
               />
             ))}
           </div>

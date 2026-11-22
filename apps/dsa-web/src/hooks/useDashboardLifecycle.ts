@@ -21,6 +21,11 @@ type UseDashboardLifecycleOptions = {
   enabled?: boolean;
 };
 
+export interface UseDashboardLifecycleResult {
+  isConnected: boolean;
+  heartbeatIntervalMs: number;
+}
+
 export function useDashboardLifecycle({
   loadInitialHistory,
   refreshHistory,
@@ -38,7 +43,7 @@ export function useDashboardLifecycle({
   onCompletedTaskDataRefreshStarted,
   onCompletedTaskDataRefreshed,
   enabled = true,
-}: UseDashboardLifecycleOptions): void {
+}: UseDashboardLifecycleOptions): UseDashboardLifecycleResult {
   const removalTimeoutsRef = useRef<number[]>([]);
 
   useEffect(() => {
@@ -108,7 +113,7 @@ export function useDashboardLifecycle({
     removalTimeoutsRef.current.push(timeoutId);
   };
 
-  useTaskStream({
+  const taskStream = useTaskStream({
     onTaskCreated: syncTaskCreated,
     onTaskStarted: syncTaskUpdated,
     onTaskProgress: syncTaskUpdated,
@@ -130,8 +135,9 @@ export function useDashboardLifecycle({
       scheduleTaskRemoval(task.taskId, 2_000);
     },
     onTaskFailed: (task) => {
+      // Failures stay on screen: the run card and the panel are the only
+      // places to retry from, so a timed removal hides the reason (H8).
       syncTaskFailed(task);
-      scheduleTaskRemoval(task.taskId, 5_000);
     },
     onTaskCancelRequested: syncTaskUpdated,
     onTaskCancelled: (task) => {
@@ -143,6 +149,30 @@ export function useDashboardLifecycle({
     },
     enabled,
   });
+
+  // Tests and embedders may stub `useTaskStream`; treat a missing result as
+  // "connected" so behaviour only changes when the real hook reports a drop.
+  const streamConnected = taskStream?.isConnected ?? true;
+
+  // While the stream is down, the 30 s reconciliation loop is too slow to
+  // notice a finished task. Tighten it only while disconnected.
+  useEffect(() => {
+    if (!enabled || streamConnected) {
+      return;
+    }
+    const intervalId = window.setInterval(() => {
+      if (document.hidden) {
+        return;
+      }
+      void refreshActiveTasks();
+    }, 3_000);
+    return () => window.clearInterval(intervalId);
+  }, [enabled, refreshActiveTasks, streamConnected]);
+
+  return {
+    isConnected: streamConnected,
+    heartbeatIntervalMs: taskStream?.heartbeatIntervalMs ?? 30_000,
+  };
 }
 
 export default useDashboardLifecycle;

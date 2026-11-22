@@ -375,17 +375,22 @@ class AgentChatSessionService:
         self, config: Any, session_id: str, message: str,
         requested_skill_ids: Optional[List[str]] = None,
         *, context: Optional[Dict[str, Any]] = None, expected_generation: Optional[str] = None,
+        confirmed_object: Optional[Dict[str, Any]] = None,
     ) -> ResolvedChatTurn:
         generation = self.db.ensure_chat_session_generation(session_id, expected_generation=expected_generation)
         snapshot = self.db.read_chat_session_snapshot(session_id)
         if snapshot["session_generation"] != generation:
             raise ChatSessionStateConflict()
-        return self._resolve_session_turn(config, snapshot, message, requested_skill_ids, context=context)
+        return self._resolve_session_turn(
+            config, snapshot, message, requested_skill_ids,
+            context=context, confirmed_object=confirmed_object,
+        )
 
     def _resolve_session_turn(
         self, config: Any, snapshot: Dict[str, Any], message: str,
         requested_skill_ids: Optional[List[str]], *, context: Optional[Dict[str, Any]],
         allow_report_context: bool = True,
+        confirmed_object: Optional[Dict[str, Any]] = None,
     ) -> ResolvedChatTurn:
         skills = self.resolve_skill_selection(config, snapshot["session_id"], requested_skill_ids, snapshot=snapshot)
         registry, lookup = _stock_lookup()
@@ -399,8 +404,25 @@ class AgentChatSessionService:
         compare = decision.kind == "compare"
         confirm = False
         clarification = None
+        bound_from_intake = False
+        if confirmed_object and active is None and decision.kind in ("clarify", "maintain"):
+            # The intake card already resolved the object for this same first
+            # question. Bind it instead of asking the user a second time; the
+            # token is validated against the local index, never trusted raw.
+            try:
+                bound = _code_identity(
+                    str(confirmed_object.get("canonical_id")
+                        or confirmed_object.get("stock_code") or ""),
+                    registry, lookup,
+                )
+            except (ValueError, TypeError):
+                bound = None
+            if bound is not None:
+                active = _stock_record(bound, lookup, registry)
+                confirm = True
+                bound_from_intake = True
         preferred: Optional[StockIdentity] = None
-        if decision.kind == "clarify":
+        if decision.kind == "clarify" and not bound_from_intake:
             clarification = "请明确提供本次讨论的股票或指数代码，或确认是否切换。"
         elif decision.kind == "confirm":
             selected = decision.target.identity

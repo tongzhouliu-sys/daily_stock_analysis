@@ -348,6 +348,14 @@ class TaskStatus(BaseModel):
     )
     stock_name: Optional[str] = Field(None, description="股票名称")
     original_query: Optional[str] = Field(None, description="用户原始输入")
+    stage: Optional[str] = Field(
+        None,
+        description="当前分析阶段（queued/market_data/fundamentals/news/generating/finalizing）；后台任务不返回",
+    )
+    progress_updated_at: Optional[str] = Field(
+        None,
+        description="最近一次进度或文案变化的时间",
+    )
     selection_source: Optional[str] = Field(
         None,
         description="选择来源",
@@ -410,6 +418,14 @@ class TaskInfo(BaseModel):
     asset_type: Optional[Literal["stock", "index"]] = Field(
         None,
         description="parser 来源的可选资产类型（stock/index）；由已提交的 analysis_target 透传，旧客户端可缺省",
+    )
+    stage: Optional[str] = Field(
+        None,
+        description="当前分析阶段（queued/market_data/fundamentals/news/generating/finalizing）；后台任务不返回",
+    )
+    progress_updated_at: Optional[str] = Field(
+        None,
+        description="最近一次进度或文案变化的时间，用于前端判断当前步骤是否偏慢",
     )
     
     model_config = ConfigDict(json_schema_extra={

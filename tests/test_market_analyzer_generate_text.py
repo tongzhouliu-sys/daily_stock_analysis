@@ -2879,7 +2879,7 @@ class TestAnalyzerGenerateText:
         assert result.analysis_summary == "补全后结果"
         assert [progress for progress, _ in progress_updates] == [68, 93, 94, 95]
         assert "补全重试" in progress_updates[2][1]
-        assert "解析 JSON" in progress_updates[3][1]
+        assert "正在整理结果" in progress_updates[3][1]
 
     def test_analyze_integrity_retry_exception_falls_back_to_first_result(self):
         analyzer = self._make_analyzer()

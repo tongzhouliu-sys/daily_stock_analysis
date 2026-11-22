@@ -12,13 +12,17 @@ T1: Contract and question bank convergence.
 from __future__ import annotations
 
 import re
+import unicodedata
 from typing import Any, Dict, List, Optional, Set, Tuple
 
 from src.schemas.agent_intake import (
     AnalysisBrief,
     Answer,
+    BriefSource,
+    ObjectIdentity,
     Question,
     QuestionDimension,
+    QuestionKind,
     QuestionOption,
     QuestionType,
 )
@@ -162,105 +166,108 @@ QUESTION_BANK: Dict[str, Question] = {
 # Intent classification for question selection
 # ─────────────────────────────────────────────────────────────────────────────
 
-# Patterns for concept questions (no holding/risk needed)
+# Patterns for concept questions (no object needed)
 CONCEPT_PATTERNS = [
-    r"什么是", r"解释.*一下", r"什么叫", r"是什么意思",
-    r"如何理解", r"怎么理解", r"讲讲.*原理",
+    r"什么是", r"什么叫", r"是什么意思", r"如何理解", r"怎么理解",
     r"what\s+is", r"explain", r"how\s+to\s+understand",
 ]
 
 # Patterns for comparison questions
 COMPARISON_PATTERNS = [
     r"比较", r"对比", r"和.*哪个", r"vs", r"versus",
-    r"compare", r"versus", r"vs\.?",
+    r"compare", r"vs\.?",
 ]
 
-# Patterns indicating explicit object info
-OBJECT_EXPLICIT_PATTERNS = [
-    r"^(?:帮我)?(?:看看|分析|研究|诊断)\s+",
-    r"(?:aapl|msft|googl?|amzn|tsla|meta|nvda|nvo)",
-    r"(?:600519|300750|002594|688981|hk00700)",
-]
+# Objective codes/names are resolved by the local stock index
+# (``decide_chat_object``), never by a hard-coded ticker list here.
 
-# Patterns indicating explicit goal
-GOAL_PATTERNS = {
-    "worth_watching": [
-        r"值得.*关注", r"值得.*买", r"能不能.*买", r"可以.*买",
-        r"是否.*关注", r"有没有.*价值", r"值.*关注",
+# ─────────────────────────────────────────────────────────────────────────────
+# Preference inference
+#
+# Rules are deliberately high precision: an inferred value is written into the
+# analysis brief, so a false positive silently steers the answer. Every rule
+# below must be paired with a counter-example in the tests. The previous
+# implementation threw matches away (it only recorded "this dimension is
+# known"); v2 keeps the matched option AND the evidence span.
+# ─────────────────────────────────────────────────────────────────────────────
+
+_HOLDING_CONTEXT = r"(?:我|我的|手里|仓位|持仓|成本|已买|买入|持有)"
+_NEGATED_METHOD = r"(?:机器学习|深度学习|强化学习|学习机)"
+
+#: dim -> ordered rules. First match wins.
+#: (option_id, positive patterns, negative patterns)
+_PREFERENCE_RULES: Dict[str, List[Tuple[str, List[str], List[str]]]] = {
+    "goal": [
+        ("understand_move", [
+            r"(?:为什么|为何|怎么|啥原因|什么原因).{0,6}(?:涨|跌)",
+            r"(?:涨跌|波动).{0,6}(?:原因|解读)",
+        ], []),
+        ("evaluate_holding", [
+            _HOLDING_CONTEXT + r".{0,6}(?:持有|买入|已买|套|亏|赚|成本)",
+            r"(?:持仓|仓位).{0,6}(?:怎么|如何|处理|要不要)",
+        ], []),
+        ("worth_watching", [
+            r"(?:值得|值)\s*(?:关注|买|持有)",
+            r"(?:能不能|可以|该不该|要不要)\s*(?:买|入手|上车)",
+            r"有没有(?:投资)?价值",
+        ], []),
+        ("learn_method", [
+            r"(?:怎么|如何|教我?).{0,4}(?:分析|看盘|估值|选股|复盘)",
+            r"(?:分析|选股).{0,4}(?:方法|思路)",
+        ], [_NEGATED_METHOD]),
     ],
-    "evaluate_holding": [
-        r"持仓", r"持有", r"仓位", r"已买", r"已经.*买",
-        r"我.*有", r"手里.*有", r"成本.*是",
+    "horizon": [
+        ("days", [r"(?:短线|日内|做T|今明两天|这周内|本周内)"], []),
+        ("weeks", [r"(?:一两周|两三周|几周|1[–\-]?4\s*周|一个月内|月内)"], []),
+        ("months", [
+            r"(?:1[–\-]?6\s*个月|两三个月|三四个月|半年(?:内|左右)?|中期)",
+        ], []),
+        ("long", [r"(?:长期|长线|半年以上|一年以上|几年|数年|多年)"], []),
     ],
-    "understand_move": [
-        r"为什么.*涨", r"为什么.*跌", r"涨跌.*原因",
-        r"为何.*涨", r"为何.*跌", r"怎么.*涨", r"怎么.*跌",
-        r"啥原因", r"什么原因",
+    "position": [
+        ("held_protect_profit", [
+            r"(?:浮盈|盈利保护|保护(?:利润|盈利)|已经(?:赚|盈利)|持仓.{0,4}(?:赚|盈利))",
+        ], []),
+        ("held_control_drawdown", [
+            r"(?:被套|套牢|浮亏|持仓.{0,4}(?:亏|套)|持有.{0,4}(?:亏|套)|成本.{0,4}(?:高|套)|已经(?:亏|亏损))",
+        ], []),
+        ("not_held", [
+            r"(?:还没(?:买|入手)|没有(?:持仓|仓位)|空仓|准备(?:买|入手)|打算(?:买|入手)|想(?:买|入手))",
+        ], []),
     ],
-    "learn_method": [
-        r"怎么分析", r"分析方法", r"学习", r"如何分析",
-        r"教.*分析", r"分析.*方法", r"用什么.*方法",
+    "risk_focus": [
+        ("downside", [r"(?:控制(?:下行|回撤|风险)|稳健|保守)"], []),
+        ("balanced", [r"(?:均衡|机会.{0,4}风险|攻守平衡)"], []),
+        ("tolerant", [r"(?:愿意接受.{0,4}波动|能承受.{0,4}(?:波动|回撤)|激进|高风险高收益)"], []),
     ],
 }
 
-# Patterns indicating explicit horizon
-HORIZON_PATTERNS = {
-    "days": [
-        r"几天", r"短线", r"日内", r"数日", r"今天", r"明天",
-        r"这周", r"本周", r"下周", r"短期.*内",
-    ],
-    "weeks": [
-        r"几周", r"短期", r"1.*4.*周", r"一两周",
-        r"两三周", r"月内",
-    ],
-    "months": [
-        r"几个月", r"中期", r"1.*6.*月", r"半年",
-        r"两三个月", r"三四个月",
-    ],
-    "long": [
-        r"长期", r"半年以上", r"一年", r"数年", r"几年",
-        r"长线", r"一年以上", r"多年",
-    ],
-}
 
-# Patterns indicating explicit position
-POSITION_PATTERNS = {
-    "not_held": [
-        r"没有.*持仓", r"未.*持有", r"空仓", r"想.*买",
-        r"准备.*买", r"打算.*买", r"还没.*买", r"想.*入手",
-    ],
-    "held_protect_profit": [
-        r"持有.*盈利", r"持仓.*赚", r"保护.*利润", r"已经.*赚",
-        r"有.*利润", r"浮盈", r"盈利.*保护",
-    ],
-    "held_control_drawdown": [
-        r"持有.*亏", r"持仓.*套", r"控制.*回撤", r"已经.*亏",
-        r"被套", r"浮亏", r"亏损", r"套牢",
-    ],
-}
-
-# Patterns indicating explicit risk focus
-RISK_PATTERNS = {
-    "downside": [r"控制.*风险", r"下行.*风险", r"稳健"],
-    "balanced": [r"均衡", r"机会.*风险"],
-    "tolerant": [r"波动", r"激进", r"高风险.*高收益"],
-}
+def _first_rule_match(
+    text: str, rules: List[Tuple[str, List[str], List[str]]],
+) -> Optional[Tuple[str, str]]:
+    for option_id, positives, negatives in rules:
+        if any(re.search(pattern, text, re.IGNORECASE) for pattern in negatives):
+            continue
+        for pattern in positives:
+            match = re.search(pattern, text, re.IGNORECASE)
+            if match:
+                return option_id, match.group(0)
+    return None
 
 
 def classify_question_intent(message: str) -> Dict[str, Any]:
-    """Classify the user's question intent to determine which questions to ask.
+    """Classify a first question into its type and already-known preferences.
 
-    Returns a dict with:
-    - question_type: "research" | "concept" | "comparison"
-    - explicit_dims: set of dimensions already provided in the message
-    - inferred_dims: set of dimensions that can be inferred
+    Returns:
+        question_type: "research" | "concept" | "comparison"
+        explicit_dims: dimensions the message already answers
+        inferred: dimension -> (option_id, evidence span)
     """
-    text = message.strip().lower()
+    text = unicodedata.normalize("NFKC", message or "").strip()
 
-    # Determine question type
     is_concept = any(re.search(p, text, re.IGNORECASE) for p in CONCEPT_PATTERNS)
     is_comparison = any(re.search(p, text, re.IGNORECASE) for p in COMPARISON_PATTERNS)
-
     if is_concept:
         question_type = "concept"
     elif is_comparison:
@@ -268,40 +275,18 @@ def classify_question_intent(message: str) -> Dict[str, Any]:
     else:
         question_type = "research"
 
-    # Detect explicit dimensions
-    explicit_dims: Set[str] = set()
+    inferred: Dict[str, Tuple[str, str]] = {}
+    for dimension, rules in _PREFERENCE_RULES.items():
+        match = _first_rule_match(text, rules)
+        if match is not None:
+            inferred[dimension] = match
 
-    # Object detection
-    if any(re.search(p, text, re.IGNORECASE) for p in OBJECT_EXPLICIT_PATTERNS):
-        explicit_dims.add("object")
-
-    # Goal detection
-    for goal_id, patterns in GOAL_PATTERNS.items():
-        if any(re.search(p, text, re.IGNORECASE) for p in patterns):
-            explicit_dims.add("goal")
-            break
-
-    # Horizon detection
-    for horizon_id, patterns in HORIZON_PATTERNS.items():
-        if any(re.search(p, text, re.IGNORECASE) for p in patterns):
-            explicit_dims.add("horizon")
-            break
-
-    # Position detection
-    for position_id, patterns in POSITION_PATTERNS.items():
-        if any(re.search(p, text, re.IGNORECASE) for p in patterns):
-            explicit_dims.add("position")
-            break
-
-    # Risk detection
-    for risk_id, patterns in RISK_PATTERNS.items():
-        if any(re.search(p, text, re.IGNORECASE) for p in patterns):
-            explicit_dims.add("risk_focus")
-            break
+    explicit_dims: Set[str] = set(inferred)
 
     return {
         "question_type": question_type,
         "explicit_dims": explicit_dims,
+        "inferred": inferred,
     }
 
 
@@ -458,6 +443,13 @@ def validate_answers(
         if q is None:
             return False, f"Unknown question_id: {answer.question_id}"
 
+        # The object question accepts a searched stock outside the candidate
+        # list; the service validates it against the local index instead.
+        if q.id == "object" and q.allow_free_text:
+            if len(answer.option_ids) != 1:
+                return False, "'object' accepts exactly one selection"
+            continue
+
         # Check option_ids are valid
         valid_option_ids = {opt.id for opt in q.options}
         for opt_id in answer.option_ids:
@@ -521,11 +513,105 @@ def describe_analysis_brief(brief: AnalysisBrief, language: str = "zh") -> str:
         else:
             option_labels = {opt.id: opt.label for opt in QUESTION_BANK[dimension].options}
             rendered = "、".join(option_labels.get(item, item) for item in raw)
+        source = (brief.sources or {}).get(dimension)
+        if source in (BriefSource.EXPLICIT_MESSAGE, BriefSource.SYSTEM_INFERRED):
+            rendered += (
+                " (inferred from the question; the user's wording wins)"
+                if english
+                else "（根据提问推断，以用户原话为准）"
+            )
         lines.append(f"- {labels[dimension]}: {rendered}")
     return "\n".join(lines)
 
 
+def _object_question(resolution: Dict[str, Any]) -> Question:
+    """The only blocking question: which object should be analysed."""
+    candidates = list(resolution.get("candidates") or [])
+    recommended = resolution.get("recommended") or None
+    options = [
+        QuestionOption(
+            id=item["canonical_id"],
+            label=item.get("stock_name") or item["stock_code"],
+            identity=ObjectIdentity.model_validate(item),
+        )
+        for item in candidates
+    ]
+    return Question(
+        id="object",
+        dimension=QuestionDimension.OBJECT,
+        type=QuestionType.SINGLE,
+        title="\u4f60\u60f3\u5206\u6790\u54ea\u4e00\u53ea\uff1f" if candidates else "\u6ca1\u80fd\u786e\u5b9a\u4f60\u60f3\u5206\u6790\u7684\u80a1\u7968",
+        help="\u4ece\u5019\u9009\u91cc\u9009\u4e00\u4e2a\uff0c\u6216\u76f4\u63a5\u641c\u7d22\u4ee3\u7801\u3002" if candidates else "\u8f93\u5165\u80a1\u7968\u540d\u79f0\u6216\u4ee3\u7801\u3002",
+        required=True,
+        kind=QuestionKind.OBJECT_CHOICE,
+        options=options,
+        recommended_option_id=(
+            recommended["canonical_id"]
+            if recommended and any(item["canonical_id"] == recommended["canonical_id"] for item in candidates)
+            else None
+        ),
+        allow_free_text=True,
+        free_text_kind="stock_search",
+    )
+
+
+def build_smart_intake(
+    message: str,
+    resolution: Dict[str, Any],
+    inferred: Dict[str, Tuple[str, str]],
+) -> Dict[str, Any]:
+    """Build the v2 questionnaire, prefilled answers and brief.
+
+    Only the object blocks the first run. Preferences that were inferred from
+    the question are sent as pre-answered, non-blocking questions so the user
+    can see and adjust them, never as a quiz.
+    """
+    questions: List[Question] = []
+    answers: List[Answer] = []
+
+    blocking = resolution.get("status") in ("ambiguous", "missing")
+    if blocking:
+        questions.append(_object_question(resolution))
+
+    for dimension, (option_id, _evidence) in inferred.items():
+        bank_question = QUESTION_BANK.get(dimension)
+        if bank_question is None:
+            continue
+        if not any(option.id == option_id for option in bank_question.options):
+            continue
+        questions.append(bank_question)
+        answers.append(Answer(
+            question_id=dimension,
+            option_ids=[option_id],
+            source="explicit_message",
+        ))
+
+    brief = build_analysis_brief(questions, answers)
+    identity = resolution.get("identity")
+    if identity:
+        brief.object = ObjectIdentity.model_validate(identity)
+        brief.object_scope = identity.get("stock_code")
+        brief.sources["object"] = BriefSource.EXPLICIT_MESSAGE
+    for dimension, (_option_id, evidence) in inferred.items():
+        brief.sources[dimension] = BriefSource.EXPLICIT_MESSAGE
+        if evidence:
+            brief.evidence[dimension] = evidence
+
+    auto_start = resolution.get("status") in ("resolved", "not_required")
+    return {
+        "questions": questions,
+        "answers": answers,
+        "brief": brief,
+        "plan": {
+            "auto_start": auto_start,
+            "blocking_reason": None if auto_start else resolution.get("status"),
+            "question_count": len(questions),
+        },
+    }
+
+
 __all__ = [
+    "build_smart_intake",
     "MAX_QUESTIONS",
     "QUESTION_BANK",
     "classify_question_intent",

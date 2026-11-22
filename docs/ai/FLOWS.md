@@ -23,6 +23,8 @@ main.py::main → StockAnalysisPipeline.run → fetch_and_save_stock_data
 
 调度模式下（`--schedule`）第 3 步由调度器按 `SCHEDULE_TIME` 触发；保存调度配置只重建调度线程，不杀正在跑的分析。
 
+Web 触发异步分析时会话走 `AnalysisTaskQueue`：`TaskInfo.to_dict()` 输出 `stage`（`src/services/analysis_progress.py` 的阶段入口表）与 `progress_updated_at`，SSE `connected` 事件带 `heartbeat_interval_s`；首页 `AnalysisRunCard` 按这些字段渲染阶段条与「偏慢 / 久等 / 断线」状态，失败任务停留可重试。Agent 分析路径通过 `AgentExecutor.run(progress_callback=...)` 把每个工具完成事件桥接成任务进度。
+
 ## 2. 问股一次提问（Web / 桌面端）
 
 ```
@@ -37,10 +39,10 @@ ChatPage 发送 → POST /api/v1/agent/chat/stream (SSE)
 | 2. 请求 | `apps/dsa-web/src/api/agent.ts`（`/api/v1/agent/chat/stream`、`/chat/send`） | 流式入口用于进度展示；`/chat/send` 为非流式兼容入口 |
 | 3. 端点 | `api/v1/endpoints/agent.py:849 agent_chat_stream()` | SSE 事件类型：`thinking`、`stage_start`、`stage_done`、`tool_start`、`tool_done`、`generating`、`pipeline_timeout`、`pipeline_budget_skipped`、`done`、`error` |
 | 4. 请求准备 | `api/v1/endpoints/agent.py:261 _prepare_chat_request()` | 绑定/解析标的、加载会话、技能白名单 |
-| 5. 标的澄清 | `api/v1/endpoints/agent.py:309 _clarification_result()` | 名称歧义时先返回澄清卡片，不直接开始研究 |
-| 6. 引导首问 | `api/v1/endpoints/agent.py:1121 /chat/intake` | 新会话首问生成 1–5 个受控选项，用户确认后才真正开跑 |
+| 5. 标的澄清 | `api/v1/endpoints/agent.py:309 _clarification_result()` | 名称歧义时返回澄清卡片，不直接开始研究；卡片直接呈现结论，默认回复 10 秒后自动确认 |
+| 6. 引导首问（v2） | `api/v1/endpoints/agent.py` `/chat/intake`；`src/agent/object_resolution.py`、`src/agent/intake_questions.py` | 创建草稿时先用本地股票索引解析标的、从提问中推断目标 / 周期 / 持仓；标的明确或不需要标的时草稿创建即 `confirmed` 并直接开流（`plan.auto_start`），只有标的不明确才保留一道带候选与推荐的问题；本次请求接受的 brief 会把标的贯通到首轮，不再二次澄清 |
 | 7. 编排 | `src/agent/orchestrator.py:443 AgentOrchestrator.chat()` | 阶段推进、工具调用、预算控制；`progress_callback` 产出 SSE 事件 |
-| 8. 前端渲染 | `ChatLiveProgress`（进行中）、`ChatMessageItem`（历史消息）、`ChatThinkingBlock`（思考分组） | 消息项记忆化，打字不重渲染历史消息 |
+| 8. 前端渲染 | `ChatLiveProgress`（进行中）、`ChatUnderstandingCard` / `ChatUnderstandingStrip`（首问理解）、`ChatMessageItem`（历史消息）、`ChatThinkingBlock`（思考分组） | 消息项记忆化；发送即上屏乐观气泡；进行中面板展示三阶段、步骤时间线、已用时与停止；连续 3 个心跳周期无字节时转入进度恢复（不取消后台任务） |
 | 9. 落库 | `src/services/agent_chat_session_service.py` | 会话与消息分组保存；`/chat/sessions` 供侧栏读取 |
 
 ## 3. 配置保存（Web 设置页）
