@@ -5,6 +5,10 @@ import {
   getPipelineBudgetSkippedLabel,
   getStageDoneLabel,
   isStageDoneSuccessful,
+  isStageProgressStep,
+  isToolProgressStep,
+  summarizeProgressSteps,
+  type SummarizedProgressStep,
 } from '../../utils/chatProgress';
 
 interface ChatThinkingBlockProps {
@@ -121,6 +125,49 @@ function describeStep(step: ProgressStep): { text: string; statusClass: string; 
   return { text, statusClass, iconClass };
 }
 
+function summarizeCounts(items: SummarizedProgressStep[]): {
+  toolCalls: number;
+  stages: number;
+  issues: number;
+} {
+  let toolCalls = 0;
+  let stages = 0;
+  let issues = 0;
+  items.forEach(({ step, repeat }) => {
+    if (isToolProgressStep(step)) toolCalls += repeat;
+    if (isStageProgressStep(step)) stages += repeat;
+    if (
+      step.outcome === 'failed'
+      || step.outcome === 'timeout'
+      || step.type === 'pipeline_timeout'
+      || step.type === 'pipeline_budget_skipped'
+    ) {
+      issues += repeat;
+    }
+  });
+  return { toolCalls, stages, issues };
+}
+
+function buildSummaryText(
+  counts: { toolCalls: number; stages: number; issues: number },
+  language: 'zh' | 'en',
+): string {
+  const parts: string[] = [];
+  if (counts.toolCalls > 0) {
+    parts.push(language === 'en' ? `${counts.toolCalls} tool calls` : `${counts.toolCalls} 次工具调用`);
+  }
+  if (counts.stages > 0) {
+    parts.push(language === 'en' ? `${counts.stages} stages` : `${counts.stages} 个分析阶段`);
+  }
+  if (counts.issues > 0) {
+    parts.push(language === 'en'
+      ? `${counts.issues} issue${counts.issues > 1 ? 's' : ''}`
+      : `${counts.issues} 项异常`);
+  }
+  if (parts.length === 0) return language === 'en' ? 'No tool calls' : '无工具调用';
+  return parts.join(' · ');
+}
+
 /**
  * Memoized thinking/progress block (T40).
  *
@@ -137,30 +184,37 @@ function ChatThinkingBlock({
 }: ChatThinkingBlockProps) {
   if (!steps || steps.length === 0) return null;
 
-  const categoryMap = new Map<string, ProgressStep[]>();
+  // Merge start/done pairs, drop repetitive thinking chatter and collapse
+  // identical repeated rows so expanding a category reads as a short summary
+  // instead of the same sentence appearing several times.
+  const displaySteps = summarizeProgressSteps(steps);
+  const summaryText = buildSummaryText(summarizeCounts(displaySteps), language);
+
+  const categoryMap = new Map<string, SummarizedProgressStep[]>();
   const categoryOrder: string[] = [];
-  steps.forEach((step) => {
-    const category = categorizeStep(step);
+  displaySteps.forEach((item) => {
+    const category = categorizeStep(item.step);
     if (!categoryMap.has(category)) {
       categoryMap.set(category, []);
       categoryOrder.push(category);
     }
-    categoryMap.get(category)!.push(step);
+    categoryMap.get(category)!.push(item);
   });
 
   return (
     <div className="mb-3">
-      <div className="flex items-center gap-2 mb-2">
+      <div className="flex flex-wrap items-center gap-x-2 gap-y-1 mb-2">
         <span className="text-xs text-muted-text opacity-60">分析过程</span>
+        <span className="text-xs text-secondary-text opacity-70">{summaryText}</span>
       </div>
 
       {/* Category tags */}
       <div className="flex flex-wrap gap-1.5 mb-2">
         {categoryOrder.map((category) => {
-          const steps = categoryMap.get(category) || [];
+          const categorySteps = categoryMap.get(category) || [];
           const [zhLabel, enLabel] = CATEGORY_LABELS[category] || ['其他', 'Other'];
           const label = language === 'en' ? enLabel : zhLabel;
-          const count = steps.length;
+          const count = categorySteps.length;
           const isCategoryExpanded = expanded && expandedCategories.has(`${messageId}:${category}`);
 
           return (
@@ -191,12 +245,17 @@ function ChatThinkingBlock({
             const categorySteps = categoryMap.get(category) || [];
             return (
               <div key={category} className="pl-4 border-l-2 border-primary/30 space-y-1.5">
-                {categorySteps.map((step, idx) => {
-                  const { text, statusClass, iconClass } = describeStep(step);
+                {categorySteps.map((item, idx) => {
+                  const { text, statusClass, iconClass } = describeStep(item.step);
                   return (
                     <div key={idx} className={cn('chat-progress-item', statusClass)}>
                       <span className={cn('chat-progress-dot', iconClass)} />
-                      <span className="leading-relaxed">{text}</span>
+                      <span className="leading-relaxed">
+                        {text}
+                        {item.repeat > 1 && (
+                          <span className="ml-1 opacity-60">×{item.repeat}</span>
+                        )}
+                      </span>
                     </div>
                   );
                 })}

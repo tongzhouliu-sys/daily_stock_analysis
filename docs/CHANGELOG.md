@@ -9,6 +9,7 @@ and this project adheres to [Semantic Versioning](https://semver.org/).
 
 ## [Unreleased]
 - [新功能] 问股对话列表支持置顶：会话菜单新增「置顶对话 / 取消置顶」，置顶会话在列表顶部独立成组并持久化到新表 `conversation_session_pins`；`GET /api/v1/agent/chat/sessions` 新增 `is_pinned`，新增 `PUT /api/v1/agent/chat/sessions/{session_id}/pin`；置顶排序在 SQL 层先于 `limit` 截断执行，删除会话同步清理置顶记录，失败时前端回滚乐观更新并提示。详见 [开发任务书](tasks/chat-session-pin.md)。
+- [改进] 问股「分析过程」明细收敛重复内容：展开类别时按 `call_id` / `stage_id` 把 `tool_start` 与 `tool_done`、`stage_start` 与 `stage_done` 合并为一行，隐藏「…已完成，继续深入分析…」等重复思考提示，连续相同记录折叠为 `×N`，并在标题旁汇总「N 次工具调用 · M 个分析阶段 · K 项异常」；运行中的进度面板也不再同时展示已完成的 start/done 两行。
 - [新功能] 数据中心数据源运行时探测：对 YFinance、Finnhub、Alpha Vantage、efinance、AkShare、Tencent、Baostock 等按次调用数据源，后台默认每 30 分钟发一次最小请求并把 `ok` / `unavailable`、检测时间、脱敏错误摘要写入进程内缓存；真实业务调用成功或失败也会更新同一份缓存，近期有真实调用时不重复探测。页面只读缓存，打开时不发外部请求；缓存超过 2 个探测周期回到 `unknown` 并标记 `probe_stale`。Alpha Vantage 探测只使用 Key 池主 Key，并计入扫描器 `alphavantage-quota.json` 与日常分析 Key 池，24 小时额度不足时保持 `ok` 并标记 `quota_limited`。新增 `DATA_PROVIDER_PROBE_INTERVAL_MINUTES`（默认 30，0 关闭）。
 - [修复] 扫描器财报校验复用 Finnhub 多 Key 池：`FINNHUB_API_KEY=key_a,key_b` 时按 Key 池顺序发起财报日历请求，鉴权失败、配额用尽或限流（401/403/429）切换下一个 Key，网络错误不切换；单个 Key 与未配置时的行为不变，日志不再输出 Key 片段。
 - [改进] 美股数据源 Finnhub / AlphaVantage 支持多 Key：`FINNHUB_API_KEY` / `ALPHAVANTAGE_API_KEY` 可用英文逗号分隔多个账号 Key，鉴权失败、配额用尽或限流时在同一次请求内自动切换到下一个 Key，连续失败的 Key 冷却 5 分钟后恢复；请求错误日志改为不含 Key 的 URL 摘要。

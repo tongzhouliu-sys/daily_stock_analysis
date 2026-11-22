@@ -189,6 +189,13 @@ If a future backend event is not recognized, the UI keeps the event in the
 message progress history and renders a generic fallback instead of an empty
 progress row.
 
+The "分析过程" detail list is a display-layer summary, not a raw event dump:
+`tool_start`/`tool_done` and `stage_start`/`stage_done` are paired by
+`call_id`/`stage_id` into one row (paired starts are hidden, orphan starts are
+kept), repetitive `thinking` chatter is not rendered, identical consecutive
+rows collapse into a `×N` counter, and the header shows aggregate counts.
+The raw events stay persisted in `thinking_steps`; only the rendering changes.
+
 ## Runtime And Provider Scope
 
 This event contract does not change model routing or runtime configuration.
