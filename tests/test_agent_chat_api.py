@@ -445,6 +445,7 @@ def test_agent_status_exposes_only_compatibility_fields() -> None:
         "message": None,
         # Capability flag; the Web client uses it to decide guided intake.
         "guided_intake": True,
+        "smart_intake": True,
     }
 
 

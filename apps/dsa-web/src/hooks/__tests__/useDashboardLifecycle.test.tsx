@@ -230,7 +230,7 @@ describe('useDashboardLifecycle', () => {
     expect(syncTaskUpdated).toHaveBeenCalledWith(progressTask);
   });
 
-  it('reports failed tasks and removes them after the failure grace window', () => {
+  it('reports failed tasks and keeps them on screen until the user dismisses them', () => {
     const syncTaskFailed = vi.fn();
     const removeTask = vi.fn();
 
@@ -261,10 +261,11 @@ describe('useDashboardLifecycle', () => {
     expect(syncTaskFailed).toHaveBeenCalledWith(failedTask);
 
     act(() => {
-      vi.advanceTimersByTime(5_000);
+      vi.advanceTimersByTime(30_000);
     });
 
-    expect(removeTask).toHaveBeenCalledWith(failedTask.taskId);
+    // A failure is the only place to retry from: it must not auto-disappear.
+    expect(removeTask).not.toHaveBeenCalledWith(failedTask.taskId);
   });
 
   it('reconciles active tasks when the SSE stream connects', () => {

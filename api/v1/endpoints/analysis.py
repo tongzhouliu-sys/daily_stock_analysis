@@ -79,10 +79,16 @@ from src.utils.data_processing import (
     parse_json_field,
 )
 from src.utils.market_review_region import normalize_market_review_region_lenient
+from src.services.analysis_progress import progress_stage
 
 logger = logging.getLogger(__name__)
 
 router = APIRouter()
+
+#: Idle interval after which the task stream emits a heartbeat line. The Web
+#: client reads this value from the ``connected`` event instead of hard-coding
+#: it, so the silence watchdog and the server stay in sync.
+TASK_HEARTBEAT_INTERVAL_SECONDS = 30.0
 
 _SUPPORTED_FREE_TEXT_RE = re.compile(r"^[A-Za-z0-9.*\-+\u3400-\u9fff\s]+$")
 
@@ -123,10 +129,29 @@ def _task_asset_type(task: Any) -> Optional[str]:
     return None
 
 
+def _task_stage(task: Any) -> Optional[str]:
+    """Return the task's analysis stage only for stage-tracked stock tasks."""
+    if not getattr(task, "stage_tracked", True):
+        return None
+    progress = getattr(task, "progress", None)
+    if not isinstance(progress, int):
+        return None
+    return progress_stage(progress)
+
+
+def _task_progress_updated_at(task: Any) -> Optional[str]:
+    """Return the last progress timestamp when the value is real, else None."""
+    for attribute in ("progress_updated_at", "started_at", "created_at"):
+        value = getattr(task, attribute, None)
+        if isinstance(value, datetime):
+            return value.isoformat()
+        if isinstance(value, str) and value.strip():
+            return value
+    return None
+
+
 def _market_review_lock_path(config: Config) -> Path:
     return market_review_lock_path(config)
-
-
 def _build_market_review_runtime(config: Config, source_message: Optional[Any] = None) -> tuple[Any, Any, Any]:
     return _runtime_build_market_review_runtime(config, source_message)
 
@@ -761,6 +786,8 @@ def get_task_list(
             skills=getattr(t, "skills", None),
             region=t.region,
             asset_type=_task_asset_type(t),
+            stage=_task_stage(t),
+            progress_updated_at=_task_progress_updated_at(t),
         )
         for t in all_tasks
     ]
@@ -806,7 +833,10 @@ async def task_stream():
         event_queue: asyncio.Queue = asyncio.Queue()
         
         # 发送连接成功事件
-        yield _format_sse_event("connected", {"message": "Connected to task stream"})
+        yield _format_sse_event("connected", {
+            "message": "Connected to task stream",
+            "heartbeat_interval_s": TASK_HEARTBEAT_INTERVAL_SECONDS,
+        })
         
         # 发送当前进行中的任务
         pending_tasks = task_queue.list_pending_tasks()
@@ -820,7 +850,9 @@ async def task_stream():
             while True:
                 try:
                     # 等待事件，超时发送心跳
-                    event = await asyncio.wait_for(event_queue.get(), timeout=30)
+                    event = await asyncio.wait_for(
+                        event_queue.get(), timeout=TASK_HEARTBEAT_INTERVAL_SECONDS,
+                    )
                     yield _format_sse_event(event["type"], event["data"])
                 except asyncio.TimeoutError:
                     # 心跳
@@ -1225,6 +1257,8 @@ def get_analysis_status(task_id: str) -> TaskStatus:
             selection_source=task.selection_source,
             analysis_phase=task.analysis_phase,
             skills=getattr(task, "skills", None),
+            stage=_task_stage(task),
+            progress_updated_at=_task_progress_updated_at(task),
         )
     
     # 2. 从数据库查询已完成的记录

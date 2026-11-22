@@ -24,7 +24,8 @@ import {
   type Message,
   type StockClarificationIdentity,
 } from '../stores/agentChatStore';
-import ChatSmartSummaryCard from '../components/chat/ChatSmartSummaryCard';
+import ChatUnderstandingCard from '../components/chat/ChatUnderstandingCard';
+import ChatUnderstandingStrip from '../components/chat/ChatUnderstandingStrip';
 import ChatMessageItem from '../components/chat/ChatMessageItem';
 import ChatLiveProgress from '../components/chat/ChatLiveProgress';
 import ChatInputArea from '../components/chat/ChatInputArea';
@@ -328,6 +329,10 @@ const ChatPage: React.FC = () => {
     loading,
     progressSteps,
     streamingContent,
+    pendingUserMessage,
+    turnStartedAt,
+    lastStreamActivityAt,
+    understanding,
     sessionId,
     sessions,
     sessionsLoading,
@@ -340,7 +345,6 @@ const ChatPage: React.FC = () => {
     createIntake,
     updateIntakeAnswers,
     startIntakeAnalysis,
-    skipIntake,
     clearIntake,
     cancelIntake,
     setSelectedSkillIds,
@@ -361,6 +365,10 @@ const ChatPage: React.FC = () => {
     loading: state.loading,
     progressSteps: state.progressSteps,
     streamingContent: state.streamingContent,
+    pendingUserMessage: state.pendingUserMessage,
+    turnStartedAt: state.turnStartedAt,
+    lastStreamActivityAt: state.lastStreamActivityAt,
+    understanding: state.understanding,
     sessionId: state.sessionId,
     sessions: state.sessions,
     sessionsLoading: state.sessionsLoading,
@@ -373,7 +381,6 @@ const ChatPage: React.FC = () => {
     createIntake: state.createIntake,
     updateIntakeAnswers: state.updateIntakeAnswers,
     startIntakeAnalysis: state.startIntakeAnalysis,
-    skipIntake: state.skipIntake,
     clearIntake: state.clearIntake,
     cancelIntake: state.cancelIntake,
     setSelectedSkillIds: state.setSelectedSkillIds,
@@ -681,6 +688,9 @@ const ChatPage: React.FC = () => {
   const skillLimitReached = selectedSkillIds.length >= MAX_SELECTED_SKILLS;
   const agentConfirmedUnavailable = Boolean(agentStatus && !agentStatus.available);
   const agentAvailable = Boolean(agentStatus?.available) && !agentStatusChecking;
+  // While the status probe is still in flight the backend is unknown, not
+  // unavailable: an action clicked in that window must not be silently dropped.
+  const agentUnavailable = Boolean(agentStatus && !agentStatus.available);
   const guidedIntakeSupported = Boolean(agentStatus?.guidedIntake);
   const agentUnavailableMessage = agentStatus?.errorCode === 'backend_removed'
     ? t('settings.agentBackendRemoved')
@@ -951,7 +961,7 @@ const ChatPage: React.FC = () => {
       // (button, Enter, quick question or clarification confirmation) submits.
       const reportDraftBlocked = reportDraft !== null && reportDraft.status !== 'ready';
       // T5: prevent duplicate submissions during intake creation
-      if (!msgText || loading || intakeBusy || !agentAvailable || !agentStatus || intakeDraft
+      if (!msgText || loading || intakeBusy || agentUnavailable || intakeDraft
         || reportDraftBlocked) return;
       if (overrideMessage !== undefined) {
         setInput(msgText);
@@ -1010,12 +1020,16 @@ const ChatPage: React.FC = () => {
             : current);
         },
       };
-      // First valid question of a new session: prepare 1-5 controlled choices.
-      // No research, quotes or news lookups start while a draft is pending.
+      // First valid question of a new session: the server resolves the object
+      // and infers the background in the same request (v2). v1 clients still
+      // send client-side hints. No research starts while a draft is pending.
       const isFirstQuestion = messages.length === 0 && hasInitialLoad && !intakeDraft;
       if (isFirstQuestion && guidedIntakeSupported) {
-        const hints = extractIntentHints(msgText, stockIndex);
-        const success = await createIntake(msgText, payload, streamMeta, hints);
+        const smart = Boolean(agentStatus?.smartIntake);
+        const hints = smart ? null : extractIntentHints(msgText, stockIndex);
+        const success = await createIntake(
+          msgText, payload, streamMeta, hints, smart ? 2 : 1,
+        );
         // T5: only clear input on success to preserve user's question on failure
         if (success) {
           setInput('');
@@ -1026,7 +1040,7 @@ const ChatPage: React.FC = () => {
       if (isFirstQuestion) setLegacyIntakeNotice(true);
       await startStream(payload, streamMeta);
     },
-    [activeStockContext, agentAvailable, agentStatus, clearFollowUpParams, createIntake, getSkillNames,
+    [activeStockContext, agentStatus, agentUnavailable, clearFollowUpParams, createIntake, getSkillNames,
       guidedIntakeSupported, hasInitialLoad, input, intakeBusy, intakeDraft, loading, messages.length,
       normalizeSelectedSkillIds, pendingReportRemoval, reportDraft, requestScrollToBottom, selectedSkillIds,
       sessionId, sessionSelectedSkillIds, startStream, stockIndex, t],
@@ -1042,7 +1056,7 @@ const ChatPage: React.FC = () => {
       next.add(message.id);
       return next;
     });
-    if (loading || !agentAvailable) {
+    if (loading || agentUnavailable) {
       composerRef.current?.focus();
       return;
     }
@@ -1065,7 +1079,7 @@ const ChatPage: React.FC = () => {
       return;
     }
     composerRef.current?.focus();
-  }, [activeStockContext, agentAvailable, handleSend, loading]);
+  }, [activeStockContext, agentUnavailable, handleSend, loading]);
 
   // Stable indirection so memoized message items do not re-render on every
   // keystroke (T40). `handleSend` depends on `input`, so it must not be passed
@@ -1480,20 +1494,13 @@ const ChatPage: React.FC = () => {
                     </div>
                   )}
                   {intakeDraft && (
-                    <ChatSmartSummaryCard
-                      questions={intakeDraft.questions}
-                      answers={intakeDraft.answers}
-                      status={intakeDraft.status}
-                      originalMessage={intakeDraft.original_message}
+                    <ChatUnderstandingCard
+                      draft={intakeDraft}
                       isLoading={intakeBusy}
                       onConfirm={async (a) => {
                         const saved = await updateIntakeAnswers(a, 'confirm');
                         if (saved) await startIntakeAnalysis();
                         return saved;
-                      }}
-                      onSkip={async () => {
-                        await skipIntake();
-                        return !useAgentChatStore.getState().intakeError;
                       }}
                       onCancel={() => {
                         const draft = useAgentChatStore.getState().intakeDraft;
@@ -1501,23 +1508,20 @@ const ChatPage: React.FC = () => {
                         void cancelIntake();
                         composerRef.current?.focus();
                       }}
-                      onUpdateAnswer={(questionId, optionId) => {
-                        const currentAnswers = intakeDraft.answers || [];
-                        const existingIndex = currentAnswers.findIndex(a => a.question_id === questionId);
-                        let newAnswers;
-                        if (existingIndex >= 0) {
-                          newAnswers = currentAnswers.map((a, i) => 
-                            i === existingIndex 
-                              ? { ...a, option_ids: [optionId] }
-                              : a
-                          );
-                        } else {
-                          newAnswers = [...currentAnswers, { question_id: questionId, option_ids: [optionId] }];
-                        }
-                        updateIntakeAnswers(newAnswers, 'save');
-                      }}
                     />
                   )}
+                  {understanding && loading && !intakeDraft ? (
+                    <ChatUnderstandingStrip understanding={understanding} />
+                  ) : null}
+                  {pendingUserMessage ? (
+                    <div
+                      className="chat-msg chat-msg-user"
+                      data-testid="chat-pending-user-message"
+                      aria-busy="true"
+                    >
+                      <div className="chat-user-bubble is-pending">{pendingUserMessage.content}</div>
+                    </div>
+                  ) : null}
                   {messages.map((msg) => {
                   const skillLabel = getMessageSkillLabel(msg);
                   return (
@@ -1576,6 +1580,9 @@ const ChatPage: React.FC = () => {
                   steps={progressSteps}
                   streamingContent={streamingContent}
                   language={language}
+                  turnStartedAt={turnStartedAt}
+                  lastActivityAt={lastStreamActivityAt}
+                  onStop={() => { void stopStream(); }}
                 />
               )}
 

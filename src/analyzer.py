@@ -4259,7 +4259,7 @@ Output strictly in the following JSON format. This is a complete Decision Dashbo
         request_delay = config.gemini_request_delay
         if request_delay > 0:
             logger.debug('[LLM] 请求前等待 %.1f 秒...', request_delay)
-            _emit_progress(65, f"{code}：LLM 请求前等待 {request_delay:.1f} 秒")
+            _emit_progress(65, f"{code}：正在排队等待模型（{request_delay:.1f} 秒）")
             time.sleep(request_delay)
         
         # 优先从上下文获取股票名称（由 main.py 传入）
@@ -4412,7 +4412,7 @@ Output strictly in the following JSON format. This is a complete Decision Dashbo
             }
 
             logger.info('[LLM调用] 开始调用 %s...', model_name)
-            _emit_progress(68, f"{name}：LLM 已接收请求，等待响应")
+            _emit_progress(68, f"{name}：已提交给模型，等待开始生成")
 
             # 使用 litellm 调用（支持完整性校验重试）
             current_prompt = prompt
@@ -4485,7 +4485,7 @@ Output strictly in the following JSON format. This is a complete Decision Dashbo
                     logger.debug('=== %s 完整响应 (%s字符) ===\n%s\n=== End Response ===', model_used or model_name, len(response_text), response_text)
                 # Keep parser/retry progress monotonic so task progress/message never "goes backward".
                 parse_progress = min(99, 93 + retry_count * 2)
-                _emit_progress(parse_progress, f"{name}：LLM 返回完成，正在解析 JSON")
+                _emit_progress(parse_progress, f"{name}：模型已返回，正在整理结果")
 
                 # 解析响应
                 result = self._parse_response(response_text, code, name)

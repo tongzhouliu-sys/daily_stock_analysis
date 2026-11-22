@@ -66,6 +66,11 @@ from src.agent.news_evidence import (
     reset_news_evidence_scope,
 )
 from src.services.empty_news import news_evidence_present
+from src.services.analysis_progress import (
+    PROGRESS_FUNDAMENTALS,
+    PROGRESS_GENERATING,
+    PROGRESS_NEWS,
+)
 from src.phase_decision_guardrail import apply_phase_decision_guardrails
 from src.services.daily_market_context import (
     DailyMarketContext,
@@ -643,7 +648,7 @@ class StockAnalysisPipeline:
                     use_agent = True
                     logger.info('%s(%s) Auto-enabled agent mode due to configured skills: %s', stock_name, code, configured_skills)
 
-            self._emit_progress(32, f"{stock_name}：正在聚合基本面与趋势数据")
+            self._emit_progress(PROGRESS_FUNDAMENTALS, f"{stock_name}：正在聚合基本面与趋势数据")
 
             # Step 2.5: 基本面能力聚合（统一入口，异常降级）
             # - 失败时返回 partial/failed，不影响既有技术面/新闻链路
@@ -749,7 +754,7 @@ class StockAnalysisPipeline:
 
             if use_agent:
                 logger.info('%s(%s) 启用 Agent 模式进行分析', stock_name, code)
-                self._emit_progress(58, f"{stock_name}：正在切换 Agent 分析链路")
+                self._emit_progress(PROGRESS_GENERATING, f"{stock_name}：正在启用深度分析")
                 return self._analyze_with_agent(
                     code,
                     report_type,
@@ -775,7 +780,7 @@ class StockAnalysisPipeline:
                 market=market or "cn",
             )
             news_result_count: Optional[int] = None
-            self._emit_progress(46, f"{stock_name}：正在检索新闻与舆情")
+            self._emit_progress(PROGRESS_NEWS, f"{stock_name}：正在检索新闻与舆情")
             if self.search_service is not None and self.search_service.is_available:
                 logger.info('%s(%s) 开始多维度情报搜索...', stock_name, code)
 
@@ -851,7 +856,7 @@ class StockAnalysisPipeline:
             )
 
             # Step 5: 获取分析上下文（技术面数据）
-            self._emit_progress(58, f"{stock_name}：正在整理分析上下文")
+            self._emit_progress(PROGRESS_GENERATING, f"{stock_name}：正在整理分析上下文")
             with _measure_fetch_step(fetch_timings, "分析上下文"):
                 context = self._get_analysis_context_with_market_fallback(
                     code, analysis_target=analysis_target, current_time=current_time
@@ -928,7 +933,7 @@ class StockAnalysisPipeline:
                 llm_progress_state["last_progress"] = dynamic_progress
                 self._emit_progress(
                     dynamic_progress,
-                    f"{stock_name}：LLM 正在生成分析结果（已接收 {chars_received} 字符）",
+                    f"{stock_name}：正在生成报告 · 已生成约 {chars_received} 字",
                 )
 
             self._emit_progress(64, f"{stock_name}：正在请求 LLM 生成报告")
@@ -1774,12 +1779,29 @@ class StockAnalysisPipeline:
             # 累加器对象在这里持有引用，reset 之后仍可安全读取。
             news_evidence_token = activate_news_evidence_scope()
             news_evidence = get_current_news_evidence()
+
+            def _agent_progress(event) -> None:
+                """把 Agent 工具事件桥接成任务进度。
+
+                Agent 分支以前从 58% 直接跳到 94%，中间是最长的一段，用户会
+                以为任务已经死掉（H3）。每完成一个工具就更新一次任务文案，
+                进度值保持在生成阶段内（任务进度只增不减，不会回退）。
+                """
+                event_type = event.get("type") if isinstance(event, dict) else None
+                if event_type == "tool_done":
+                    label = event.get("display_label") or event.get("tool") or "数据"
+                    self._emit_progress(PROGRESS_GENERATING, f"{stock_name}：正在{label}")
+                elif event_type == "generating":
+                    self._emit_progress(PROGRESS_GENERATING, f"{stock_name}：正在生成报告")
+
             try:
                 record_llm_run_started(
                     model=getattr(self.config, "agent_litellm_model", None),
                     call_type="agent_analysis",
                 )
-                agent_result = executor.run(message, context=initial_context)
+                agent_result = executor.run(
+                    message, context=initial_context, progress_callback=_agent_progress,
+                )
             except Exception as exc:
                 record_llm_run(
                     success=False,

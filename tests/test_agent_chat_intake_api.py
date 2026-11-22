@@ -16,6 +16,7 @@ from api.v1.endpoints.agent import (
 from src.schemas.agent_intake import (
     AnalysisBrief,
     AnswerMeta,
+    IntakeCreateRequest,
     IntakeStatus,
     IntakeUpdateResponse,
     Question,
@@ -72,6 +73,25 @@ def test_chat_request_rejects_unsupported_interaction_versions():
     for version in (2, -1):
         with pytest.raises(ValidationError):
             _request(interaction_version=version)
+
+
+def test_intake_request_accepts_smart_intake_version():
+    request = IntakeCreateRequest(
+        message="分析 600519", session_id="session-a", interaction_version=2,
+    )
+    assert request.interaction_version == 2
+    # Chat requests stay on v1; only the intake endpoint gained v2.
+    with pytest.raises(ValidationError):
+        IntakeCreateRequest(
+            message="分析 600519", session_id="session-a", interaction_version=3,
+        )
+
+
+def test_status_advertises_smart_intake_capability():
+    status = _agent_status_response({
+        "backend": "litellm", "available": True, "experimental": False,
+    })
+    assert status.smart_intake is True
 
 
 def test_status_advertises_guided_intake_capability():

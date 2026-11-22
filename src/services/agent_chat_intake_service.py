@@ -11,7 +11,7 @@ from __future__ import annotations
 import json
 import logging
 import uuid
-from typing import Any, Dict, List, Optional
+from typing import Any, Dict, List, Optional, Tuple
 
 from src.agent.intake_questions import (
     MAX_QUESTIONS, apply_branching, build_analysis_brief,
@@ -181,6 +181,80 @@ class AgentChatIntakeService:
                     draft.intake_id, session_id, len(draft.questions))
         return draft
 
+    def create_intake_v2(
+        self, *, message: str, session_id: str, session_generation: str,
+        request_id: Optional[str] = None, report_follow_up: bool = False,
+        intent_hints: Optional[Dict[str, Any]] = None,
+    ) -> Tuple[IntakeDraft, Dict[str, Any]]:
+        """Create a smart intake draft: resolve first, then ask at most one thing.
+
+        Returns the draft plus the public resolution/brief/plan the API layer
+        echoes back. Nothing here executes research.
+        """
+        from src.agent.intake_questions import build_smart_intake, classify_question_intent
+        from src.agent.object_resolution import resolve_intake_object
+        from src.services.agent_chat_session_service import _stock_lookup
+
+        message = (message or "").strip()
+        if not message:
+            raise IntakeServiceError("message is required", code="invalid_intake_answer")
+        if len(message) > 4000:
+            raise IntakeServiceError("message is too long", code="invalid_intake_answer")
+        if not session_id:
+            raise IntakeServiceError("session_id is required", code="intake_error")
+
+        intent = classify_question_intent(message)
+        registry, lookup = _stock_lookup()
+        resolution = resolve_intake_object(
+            message, registry, lookup,
+            concept_question=intent["question_type"] == "concept",
+        )
+        if report_follow_up:
+            # A report follow-up already carries its object in the context.
+            resolution = {
+                **resolution,
+                "status": "not_required",
+                "reason": "report_follow_up",
+                "candidates": [],
+                "recommended": None,
+            }
+
+        built = build_smart_intake(message, resolution, intent["inferred"])
+        questions = built["questions"]
+        answers = built["answers"]
+        if len(questions) > MAX_QUESTIONS:
+            raise IntakeServiceError("question bank produced an invalid questionnaire", code="intake_error")
+
+        generation = session_generation or str(uuid.uuid4())
+        base_state_version = self._current_state_version(session_id, self.db)
+        status = "confirmed" if built["plan"]["auto_start"] else "pending"
+        row = self.db.create_intake_draft(
+            intake_id=f"intake_{uuid.uuid4().hex[:24]}",
+            schema_version=SCHEMA_VERSION + 1,
+            session_id=session_id, session_generation=generation,
+            original_message=message,
+            questions_json=json.dumps(
+                [q.model_dump(mode="json") for q in questions], ensure_ascii=False,
+            ),
+            answers_json=json.dumps(
+                [a.model_dump(mode="json") for a in answers], ensure_ascii=False,
+            ),
+            base_state_version=base_state_version,
+            request_id=request_id,
+            status=status,
+        )
+        draft = self._to_draft(row)
+        assert draft is not None
+        logger.info(
+            "Created smart intake %s for session %s (status=%s, questions=%d)",
+            draft.intake_id, session_id, status, len(questions),
+        )
+        return draft, {
+            "resolution": resolution,
+            "brief": built["brief"],
+            "plan": built["plan"],
+        }
+
     def update_intake(
         self, *, intake_id: str, expected_revision: int, answers: List[Answer],
         action: str = "save", session_id: Optional[str] = None,
@@ -212,7 +286,15 @@ class AgentChatIntakeService:
         is_valid, error_msg = validate_answers(draft.questions, sanitized)
         if not is_valid:
             raise IntakeServiceError(error_msg or "Invalid answers", code="invalid_intake_answer")
+        self._validate_object_selection(draft.questions, sanitized)
         previous_map = {a.question_id: a for a in draft.answers}
+        # Keep the original provenance for answers the user did not change:
+        # values pre-filled from the question stay "explicit_message" instead
+        # of being relabelled as a fresh user choice.
+        for answer in sanitized:
+            previous = previous_map.get(answer.question_id)
+            if previous is not None and previous.option_ids == answer.option_ids:
+                answer.source = previous.source
         submitted_map = {a.question_id: a for a in sanitized}
         changed = {
             qid for qid, submitted in submitted_map.items()
@@ -240,6 +322,29 @@ class AgentChatIntakeService:
         updated = self._to_draft(row)
         assert updated is not None
         return updated
+
+    @staticmethod
+    def _validate_object_selection(questions: List[Question], answers: List[Answer]) -> None:
+        """A searched object must exist in the local stock index."""
+        object_question = next((q for q in questions if q.id == "object"), None)
+        if object_question is None:
+            return
+        answer = next((a for a in answers if a.question_id == "object"), None)
+        if answer is None or not answer.option_ids:
+            return
+        allowed = {option.id for option in object_question.options}
+        if answer.option_ids[0] in allowed:
+            return
+        from src.agent.chat_object_decision import validate_chat_identity
+        from src.services.agent_chat_session_service import _stock_lookup
+
+        registry, lookup = _stock_lookup()
+        try:
+            validate_chat_identity(answer.option_ids[0], registry, lookup)
+        except Exception as exc:  # noqa: BLE001 - any failure is a user input error
+            raise IntakeServiceError(
+                "Unknown stock selection", code="invalid_intake_answer",
+            ) from exc
 
     def get_intake(self, intake_id: str, session_id: Optional[str] = None) -> Optional[IntakeDraft]:
         draft = self._to_draft(self.db.get_intake_draft(intake_id))

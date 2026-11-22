@@ -170,6 +170,9 @@ class AgentBackendStatusResponse(BaseModel):
     message: Optional[str] = None
     # Capability flag: the Web client only starts guided intake when True.
     guided_intake: bool = False
+    # Capability flag: v2 intake resolves the object server-side and may start
+    # the first run without an extra confirmation.
+    smart_intake: bool = False
 
 
 class ExportSystemConfigResponse(BaseModel):

@@ -37,6 +37,7 @@ from src.services.run_diagnostics import (
     reset_run_diagnostic_context,
 )
 from src.utils.analysis_metadata import SELECTION_SOURCES
+from src.services.analysis_progress import progress_stage
 from src.services.stock_code_utils import resolve_index_stock_code_for_analysis
 
 logger = logging.getLogger(__name__)
@@ -139,6 +140,10 @@ class TaskInfo:
     # parser 来源的可选资产类型（``index``/``stock``/``None``）；SSE 与任务列表
     # 从这里透传，不得在消费端重新猜测。
     asset_type: Optional[str] = None
+    # 最近一次进度或文案变化的时间；前端据此判断「这一步是不是偏慢」。
+    progress_updated_at: Optional[datetime] = None
+    # 只有走个股分析管线的任务才有五阶段进度；后台通用任务（大盘复盘）为 False。
+    stage_tracked: bool = True
     
     def to_dict(self) -> Dict[str, Any]:
         """Convert task info into an API-friendly dictionary."""
@@ -159,7 +164,15 @@ class TaskInfo:
             "original_query": self.original_query,
             "selection_source": self.selection_source,
             "skills": self.skills,
+            "progress_updated_at": (
+                self.progress_updated_at or self.started_at or self.created_at
+            ).isoformat(),
         }
+        # Market review and other background callables do not run the stock
+        # pipeline, so they have no stage strip; omit the field instead of
+        # inventing one.
+        if self.stage_tracked:
+            payload["stage"] = progress_stage(self.progress)
         if self.region is not None:
             payload["region"] = self.region
         if self.asset_type is not None:
@@ -199,6 +212,8 @@ class TaskInfo:
             dedupe_key=self.dedupe_key,
             analysis_target=self.analysis_target,
             asset_type=self.asset_type,
+            progress_updated_at=self.progress_updated_at,
+            stage_tracked=self.stage_tracked,
         )
 
 
@@ -592,6 +607,8 @@ class AnalysisTaskQueue:
             message=message,
             report_type=report_type,
             region=region,
+            # Generic callables (market review) have no five-stage pipeline.
+            stage_tracked=False,
         )
 
         with self._data_lock:
@@ -758,6 +775,8 @@ class AnalysisTaskQueue:
             if message is not None and message != task.message:
                 task.message = message
                 changed = True
+            if changed:
+                task.progress_updated_at = datetime.now()
 
             if not changed:
                 return task.copy(include_flow_events=False)
@@ -857,6 +876,7 @@ class AnalysisTaskQueue:
             portfolio_context = dict(task.portfolio_context) if isinstance(task.portfolio_context, dict) else None
             task.status = TaskStatus.PROCESSING
             task.started_at = datetime.now()
+            task.progress_updated_at = task.started_at
             task.message = "正在分析中..."
             task.progress = 10
 

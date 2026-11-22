@@ -17,6 +17,7 @@ import { MarketReviewRegionSelector } from '../components/market-review/MarketRe
 import { ReportSummary } from '../components/report/ReportSummary';
 import { RunFlowPanel } from '../components/run-flow';
 import { TaskPanel } from '../components/tasks';
+import { AnalysisRunCard } from '../components/tasks/AnalysisRunCard';
 import {
   HomeStockWorkspace,
   type HomeWatchlistRow,
@@ -67,6 +68,8 @@ const BATCH_ANALYSIS_CHUNK_SIZE = 50;
 const TODAY_ANALYSIS_PAGE_SIZE = 100;
 const WATCHLIST_HISTORY_LOOKUP_CONCURRENCY = 4;
 const TASK_PANEL_COLLAPSED_STORAGE_KEY = 'dsa.home.taskPanelCollapsed';
+/** How long the run card stays visible after a task completes. */
+const RUN_CARD_DONE_LINGER_MS = 1_500;
 const SERVER_LOCAL_DATE_TIME_PATTERN = /^\d{4}-\d{2}-\d{2}[T\s]\d{2}:\d{2}(?::\d{2}(?:\.\d+)?)?$/;
 
 type BatchAnalyzeStatus = {
@@ -302,6 +305,7 @@ const HomePage: React.FC = () => {
   }, [sidebarOpen]);
   const [isSubmittingMarketReview, setIsSubmittingMarketReview] = useState(false);
   const [marketReviewNotice, setMarketReviewNotice] = useState<MarketReviewNotice>(null);
+  const [marketReviewTask, setMarketReviewTask] = useState<TaskInfo | null>(null);
   const [marketReviewError, setMarketReviewError] = useState<ParsedApiError | null>(null);
   const [askAiWaitHint, setAskAiWaitHint] = useState(false);
   const [marketReviewReport, setMarketReviewReport] = useState<string | null>(null);
@@ -385,6 +389,7 @@ const HomePage: React.FC = () => {
     stockHistoryError,
     stockHistoryFilters,
     activeTasks,
+    focusedTaskId,
     markdownDrawerOpen,
     setQuery,
     clearError,
@@ -403,6 +408,8 @@ const HomePage: React.FC = () => {
     refreshActiveTasks,
     cancelTask,
     removeTask,
+    dismissTask,
+    setFocusedTaskId,
     openMarkdownDrawer,
     closeMarkdownDrawer,
     openHistoryTrend,
@@ -694,7 +701,7 @@ const HomePage: React.FC = () => {
     setTodayAnalysisRefreshVersion((version) => version + 1);
   }, []);
 
-  useDashboardLifecycle({
+  const dashboardStream = useDashboardLifecycle({
     loadInitialHistory,
     refreshHistory,
     refreshHistoryForCompletedTask,
@@ -711,6 +718,7 @@ const HomePage: React.FC = () => {
     onCompletedTaskDataRefreshStarted: handleCompletedTaskDataRefreshStarted,
     onCompletedTaskDataRefreshed: handleCompletedTaskDataRefreshed,
   });
+  const { isConnected: isTaskStreamConnected } = dashboardStream;
 
   useEffect(() => {
     if (isLoadingStockBar) {
@@ -912,6 +920,75 @@ const HomePage: React.FC = () => {
     [query, selectedAnalysisSkills, submitAnalysis],
   );
 
+  const focusedTask = useMemo(
+    () => (focusedTaskId
+      ? activeTasks.find((task) => task.taskId === focusedTaskId) ?? null
+      : null),
+    [activeTasks, focusedTaskId],
+  );
+  const focusedQueuedPosition = useMemo(() => {
+    if (!focusedTask || focusedTask.status !== 'pending') return 0;
+    return activeTasks
+      .filter((task) => task.status === 'pending')
+      .filter((task) => Date.parse(task.createdAt) < Date.parse(focusedTask.createdAt))
+      .length;
+  }, [activeTasks, focusedTask]);
+
+  // Completed tasks disappear from the panel after a short linger, so the
+  // card must not vanish in the same frame the report appears.
+  useEffect(() => {
+    if (!focusedTask || focusedTask.status !== 'completed') {
+      return undefined;
+    }
+    const timer = window.setTimeout(() => {
+      setFocusedTaskId(null);
+      dismissTask(focusedTask.taskId);
+    }, RUN_CARD_DONE_LINGER_MS);
+    return () => window.clearTimeout(timer);
+  }, [dismissTask, focusedTask, setFocusedTaskId]);
+
+  const handleRunCardRetry = useCallback((task: TaskInfo) => {
+    const source = task.selectionSource === 'autocomplete'
+      || task.selectionSource === 'import'
+      || task.selectionSource === 'image'
+      ? task.selectionSource
+      : 'manual';
+    void submitAnalysis({
+      stockCode: task.stockCode,
+      stockName: task.stockName,
+      originalQuery: task.originalQuery ?? task.stockCode,
+      selectionSource: source,
+      forceRefresh: true,
+      skills: task.skills,
+    });
+  }, [submitAnalysis]);
+
+  const handleRunCardViewReport = useCallback((task: TaskInfo) => {
+    if (task.reportType === 'market_review') {
+      void refreshMarketReviewHistory(true);
+      return;
+    }
+    void refreshHistoryForCompletedTask(task);
+  }, [refreshHistoryForCompletedTask, refreshMarketReviewHistory]);
+
+  const handleRunCardDismiss = useCallback(() => {
+    if (focusedTask) {
+      dismissTask(focusedTask.taskId);
+    }
+    setFocusedTaskId(null);
+  }, [dismissTask, focusedTask, setFocusedTaskId]);
+
+  const recordsPanelRef = useRef<HTMLElement | null>(null);
+  const handleOpenTasksPanel = useCallback(() => {
+    // Wide screens already show the records panel; narrow screens keep it in
+    // a drawer, so open it instead of scrolling to an invisible node.
+    if (typeof window !== 'undefined' && window.matchMedia('(min-width: 48rem)').matches) {
+      recordsPanelRef.current?.scrollIntoView({ behavior: 'smooth', block: 'nearest' });
+      return;
+    }
+    setSidebarOpen(true);
+  }, []);
+
   useEffect(() => {
     const state = location.state as StockAnalysisNavigationState | null;
     const stockCode = typeof state?.stockCode === 'string' ? state.stockCode.trim() : '';
@@ -1020,21 +1097,26 @@ const HomePage: React.FC = () => {
           if (status.status === 'pending' || status.status === 'processing') {
             setMarketReviewReport(null);
             setMarketReviewPayload(null);
-            const progress = typeof status.progress === 'number'
-              ? `${status.progress}%`
-              : t('home.progressActive');
-            setMarketReviewNotice({
-              variant: 'warning',
-              title: t('home.marketReviewInProgress'),
-              message: status.region
-                ? t('home.taskStatusWithRegion', { status: status.status, progress, region: status.region })
-                : t('home.taskStatus', { status: status.status, progress }),
-            });
+            setMarketReviewNotice(null);
+            const updatedAt = status.progressUpdatedAt ?? new Date().toISOString();
+            setMarketReviewTask((previous) => ({
+              taskId,
+              stockCode: 'market_review',
+              stockName: previous?.stockName ?? t('home.marketReview'),
+              status: status.status === 'pending' ? 'pending' : 'processing',
+              progress: status.progress ?? previous?.progress ?? 0,
+              reportType: 'market_review',
+              createdAt: previous?.createdAt ?? updatedAt,
+              startedAt: previous?.startedAt ?? updatedAt,
+              progressUpdatedAt: updatedAt,
+              region: status.region ?? previous?.region,
+            }));
             return true;
           }
 
           if (status.status === 'completed') {
             stopMarketReviewPolling();
+            setMarketReviewTask(null);
             const marketReviewText = typeof status.marketReviewReport === 'string'
               ? status.marketReviewReport
               : '';
@@ -1053,6 +1135,7 @@ const HomePage: React.FC = () => {
 
           if (status.status === 'failed') {
             stopMarketReviewPolling();
+            setMarketReviewTask(null);
             setMarketReviewReport(null);
             setMarketReviewPayload(null);
             setMarketReviewError(
@@ -1493,6 +1576,8 @@ const HomePage: React.FC = () => {
           tasks={activeTasks}
           onOpenRunFlow={openTaskRunFlow}
           onCancelTask={cancelTask}
+          onRetryTask={handleRunCardRetry}
+          onDismissTask={dismissTask}
           collapsed={isTaskPanelCollapsed}
           onCollapsedChange={handleTaskPanelCollapsedChange}
         />
@@ -1529,7 +1614,9 @@ const HomePage: React.FC = () => {
       activeTasks,
       batchAnalyzeStatus,
       cancelTask,
+      dismissTask,
       handleAnalyzeWatchlist,
+      handleRunCardRetry,
       handleDeleteStock,
       handleHistoryItemClick,
       handleRefreshWatchlist,
@@ -1749,6 +1836,23 @@ const HomePage: React.FC = () => {
               data-testid="home-dashboard-scroll"
               className="research-reading-scroll touch-pan-y"
             >
+              {(focusedTask ?? marketReviewTask) ? (
+                <div className="mb-3">
+                  <AnalysisRunCard
+                    task={(focusedTask ?? marketReviewTask)!}
+                    activeTasks={focusedTask ? activeTasks : []}
+                    isConnected={isTaskStreamConnected}
+                    queuedPosition={focusedQueuedPosition}
+                    onCancel={cancelTask}
+                    onRetry={handleRunCardRetry}
+                    onOpenRunFlow={openTaskRunFlow}
+                    onViewReport={handleRunCardViewReport}
+                    onDismiss={handleRunCardDismiss}
+                    onOpenTasksPanel={handleOpenTasksPanel}
+                  />
+                </div>
+              ) : null}
+
               {marketReviewNotice ? (
                 <div className="mb-3">
                   <InlineAlert
@@ -1910,7 +2014,11 @@ const HomePage: React.FC = () => {
             </div>
           </section>
 
-          <aside className="research-records" aria-label={t('home.researchRecords')}>
+          <aside
+            ref={recordsPanelRef}
+            className="research-records"
+            aria-label={t('home.researchRecords')}
+          >
             <div className="research-panel-heading">
               <h2><PanelRight size={16} aria-hidden="true" />{t('home.researchRecords')}</h2>
             </div>

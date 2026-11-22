@@ -1,9 +1,9 @@
 /**
  * Client-side intent inference from user messages.
  *
- * Extracts stock codes, infers markets, and detects goal/horizon/position hints
- * from natural language. These hints are sent to the backend to suppress
- * redundant questions in the intake flow.
+ * Extracts stock codes and infers markets. Preference inference lives in the
+ * server (``intake_questions.classify_question_intent``) so the two sides cannot
+ * disagree; v1 clients still send these object hints only.
  */
 
 import { extractStockCodesFromMessage } from './chatStockCode';
@@ -47,127 +47,6 @@ function inferMarketFromCode(normalizedCode: string): IntentHints['inferred_mark
   return 'other';
 }
 
-// Goal patterns
-const GOAL_PATTERNS = {
-  worth_watching: [
-    /值得.*关注/,
-    /值得.*买/,
-    /值得.*持有/,
-    /能不能.*买/,
-    /可以.*买/,
-    /是否.*关注/,
-    /有没有.*价值/,
-    /值.*关注/,
-  ],
-  evaluate_holding: [
-    /持仓/,
-    /我.*持有/,
-    /持有.*的/,
-    /我的.*持仓/,
-    /仓位/,
-    /已买/,
-    /已经.*买/,
-    /我.*有/,
-    /手里.*有/,
-    /成本.*是/,
-  ],
-  understand_move: [
-    /为什么.*涨/,
-    /为什么.*跌/,
-    /涨跌.*原因/,
-    /为何.*涨/,
-    /为何.*跌/,
-    /怎么.*涨/,
-    /怎么.*跌/,
-    /啥原因/,
-    /什么原因/,
-  ],
-  learn_method: [
-    /怎么分析/,
-    /分析方法/,
-    /学习/,
-    /如何分析/,
-    /教.*分析/,
-    /分析.*方法/,
-    /用什么.*方法/,
-  ],
-};
-
-// Horizon patterns
-const HORIZON_PATTERNS = {
-  days: [
-    /几天/,
-    /短线/,
-    /日内/,
-    /数日/,
-    /今天/,
-    /明天/,
-    /这周/,
-    /本周/,
-    /下周/,
-    /短期.*内/,
-  ],
-  weeks: [
-    /几周/,
-    /短期/,
-    /1.*4.*周/,
-    /一两周/,
-    /两三周/,
-    /月内/,
-  ],
-  months: [
-    /几个月/,
-    /中期/,
-    /1.*6.*月/,
-    /半年/,
-    /两三个月/,
-    /三四个月/,
-  ],
-  long: [
-    /长期/,
-    /半年以上/,
-    /一年/,
-    /数年/,
-    /几年/,
-    /长线/,
-    /一年以上/,
-    /多年/,
-  ],
-};
-
-// Position patterns
-const POSITION_PATTERNS = {
-  not_held: [
-    /没有.*持仓/,
-    /未.*持有/,
-    /空仓/,
-    /想.*买/,
-    /准备.*买/,
-    /打算.*买/,
-    /还没.*买/,
-    /想.*入手/,
-  ],
-  held_protect_profit: [
-    /持有.*盈利/,
-    /持仓.*赚/,
-    /保护.*利润/,
-    /已经.*赚/,
-    /有.*利润/,
-    /浮盈/,
-    /盈利.*保护/,
-  ],
-  held_control_drawdown: [
-    /持有.*亏/,
-    /持仓.*套/,
-    /控制.*回撤/,
-    /已经.*亏/,
-    /被套/,
-    /浮亏/,
-    /亏损/,
-    /套牢/,
-  ],
-};
-
 /**
  * Extract intent hints from a user message.
  *
@@ -180,7 +59,6 @@ export function extractIntentHints(
   stockIndex?: ReadonlyArray<StockIndexItem>,
 ): IntentHints {
   const hints: IntentHints = {};
-  const text = message.toLowerCase();
 
   // Extract stock code
   const codes = extractStockCodesFromMessage(message, stockIndex);
@@ -189,30 +67,6 @@ export function extractIntentHints(
     const normalized = normalizeStockCode(primaryCode);
     hints.extracted_stock_code = normalized;
     hints.inferred_market = inferMarketFromCode(normalized);
-  }
-
-  // Detect goal
-  for (const [goal, patterns] of Object.entries(GOAL_PATTERNS)) {
-    if (patterns.some((pattern) => pattern.test(text))) {
-      hints.goal = goal as IntentHints['goal'];
-      break;
-    }
-  }
-
-  // Detect horizon
-  for (const [horizon, patterns] of Object.entries(HORIZON_PATTERNS)) {
-    if (patterns.some((pattern) => pattern.test(text))) {
-      hints.horizon = horizon as IntentHints['horizon'];
-      break;
-    }
-  }
-
-  // Detect position
-  for (const [position, patterns] of Object.entries(POSITION_PATTERNS)) {
-    if (patterns.some((pattern) => pattern.test(text))) {
-      hints.position = position as IntentHints['position'];
-      break;
-    }
   }
 
   return hints;

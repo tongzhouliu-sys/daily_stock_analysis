@@ -16,6 +16,7 @@ import type {
   AnswerMeta,
   IntakeStatus,
   IntentHints,
+  ObjectResolution,
 } from '../api/agentIntake';
 import {
   createParsedApiError,
@@ -89,6 +90,8 @@ export interface ProgressStep {
   category?: string;
   display_label?: string;
   cached?: boolean;
+  /** Client receive time, used for per-step wait timers in the live panel. */
+  receivedAt?: number;
 }
 
 // T4: Domain guard metadata on messages
@@ -134,6 +137,14 @@ export interface StreamAcceptedEvent extends ChatStateFields {
 }
 
 type StreamTerminalStatus = 'timeout' | 'stopped' | 'interrupted' | null;
+
+/** Raised when no byte (business event or heartbeat) arrived in time (C3/C4). */
+class StreamSilenceError extends Error {
+  constructor() {
+    super('Agent stream went silent');
+    this.name = 'StreamSilenceError';
+  }
+}
 
 type StreamFailureEvent = {
   type: string;
@@ -222,6 +233,20 @@ interface AgentChatState {
   intakeError: string | null;
   // T6: 流式内容输出（临时文本，完成后由 done.content 替换）
   streamingContent: string | null;
+  /** Optimistic user bubble shown before the server accepts the turn (C1). */
+  pendingUserMessage: { id: string; content: string } | null;
+  /** Local start time of the current turn, used for the elapsed timer. */
+  turnStartedAt: number | null;
+  /** Last byte received on the stream, incl. heartbeat comments (C3). */
+  lastStreamActivityAt: number | null;
+  /** Heartbeat interval reported by the server on `accepted`. */
+  heartbeatIntervalMs: number;
+  /** v2 intake: what the server understood, shown above the running turn. */
+  understanding: {
+    brief: AnalysisBrief;
+    resolution: ObjectResolution | null;
+    questions: import('../api/agentIntake').Question[];
+  } | null;
 }
 
 interface AgentChatActions {
@@ -237,7 +262,13 @@ interface AgentChatActions {
   stopStream: () => Promise<void>;
   startStream: (payload: ChatStreamRequest, meta?: StreamMeta) => Promise<void>;
   // T3: Intake actions
-  createIntake: (message: string, payload?: ChatStreamRequest, meta?: StreamMeta, intentHints?: IntentHints | null) => Promise<boolean>;
+  createIntake: (
+    message: string,
+    payload?: ChatStreamRequest,
+    meta?: StreamMeta,
+    intentHints?: IntentHints | null,
+    interactionVersion?: 1 | 2,
+  ) => Promise<boolean>;
   updateIntakeAnswers: (
     answers: Answer[], action: 'save' | 'confirm' | 'skip',
   ) => Promise<boolean>;
@@ -264,6 +295,8 @@ const emptySessionState = {
 const emptyStreamState = {
   loading: false, progressSteps: [], abortController: null, activeRequestId: null,
   terminalStatus: null, streamingContent: null,
+  pendingUserMessage: null, turnStartedAt: null, lastStreamActivityAt: null,
+  heartbeatIntervalMs: 15_000, understanding: null,
 };
 
 // null rejects the response. {} keeps the newer state but can still acknowledge
@@ -580,6 +613,11 @@ export const useAgentChatStore = create<AgentChatState & AgentChatActions>((set,
   intakeSendMeta: null,
   intakeBusy: false,
   intakeError: null,
+  pendingUserMessage: null,
+  turnStartedAt: null,
+  lastStreamActivityAt: null,
+  heartbeatIntervalMs: 15_000,
+  understanding: null,
 
   setSelectedSkillIds: (skillIds) => set((s) => ({ selectedSkillIds: [...skillIds],
     skillDraftRevision: s.skillDraftRevision + 1, skillDraftDirty: true })),
@@ -697,6 +735,8 @@ export const useAgentChatStore = create<AgentChatState & AgentChatActions>((set,
       loading: false,
       progressSteps: [],
       streamingContent: null,
+      pendingUserMessage: null,
+      lastStreamActivityAt: null,
       terminalStatus: 'stopped',
       detailReadSequence: state.detailReadSequence + 1,
     }));
@@ -749,6 +789,11 @@ export const useAgentChatStore = create<AgentChatState & AgentChatActions>((set,
       loading: true,
       progressSteps: [],
       chatError: null,
+      // The bubble must appear on the same frame as the click: the server
+      // `accepted` event can take seconds on a cold model connection (C1).
+      pendingUserMessage: { id: `pending-${requestId}`, content: payload.message },
+      turnStartedAt: Date.now(),
+      lastStreamActivityAt: Date.now(),
     });
     let streamWasAccepted = false;
 
@@ -808,8 +853,15 @@ export const useAgentChatStore = create<AgentChatState & AgentChatActions>((set,
           acceptedEvent = event as StreamAcceptedEvent;
           streamWasAccepted = true;
           finalBackend = acceptedEvent.backend;
+          const serverHeartbeat = (event as unknown as { heartbeat_interval_s?: number })
+            .heartbeat_interval_s;
           set((s) => ({
             ...statePatch,
+            ...(typeof serverHeartbeat === 'number' && serverHeartbeat > 0
+              ? { heartbeatIntervalMs: serverHeartbeat * 1000 }
+              : {}),
+            pendingUserMessage: null,
+            lastStreamActivityAt: Date.now(),
             messages: [...s.messages, { ...userMessage, backend: acceptedEvent!.backend }],
             sessions: s.sessions.some((x) => x.session_id === streamSessionId)
               ? s.sessions
@@ -883,16 +935,46 @@ export const useAgentChatStore = create<AgentChatState & AgentChatActions>((set,
           return true;
         }
 
+        event.receivedAt = Date.now();
         currentProgressSteps.push(event);
         set((s) => ({ progressSteps: [...s.progressSteps, event] }));
         return false;
       };
 
       let terminalReceived = false;
+      let streamSilent = false;
+      let lastActivityWrite = 0;
       while (!terminalReceived) {
-        const { done, value } = await reader.read();
-        if (done) break;
-        buf += decoder.decode(value, { stream: true });
+        let silenceTimer: number | null = null;
+        const silenceDeadline = Math.max(15_000, get().heartbeatIntervalMs * 3);
+        const silence = new Promise<never>((_, reject) => {
+          silenceTimer = window.setTimeout(
+            () => reject(new StreamSilenceError()),
+            silenceDeadline,
+          );
+        });
+        let chunk: ReadableStreamReadResult<Uint8Array>;
+        try {
+          chunk = await Promise.race([reader.read(), silence]);
+        } catch (readError) {
+          if (readError instanceof StreamSilenceError) {
+            streamSilent = true;
+            break;
+          }
+          throw readError;
+        } finally {
+          if (silenceTimer !== null) {
+            window.clearTimeout(silenceTimer);
+          }
+        }
+        if (chunk.done) break;
+        // Any byte proves the socket is alive, including heartbeat comments
+        // that `processLine` intentionally ignores.
+        if (Date.now() - lastActivityWrite > 1_000) {
+          lastActivityWrite = Date.now();
+          set({ lastStreamActivityAt: lastActivityWrite });
+        }
+        buf += decoder.decode(chunk.value, { stream: true });
         const lines = buf.split('\n');
         buf = lines.pop() ?? '';
 
@@ -926,6 +1008,24 @@ export const useAgentChatStore = create<AgentChatState & AgentChatActions>((set,
         } catch {
           // The terminal event already arrived; a failed cancel is harmless.
         }
+      }
+
+      if (streamSilent && !ac.signal.aborted) {
+        // The server run keeps going (refresh must not cancel it). Detach the
+        // dead socket and let the existing detail polling restore progress.
+        ac.abort();
+        set((state) => ({
+          loading: true,
+          progressSteps: [{ type: 'recovering' }],
+          streamingContent: null,
+          terminalStatus: null,
+          abortController: null,
+          activeRequestId: null,
+          lastStreamActivityAt: null,
+          detailReadSequence: state.detailReadSequence + 1,
+        }));
+        await get().refreshSession();
+        return;
       }
 
       if (!acceptedEvent && !ac.signal.aborted) {
@@ -975,6 +1075,9 @@ export const useAgentChatStore = create<AgentChatState & AgentChatActions>((set,
       if (isAbortError(error) || !ownsStream() || ac.signal.aborted) {
         // Aborted or superseded requests must not affect the active chat.
       } else {
+        if (!streamWasAccepted) {
+          set({ pendingUserMessage: null });
+        }
         const parsedError = getParsedApiError(error);
         set({ chatError: parsedError });
         meta?.onError?.({ error: parsedError, accepted: streamWasAccepted });
@@ -991,6 +1094,8 @@ export const useAgentChatStore = create<AgentChatState & AgentChatActions>((set,
           progressSteps: [],
           abortController: null,
           activeRequestId: null,
+          pendingUserMessage: null,
+          lastStreamActivityAt: null,
           // T25: 每轮结束（成功或失败）都清空流式正文，避免残留到下一轮
           streamingContent: null,
         });
@@ -1001,9 +1106,16 @@ export const useAgentChatStore = create<AgentChatState & AgentChatActions>((set,
 
   // T3: The original question stays local until the user confirms the
   // background; only startIntakeAnalysis submits one research request.
-  createIntake: async (message, payload, meta, intentHints) => {
+  createIntake: async (message, payload, meta, intentHints, interactionVersion = 1) => {
     const { sessionId, sessionGeneration } = get();
-    set({ intakeBusy: true, intakeError: null, chatError: null });
+    set({
+      intakeBusy: true,
+      intakeError: null,
+      chatError: null,
+      // The bubble appears immediately; understanding the question can take a
+      // moment on a cold model connection (C1).
+      pendingUserMessage: { id: `pending-intake-${generateUUID()}`, content: message },
+    });
     try {
       const response = await intakeApi.create({
         message,
@@ -1013,29 +1125,47 @@ export const useAgentChatStore = create<AgentChatState & AgentChatActions>((set,
         skills: payload?.skills ?? null,
         context: (payload?.context as Record<string, unknown> | undefined) ?? null,
         intent_hints: intentHints ?? null,
+        interaction_version: interactionVersion,
       });
+      const draft = {
+        intake_id: response.intake_id,
+        schema_version: response.schema_version,
+        session_id: sessionId,
+        session_generation: response.session_generation,
+        base_state_version: response.base_state_version,
+        revision: response.revision,
+        original_message: message,
+        questions: response.questions,
+        answers: response.answers,
+        status: response.status,
+        resolution: response.resolution ?? null,
+        brief_preview: response.brief_preview ?? null,
+        plan: response.plan ?? null,
+      };
       set({
-        intakeDraft: {
-          intake_id: response.intake_id,
-          schema_version: response.schema_version,
-          session_id: sessionId,
-          session_generation: response.session_generation,
-          base_state_version: response.base_state_version,
-          revision: response.revision,
-          original_message: message,
-          questions: response.questions,
-          answers: response.answers,
-          status: response.status,
-        },
+        intakeDraft: draft,
         intakeStatus: response.status,
-        analysisBrief: null,
+        analysisBrief: response.brief_preview ?? null,
+        understanding: response.brief_preview
+          ? {
+              brief: response.brief_preview,
+              resolution: response.resolution ?? null,
+              questions: response.questions,
+            }
+          : null,
         intakeSendPayload: payload ?? { message, session_id: sessionId },
         intakeSendMeta: meta ?? null,
         intakeBusy: false,
         intakeError: null,
+        pendingUserMessage: null,
       });
+      if (response.plan?.auto_start && response.status === 'confirmed') {
+        // Nothing left to ask: start the first run now.
+        await get().startIntakeAnalysis();
+      }
       return true;
     } catch (error) {
+      set({ pendingUserMessage: null });
       const parsed = getParsedApiError(error);
       const capabilityMissing = parsed.status === 404 || parsed.status === 405
         || parsed.status === 501;
@@ -1134,6 +1264,7 @@ export const useAgentChatStore = create<AgentChatState & AgentChatActions>((set,
     set({
       intakeDraft: null,
       intakeStatus: null,
+      understanding: null,
       analysisBrief: null,
       intakeSendPayload: null,
       intakeSendMeta: null,

@@ -475,6 +475,8 @@ export interface TaskStatus {
   traceId?: string;
   status: 'pending' | 'processing' | 'completed' | 'failed' | 'cancel_requested' | 'cancelled';
   progress?: number;
+  stage?: AnalysisRunStage;
+  progressUpdatedAt?: string;
   result?: AnalysisResult;
   marketReviewReport?: string;
   marketReviewPayload?: MarketReviewPayload;
@@ -507,7 +509,20 @@ export interface TaskInfo {
   skills?: string[];
   region?: string;
   assetType?: 'stock' | 'index';
+  /** Analysis stage reported by the server; absent for background tasks. */
+  stage?: AnalysisRunStage;
+  /** Timestamp of the last progress or message change. */
+  progressUpdatedAt?: string;
 }
+
+export type AnalysisRunStage =
+  | 'queued'
+  | 'market_data'
+  | 'fundamentals'
+  | 'news'
+  | 'generating'
+  | 'finalizing'
+  | 'done';
 
 /** Task list response */
 export interface TaskListResponse {

@@ -172,6 +172,9 @@ export interface AgentBackendStatusResponse {
   message?: string | null;
   // Capability flag: only start guided intake when the API supports it.
   guidedIntake?: boolean;
+  // Capability flag: v2 intake resolves the object server-side and may start
+  // the first run without an extra confirmation.
+  smartIntake?: boolean;
 }
 
 export interface AgentBackendStatusPreviewRequest {

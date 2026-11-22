@@ -8,9 +8,25 @@ and this project adheres to [Semantic Versioning](https://semver.org/).
 > For user-friendly release highlights, see the [GitHub Releases](https://github.com/ZhuLinsen/daily_stock_analysis/releases) page.
 
 ## [Unreleased]
-- [新功能] 个股分析与问股接入「财报日历」（下一次财报披露日期）：A股经 AkShare 巨潮预约披露 / 东财预约披露、美股经 yfinance `calendar` / `earnings_dates` 取下一次财报披露日期，标准化为 `earnings.calendar` 子块（`next_earnings_date` / `days_to_next` / `events`），进入报告基本面业绩区块与问股 `get_stock_info`；无密钥、fail-open、默认开启，披露日期始终标注「预计/预约」，港股暂标 `not_supported`。详见 [开发任务书](tasks/earnings-calendar.md)。
+- [新功能] 首页分析运行反馈：主阅读区新增运行卡（五阶段进度条、当前步骤、已用时、取消），窄屏同样可见；运行卡与任务面板共用同一套阶段 / 状态模型，失败任务停留可重试，排队显示队列位置，断线显示重连提示并在断开期间加密轮询；任务 SSE 与任务列表新增 `stage`、`progress_updated_at`，`connected` 事件新增 `heartbeat_interval_s`。
+- [修复] Agent 模式分析进度停滞：`AgentExecutor.run` / `AgentOrchestrator.run` 增加可选进度回调，个股分析在 58%–93% 之间每完成一个工具都更新任务进度，不再长时间停在「正在切换 Agent 分析链路」。
+- [改进] 问股运行反馈：发送后用户气泡立即上屏，进行中面板展示三阶段、步骤时间线、每步耗时、总已用时与停止按钮；读取到心跳注释行即视为存活，连续 3 个心跳周期无任何字节时中止本地读取并转入进度恢复（不取消后台任务）；进度文案统一迁入 `uiText.ts`。
+- [新功能] 问股首问「先判断，再提问」：`POST /api/v1/agent/chat/intake` 新增 `interaction_version=2`，服务端在创建草稿的同一请求内用本地股票索引解析标的、从提问中推断目标 / 周期 / 持仓并写入分析背景；标的明确或问题不需要标的时创建即确认并直接开始，只有标的不明确才保留一道带候选与推荐的问题；新增「我的理解」条展示已识别的标的与背景（含推断依据）。
+- [修复] 首问确认的标的贯通首轮：本次请求刚接受的 intake brief 带标的时直接绑定，不再出现第二张标的澄清卡；历史 brief 不参与绑定，会话中途切换口径不变。
+- [改进] 问股标的澄清卡去掉假的四步解析动画，直接呈现结论；首问卡、澄清卡、理解条统一卡片外壳。
+- [改进] 收紧首问偏好推断规则：「没有持仓」「公司连续亏损」「最近波动大」「今天为什么跌」「机器学习」「一年内新高」等不再被误判为持仓、风险偏好或周期；服务端与前端不再各维护一份推断规则。
+- [文档] 新增「分析运行过程可感知 + 问股首问先判断再提问」开发任务书（docs/tasks/run-feedback-and-chat-intake-ux.md）。
+- [新功能] 首页分析运行反馈：主阅读区新增运行卡（五阶段进度条、当前步骤、已用时、取消），窄屏同样可见；运行卡与任务面板共用同一套阶段 / 状态模型，失败任务停留可重试，排队显示队列位置，断线显示重连提示并在断开期间加密轮询；任务 SSE 与任务列表新增 `stage`、`progress_updated_at`，`connected` 事件新增 `heartbeat_interval_s`。
+- [修复] Agent 模式分析进度停滞：`AgentExecutor.run` / `AgentOrchestrator.run` 增加可选进度回调，个股分析在 58%–93% 之间每完成一个工具都更新任务进度，不再长时间停在「正在切换 Agent 分析链路」。
+- [改进] 问股运行反馈：发送后用户气泡立即上屏，进行中面板展示三阶段、步骤时间线、每步耗时、总已用时与停止按钮；读取到心跳注释行即视为存活，连续 3 个心跳周期无任何字节时中止本地读取并转入进度恢复（不取消后台任务）；进度文案统一迁入 `uiText.ts`。
+- [新功能] 问股首问「先判断，再提问」：`POST /api/v1/agent/chat/intake` 新增 `interaction_version=2`，服务端在创建草稿的同一请求内用本地股票索引解析标的、从提问中推断目标 / 周期 / 持仓并写入分析背景；标的明确或问题不需要标的时创建即确认并直接开始，只有标的不明确才保留一道带候选与推荐的问题；新增「我的理解」条展示已识别的标的与背景（含推断依据）。
+- [修复] 首问确认的标的贯通首轮：本次请求刚接受的 intake brief 带标的时直接绑定，不再出现第二张标的澄清卡；历史 brief 不参与绑定，会话中途切换口径不变。
+- [改进] 问股标的澄清卡去掉假的四步解析动画，直接呈现结论；首问卡、澄清卡、理解条统一卡片外壳。
+- [改进] 收紧首问偏好推断规则：「没有持仓」「公司连续亏损」「最近波动大」「今天为什么跌」「机器学习」「一年内新高」等不再被误判为持仓、风险偏好或周期；服务端与前端不再各维护一份推断规则。
+- [文档] 新增「分析运行过程可感知 + 问股首问先判断再提问」开发任务书（docs/tasks/run-feedback-and-chat-intake-ux.md）。
 - [改进] 飞书推送升级结构化卡片：优先用通知链路已算好的结构化数据渲染信号区（八态动作徽章 / 0–100 评分分级色 / 理想买·止损·目标三列卡 / 大盘情绪灯），卡片无 `render_context` 时输出逐字节不变；`render_context` 从发送层透传到 Webhook 与 App Bot 两条链路，分片时信号区只作用于首片。详见 [开发任务书](tasks/feishu-message-redesign.md)。
 - [文档] 新增飞书消息格式深度优化开发任务书与 P1 落地说明（docs/tasks/feishu-message-redesign.md）。
+- [新功能] 个股分析与问股接入「财报日历」（下一次财报披露日期）：A股经 AkShare 巨潮预约披露 / 东财预约披露、美股经 yfinance `calendar` / `earnings_dates` 取下一次财报披露日期，标准化为 `earnings.calendar` 子块（`next_earnings_date` / `days_to_next` / `events`），进入报告基本面业绩区块与问股 `get_stock_info`；无密钥、fail-open、默认开启，披露日期始终标注「预计/预约」，港股暂标 `not_supported`。详见 [开发任务书](tasks/earnings-calendar.md)。
 - [新功能] 问股与个股/大盘分析接入「预测市场现状」：新增只读预测市场采集层（Kalshi / Polymarket 标准化字段、`(source, market_id)` 去重、retention、fail-open），问股 Agent 新增只读工具 `search_prediction_markets`，个股分析注入独立 `prediction_market_context` 数据块、大盘复盘 Prompt 合并宏观事件；新增 `GET/POST /api/v1/prediction-markets/*` 查询与拉取接口。全能力默认关闭（`PREDICTION_MARKET_ENABLED=false`），不参与评分/仓位，详见 [开发任务书](tasks/prediction-market-intelligence.md)。
 - [新功能] 问股对话列表支持置顶：会话菜单新增「置顶对话 / 取消置顶」，置顶会话在列表顶部独立成组并持久化到新表 `conversation_session_pins`；`GET /api/v1/agent/chat/sessions` 新增 `is_pinned`，新增 `PUT /api/v1/agent/chat/sessions/{session_id}/pin`；置顶排序在 SQL 层先于 `limit` 截断执行，删除会话同步清理置顶记录，失败时前端回滚乐观更新并提示。详见 [开发任务书](tasks/chat-session-pin.md)。
 - [改进] 问股「分析过程」明细收敛重复内容：展开类别时按 `call_id` / `stage_id` 把 `tool_start` 与 `tool_done`、`stage_start` 与 `stage_done` 合并为一行，隐藏「…已完成，继续深入分析…」等重复思考提示，连续相同记录折叠为 `×N`，并在标题旁汇总「N 次工具调用 · M 个分析阶段 · K 项异常」；运行中的进度面板也不再同时展示已完成的 start/done 两行。

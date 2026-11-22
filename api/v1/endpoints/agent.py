@@ -28,8 +28,9 @@ from src.services.agent_chat_intake_service import (
     AgentChatIntakeService, IntakeNotConfirmed, IntakeServiceError,
 )
 from src.schemas.agent_intake import (
-    IntakeCreateRequest, IntakeCreateResponse, IntakeStatus,
-    IntakeUpdateRequest, IntakeUpdateResponse,
+    IntakeCreateRequest, IntakeCreateResponse, IntakePlan, IntakeStatus,
+    IntakeUpdateRequest, IntakeUpdateResponse, ObjectIdentity, ObjectResolution,
+    ResolutionScope, ResolutionStatus,
 )
 from src.agent.cancellation import alias_run, register_run, release_run, request_cancel
 from src.storage import (
@@ -282,6 +283,7 @@ def _prepare_chat_request(request, config, session_id, session_service,
         raise ChatTurnInProgress()
 
     brief_payload = None
+    confirmed_object = None
     if request.interaction_version >= 1:
         if request.intake_id:
             if request.intake_revision is None or intake_service is None:
@@ -295,6 +297,10 @@ def _prepare_chat_request(request, config, session_id, session_service,
                 request_id=request_id or request.request_id or "",
             )
             brief_payload = accepted_brief.model_dump(exclude_none=True)
+            # Only a brief accepted by *this* request may bind the object. A
+            # reused historical brief must not pin the conversation, or later
+            # "switch to X" turns would be blocked (R9).
+            confirmed_object = brief_payload.get("object")
         else:
             brief_payload = _reuse_session_brief(session_service, session_id)
 
@@ -302,6 +308,7 @@ def _prepare_chat_request(request, config, session_id, session_service,
         config, session_id, request.message, request.effective_skills,
         context=_build_agent_chat_context(request, config, None, brief_payload),
         expected_generation=request.session_generation,
+        confirmed_object=confirmed_object,
     )
     if resolved.clarification is not None:
         accepted = session_service.commit_user_turn(resolved)
@@ -538,6 +545,7 @@ def _agent_status_response(payload: Dict[str, Any]) -> AgentBackendStatusRespons
         error_code=payload.get("error_code"),
         message=payload.get("message"),
         guided_intake=True,
+        smart_intake=True,
     )
 
 
@@ -1132,6 +1140,9 @@ async def agent_chat_stream(
                     "backend": backend_id,
                     "request_id": request_id,
                     "session_id": session_id,
+                    # The client derives its silence watchdog from this value
+                    # instead of hard-coding the server heartbeat.
+                    "heartbeat_interval_s": HEARTBEAT_INTERVAL_SECONDS,
                     **accepted_payload,
                 }
                 yield "data: " + json.dumps(accepted_event, ensure_ascii=False) + "\n\n"
@@ -1162,6 +1173,9 @@ async def agent_chat_stream(
                 "backend": backend_id,
                 "request_id": request_id,
                 "session_id": session_id,
+                # The client derives its silence watchdog from this value
+                # instead of hard-coding the server heartbeat.
+                "heartbeat_interval_s": HEARTBEAT_INTERVAL_SECONDS,
                 **_accepted_state_payload(accepted),
             }
             yield "data: " + json.dumps(accepted_event, ensure_ascii=False) + "\n\n"
@@ -1350,6 +1364,48 @@ async def create_chat_intake(
         intent_hints_dict = None
         if request.intent_hints is not None:
             intent_hints_dict = request.intent_hints.model_dump(exclude_none=True)
+
+        if request.interaction_version >= 2:
+            # v2: resolve the object and infer the background in this request.
+            # The draft may already be confirmed, which lets the client start
+            # the first run without an extra click.
+            draft, meta = await asyncio.to_thread(
+                intake_service.create_intake_v2,
+                message=request.message, session_id=session_id,
+                session_generation=generation or "", request_id=request.request_id,
+                report_follow_up=bool(
+                    context.get("report_record_id") or context.get("record_id")
+                ),
+                intent_hints=intent_hints_dict,
+            )
+            resolution = meta["resolution"]
+            identity = resolution.get("identity")
+            recommended = resolution.get("recommended")
+            candidates = [
+                ObjectIdentity.model_validate(item)
+                for item in resolution.get("candidates") or []
+            ]
+            return IntakeCreateResponse(
+                intake_id=draft.intake_id, schema_version=draft.schema_version,
+                session_generation=draft.session_generation,
+                base_state_version=draft.base_state_version, revision=draft.revision,
+                status=draft.status, questions=draft.questions, answers=draft.answers,
+                resolution=ObjectResolution(
+                    status=ResolutionStatus(resolution["status"]),
+                    scope=ResolutionScope(resolution.get("scope", "unknown")),
+                    identity=(
+                        ObjectIdentity.model_validate(identity) if identity else None
+                    ),
+                    candidates=candidates,
+                    recommended_option_id=(
+                        recommended.get("canonical_id") if recommended else None
+                    ),
+                    reason=resolution.get("reason"),
+                ),
+                brief_preview=meta["brief"],
+                plan=IntakePlan(**meta["plan"]),
+            )
+
         draft = await asyncio.to_thread(
             intake_service.create_intake,
             message=request.message, session_id=session_id,

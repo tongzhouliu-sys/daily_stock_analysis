@@ -4547,6 +4547,7 @@ class DatabaseManager(metaclass=_DatabaseManagerMeta):
         self, *, intake_id: str, session_id: str, session_generation: str,
         original_message: str, questions_json: str, base_state_version: int = 0,
         request_id: Optional[str] = None, schema_version: int = 1,
+        answers_json: str = "[]", status: str = "pending",
     ) -> Dict[str, Any]:
         """Insert a draft, or return the existing one for a creation retry."""
         def write(session: Session) -> Dict[str, Any]:
@@ -4561,7 +4562,7 @@ class DatabaseManager(metaclass=_DatabaseManagerMeta):
                 session_id=session_id, session_generation=session_generation,
                 base_state_version=base_state_version, revision=1,
                 original_message=original_message, questions_json=questions_json,
-                answers_json="[]", status="pending", request_id=request_id,
+                answers_json=answers_json, status=status, request_id=request_id,
             )
             session.add(row)
             session.flush()

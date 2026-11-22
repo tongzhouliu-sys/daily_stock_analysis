@@ -1,6 +1,7 @@
 import { memo } from 'react';
 import { cn } from '../../utils/cn';
 import type { ProgressStep } from '../../stores/agentChatStore';
+import { useUiLanguage, type TranslateFn } from '../../contexts/UiLanguageContext';
 import {
   getPipelineBudgetSkippedLabel,
   getStageDoneLabel,
@@ -54,7 +55,10 @@ function categorizeStep(step: ProgressStep): string {
   return 'other';
 }
 
-function describeStep(step: ProgressStep): { text: string; statusClass: string; iconClass: string } {
+function describeStep(
+  step: ProgressStep,
+  t: TranslateFn,
+): { text: string; statusClass: string; iconClass: string } {
   let statusClass = 'chat-progress-item-muted';
   let iconClass = 'chat-progress-dot-muted';
   let text = '';
@@ -71,18 +75,20 @@ function describeStep(step: ProgressStep): { text: string; statusClass: string; 
       } else if (outcome === 'timeout') {
         statusClass = 'chat-progress-item-danger';
         iconClass = 'chat-progress-dot-danger';
-        text += ' · 超时';
+        text += ` · ${t('chat.thinking.timeout')}`;
       } else if (outcome === 'failed') {
         statusClass = 'chat-progress-item-danger';
         iconClass = 'chat-progress-dot-danger';
       } else if (outcome === 'partial') {
-        text += ' · 部分可用';
+        text += ` · ${t('chat.thinking.partial')}`;
       }
       if (step.detail) {
         const detailParts: string[] = [];
-        if (step.detail.record_count) detailParts.push(`${step.detail.record_count} 条记录`);
+        if (step.detail.record_count) {
+          detailParts.push(t('chat.thinking.records', { count: Number(step.detail.record_count) }));
+        }
         if (step.detail.date_range) detailParts.push(String(step.detail.date_range));
-        if (step.detail.data_source === 'cache') detailParts.push('历史缓存');
+        if (step.detail.data_source === 'cache') detailParts.push(t('chat.thinking.cached'));
         if (detailParts.length > 0) text += ` · ${detailParts.join(' · ')}`;
       }
       break;
@@ -93,7 +99,7 @@ function describeStep(step: ProgressStep): { text: string; statusClass: string; 
       iconClass = 'chat-progress-dot-tool';
       break;
     case 'stage_start':
-      text = step.message || `Starting ${step.stage || 'stage'}...`;
+      text = step.message || t('chat.progress.waiting');
       statusClass = 'chat-progress-item-thinking';
       iconClass = 'chat-progress-dot-thinking';
       break;
@@ -110,12 +116,12 @@ function describeStep(step: ProgressStep): { text: string; statusClass: string; 
       iconClass = 'chat-progress-dot-thinking';
       break;
     case 'thinking':
-      text = step.message || `第 ${step.step} 步：思考`;
+      text = step.message || t('chat.progress.planning');
       statusClass = 'chat-progress-item-thinking';
       iconClass = 'chat-progress-dot-thinking';
       break;
     case 'generating':
-      text = step.message || '生成分析';
+      text = step.message || t('chat.progress.generating');
       statusClass = 'chat-progress-item-generating';
       iconClass = 'chat-progress-dot-generating';
       break;
@@ -150,21 +156,19 @@ function summarizeCounts(items: SummarizedProgressStep[]): {
 
 function buildSummaryText(
   counts: { toolCalls: number; stages: number; issues: number },
-  language: 'zh' | 'en',
+  t: TranslateFn,
 ): string {
   const parts: string[] = [];
   if (counts.toolCalls > 0) {
-    parts.push(language === 'en' ? `${counts.toolCalls} tool calls` : `${counts.toolCalls} 次工具调用`);
+    parts.push(t('chat.thinking.toolCalls', { count: counts.toolCalls }));
   }
   if (counts.stages > 0) {
-    parts.push(language === 'en' ? `${counts.stages} stages` : `${counts.stages} 个分析阶段`);
+    parts.push(t('chat.thinking.stages', { count: counts.stages }));
   }
   if (counts.issues > 0) {
-    parts.push(language === 'en'
-      ? `${counts.issues} issue${counts.issues > 1 ? 's' : ''}`
-      : `${counts.issues} 项异常`);
+    parts.push(t('chat.thinking.issues', { count: counts.issues }));
   }
-  if (parts.length === 0) return language === 'en' ? 'No tool calls' : '无工具调用';
+  if (parts.length === 0) return t('chat.thinking.none');
   return parts.join(' · ');
 }
 
@@ -182,13 +186,14 @@ function ChatThinkingBlock({
   onToggleCategory,
   language,
 }: ChatThinkingBlockProps) {
+  const { t } = useUiLanguage();
   if (!steps || steps.length === 0) return null;
 
   // Merge start/done pairs, drop repetitive thinking chatter and collapse
   // identical repeated rows so expanding a category reads as a short summary
   // instead of the same sentence appearing several times.
   const displaySteps = summarizeProgressSteps(steps);
-  const summaryText = buildSummaryText(summarizeCounts(displaySteps), language);
+  const summaryText = buildSummaryText(summarizeCounts(displaySteps), t);
 
   const categoryMap = new Map<string, SummarizedProgressStep[]>();
   const categoryOrder: string[] = [];
@@ -204,7 +209,7 @@ function ChatThinkingBlock({
   return (
     <div className="mb-3">
       <div className="flex flex-wrap items-center gap-x-2 gap-y-1 mb-2">
-        <span className="text-xs text-muted-text opacity-60">分析过程</span>
+        <span className="text-xs text-muted-text opacity-60">{t('chat.thinking.title')}</span>
         <span className="text-xs text-secondary-text opacity-70">{summaryText}</span>
       </div>
 
@@ -246,7 +251,7 @@ function ChatThinkingBlock({
             return (
               <div key={category} className="pl-4 border-l-2 border-primary/30 space-y-1.5">
                 {categorySteps.map((item, idx) => {
-                  const { text, statusClass, iconClass } = describeStep(item.step);
+                  const { text, statusClass, iconClass } = describeStep(item.step, t);
                   return (
                     <div key={idx} className={cn('chat-progress-item', statusClass)}>
                       <span className={cn('chat-progress-dot', iconClass)} />

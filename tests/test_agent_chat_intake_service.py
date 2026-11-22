@@ -7,7 +7,9 @@ from typing import Any, Dict, Optional
 
 import pytest
 
-from src.agent.intake_questions import MAX_QUESTIONS, select_questions
+from src.agent.intake_questions import (
+    MAX_QUESTIONS, classify_question_intent, select_questions,
+)
 from src.schemas.agent_intake import Answer, IntakeStatus
 from src.services.agent_chat_intake_service import (
     AgentChatIntakeService,
@@ -120,8 +122,16 @@ def test_concept_question_only_asks_about_reading_style():
 
 
 def test_complete_question_shows_one_confirmation():
-    questions = select_questions("没有持仓，研究 AAPL 未来半年，优先控制风险")
+    # v2 rule tightening: "没有持仓" no longer implies "review a holding", so a
+    # complete question must state the holding in the first person.
+    questions = select_questions("我持有 AAPL，未来半年，优先控制风险")
     assert len(questions) == 1 and questions[0].id == "confirm"
+
+
+def test_negated_holding_is_not_inferred_as_evaluate_holding():
+    intent = classify_question_intent("没有持仓，研究 AAPL 未来半年，优先控制风险")
+    assert "goal" not in intent["inferred"]
+    assert intent["inferred"]["position"][0] == "not_held"
 
 
 def test_object_ambiguity_is_merged_into_the_same_questionnaire():
