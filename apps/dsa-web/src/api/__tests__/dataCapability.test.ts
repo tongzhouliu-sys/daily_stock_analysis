@@ -24,6 +24,7 @@ describe('dataCapabilityApi', () => {
           datasets: ['financial.snapshot'],
           dataset_markets: { 'financial.snapshot': ['HK', 'US'] },
           warnings: [],
+          last_checked_at: '2026-11-22T09:30:00+08:00',
         }],
         datasets: [],
         priorities: [],
@@ -35,5 +36,6 @@ describe('dataCapabilityApi', () => {
 
     expect(apiClient.get).toHaveBeenCalledWith('/api/v1/data/overview');
     expect(result.providers[0].datasetMarkets).toEqual({ 'financial.snapshot': ['HK', 'US'] });
+    expect(result.providers[0].lastCheckedAt).toBe('2026-11-22T09:30:00+08:00');
   });
 });

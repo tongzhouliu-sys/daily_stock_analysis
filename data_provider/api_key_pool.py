@@ -48,6 +48,19 @@ _KEY_FAILURE_MARKERS = (
 )
 
 
+class KeyFailureError(Exception):
+    """显式标记为 Key 级失效（鉴权 / 配额 / 限流）的错误。
+
+    适配器把 401/403/429 等 Key 级错误包装成本异常，``ApiKeyPool`` 据此切换到下一个
+    Key；未包装的异常（如网络错误）不会被当作 Key 失效。
+    """
+
+    def __init__(self, reason: str = "", *, error: Optional[BaseException] = None) -> None:
+        self.reason = reason
+        self.error = error
+        super().__init__(reason)
+
+
 def parse_api_keys(value: Any) -> List[str]:
     """把配置值解析为去重后的 Key 列表。
 
@@ -86,6 +99,8 @@ def is_key_failure(error: Optional[BaseException]) -> bool:
     """判断异常是否属于 Key 级失效（可用另一个 Key 重试）。"""
     if error is None:
         return False
+    if isinstance(error, KeyFailureError):
+        return True
     text = str(error).strip().lower()
     if not text:
         return False
@@ -109,11 +124,14 @@ class ApiKeyPool:
     MAX_CONSECUTIVE_ERRORS = 3
     # 连续失败超过阈值的 Key 进入冷却；冷却结束自动重新参与轮询
     COOLDOWN_SECONDS = 300
+    # 日配额窗口（Alpha Vantage 免费层按天计数）
+    QUOTA_WINDOW_SECONDS = 86400
 
     def __init__(self, keys: Iterable[str] = ()) -> None:
         self._keys = parse_api_keys(list(keys))
         self._errors = {key: 0 for key in self._keys}
         self._blocked_until = {key: 0.0 for key in self._keys}
+        self._request_times: dict[str, List[float]] = {key: [] for key in self._keys}
         self._cursor = 0
         self._lock = threading.RLock()
 
@@ -136,6 +154,34 @@ class ApiKeyPool:
         with self._lock:
             return dict(self._errors)
 
+    def note_request(self, key: Optional[str] = None) -> None:
+        """记录一次配额消耗；不传 key 时记录到当前主 Key。
+
+        仅保留最近 :attr:`QUOTA_WINDOW_SECONDS` 内的请求时间，供后台探测和
+        日常分析共享“这个 Key 今天用了多少次”的判断。
+        """
+        with self._lock:
+            target = key or (self._keys[0] if self._keys else None)
+            if not target:
+                return
+            now = time.time()
+            cutoff = now - self.QUOTA_WINDOW_SECONDS
+            times = [item for item in self._request_times.get(target, []) if item > cutoff]
+            times.append(now)
+            self._request_times[target] = times
+
+    def requests_last_day(self, key: Optional[str] = None) -> int:
+        """返回某个 Key（不传则全部 Key）最近 24 小时的请求数。"""
+        with self._lock:
+            now = time.time()
+            cutoff = now - self.QUOTA_WINDOW_SECONDS
+            if key is not None:
+                return len([item for item in self._request_times.get(key, []) if item > cutoff])
+            return sum(
+                len([item for item in times if item > cutoff])
+                for times in self._request_times.values()
+            )
+
     def call(self, func: Callable[[str], T]) -> T:
         """用池中的 Key 依次调用 ``func(key)``，Key 级失败时切换下一个。"""
         keys = self._ordered_keys()
@@ -144,6 +190,7 @@ class ApiKeyPool:
 
         last_error: Optional[BaseException] = None
         for key in keys:
+            self.note_request(key)
             try:
                 result = func(key)
             except Exception as exc:  # noqa: BLE001 - 需要按错误类型决定是否换 Key
@@ -152,8 +199,8 @@ class ApiKeyPool:
                     raise
                 self._record_error(key)
                 logger.warning(
-                    "[APIKeyPool] API Key %s... 不可用（%s），尝试下一个 Key",
-                    key[:8],
+                    "[APIKeyPool] API Key #%s 不可用（%s），尝试下一个 Key",
+                    self._keys.index(key) + 1,
                     describe_request_error(exc),
                 )
                 continue
@@ -189,7 +236,7 @@ class ApiKeyPool:
         if now >= blocked_until:
             self._errors[key] = 0
             self._blocked_until[key] = 0.0
-            logger.info("[APIKeyPool] API Key %s... 冷却结束，恢复参与轮询", key[:8])
+            logger.info("[APIKeyPool] API Key #%s 冷却结束，恢复参与轮询", self._keys.index(key) + 1)
             return True
 
         return False

@@ -29,6 +29,7 @@ function mapProvider(raw: Record<string, unknown>): DataProviderCapability {
     datasetMarkets: (raw.dataset_markets as Record<string, string[]> | undefined) ?? {},
     warnings: strings(raw.warnings),
     lastError: raw.last_error == null ? null : String(raw.last_error),
+    lastCheckedAt: raw.last_checked_at == null ? null : String(raw.last_checked_at),
     cooldown: raw.cooldown == null ? null : Boolean(raw.cooldown),
   };
 }

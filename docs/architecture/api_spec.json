@@ -8559,6 +8559,18 @@
             "title": "Last Error",
             "description": "Last known non-sensitive error summary"
           },
+          "last_checked_at": {
+            "anyOf": [
+              {
+                "type": "string"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Last Checked At",
+            "description": "Last successful or failed runtime probe timestamp"
+          },
           "cooldown": {
             "anyOf": [
               {

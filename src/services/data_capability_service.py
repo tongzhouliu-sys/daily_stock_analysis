@@ -5,11 +5,20 @@ from __future__ import annotations
 
 import logging
 import os
+import time
 from dataclasses import dataclass
 from datetime import datetime, timezone
 from typing import Any, Callable, Dict, Iterable, List, Mapping, Optional, Sequence
 
+from data_provider.runtime_status_cache import (
+    get_runtime_result,
+    sanitize_error_summary,
+)
 from src.config import get_config
+from src.services.data_provider_probe_service import (
+    DEFAULT_PROBE_INTERVAL_MINUTES,
+    probe_interval_minutes,
+)
 
 logger = logging.getLogger(__name__)
 
@@ -292,6 +301,8 @@ class DataCapabilityService:
             configured = self._is_provider_configured(definition)
             enabled = bool(definition.builtin or configured)
             warnings: List[str] = []
+            last_checked_at: Optional[str] = None
+            cached_error: Optional[str] = None
 
             if not configured and not definition.builtin:
                 status = "unconfigured"
@@ -299,11 +310,13 @@ class DataCapabilityService:
                 status = "unavailable"
                 warnings.append("provider_not_initialized")
             else:
-                status = self._provider_runtime_status(fetcher)
-                if status == "unavailable":
-                    warnings.append("provider_marked_unavailable")
-                elif status == "unknown":
-                    warnings.append("runtime_probe_not_performed")
+                (
+                    status,
+                    last_checked_at,
+                    cached_error,
+                    state_warnings,
+                ) = self._provider_runtime_state(definition, fetcher)
+                warnings.extend(state_warnings)
 
             providers.append(
                 {
@@ -320,12 +333,78 @@ class DataCapabilityService:
                         for dataset, markets in definition.dataset_markets.items()
                     },
                     "warnings": warnings,
-                    "last_error": self._safe_last_error(fetcher),
+                    "last_error": cached_error or self._safe_last_error(fetcher),
+                    "last_checked_at": last_checked_at,
                     "cooldown": None,
                 }
             )
 
         return providers
+
+    def _provider_runtime_state(
+        self,
+        definition: _ProviderDefinition,
+        fetcher: Any,
+    ) -> tuple[str, Optional[str], Optional[str], List[str]]:
+        """Resolve provider status from runtime flags, cache, or local probes.
+
+        The cached result is the only source for periodically probed providers;
+        this method never issues an external request.
+        """
+
+        runtime_status = getattr(fetcher, "runtime_status", None)
+        if isinstance(runtime_status, str) and runtime_status in {"ok", "unknown", "unavailable"}:
+            warnings: List[str] = []
+            if runtime_status == "unavailable":
+                warnings.append("provider_marked_unavailable")
+            elif runtime_status == "unknown":
+                warnings.append("runtime_probe_not_performed")
+            return runtime_status, None, None, warnings
+
+        cached = get_runtime_result(definition.name)
+        if cached is not None:
+            checked_at = cached.get("checked_at")
+            checked_iso = self._iso_from_epoch(checked_at)
+            cached_error = cached.get("error")
+            if self._probe_cache_stale(checked_at):
+                return "unknown", checked_iso, cached_error, ["probe_stale"]
+            status = str(cached.get("status") or "unknown")
+            cached_warnings = list(cached.get("warnings") or [])
+            if status == "ok":
+                return "ok", checked_iso, None, cached_warnings
+            if status == "unavailable":
+                return "unavailable", checked_iso, cached_error, ["provider_marked_unavailable"]
+            return "unknown", checked_iso, cached_error, ["runtime_probe_not_performed"]
+
+        status = self._provider_runtime_status(fetcher)
+        warnings = []
+        if status == "unavailable":
+            warnings.append("provider_marked_unavailable")
+        elif status == "unknown":
+            warnings.append("runtime_probe_not_performed")
+        return status, None, None, warnings
+
+    @staticmethod
+    def _iso_from_epoch(value: Any) -> Optional[str]:
+        try:
+            timestamp = float(value)
+        except (TypeError, ValueError):
+            return None
+        try:
+            return datetime.fromtimestamp(timestamp, tz=timezone.utc).astimezone().isoformat()
+        except (OverflowError, OSError, ValueError):
+            return None
+
+    @staticmethod
+    def _probe_cache_stale(checked_at: Any) -> bool:
+        try:
+            timestamp = float(checked_at)
+        except (TypeError, ValueError):
+            return True
+        interval_minutes = probe_interval_minutes()
+        if interval_minutes <= 0:
+            interval_minutes = DEFAULT_PROBE_INTERVAL_MINUTES
+        return (time.time() - timestamp) > interval_minutes * 60 * 2
 
     @staticmethod
     def _provider_runtime_status(fetcher: Any) -> str:
@@ -403,7 +482,7 @@ class DataCapabilityService:
         for attr in ("last_error", "_last_error"):
             value = getattr(fetcher, attr, None)
             if value:
-                return " ".join(str(value).split())
+                return sanitize_error_summary(value)
         return None
 
     def _build_priority_views(self, fetchers: Sequence[Any]) -> List[Dict[str, Any]]:

@@ -963,6 +963,7 @@ def test_data_capability_api_paths_return_valid_contract() -> None:
                 "dataset_markets": {"quote.realtime": ["cn"]},
                 "warnings": [],
                 "last_error": None,
+                "last_checked_at": None,
                 "cooldown": None,
             }
         ],

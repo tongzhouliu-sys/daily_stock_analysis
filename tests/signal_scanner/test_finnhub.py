@@ -1,9 +1,11 @@
 from datetime import timedelta
 
 import httpx
+import pytest
 
+from src.services.signal_scanner.adapters import base as adapter_base
 from src.services.signal_scanner.adapters.finnhub_earnings_adapter import FinnhubEarningsAdapter
-from src.services.signal_scanner.core import Settings, now
+from src.services.signal_scanner.core import DomainError, Settings, now
 from src.services.signal_scanner.services.source_data import load_finnhub
 from src.services.signal_scanner.storage.db import Database, many, one
 from src.services.signal_scanner.worker.pipeline import gate_events
@@ -19,6 +21,24 @@ def adapter(rows, code=200):
     return FinnhubEarningsAdapter(
         key="FICTIONAL_KEY", client=httpx.Client(transport=httpx.MockTransport(handler))
     )
+
+
+def calendar_row():
+    day = (now() + timedelta(days=3)).date().isoformat()
+    return [dict(symbol="AAPL", date=day, hour="bmo", year=2026, quarter=4)]
+
+
+def keyed_client(seen, codes):
+    """按 Key 返回预设状态码的客户端，并把实际使用的 Key 记录到 ``seen``。"""
+    def respond(request):
+        token = request.headers["X-Finnhub-Token"]
+        seen.append(token)
+        code = codes.get(token, 200)
+        if code == 200:
+            return httpx.Response(200, json={"earningsCalendar": calendar_row()})
+        return httpx.Response(code, json={"error": "invalid api key"})
+
+    return httpx.Client(transport=httpx.MockTransport(respond))
 
 
 def test_finnhub_hours_actual_time_unknown_idempotent(tmp_path):
@@ -90,3 +110,90 @@ def test_finnhub_missing_key_no_network(tmp_path):
 def test_finnhub_denied_is_not_success(tmp_path):
     report = load_finnhub(Settings(tmp_path), adapter=adapter([], 403))
     assert report["status"] == "FAILED" and report["health"]["permission"] == "DENIED"
+
+
+def test_finnhub_env_accepts_comma_separated_keys(monkeypatch, tmp_path):
+    monkeypatch.setenv("FINNHUB_API_KEY", "key_a,key_b")
+    seen = []
+    subject = FinnhubEarningsAdapter(client=keyed_client(seen, {}))
+
+    assert subject.keys == ["key_a", "key_b"] and subject.key == "key_a"
+    report = load_finnhub(Settings(tmp_path), adapter=subject)
+    assert report["ingest"]["inserted"] == 1
+    assert seen == ["key_a"]
+
+
+def test_finnhub_single_key_never_switches(monkeypatch, tmp_path):
+    monkeypatch.setattr(adapter_base.time, "sleep", lambda seconds: None)
+    seen = []
+    subject = FinnhubEarningsAdapter(key="only_key", client=keyed_client(seen, {"only_key": 401}))
+
+    assert subject.keys == ["only_key"]
+    report = load_finnhub(Settings(tmp_path), adapter=subject)
+    assert report["status"] == "FAILED" and report["reason_code"] == "SOURCE_PERMISSION_DENIED"
+    assert seen == ["only_key"]
+
+
+@pytest.mark.parametrize("code", [401, 403, 429])
+def test_finnhub_switches_to_next_key_on_key_level_failure(code, monkeypatch, tmp_path, caplog):
+    # 429 先由传输层重试，这里跳过等待以保持测试快速
+    monkeypatch.setattr(adapter_base.time, "sleep", lambda seconds: None)
+    seen = []
+    subject = FinnhubEarningsAdapter(
+        key="key_a,key_b", client=keyed_client(seen, {"key_a": code})
+    )
+
+    report = load_finnhub(Settings(tmp_path), adapter=subject)
+
+    assert report["ingest"]["inserted"] == 1
+    assert seen[-1] == "key_b" and set(seen) == {"key_a", "key_b"}
+    assert "key_a" not in caplog.text and "key_b" not in caplog.text
+
+
+def test_finnhub_all_keys_failing_reports_permission_denied(monkeypatch, tmp_path, caplog):
+    monkeypatch.setattr(adapter_base.time, "sleep", lambda seconds: None)
+    seen = []
+    subject = FinnhubEarningsAdapter(
+        key="key_a,key_b", client=keyed_client(seen, {"key_a": 401, "key_b": 401})
+    )
+
+    report = load_finnhub(Settings(tmp_path), adapter=subject)
+
+    assert report["status"] == "FAILED" and report["reason_code"] == "SOURCE_PERMISSION_DENIED"
+    assert report["health"]["permission"] == "DENIED"
+    assert seen == ["key_a", "key_b"]
+    assert "key_a" not in caplog.text and "key_b" not in caplog.text
+
+
+def test_finnhub_all_keys_rate_limited_raises_domain_error(monkeypatch):
+    monkeypatch.setattr(adapter_base.time, "sleep", lambda seconds: None)
+    seen = []
+    subject = FinnhubEarningsAdapter(
+        key="key_a,key_b", client=keyed_client(seen, {"key_a": 429, "key_b": 429})
+    )
+
+    with pytest.raises(DomainError) as info:
+        subject.fetch(["AAPL"], "2026-01-01", "2026-01-31")
+
+    assert info.value.code == "SOURCE_RATE_LIMITED"
+    assert set(seen) == {"key_a", "key_b"}
+    assert "key_a" not in str(info.value) and "key_b" not in str(info.value)
+
+
+def test_finnhub_network_error_does_not_switch_key(monkeypatch):
+    monkeypatch.setattr(adapter_base.time, "sleep", lambda seconds: None)
+    seen = []
+
+    def handler(request):
+        seen.append(request.headers["X-Finnhub-Token"])
+        raise httpx.ConnectError("network down")
+
+    subject = FinnhubEarningsAdapter(
+        key="key_a,key_b", client=httpx.Client(transport=httpx.MockTransport(handler))
+    )
+    with pytest.raises(DomainError) as info:
+        subject.fetch(["AAPL"], "2026-01-01", "2026-01-31")
+
+    assert info.value.code == "SOURCE_UNREACHABLE"
+    assert set(seen) == {"key_a"}
+

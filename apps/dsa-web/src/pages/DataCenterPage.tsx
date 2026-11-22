@@ -4,11 +4,29 @@ import { Database, RefreshCw, Settings2, TriangleAlert } from 'lucide-react';
 import { Link } from 'react-router-dom';
 import { dataCapabilityApi } from '../api/dataCapability';
 import { AppPage, Badge, Button, Card, EmptyState, InlineAlert, Loading, PageHeader } from '../components/common';
-import { useUiLanguage } from '../contexts/UiLanguageContext';
+import { useUiLanguage, type TranslateFn } from '../contexts/UiLanguageContext';
 import type { DataCapabilityOverview, DatasetQualityStatus, ProviderCapabilityStatus } from '../types/dataCapability';
 import { formatDateTime } from '../utils/format';
 
 type Status = DatasetQualityStatus | ProviderCapabilityStatus;
+
+const PROVIDER_WARNING_KEYS: Record<string, Parameters<TranslateFn>[0]> = {
+  runtime_probe_not_performed: 'dataCenter.warning.notChecked',
+  probe_stale: 'dataCenter.warning.probeStale',
+  quota_limited: 'dataCenter.warning.quotaLimited',
+};
+
+function providerWarningText(warning: string, t: TranslateFn): string {
+  const key = PROVIDER_WARNING_KEYS[warning];
+  return key ? t(key) : warning;
+}
+
+function providerStatusText(provider: DataCapabilityOverview['providers'][number], t: TranslateFn): string {
+  if (provider.status !== 'unknown') return provider.status;
+  return provider.warnings.includes('probe_stale')
+    ? t('dataCenter.statusStale')
+    : t('dataCenter.statusNotChecked');
+}
 
 function statusVariant(status: Status): 'success' | 'warning' | 'danger' | 'default' {
   if (status === 'ok') return 'success';
@@ -146,13 +164,20 @@ const DataCenterPage: React.FC = () => {
                       <div className="truncate font-semibold text-foreground">{provider.label || provider.name}</div>
                       <div className="mt-1 font-mono text-xs text-muted-text">{provider.name}</div>
                     </div>
-                    <Badge variant={statusVariant(provider.status)}>{provider.status}</Badge>
+                    <Badge variant={statusVariant(provider.status)}>{providerStatusText(provider, t)}</Badge>
                   </div>
                   <div className="mt-3 text-xs leading-5 text-secondary-text">
                     <div>{t('dataCenter.markets')}: {provider.markets.join(', ') || '--'}</div>
                     <div>{t('dataCenter.datasets')}: {formatDatasetMarkets(provider.datasetMarkets) || '--'}</div>
+                    <div className="text-muted-text">
+                      {t('dataCenter.lastChecked')}: {provider.lastCheckedAt ? formatDateTime(provider.lastCheckedAt) : '--'}
+                    </div>
                   </div>
-                  {provider.warnings.length > 0 ? <div className="mt-2 text-xs text-warning">{provider.warnings.join(' · ')}</div> : null}
+                  {provider.warnings.length > 0 ? (
+                    <div className="mt-2 text-xs text-warning">
+                      {provider.warnings.map((warning) => providerWarningText(warning, t)).join(' · ')}
+                    </div>
+                  ) : null}
                 </div>
               ))}
             </div>

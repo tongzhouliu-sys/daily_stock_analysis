@@ -28,6 +28,7 @@ const overview = {
       },
       warnings: ['runtime_probe_unknown'],
       lastError: null,
+      lastCheckedAt: '2026-08-29T09:29:00+08:00',
       cooldown: false,
     },
   ],
@@ -135,6 +136,23 @@ describe('DataCenterPage', () => {
     const row = (await screen.findByText('screening.snapshot')).closest('tr');
     expect(row).toHaveTextContent('unknown');
     expect(row).not.toHaveTextContent('ok');
+  });
+
+  it('shows the last check time and presents an unprobed provider as not checked', async () => {
+    getOverview.mockResolvedValueOnce({
+      ...overview,
+      providers: [{
+        ...overview.providers[0],
+        status: 'unknown',
+        warnings: ['runtime_probe_not_performed'],
+        lastCheckedAt: null,
+      }],
+    });
+
+    render(<MemoryRouter><DataCenterPage /></MemoryRouter>);
+
+    expect(await screen.findByText('最近检测', { exact: false })).toBeInTheDocument();
+    expect(screen.getAllByText('尚未检测').length).toBeGreaterThan(0);
   });
 
   it('shows empty and error states and can retry the endpoint', async () => {

@@ -35,6 +35,8 @@ _test_env_path.write_text("ADMIN_AUTH_ENABLED=false\nSCANNER_WORKERS_ENABLED=fal
 os.environ["ENV_FILE"] = str(_test_env_path)
 os.environ["DATABASE_PATH"] = str(Path(_test_environment.name) / "test.db")
 os.environ["SCANNER_WORKERS_ENABLED"] = "false"
+# Background provider probes would hit the network from every TestClient app.
+os.environ["DATA_PROVIDER_PROBE_INTERVAL_MINUTES"] = "0"
 os.environ["LITELLM_LOCAL_MODEL_COST_MAP"] = "True"
 
 # LiteLLM and network-test modules call load_dotenv() during collection, without
@@ -70,12 +72,15 @@ def isolated_application_environment():
         # 这样并发饿死这类问题能在测试里暴露；限制器本身由
         # tests/test_rate_limit_slot.py 显式覆盖。
         from data_provider import fundamental_adapter as _fundamental_adapter
+        from data_provider.runtime_status_cache import clear_runtime_results
 
         _fundamental_adapter._clear_daily_table_cache()
         _fundamental_adapter._clear_source_rate_limiters_for_tests()
+        clear_runtime_results()
         yield
         _fundamental_adapter._clear_daily_table_cache()
         _fundamental_adapter._clear_source_rate_limiters_for_tests()
+        clear_runtime_results()
         Config.reset_instance()
         for key in ("_auth_enabled", "_session_secret", "_password_hash_salt", "_password_hash_stored"):
             setattr(auth, key, None)

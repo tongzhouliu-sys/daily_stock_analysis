@@ -179,6 +179,7 @@ from api.middlewares.error_handler import add_error_handlers
 from api.v1.schemas.common import HealthResponse
 from src.auth import is_auth_enabled
 from src.data.stock_index_loader import find_existing_stock_index_path
+from src.services.data_provider_probe_service import DataProviderProbeService
 from src.services.system_config_service import SystemConfigService
 from src.services.runtime_scheduler import (
     CLI_SCHEDULER_OWNER_ENV,
@@ -295,6 +296,9 @@ async def app_lifespan(app: FastAPI):
         app.state.runtime_scheduler_service.reconcile_from_config(
             run_immediately=runtime_run_immediately,
         )
+    data_provider_probe_service = DataProviderProbeService()
+    app.state.data_provider_probe_service = data_provider_probe_service
+    data_provider_probe_service.start()
     app.state.system_config_service = SystemConfigService(
         runtime_scheduler=app.state.runtime_scheduler_service,
     )
@@ -330,6 +334,10 @@ async def app_lifespan(app: FastAPI):
                 await refresh_task
         if hasattr(app.state, "system_config_service"):
             delattr(app.state, "system_config_service")
+        probe_service = getattr(app.state, "data_provider_probe_service", None)
+        if probe_service is not None:
+            probe_service.stop()
+            delattr(app.state, "data_provider_probe_service")
         runtime_scheduler = getattr(app.state, "runtime_scheduler_service", None)
         if runtime_scheduler is not None:
             runtime_scheduler.stop()
