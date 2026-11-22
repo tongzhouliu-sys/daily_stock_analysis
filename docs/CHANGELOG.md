@@ -9,6 +9,8 @@ and this project adheres to [Semantic Versioning](https://semver.org/).
 
 ## [Unreleased]
 - [改进] 搜索 Key 支持失效自动切换：同一渠道配置多个 Key 时，当前 Key 返回鉴权失败、配额用尽或限流（401/403/429、`invalid api key`、`quota`、`rate limit`、`run out of searches` 等）会在本次搜索内立即切到下一个 Key 重试；连续失败 3 次的 Key 后续优先跳过。SerpAPI 的 `error` 响应不再被当成空结果的成功响应。
+- [修复] HTML 报告固定中文：`GET /api/v1/history/{id}/report-html` 不再跟随记录或界面语言，按 `zh` 重新构建章节 / 字段 / 操作建议等结构化文案，`<html lang="zh">` 写死；Web 端「查看 HTML 报告 / 下载 HTML」与抽屉文案也固定中文。模型当年写入的英文自由文本保留原文，详见 [飞书同源 HTML 报告](report-html.md)。
+- [测试] 锁定 HTML 报告中文化契约：英文记录仍输出中文框架与中文免责声明，历史 Markdown 接口默认语言行为不变。
 - [修复] 恢复主干离线测试绿灯：`SCANNER_BACKUP_KEEP_DAILY/WEEKLY` 归入扫描器隐藏配置，飞书 sender 断言同步关键词页脚与 `render_context/include_disclaimer` 契约，单股通知测试替身补齐 `results/report_type` 形参；`pytest -m "not network"` 恢复 0 失败。
 - [修复] 修复前端 lint：`LoginLogCard` 用显式 i18n key 映射替代 `t(key as any)`，`npm run lint` 恢复 0 error。
 - [修复] Docker 健康检查不再恒真：移除 `|| python -c "sys.exit(0)"`，改用 Python `urllib` 探活；API 不可用时容器会标记 unhealthy。

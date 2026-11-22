@@ -2,14 +2,12 @@ import type React from 'react';
 import { useCallback, useEffect, useRef, useState } from 'react';
 import { historyApi } from '../../api/history';
 import { getParsedApiError } from '../../api/error';
-import type { ReportLanguage } from '../../types/analysis';
-import { getReportText, normalizeReportLanguage } from '../../utils/reportLanguage';
+import { getReportText } from '../../utils/reportLanguage';
 import { Drawer } from '../common/Drawer';
 
 interface ReportHtmlDrawerProps {
   recordId: number;
   reportTitle: string;
-  reportLanguage?: ReportLanguage;
   onClose: () => void;
 }
 
@@ -28,10 +26,10 @@ type LoadState =
 export const ReportHtmlDrawer: React.FC<ReportHtmlDrawerProps> = ({
   recordId,
   reportTitle,
-  reportLanguage = 'zh',
   onClose,
 }) => {
-  const text = getReportText(normalizeReportLanguage(reportLanguage));
+  // HTML 报告固定中文：抽屉文案不跟随记录语言或界面语言。
+  const text = getReportText('zh');
   const [isOpen, setIsOpen] = useState(true);
   const [state, setState] = useState<LoadState>({ status: 'loading', recordId });
   const loadTokenRef = useRef(0);

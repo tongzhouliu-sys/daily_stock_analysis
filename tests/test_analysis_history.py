@@ -2065,6 +2065,63 @@ class AnalysisHistoryTestCase(unittest.TestCase):
         self.assertIn("Unnamed Stock (AAPL)", markdown)
         self.assertNotIn("核心结论", markdown)
 
+    def test_history_markdown_can_force_chinese_for_html_report(self) -> None:
+        """HTML 报告接口需要按 zh 重建结构化报告，默认调用仍保留记录语言。"""
+        result = AnalysisResult(
+            code="AAPL",
+            name="Apple",
+            sentiment_score=78,
+            trend_prediction="Bullish",
+            operation_advice="Buy",
+            analysis_summary="Momentum remains constructive.",
+            report_language="en",
+            dashboard={
+                "core_conclusion": {
+                    "one_sentence": "Favor buying on pullbacks.",
+                    "position_advice": {
+                        "no_position": "Open a starter position.",
+                        "has_position": "Hold and trail the stop.",
+                    },
+                },
+                "intelligence": {
+                    "risk_alerts": [],
+                },
+                "battle_plan": {
+                    "sniper_points": {
+                        "ideal_buy": "180-182",
+                        "stop_loss": "172",
+                        "take_profit": "195",
+                    }
+                },
+            },
+        )
+
+        saved = self.db.save_analysis_history(
+            result=result,
+            query_id="query_force_chinese_markdown_001",
+            report_type="full",
+            news_content="news",
+            context_snapshot=None,
+            save_snapshot=False,
+        )
+        self.assertGreater(saved, 0)
+
+        service = HistoryService(self.db)
+        english = service.get_markdown_report(str(saved))
+        chinese = service.get_markdown_report(str(saved), report_language="zh")
+
+        self.assertIsNotNone(english)
+        self.assertIn("Stock Analysis Report", english)
+        self.assertIn("Core Conclusion", english)
+
+        self.assertIsNotNone(chinese)
+        self.assertIn("股票分析报告", chinese)
+        self.assertIn("核心结论", chinese)
+        self.assertIn("看多", chinese)
+        self.assertIn("买入", chinese)
+        self.assertNotIn("Stock Analysis Report", chinese)
+        self.assertNotIn("Core Conclusion", chinese)
+
     def test_history_markdown_signal_metadata_uses_explicit_avoid_action(self) -> None:
         result = AnalysisResult(
             code="AAPL",

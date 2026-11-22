@@ -5,6 +5,9 @@
 
     Markdown -> format_feishu_markdown -> parse_report_document -> 本渲染器
 
+语言策略：HTML 报告固定中文，文档语言写死为 ``zh``，不跟随记录语言或界面语言。
+历史记录中的模型自由文本无法离线翻译，仍按原文展示。
+
 安全策略：
 - Jinja2 自动转义开启；正文行内片段先 html.escape 再按白名单还原少量标记；
 - 只识别 ``**粗体**``、``*斜体*``、```代码``` 与 ``<font color=...>``；
@@ -33,7 +36,6 @@ from src.notification_sender.feishu_card import (
     plan_field_grid,
     section_tone,
 )
-from src.report_language import normalize_report_language
 
 logger = logging.getLogger(__name__)
 
@@ -245,16 +247,17 @@ def _merge_preamble(preamble: List[str]) -> List[Dict[str, Any]]:
 def render_report_html(
     markdown: str,
     *,
-    report_language: str = "zh",
     page_title: Optional[str] = None,
     generated_at: Optional[str] = None,
     include_disclaimer: bool = True,
 ) -> str:
-    """把报告 Markdown 渲染为自包含、可直接离线打开的 HTML 字符串。
+    """把报告 Markdown 渲染为固定中文、自包含、可直接离线打开的 HTML 字符串。
+
+    语言策略：HTML 报告固定中文，不提供语言参数；页面语言写死为 ``zh``。
+    报告正文中由模型写入的自由文本按原文展示，不做翻译。
 
     Args:
         markdown: 与推送同源的 Markdown 报告正文。
-        report_language: zh | en | ko，经 normalize_report_language 归一化。
         page_title: <title> 文本，缺省取文档标题或通用标题。
         generated_at: 页脚生成时间，渲染器内部不取当前时间，保证确定性。
         include_disclaimer: 是否与报告路由推送一致补齐 AI 生成声明。
@@ -265,7 +268,6 @@ def render_report_html(
     Raises:
         ReportHtmlRenderError: 模板缺失或渲染失败。
     """
-    lang = normalize_report_language(report_language)
     try:
         lark_text = format_feishu_markdown(markdown or "")
         doc = parse_report_document(lark_text, include_disclaimer=include_disclaimer)
@@ -308,7 +310,6 @@ def render_report_html(
             doc=doc,
             blocks=blocks,
             kpis=_extract_kpis(doc.summary),
-            lang=lang,
             page_title=page_title or doc.title or "分析报告",
             generated_at=generated_at or "",
             styles=styles,

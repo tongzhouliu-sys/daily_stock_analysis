@@ -966,7 +966,12 @@ class HistoryService:
         else:
             return "极度悲观"
 
-    def get_markdown_report(self, record_id: str) -> Optional[str]:
+    def get_markdown_report(
+        self,
+        record_id: str,
+        *,
+        report_language: Optional[str] = None,
+    ) -> Optional[str]:
         """
         Generate a Markdown report for a single analysis history record.
 
@@ -975,6 +980,9 @@ class HistoryService:
 
         Args:
             record_id: integer PK (as string) or query_id string
+            report_language: optional output language override (zh/en/ko).
+                ``None`` keeps the record's persisted language. The HTML report
+                endpoint passes ``zh`` so the rendered document is always Chinese.
 
         Returns:
             Markdown formatted report string, or None if record not found
@@ -1021,6 +1029,9 @@ class HistoryService:
                 "Failed to rebuild AnalysisResult from raw_result",
                 record_id=record_id
             )
+
+        if report_language is not None:
+            result.report_language = normalize_report_language(report_language)
 
         # Generate Markdown report
         try:

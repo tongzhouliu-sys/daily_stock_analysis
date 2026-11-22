@@ -7,6 +7,8 @@
 - 本次定稿范围：H0–H5、H9。H6 / H7 / H8 经确认**不在本任务内**，仅保留章节作为后续参考
 - 分支建议：`feat/report-html-view`（一个任务一个分支一个 PR，遵循 AGENTS.md 第 8 节）
 
+> 后续变更：T77（2026-11-22）已将 HTML 报告固定为中文，`render_report_html()` 不再接收 `report_language`，历史 HTML 接口按 `zh` 重建报告。以 [T77 任务书](report-html-chinese-only.md) 与 [飞书同源 HTML 报告](../report-html.md) 为准；本文保留为 T45 的历史设计记录。
+
 ---
 
 ## 1. 背景与目标
