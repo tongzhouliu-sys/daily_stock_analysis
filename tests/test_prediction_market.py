@@ -12,6 +12,7 @@ from data_provider.prediction_market_fetcher import (
     PredictionMarketFetcher,
     _normalize_probability,
 )
+from src.repositories.prediction_market_evidence_repo import PredictionMarketEvidenceRepository
 from src.repositories.prediction_market_repo import PredictionMarketRepository
 from src.services.prediction_market_service import PredictionMarketService
 from src.storage import DatabaseManager, PredictionMarketEvent, utc_naive_now
@@ -338,6 +339,28 @@ class TestAgentTool(unittest.TestCase):
             result = _handle_search_prediction_markets()
         self.assertEqual(result["status"], "disabled")
         self.assertEqual(result["items"], [])
+
+
+class TestEvidenceRepository(unittest.TestCase):
+    def setUp(self):
+        DatabaseManager.reset_instance()
+        self.db = DatabaseManager(db_url="sqlite:///:memory:")
+        self.repo = PredictionMarketEvidenceRepository(db_manager=self.db)
+
+    def tearDown(self):
+        DatabaseManager.reset_instance()
+
+    def test_replace_and_list_roundtrip(self):
+        events = [
+            {"source": "kalshi", "market_id": "A", "question": "Q1", "implied_probability": 0.5, "volume_24h": 5000},
+            {"source": "polymarket", "market_id": "B", "question": "Q2", "implied_probability": 0.6, "volume_24h": 6000},
+        ]
+        self.assertEqual(self.repo.replace_for_history(7, events), 2)
+        rows = self.repo.list_for_history(7)
+        self.assertEqual(len(rows), 2)
+        self.assertEqual(rows[0]["market_id"], "A")
+        self.repo.replace_for_history(7, [events[0]])
+        self.assertEqual(len(self.repo.list_for_history(7)), 1)
 
 
 class TestSpecialistAllowlists(unittest.TestCase):

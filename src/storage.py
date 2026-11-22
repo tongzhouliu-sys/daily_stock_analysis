@@ -345,6 +345,40 @@ class PredictionMarketEvent(Base):
     )
 
 
+class AnalysisPredictionMarket(Base):
+    """分析历史关联的预测市场证据（sidecar）。
+
+    与 ``analysis_history`` 通过 ``analysis_history_id`` 弱关联；历史删除时
+    在同一写事务内清理。时间基准沿用历史记录的服务器本地时间。
+    """
+
+    __tablename__ = 'analysis_prediction_markets'
+
+    id = Column(Integer, primary_key=True, autoincrement=True)
+    analysis_history_id = Column(Integer, nullable=False, index=True)
+    source = Column(String(16), nullable=False)
+    market_id = Column(String(255), nullable=False)
+    question = Column(Text, nullable=False)
+    implied_probability = Column(Float)
+    volume_24h = Column(Float)
+    close_time = Column(String(64))
+    category = Column(String(32))
+    symbol = Column(String(32))
+    market = Column(String(16))
+    market_url = Column(Text)
+    created_at = Column(DateTime, default=datetime.now, index=True)
+
+    __table_args__ = (
+        UniqueConstraint(
+            'analysis_history_id',
+            'source',
+            'market_id',
+            name='uix_analysis_pm_history_source_market',
+        ),
+        Index('ix_analysis_pm_history', 'analysis_history_id'),
+    )
+
+
 class FundamentalSnapshot(Base):
     """
     基本面上下文快照（P0 write-only）。
@@ -3757,6 +3791,11 @@ class DatabaseManager(metaclass=_DatabaseManagerMeta):
             session.execute(
                 delete(SkillOpinionSampleRecord).where(
                     SkillOpinionSampleRecord.analysis_history_id.in_(existing_ids)
+                )
+            )
+            session.execute(
+                delete(AnalysisPredictionMarket).where(
+                    AnalysisPredictionMarket.analysis_history_id.in_(existing_ids)
                 )
             )
             result = session.execute(

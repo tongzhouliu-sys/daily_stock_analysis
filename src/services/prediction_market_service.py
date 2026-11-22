@@ -14,7 +14,7 @@ from __future__ import annotations
 import logging
 import threading
 from datetime import datetime
-from typing import Any, Dict, List, Optional
+from typing import Any, Dict, List, Optional, Tuple
 
 from src.config import Config, get_config
 from src.repositories.prediction_market_repo import PredictionMarketRepository
@@ -183,6 +183,21 @@ class PredictionMarketService:
         return collected
 
     # -------------------------------------------------------------- context
+    def collect_evidence(
+        self,
+        *,
+        symbol: Optional[str],
+        stock_name: Optional[str] = None,
+        market: Optional[str] = None,
+        limit: int = 6,
+    ) -> Tuple[Optional[str], List[Dict[str, Any]]]:
+        """Return ``(text_context, structured_events)`` for stock analysis."""
+        events = self.collect_events(
+            symbol=symbol, stock_name=stock_name, market=market, limit=limit
+        )
+        text = self._format_context(events, subject=stock_name or symbol)
+        return text, events
+
     def build_evidence_context(
         self,
         *,
@@ -194,10 +209,10 @@ class PredictionMarketService:
         """Return text evidence for stock analysis, or ``None`` when unavailable."""
         if not self.is_enabled():
             return None
-        collected = self.collect_events(
+        text, _events = self.collect_evidence(
             symbol=symbol, stock_name=stock_name, market=market, limit=limit
         )
-        return self._format_context(collected, subject=stock_name or symbol)
+        return text
 
     def build_market_context(self, *, market: Optional[str], limit: int = 6) -> Optional[str]:
         """Return macro / crypto / commodity / index evidence for market review."""

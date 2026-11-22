@@ -849,7 +849,7 @@ class StockAnalysisPipeline:
                 )
 
             # 预测市场证据（默认关闭，fail-open 追加；不改既有 news_context 语义）
-            prediction_market_context = self._load_prediction_market_context(
+            prediction_market_context, prediction_market_events = self._load_prediction_market_evidence(
                 code=code,
                 stock_name=stock_name,
                 market=market or "cn",
@@ -1065,6 +1065,9 @@ class StockAnalysisPipeline:
                         news_content=news_context,
                         context_snapshot=context_snapshot,
                         save_snapshot=self.save_context_snapshot
+                    )
+                    self._persist_prediction_market_evidence(
+                        saved_history_id, prediction_market_events
                     )
                     valid_saved_history_id = (
                         isinstance(saved_history_id, int)
@@ -1736,7 +1739,7 @@ class StockAnalysisPipeline:
                 )
                 logger.info('[%s] Agent mode: local intelligence evidence injected into news_context', code)
 
-            prediction_market_context = self._load_prediction_market_context(
+            prediction_market_context, prediction_market_events = self._load_prediction_market_evidence(
                 code=code,
                 stock_name=stock_name,
                 market=("cn" if is_index else get_market_for_stock(normalize_stock_code(code)) or "cn"),
@@ -1744,6 +1747,8 @@ class StockAnalysisPipeline:
             if prediction_market_context:
                 initial_context["prediction_market_context"] = prediction_market_context
                 logger.info('[%s] Agent mode: prediction market evidence injected into context', code)
+            if prediction_market_events:
+                initial_context["prediction_market_events"] = prediction_market_events
 
             # Issue #1066: ensure deep history is in DB before agent tools run
             if analysis_target is None:
@@ -2090,6 +2095,9 @@ class StockAnalysisPipeline:
                         news_content=None,
                         context_snapshot=agent_context_snapshot,
                         save_snapshot=self.save_context_snapshot,
+                    )
+                    self._persist_prediction_market_evidence(
+                        saved_history_id, initial_context.get("prediction_market_events") or []
                     )
                     valid_saved_history_id = (
                         isinstance(saved_history_id, int)
@@ -3376,6 +3384,31 @@ class StockAnalysisPipeline:
             logger.debug("读取本地资讯证据失败（fail-open）: %s", exc)
             return None
 
+    def _load_prediction_market_evidence(
+        self,
+        *,
+        code: str,
+        stock_name: str,
+        market: str,
+        limit: int = 6,
+    ) -> Tuple[Optional[str], List[Dict[str, Any]]]:
+        """Load prediction-market text + structured events (fail-open, disabled by default)."""
+        try:
+            from src.services.prediction_market_service import PredictionMarketService
+
+            service = PredictionMarketService(config=self.config)
+            if not service.is_enabled():
+                return None, []
+            return service.collect_evidence(
+                symbol=code,
+                stock_name=stock_name,
+                market=market,
+                limit=limit,
+            )
+        except Exception as exc:
+            logger.debug("读取预测市场证据失败（fail-open）: %s", exc)
+            return None, []
+
     def _load_prediction_market_context(
         self,
         *,
@@ -3384,22 +3417,28 @@ class StockAnalysisPipeline:
         market: str,
         limit: int = 6,
     ) -> Optional[str]:
-        """Load prediction-market evidence as fail-open context (disabled by default)."""
-        try:
-            from src.services.prediction_market_service import PredictionMarketService
+        """Backward-compatible text-only wrapper."""
+        text, _events = self._load_prediction_market_evidence(
+            code=code, stock_name=stock_name, market=market, limit=limit
+        )
+        return text
 
-            service = PredictionMarketService(config=self.config)
-            if not service.is_enabled():
-                return None
-            return service.build_evidence_context(
-                symbol=code,
-                stock_name=stock_name,
-                market=market,
-                limit=limit,
+    def _persist_prediction_market_evidence(
+        self, analysis_history_id: int, events: Optional[List[Dict[str, Any]]]
+    ) -> None:
+        """Best-effort sidecar write; never blocks the main analysis/history flow."""
+        if not analysis_history_id or not events:
+            return
+        try:
+            from src.repositories.prediction_market_evidence_repo import (
+                PredictionMarketEvidenceRepository,
+            )
+
+            PredictionMarketEvidenceRepository(self.db).replace_for_history(
+                analysis_history_id, events
             )
         except Exception as exc:
-            logger.debug("读取预测市场证据失败（fail-open）: %s", exc)
-            return None
+            logger.debug("写入预测市场 sidecar 失败（fail-open）: %s", exc)
 
     def _build_legacy_analysis_artifacts(
         self,

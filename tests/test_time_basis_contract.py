@@ -49,6 +49,7 @@ LOCAL_TIME_TABLES = {
     "AlertNotificationRecord",
     "AlertCooldownRecord",
     "AlertRuleStateRecord",
+    "AnalysisPredictionMarket",
 }
 
 UTC_TIME_TABLES = {
