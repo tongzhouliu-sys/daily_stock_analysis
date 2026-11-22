@@ -274,6 +274,12 @@ class TestRepositoryAndService(unittest.TestCase):
         self.assertIn("宏观事件", text)
         self.assertIn("62%", text)
 
+    def test_query_without_market_includes_global_macro(self):
+        self.repo.upsert_events([self._event()])
+        service = PredictionMarketService(repository=self.repo, config=_config())
+        items = service.query_events(query="fed", category="macro", status="open", limit=5)
+        self.assertEqual(len(items), 1)
+
     def test_disabled_service_is_inert(self):
         self.repo.upsert_events([self._event()])
         service = PredictionMarketService(

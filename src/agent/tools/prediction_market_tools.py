@@ -22,7 +22,7 @@ _PREDICTION_MARKET_READ_POLICY = ToolPolicy.declared(
 def _handle_search_prediction_markets(
     query: str = None,
     symbol: str = None,
-    market: str = "us",
+    market: str = None,
     category: str = None,
     status: str = "open",
     limit: int = 5,
@@ -96,9 +96,8 @@ search_prediction_markets_tool = ToolDefinition(
         ToolParameter(
             name="market",
             type="string",
-            description="Market scope: 'us' (default), 'cn', 'hk' or 'global'",
+            description="Optional market scope: 'us', 'cn', 'hk' or 'global'; omit to search all",
             required=False,
-            default="us",
             enum=["cn", "hk", "us", "global"],
         ),
         ToolParameter(

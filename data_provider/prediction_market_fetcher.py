@@ -133,7 +133,8 @@ def _infer_market(category: str, raw: Dict[str, Any]) -> str:
     explicit = _safe_text(raw.get("market"), 8).lower()
     if explicit in {"cn", "hk", "us", "global"}:
         return explicit
-    return "global" if category == "macro" else "us"
+    # Macro / crypto / commodity events are not tied to a single equity market.
+    return "global" if category in {"macro", "crypto", "commodity"} else "us"
 
 
 class PredictionMarketFetcher:

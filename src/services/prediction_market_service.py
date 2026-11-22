@@ -136,39 +136,52 @@ class PredictionMarketService:
         market: Optional[str] = None,
         limit: int = 6,
     ) -> Optional[str]:
-        """Return text evidence for stock analysis, or ``None`` when unavailable."""
+        """Return text evidence for stock analysis, or ``None`` when unavailable.
+
+        Priority: symbol-specific events, then ``equity`` events for the stock's
+        market, then ``global`` macro events. Crypto/commodity are intentionally
+        excluded from single-stock context (available via the agent tool instead).
+        """
         if not self.is_enabled():
             return None
         self.refresh_auto()
         collected: List[Dict[str, Any]] = []
         seen: set[str] = set()
-        filters: List[Dict[str, Any]] = []
-        if symbol:
-            filters.append({"symbol": symbol})
-        if market:
-            filters.append({"market": market})
-        for extra in filters or [{}]:
-            for item in self.query_events(status="open", limit=limit, **extra):
+
+        def _collect(**filters: Any) -> None:
+            for item in self.query_events(status="open", limit=limit, **filters):
                 key = f"{item.get('source')}:{item.get('market_id')}"
                 if key in seen:
                     continue
                 seen.add(key)
                 collected.append(item)
                 if len(collected) >= limit:
-                    break
-            if len(collected) >= limit:
-                break
+                    return
+
+        if symbol:
+            _collect(symbol=symbol)
+        if len(collected) < limit and market:
+            _collect(market=market, category="equity")
+        if len(collected) < limit:
+            _collect(market="global", category="macro")
         return self._format_context(collected, subject=stock_name or symbol)
 
     def build_market_context(self, *, market: Optional[str], limit: int = 6) -> Optional[str]:
-        """Return macro-focused text evidence for market review."""
+        """Return macro / crypto / commodity / index evidence for market review."""
         if not self.is_enabled():
             return None
         self.refresh_auto()
         collected: List[Dict[str, Any]] = []
         seen: set[str] = set()
-        for category in ("macro", "commodity", "crypto"):
-            for item in self.query_events(status="open", market=market, category=category, limit=limit):
+        queries: List[Dict[str, Any]] = [
+            {"market": "global", "category": "macro"},
+            {"market": "global", "category": "crypto"},
+            {"market": "global", "category": "commodity"},
+        ]
+        if market:
+            queries.append({"market": market, "category": "equity"})
+        for filters in queries:
+            for item in self.query_events(status="open", limit=limit, **filters):
                 key = f"{item.get('source')}:{item.get('market_id')}"
                 if key in seen:
                     continue
