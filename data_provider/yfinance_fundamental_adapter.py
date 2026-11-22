@@ -147,6 +147,75 @@ def _convert_to_yf_symbol(stock_code: str) -> str:
     return code
 
 
+def _extract_yf_earnings_calendar(ticker: Any, now: Optional[datetime] = None) -> Dict[str, Any]:
+    """Build a forward-looking earnings calendar from yfinance calendar data.
+
+    Uses ``Ticker.calendar`` ("Earnings Date") first, then future rows from
+    ``Ticker.earnings_dates``. The date is a scheduled estimate, not a
+    confirmed disclosure fact.
+    """
+    now = now or datetime.now(timezone.utc)
+    today = now.date()
+    candidates: List[Any] = []
+
+    try:
+        calendar = ticker.calendar
+    except Exception:
+        calendar = None
+    if isinstance(calendar, dict):
+        raw = calendar.get("Earnings Date")
+        if raw is None:
+            raw = calendar.get("Earnings Dates")
+        if isinstance(raw, (list, tuple)):
+            candidates.extend(raw)
+        elif raw is not None:
+            candidates.append(raw)
+    elif isinstance(calendar, pd.DataFrame) and not calendar.empty:
+        for column in ("Earnings Date", "Earnings Dates"):
+            if column in calendar.columns:
+                candidates.extend(calendar[column].tolist())
+                break
+        if not candidates and calendar.index.size:
+            candidates.extend(calendar.index.tolist())
+
+    try:
+        earnings_dates = ticker.earnings_dates
+    except Exception:
+        earnings_dates = None
+    if isinstance(earnings_dates, pd.DataFrame) and not earnings_dates.empty:
+        candidates.extend(earnings_dates.index.tolist())
+
+    future = []
+    for value in candidates:
+        try:
+            parsed = pd.Timestamp(value)
+        except Exception:
+            continue
+        if pd.isna(parsed):
+            continue
+        day = parsed.date()
+        if day >= today:
+            future.append(day)
+    if not future:
+        return {}
+
+    next_day = min(future)
+    return {
+        "events": [
+            {
+                "report_period": None,
+                "expected_disclosure_date": next_day.isoformat(),
+                "actual_disclosure_date": None,
+                "disclosure_status": "scheduled",
+            }
+        ],
+        "next_earnings_date": next_day.isoformat(),
+        "days_to_next": (next_day - today).days,
+        "coverage": "yfinance_calendar",
+        "as_of": today.isoformat(),
+    }
+
+
 class YfinanceFundamentalAdapter:
     """HK/US fundamental adapter backed by yfinance.
 
@@ -384,6 +453,12 @@ class YfinanceFundamentalAdapter:
         if belong_boards:
             result["belong_boards"] = belong_boards
             result["source_chain"].append("belong_boards:yfinance.info")
+
+        # ---------------- earnings calendar (next disclosure date) ----------------
+        calendar_payload = _extract_yf_earnings_calendar(ticker)
+        if calendar_payload:
+            result.setdefault("earnings", {})["calendar"] = calendar_payload
+            result["source_chain"].append("earnings.calendar:yfinance")
 
         has_content = bool(
             result.get("growth")

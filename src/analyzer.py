@@ -1455,6 +1455,20 @@ def _build_earnings_and_chip_event_rows(
         "Pre-audit results; closer to actuals than guidance",
         "审计前的快报数据；比预告更接近实际",
     )
+    calendar = earnings.get("calendar") if isinstance(earnings.get("calendar"), dict) else {}
+    next_earnings_date = calendar.get("next_earnings_date")
+    if _present(next_earnings_date):
+        days_to_next = calendar.get("days_to_next")
+        value = (
+            f"{next_earnings_date} (est. +{days_to_next}d)"
+            if isinstance(days_to_next, int)
+            else str(next_earnings_date)
+        )
+        _add(
+            "Next Earnings Date", "下次财报披露日期", value,
+            "Scheduled/estimated disclosure date; expect volatility around it",
+            "预约/预计披露日期；临近时波动可能放大",
+        )
     _add(
         "Institutional Holding Change", "机构持仓变动", institution.get("institution_holding_change"),
         "Institutional accumulation signals medium-term interest",

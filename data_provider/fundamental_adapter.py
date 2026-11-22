@@ -136,6 +136,8 @@ _DAILY_CACHEABLE_AKSHARE_INTERFACES = {
     "stock_lhb_jgmmtj_em",
     "stock_yjyg_em",
     "stock_yjkb_em",
+    "stock_yysj_em",
+    "stock_report_disclosure",
     "stock_institute_hold",
 }
 # 盘中会变的表：板块资金流排名、龙虎榜。其余按交易日缓存即可。
@@ -589,6 +591,146 @@ def _earnings_quick_summary(row: pd.Series) -> str:
     return "；".join(parts)[:200]
 
 
+_EARNINGS_CALENDAR_KEYWORD_MAP: Dict[str, List[str]] = {
+    "first_appointment": ["首次预约时间", "首次预约"],
+    "change_1": ["一次变更日期", "初次变更", "一次变更"],
+    "change_2": ["二次变更日期", "二次变更"],
+    "change_3": ["三次变更日期", "三次变更"],
+    "actual": ["实际披露时间", "实际披露"],
+}
+
+
+def _cninfo_period_label(report_date: str) -> Optional[str]:
+    """Map a ``YYYYMMDD`` report-period date to the 巨潮 period label."""
+    period = str(report_date or "").strip()
+    if len(period) != 8 or not period.isdigit():
+        return None
+    suffix = {
+        "0331": "一季",
+        "0630": "半年报",
+        "0930": "三季",
+        "1231": "年报",
+    }.get(period[4:])
+    return f"{period[:4]}{suffix}" if suffix else None
+
+
+def _earnings_calendar_periods(now: Optional[datetime] = None) -> List[str]:
+    """Return up to two ``YYYYMMDD`` report periods to probe for disclosure.
+
+    The last completed quarter covers the "about to be disclosed" case; the
+    current quarter end covers the "next period already scheduled" case.
+    """
+    now = now or datetime.now()
+    quarter_start = datetime(now.year, ((now.month - 1) // 3) * 3 + 1, 1)
+    last_completed_end = quarter_start - timedelta(days=1)
+    next_quarter_month = quarter_start.month + 3
+    next_quarter_year = quarter_start.year + (1 if next_quarter_month > 12 else 0)
+    if next_quarter_month > 12:
+        next_quarter_month -= 12
+    current_quarter_end = datetime(next_quarter_year, next_quarter_month, 1) - timedelta(days=1)
+    periods: List[str] = []
+    for value in (last_completed_end, current_quarter_end):
+        token = value.strftime("%Y%m%d")
+        if token not in periods:
+            periods.append(token)
+    return periods
+
+
+def _resolve_earnings_disclosure_date(row: pd.Series) -> Optional[str]:
+    """Use the latest scheduled change before falling back to first appointment."""
+    for key in ("change_3", "change_2", "change_1", "first_appointment"):
+        parsed = _safe_datetime(_pick_by_keywords(row, _EARNINGS_CALENDAR_KEYWORD_MAP[key]))
+        if parsed is not None:
+            return parsed.date().isoformat()
+    return None
+
+
+def _build_earnings_calendar(
+    rows_by_period: List[Tuple[str, pd.Series]],
+    now: Optional[datetime] = None,
+) -> Dict[str, Any]:
+    """Normalize reservation-disclosure rows into a forward-looking calendar.
+
+    ``rows_by_period`` is ``[(YYYYMMDD report period, row), ...]``. Only the
+    next scheduled event and the most recent disclosed event are kept; the
+    disclosure date is always a plan/estimate, never a confirmed fact.
+    """
+    if not rows_by_period:
+        return {}
+    now = now or datetime.now()
+    today = now.date()
+    today_iso = today.isoformat()
+
+    events: List[Dict[str, Any]] = []
+    seen_periods = set()
+    for period, row in rows_by_period:
+        report_period = _normalize_report_date(period)
+        if report_period and report_period in seen_periods:
+            continue
+        expected = _resolve_earnings_disclosure_date(row)
+        actual_raw = _safe_datetime(_pick_by_keywords(row, _EARNINGS_CALENDAR_KEYWORD_MAP["actual"]))
+        actual = actual_raw.date().isoformat() if actual_raw else None
+        if not expected and not actual:
+            continue
+        if report_period:
+            seen_periods.add(report_period)
+        events.append(
+            {
+                "report_period": report_period,
+                "expected_disclosure_date": expected,
+                "actual_disclosure_date": actual,
+                "disclosure_status": "disclosed" if actual else "scheduled",
+            }
+        )
+
+    if not events:
+        return {}
+
+    scheduled = [
+        event
+        for event in events
+        if event["disclosure_status"] == "scheduled"
+        and event["expected_disclosure_date"]
+        and event["expected_disclosure_date"] >= today_iso
+    ]
+    next_earnings_date: Optional[str] = None
+    days_to_next: Optional[int] = None
+    if scheduled:
+        next_event = min(scheduled, key=lambda event: event["expected_disclosure_date"])
+        next_earnings_date = next_event["expected_disclosure_date"]
+        try:
+            days_to_next = (datetime.fromisoformat(next_earnings_date).date() - today).days
+        except ValueError:
+            next_earnings_date = None
+            days_to_next = None
+
+    # Keep the next scheduled event first, then the most recent disclosed one.
+    ordered: List[Dict[str, Any]] = []
+    if next_earnings_date:
+        match = next(
+            (event for event in events if event["expected_disclosure_date"] == next_earnings_date),
+            None,
+        )
+        if match is not None:
+            ordered.append(match)
+    disclosed = sorted(
+        (event for event in events if event["disclosure_status"] == "disclosed"),
+        key=lambda event: event.get("actual_disclosure_date") or "",
+        reverse=True,
+    )
+    ordered.extend(disclosed[:1])
+    if not ordered:
+        ordered = events[:1]
+
+    return {
+        "events": ordered,
+        "next_earnings_date": next_earnings_date,
+        "days_to_next": days_to_next,
+        "coverage": "cn_reservation_disclosure",
+        "as_of": today_iso,
+    }
+
+
 def _build_dividend_payload(
     dividend_df: pd.DataFrame,
     stock_code: str,
@@ -899,6 +1041,37 @@ class AkshareFundamentalAdapter:
             if dividend_payload:
                 result["earnings"]["dividend"] = dividend_payload
                 result["source_chain"].append(f"dividend:{dividend_source}")
+
+        # Earnings calendar (next reservation-disclosure date). Fail-open: a
+        # missing or unstable reservation endpoint only leaves this sub-block
+        # empty and never degrades the rest of the earnings block.
+        calendar_rows: List[Tuple[str, pd.Series]] = []
+        for report_period in _earnings_calendar_periods():
+            # 巨潮单次 POST 取整表（pagesize=10000）比东财分页 GET 更省请求，
+            # 因此优先 stock_report_disclosure，失败再降级 stock_yysj_em。
+            calendar_candidates: List[Tuple[str, Dict[str, Any]]] = []
+            period_label = _cninfo_period_label(report_period)
+            if period_label:
+                calendar_candidates.append(
+                    ("stock_report_disclosure", {"market": "沪深京", "period": period_label})
+                )
+            calendar_candidates.append(
+                ("stock_yysj_em", {"symbol": "沪深A股", "date": report_period})
+            )
+            calendar_df, calendar_source, calendar_errors = self._call_df_candidates(
+                calendar_candidates,
+                stock_code=stock_code,
+                deadline=deadline,
+                budget_seconds=budget_seconds,
+            )
+            result["errors"].extend(calendar_errors)
+            if calendar_df is not None and not calendar_df.empty:
+                calendar_rows.append((report_period, calendar_df.iloc[0]))
+                result["source_chain"].append(f"earnings_calendar:{calendar_source}")
+
+        calendar_payload = _build_earnings_calendar(calendar_rows)
+        if calendar_payload:
+            result["earnings"]["calendar"] = calendar_payload
 
         # Institution / top shareholders
         inst_df, inst_source, inst_errors = self._call_df_candidates([

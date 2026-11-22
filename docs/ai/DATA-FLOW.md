@@ -39,6 +39,7 @@
 | --- | --- | --- |
 | 上下文组装 | `src/analyzer.py:4196 analyze()` | 行情、历史 K 线、技术指标、新闻、基本面、持仓、预测市场（默认关闭） |
 | 上下文包 | `docs/analysis-context-pack.md`（契约文档） | Web 追问复用同一份上下文包 |
+| 财报日历 | `data_provider/fundamental_adapter.py`（A股 `stock_report_disclosure` / `stock_yysj_em`）、`data_provider/yfinance_fundamental_adapter.py`（美股 `ticker.calendar` / `earnings_dates`） | 标准化为 `earnings.calendar` 子块（下一次披露日期 + 距今交易日）；计划/预估语义，fail-open，港股暂不支持 |
 | 提示词 | `src/analyzer.py` 内各 prompt 构造函数 | 数据块降级会写明「落后 N 个交易日」并扣减数据质量分 |
 | 报告语言 | `src/report_language.py` | `REPORT_LANGUAGE` 控制输出语言与固定文案 |
 | 问股 Agent | `src/agent/orchestrator.py` + `src/agent/tools/` | 工具调用结果以 `tool_done` 事件回传，不写进系统提示词以外的全局状态 |

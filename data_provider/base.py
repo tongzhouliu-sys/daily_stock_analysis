@@ -3794,6 +3794,13 @@ class DataFetcherManager:
         dividend = payload.get("dividend")
         if DataFetcherManager._has_meaningful_payload(dividend):
             return True
+        calendar = payload.get("calendar")
+        if isinstance(calendar, dict):
+            if DataFetcherManager._has_meaningful_payload(calendar.get("next_earnings_date")):
+                return True
+            events = calendar.get("events")
+            if isinstance(events, list) and events:
+                return True
         # Fall back to the generic check for other earnings sub-blocks.
         for key in ("financial_reports", "indicators"):
             if key in payload and DataFetcherManager._has_meaningful_payload(payload.get(key)):
@@ -3980,6 +3987,10 @@ class DataFetcherManager:
                     yf_earnings.get("dividend")
                 ):
                     earnings["dividend"] = yf_earnings.get("dividend")
+                if not self._has_meaningful_payload(
+                    earnings.get("calendar")
+                ) and self._has_meaningful_payload(yf_earnings.get("calendar")):
+                    earnings["calendar"] = yf_earnings.get("calendar")
                 if any(
                     DataFetcherManager._earnings_block_has_values(earnings.get(key))
                     or self._has_meaningful_payload(earnings.get(key))
