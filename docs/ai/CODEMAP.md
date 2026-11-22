@@ -20,7 +20,7 @@
 | `data_provider/` | 多数据源适配、优先级与 fallback | 25 | 20413 |
 | `api/` | FastAPI 应用与 v1 路由 | 47 | 13935 |
 | `bot/` | IM / 机器人接入 | 22 | 5507 |
-| `apps/dsa-web/src/` | Web 前端（React + Vite） | 356 | 116036 |
+| `apps/dsa-web/src/` | Web 前端（React + Vite） | 357 | 116170 |
 | `apps/dsa-desktop/` | Electron 桌面端壳与打包配置 | 8 | 8519 |
 | `scripts/` | 本地与 CI 脚本 | 54 | 10995 |
 | `.github/scripts/` | GitHub Actions 专用脚本 | 2 | 652 |
@@ -68,7 +68,7 @@
 
 | 文件 | 行数 |
 | --- | --- |
-| `apps/dsa-web/src/i18n/uiText.ts` | 3385 |
+| `apps/dsa-web/src/i18n/uiText.ts` | 3387 |
 | `apps/dsa-web/src/components/settings/LLMChannelEditor.tsx` | 2845 |
 | `apps/dsa-web/src/locales/settingsHelp.ts` | 2574 |
 | `apps/dsa-web/src/pages/StockScreeningPage.tsx` | 2354 |
@@ -85,7 +85,7 @@
 
 - Python 源码（不含测试）：520 个文件，237684 行
 - Python 测试：391 个文件，195097 行
-- 前端 TS/TSX：348 个文件，106981 行
+- 前端 TS/TSX：349 个文件，107068 行
 - ≥400 行的 Python 文件：161 个
 
 规模数字只用于判断改动影响面，不是质量指标。

@@ -1,4 +1,4 @@
-import { memo, useMemo, useState } from 'react';
+import { memo, useEffect, useMemo, useRef, useState } from 'react';
 import { ChevronDown, Square } from 'lucide-react';
 import { cn } from '../../utils/cn';
 import { useUiLanguage } from '../../contexts/UiLanguageContext';
@@ -110,6 +110,7 @@ function ChatLiveProgress({
 }: ChatLiveProgressProps) {
   const { t } = useUiLanguage();
   const [expanded, setExpanded] = useState(false);
+  const previewRef = useRef<HTMLDivElement>(null);
   const phase = deriveChatPhase(steps);
   const state: RunState = deriveRunState({
     status: 'processing',
@@ -129,6 +130,15 @@ function ChatLiveProgress({
 
   const visibleSteps = expanded ? renderedSteps : renderedSteps.slice(-6);
   const hiddenCount = Math.max(0, renderedSteps.length - visibleSteps.length);
+  const canToggleSteps = expanded || hiddenCount > 0;
+
+  // The streaming preview is height-capped so a long answer cannot push the
+  // progress panel off-screen. Keep its own scroll pinned to the newest text;
+  // otherwise the reader only ever sees the first lines until the turn ends.
+  useEffect(() => {
+    const preview = previewRef.current;
+    if (preview) preview.scrollTop = preview.scrollHeight;
+  }, [streamingContent]);
 
   const headText = recovering
     ? t('chat.progress.recoveringHint')
@@ -198,36 +208,49 @@ function ChatLiveProgress({
 
         {renderedSteps.length > 0 ? (
           <div className="chat-live-details">
-            {hiddenCount > 0 ? (
+            {canToggleSteps ? (
               <button
                 type="button"
                 className="chat-live-more"
-                onClick={() => setExpanded(true)}
+                onClick={() => setExpanded((value) => !value)}
+                aria-expanded={expanded}
               >
-                {t('chat.progress.expandEarlier', { count: hiddenCount })}
-                <ChevronDown size={12} aria-hidden="true" />
+                {expanded
+                  ? t('chat.progress.collapseEarlier')
+                  : t('chat.progress.expandEarlier', { count: hiddenCount })}
+                <ChevronDown
+                  size={12}
+                  aria-hidden="true"
+                  className={cn('chat-live-more-icon', expanded && 'is-flipped')}
+                />
               </button>
             ) : null}
-            {visibleSteps.map((step) => (
-              <div
-                key={step.key}
-                className={cn(
-                  'chat-live-step',
-                  step.tone === 'done' && 'is-done',
-                  step.tone === 'error' && 'is-error',
-                )}
-              >
-                <span className="chat-live-step-dot" aria-hidden="true" />
-                <span className="chat-live-step-label">{step.label}</span>
-                <span className="chat-live-step-meta">{step.meta}</span>
-              </div>
-            ))}
+            <div className={cn('chat-live-steps', expanded && 'is-expanded')}>
+              {visibleSteps.map((step) => (
+                <div
+                  key={step.key}
+                  className={cn(
+                    'chat-live-step',
+                    step.tone === 'done' && 'is-done',
+                    step.tone === 'error' && 'is-error',
+                  )}
+                >
+                  <span className="chat-live-step-dot" aria-hidden="true" />
+                  <span className="chat-live-step-label">{step.label}</span>
+                  <span className="chat-live-step-meta">{step.meta}</span>
+                </div>
+              ))}
+            </div>
           </div>
         ) : null}
 
         {streamingContent ? (
-          <div className="chat-prose chat-streaming-preview" aria-live="polite">
-            <ChatAnswer content={streamingContent} />
+          <div
+            ref={previewRef}
+            className="chat-prose chat-streaming-preview"
+            aria-live="polite"
+          >
+            <ChatAnswer content={streamingContent} isStreaming />
             <span className="chat-streaming-caret" aria-hidden="true" />
           </div>
         ) : null}
