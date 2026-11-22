@@ -268,7 +268,7 @@ class AnalysisTaskQueue:
         self._max_flow_events_per_task = 200
         
         self._initialized = True
-        logger.info(f"[TaskQueue] 初始化完成，最大并发: {max_workers}")
+        logger.info('[TaskQueue] 初始化完成，最大并发: %s', max_workers)
     
     @property
     def executor(self) -> ThreadPoolExecutor:
@@ -554,7 +554,7 @@ class AnalysisTaskQueue:
                 self._cancel_events[task_id] = threading.Event()
                 accepted.append(task_info)
                 created_task_ids.append(task_id)
-                logger.info(f"[TaskQueue] 任务已提交: {stock_code} -> {task_id}")
+                logger.info('[TaskQueue] 任务已提交: %s -> %s', stock_code, task_id)
 
             # Keep task_created ordered before worker-emitted task_started/task_completed.
             # Broadcasting here also preserves batch rollback semantics because we only
@@ -927,7 +927,7 @@ class AnalysisTaskQueue:
                     self._cancel_events.pop(task_id, None)
 
                 self._broadcast_event("task_completed", task.to_dict())
-                logger.info(f"[TaskQueue] 任务完成: {task_id} ({stock_code})")
+                logger.info('[TaskQueue] 任务完成: %s (%s)', task_id, stock_code)
                 
                 # 清理过期任务
                 self._cleanup_old_tasks()
@@ -957,7 +957,7 @@ class AnalysisTaskQueue:
             if "diag_token" in locals():
                 reset_run_diagnostic_context(diag_token)
             error_msg = str(e)
-            logger.error(f"[TaskQueue] 任务失败: {task_id} ({stock_code}), 错误: {error_msg}")
+            logger.error('[TaskQueue] 任务失败: %s (%s), 错误: %s', task_id, stock_code, error_msg)
             
             with self._data_lock:
                 task = self._tasks.get(task_id)
@@ -1041,7 +1041,7 @@ class AnalysisTaskQueue:
                 self._cancel_events.pop(task_id, None)
 
             self._broadcast_event("task_completed", task.to_dict())
-            logger.info(f"[TaskQueue] 自定义任务完成: {task_id}")
+            logger.info('[TaskQueue] 自定义任务完成: %s', task_id)
 
             self._cleanup_old_tasks()
             return result
@@ -1062,9 +1062,7 @@ class AnalysisTaskQueue:
             return None
         except Exception as e:  # pragma: no cover - behavior verified in downstream tests
             error_msg = str(e)
-            logger.error(
-                f"[TaskQueue] 自定义任务失败: {task_id}, 错误: {error_msg}"
-            )
+            logger.error('[TaskQueue] 自定义任务失败: %s, 错误: %s', task_id, error_msg)
 
             with self._data_lock:
                 task = self._tasks.get(task_id)
@@ -1111,7 +1109,7 @@ class AnalysisTaskQueue:
                 removed += 1
             
             if removed > 0:
-                logger.debug(f"[TaskQueue] 清理了 {removed} 个过期任务")
+                logger.debug('[TaskQueue] 清理了 %s 个过期任务', removed)
             
             return removed
     
@@ -1135,7 +1133,7 @@ class AnalysisTaskQueue:
                     self._main_loop = asyncio.get_event_loop()
                 except RuntimeError:
                     pass
-            logger.debug(f"[TaskQueue] 新订阅者加入，当前订阅者数: {len(self._subscribers)}")
+            logger.debug('[TaskQueue] 新订阅者加入，当前订阅者数: %s', len(self._subscribers))
     
     def unsubscribe(self, queue: 'AsyncQueue') -> None:
         """
@@ -1147,7 +1145,7 @@ class AnalysisTaskQueue:
         with self._subscribers_lock:
             if queue in self._subscribers:
                 self._subscribers.remove(queue)
-                logger.debug(f"[TaskQueue] 订阅者离开，当前订阅者数: {len(self._subscribers)}")
+                logger.debug('[TaskQueue] 订阅者离开，当前订阅者数: %s', len(self._subscribers))
     
     def _broadcast_event(self, event_type: str, data: Dict[str, Any]) -> None:
         """
@@ -1179,9 +1177,9 @@ class AnalysisTaskQueue:
                 loop.call_soon_threadsafe(queue.put_nowait, event)
             except RuntimeError as e:
                 # 事件循环已关闭
-                logger.debug(f"[TaskQueue] 广播事件跳过（循环已关闭）: {e}")
+                logger.debug('[TaskQueue] 广播事件跳过（循环已关闭）: %s', e)
             except Exception as e:
-                logger.warning(f"[TaskQueue] 广播事件失败: {e}")
+                logger.warning('[TaskQueue] 广播事件失败: %s', e)
     
     # ========== 清理方法 ==========
     

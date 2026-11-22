@@ -363,7 +363,7 @@ class NotificationService(
         else:
             channel_names = [ChannelDetector.get_channel_name(ch) for ch in self._available_channels]
             channel_names.extend(self._context_channels)
-            logger.info(f"已配置 {len(channel_names)} 个通知渠道：{', '.join(channel_names)}")
+            logger.info('已配置 %s 个通知渠道：%s', len(channel_names), ', '.join(channel_names))
 
     def _normalize_report_type(self, report_type: Any) -> ReportType:
         """Normalize string/enum input into ReportType."""
@@ -777,7 +777,7 @@ class NotificationService(
                 else:
                     logger.error("钉钉会话（Stream）推送失败")
             except Exception as e:
-                logger.error(f"钉钉会话（Stream）推送异常: {e}")
+                logger.error('钉钉会话（Stream）推送异常: %s', e)
 
         # 尝试飞书会话
         feishu_info = self._extract_feishu_reply_info()
@@ -790,7 +790,7 @@ class NotificationService(
                 else:
                     logger.error("飞书会话（Stream）推送失败")
             except Exception as e:
-                logger.error(f"飞书会话（Stream）推送异常: {e}")
+                logger.error('飞书会话（Stream）推送异常: %s', e)
 
         # 尝试 Telegram 会话上下文（按来源 chat_id 回执）
         telegram_chat_id = self._extract_telegram_context_chat_id()
@@ -802,7 +802,7 @@ class NotificationService(
                 else:
                     logger.error("Telegram 上下文会话推送失败")
             except Exception as e:
-                logger.error(f"Telegram 上下文会话推送异常: {e}")
+                logger.error('Telegram 上下文会话推送异常: %s', e)
 
         return success
 
@@ -847,10 +847,10 @@ class NotificationService(
             return reply_client.send_to_chat(chat_id, content)
 
         except ImportError as e:
-            logger.error(f"导入飞书 Stream 模块失败: {e}")
+            logger.error('导入飞书 Stream 模块失败: %s', e)
             return False
         except Exception as e:
-            logger.error(f"飞书 Stream 回复异常: {e}")
+            logger.error('飞书 Stream 回复异常: %s', e)
             return False
 
     def _send_feishu_stream_chunked(
@@ -918,7 +918,7 @@ class NotificationService(
 
             if not reply_client.send_to_chat(chat_id, chunk):
                 success = False
-                logger.error(f"飞书 Stream 分块 {i+1}/{len(chunks)} 发送失败")
+                logger.error('飞书 Stream 分块 %s/%s 发送失败', i + 1, len(chunks))
 
         return success
 
@@ -1128,7 +1128,7 @@ class NotificationService(
 
                 except Exception as e:
                     # T21-B6: 单股渲染失败，输出占位说明，继续处理下一只
-                    logger.error(f"股票 {getattr(result, 'code', '?')} 报告渲染失败: {e}", exc_info=True)
+                    logger.error('股票 %s 报告渲染失败: %s', getattr(result, 'code', '?'), e, exc_info=True)
                     try:
                         display_name = self._get_display_name(result, report_language)
                     except Exception:
@@ -2720,7 +2720,7 @@ class NotificationService(
             return self.send_to_slack(content)
         if channel == NotificationChannel.ASTRBOT:
             return self.send_to_astrbot(sanitized_content)
-        logger.warning(f"不支持的通知渠道: {channel}")
+        logger.warning('不支持的通知渠道: %s', channel)
         return False
 
     def send_with_results(
@@ -2900,7 +2900,7 @@ class NotificationService(
                 )
 
         channel_names = ', '.join(ChannelDetector.get_channel_name(ch) for ch in target_channels)
-        logger.info(f"正在向 {len(target_channels)} 个渠道发送通知：{channel_names}")
+        logger.info('正在向 %s 个渠道发送通知：%s', len(target_channels), channel_names)
 
         # F2: 构建飞书渲染上下文，将结构化数据传递到飞书分支
         render_context: Optional[Dict[str, Any]] = None
@@ -2967,7 +2967,7 @@ class NotificationService(
             channel_content = content
             if use_wechat_dashboard and channel == NotificationChannel.WECHAT:
                 channel_content = self._build_report_dashboard(results, report_type or "")
-                logger.info(f"企业微信仪表盘长度: {len(channel_content)} 字符")
+                logger.info('企业微信仪表盘长度: %s 字符', len(channel_content))
 
             channel_image = image_bytes
             if (
@@ -3045,7 +3045,7 @@ class NotificationService(
             )
             _record_attempt_result(channel, ok, error, latency_ms)
 
-        logger.info(f"通知发送完成：成功 {success_count} 个，失败 {fail_count} 个")
+        logger.info('通知发送完成：成功 %s 个，失败 %s 个', success_count, fail_count)
         if success_count > 0:
             self.record_noise_control(noise_decision)
         else:
@@ -3129,7 +3129,7 @@ class NotificationService(
         with open(filepath, 'w', encoding='utf-8') as f:
             f.write(content)
 
-        logger.info(f"日报已保存到: {filepath}")
+        logger.info('日报已保存到: %s', filepath)
         return str(filepath)
 
     def save_and_send_feishu_file(

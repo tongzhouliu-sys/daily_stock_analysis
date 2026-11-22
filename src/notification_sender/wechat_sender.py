@@ -88,13 +88,13 @@ class WechatSender:
         # 检查字节长度，超长则分批发送
         content_bytes = len(sanitized_content.encode('utf-8'))
         if content_bytes > max_bytes:
-            logger.info(f"消息内容超长({content_bytes}字节/{len(content)}字符)，将分批发送")
+            logger.info('消息内容超长(%s字节/%s字符)，将分批发送', content_bytes, len(content))
             return self._send_wechat_chunked(sanitized_content, max_bytes)
         
         try:
             return self._send_wechat_message(sanitized_content, timeout_seconds=timeout_seconds)
         except Exception as e:
-            logger.error(f"发送企业微信消息失败: {e}")
+            logger.error('发送企业微信消息失败: %s', e)
             return False
 
     def _send_wechat_image(self, image_bytes: bytes) -> bool:
@@ -147,10 +147,10 @@ class WechatSender:
                 logger.info("企业微信消息发送成功")
                 return True
             else:
-                logger.error(f"企业微信返回错误: {result}")
+                logger.error('企业微信返回错误: %s', result)
                 return False
         else:
-            logger.error(f"企业微信请求失败: {response.status_code}")
+            logger.error('企业微信请求失败: %s', response.status_code)
             return False
         
     def _send_wechat_chunked(self, content: str, max_bytes: int) -> bool:
@@ -173,7 +173,7 @@ class WechatSender:
             if self._send_wechat_message(chunk):
                 success_count += 1
             else:
-                logger.error(f"企业微信第 {i+1}/{total_chunks} 批发送失败")
+                logger.error('企业微信第 %s/%s 批发送失败', i + 1, total_chunks)
             if i < total_chunks - 1:
                 time.sleep(1)
         return success_count == len(chunks)

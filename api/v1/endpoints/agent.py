@@ -661,7 +661,7 @@ async def agent_chat(
     except HTTPException:
         raise
     except Exception as e:
-        logger.error(f"Agent chat API failed: {e}")
+        logger.error('Agent chat API failed: %s', e)
         logger.exception("Agent chat error details:")
         raise HTTPException(status_code=500, detail=str(e))
 

@@ -58,6 +58,7 @@
 | 微信仪表盘图片渲染 | 依赖 Pillow 与中文字体，缺字体时降级文本 | 排障见 `docs/alerts.md`、`docs/FAQ.md` |
 | 前端双语文案 | 选股页与渠道编辑器已迁入 `uiText.ts`；扫描器整页、告警页、持仓页仍中英混排，`uiText.ts` 与 `report_language.py` 各维护一套 | 改文案时两边评估；新增页面文案只进 `uiText.ts`，旧页面按 T44 后续批次迁移 |
 | 测试治理 | 部分大测试文件数千行、跨层 mock | 新建 pipeline 测试统一用 `tests/support/pipeline_factory.make_pipeline()`；旧断言不再为现状拍照 |
+| 登录限流 | 限流计数保存在进程内字典：重启清零，多 worker/多副本各自计数 | 当前部署模型为单进程；扩容到多 worker 前需改为共享存储（SQLite/Redis），详见 `docs/DEPLOY.md` |
 
 ## 4. 已移出主干
 

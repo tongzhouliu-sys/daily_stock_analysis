@@ -62,6 +62,13 @@ class ConfigValueInjectionTestCase(unittest.TestCase):
             encoding="utf-8",
         )
         os.environ["ENV_FILE"] = str(self.env_path)
+        # Guard against shard-order leakage: another test may leave these set,
+        # which changes dotenv reference resolution during import.
+        self._saved_env = {
+            key: os.environ.pop(key)
+            for key in ("API_PORT", "WEBUI_PORT", "ADMIN_AUTH_ENABLED")
+            if key in os.environ
+        }
         Config.reset_instance()
         self.manager = ConfigManager(env_path=self.env_path)
         self.service = SystemConfigService(manager=self.manager)
@@ -69,6 +76,7 @@ class ConfigValueInjectionTestCase(unittest.TestCase):
     def tearDown(self) -> None:
         Config.reset_instance()
         os.environ.pop("ENV_FILE", None)
+        os.environ.update(getattr(self, "_saved_env", {}))
         self.temp_dir.cleanup()
 
     def _update(self, key: str, value: str):

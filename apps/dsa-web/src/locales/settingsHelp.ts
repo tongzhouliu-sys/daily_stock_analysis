@@ -662,6 +662,14 @@ const settingsHelpZhCN: SettingsHelpMap = {
     impact: ['影响重启后浏览器访问 WebUI 的 URL 端口。'],
     notes: ['修改 WEBUI_PORT 后需要重启当前进程、Docker 容器或服务管理器才会生效。'],
   },
+  'settings.system.LOGIN_LOG_RETENTION_DAYS': {
+    title: '登录日志保留天数',
+    summary: '配置管理员登录审计记录的保留天数。',
+    usage: '填写 1–3650 之间的整数，默认 90 天；每次写入日志后会自动清理超期记录。',
+    valueNotes: ['行数上限固定为 5000 行，超出时优先删除最旧记录。'],
+    impact: ['影响登录日志页面可查询的历史范围与数据库体积。'],
+    notes: ['修改后立即生效，无需重启。'],
+  },
   'settings.system.LOG_DIR': {
     title: '日志目录',
     summary: '配置应用日志输出目录。',
@@ -1900,6 +1908,14 @@ const settingsHelpEnUS: SettingsHelpMap = {
     ],
     impact: ['Affects the browser URL used to open WebUI after restart.'],
     notes: ['Restart the process, Docker container, or service manager after changing WEBUI_PORT.'],
+  },
+  'settings.system.LOGIN_LOG_RETENTION_DAYS': {
+    title: 'Login log retention (days)',
+    summary: 'How long administrator login audit records are kept.',
+    usage: 'Enter an integer from 1 to 3650; the default is 90 days. Expired rows are cleaned after each write.',
+    valueNotes: ['The row cap is fixed at 5000; the oldest rows are removed first.'],
+    impact: ['Changes the history available on the login-log page and the database size.'],
+    notes: ['Takes effect immediately; no restart required.'],
   },
   'settings.system.LOG_DIR': {
     title: 'Log Directory',

@@ -84,6 +84,8 @@ Docker Compose 中的 `env_file: ../.env` 只会把 `.env` 作为**启动环境�
 
 `ADMIN_AUTH_ENABLED` 也支持从启动环境变量读取：活跃 `.env` 文件里没有这个键时回退到进程环境变量；文件里有这个键时以文件为准（网页里的认证开关会写入文件，因此重启后仍然生效）。使用 Compose 的 `env_file` 或 `environment` 注入 `ADMIN_AUTH_ENABLED=true` 即可，不需要在容器内创建 `.env`。服务启动时会打印一行最终认证状态和监听地址；认证关闭且监听地址不是回环地址时会额外打印警告。
 
+首次启动请立即设置管理员密码。未设密码时，回环/私有网络客户端可直接初始化；公网客户端必须提供 `ADMIN_SETUP_TOKEN`（或启动日志中的随机令牌），避免“谁先访问谁成为管理员”。反向代理部署请显式设置 `ADMIN_SETUP_TOKEN`。如希望未开启认证时直接拒绝非回环启动，可设置 `DSA_REQUIRE_AUTH_FOR_PUBLIC=true`。
+
 如果希望 WebUI 中保存的配置在容器删除、重建或升级后继续保留，请把活跃配置文件放到已挂载的数据卷中，例如在 Compose 的 `environment` 中增加：
 
 ```yaml

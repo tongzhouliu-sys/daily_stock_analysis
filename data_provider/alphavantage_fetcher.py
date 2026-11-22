@@ -128,7 +128,7 @@ class AlphaVantageFetcher(BaseFetcher):
             resp.raise_for_status()
             data = resp.json()
         except Exception as e:
-            logger.warning(f"[AlphaVantage] Realtime quote failed for {symbol}: {e}")
+            logger.warning('[AlphaVantage] Realtime quote failed for %s: %s', symbol, e)
             return None
 
         gq = data.get('Global Quote', {})
@@ -172,7 +172,7 @@ class AlphaVantageFetcher(BaseFetcher):
             resp.raise_for_status()
             data = resp.json()
         except Exception as e:
-            logger.debug(f"[AlphaVantage] Symbol search failed for {symbol}: {e}")
+            logger.debug('[AlphaVantage] Symbol search failed for %s: %s', symbol, e)
             return None
 
         for match in data.get('bestMatches', []):

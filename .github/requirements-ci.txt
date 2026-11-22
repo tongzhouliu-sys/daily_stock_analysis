@@ -1,5 +1,5 @@
 # Backend CI dependencies.
--r ../requirements.txt
+-r ../requirements.lock
 
 # Test and lint tooling used by backend-gate.
 flake8

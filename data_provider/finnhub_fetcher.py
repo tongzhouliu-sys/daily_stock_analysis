@@ -111,7 +111,7 @@ class FinnhubFetcher(BaseFetcher):
             resp.raise_for_status()
             data = resp.json()
         except Exception as e:
-            logger.warning(f"[Finnhub] Realtime quote failed for {symbol}: {e}")
+            logger.warning('[Finnhub] Realtime quote failed for %s: %s', symbol, e)
             return None
 
         price = data.get('c')
@@ -160,7 +160,7 @@ class FinnhubFetcher(BaseFetcher):
             resp.raise_for_status()
             data = resp.json()
         except Exception as e:
-            logger.debug(f"[Finnhub] Symbol search failed for {symbol}: {e}")
+            logger.debug('[Finnhub] Symbol search failed for %s: %s', symbol, e)
             return None
 
         for item in data.get('result', []):

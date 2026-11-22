@@ -78,7 +78,7 @@ class BatchCommand(BotCommand):
         if limit:
             stock_list = stock_list[:limit]
         
-        logger.info(f"[BatchCommand] 开始批量分析 {len(stock_list)} 只股票")
+        logger.info('[BatchCommand] 开始批量分析 %s 只股票', len(stock_list))
         
         # 在后台线程中执行分析
         thread = threading.Thread(
@@ -119,8 +119,8 @@ class BatchCommand(BotCommand):
                 send_notification=True
             )
             
-            logger.info(f"[BatchCommand] 批量分析完成，成功 {len(results)} 只")
+            logger.info('[BatchCommand] 批量分析完成，成功 %s 只', len(results))
             
         except Exception as e:
-            logger.error(f"[BatchCommand] 批量分析失败: {e}")
+            logger.error('[BatchCommand] 批量分析失败: %s', e)
             logger.exception(e)

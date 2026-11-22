@@ -52,7 +52,7 @@
 
 ## 测试与日志
 
-26. **离线测试守卫**：`tests/support/network_guard.py` 提供 `DSA_OFFLINE_GUARD=enforce|warn` 模式；CI 的 `offline-network-guard` 作业用 `enforce` 跑核心路径，全量套件默认不启用（避免旧用例整体变慢）。本地调试需要真实网络时用 `DSA_ALLOW_NETWORK=1`。
+26. **离线测试守卫**：`tests/support/network_guard.py` 默认以 `enforce` 模式拦截未标记 `@pytest.mark.network` 的外网连接（含子进程，靠 `DSA_OFFLINE_GUARD` 传递）；需要真实网络时用 `DSA_ALLOW_NETWORK=1` 或 `DSA_OFFLINE_GUARD=off/warn`。全量 `-m "not network"` 已在该模式下通过，新增联网用例必须显式标记。
 27. **日志用 `%s` 惰性格式化**：`logger.info(f"...")` 关闭级别也会先拼字符串；外部文本（新闻标题、模型输出、URL）进日志前要清洗换行，避免日志注入。
 28. **时间字段有两套约定**：`src/storage.py` 同时存在本地 naive 与 UTC naive，新增表必须在 `tests/test_time_basis_contract.py` 登记，并同步 `docs/ai/DATA-FLOW.md`。
 29. **文档与实现一致性**：改配置键、接口上限、能力开关时，同时检查 `.env.example`、`config_registry`、接口 description、专题文档和 CHANGELOG；不要出现“文档已宣称、代码未实现”或“CHANGELOG 已删除、文件仍在”。

@@ -100,7 +100,6 @@ WEB_SETTINGS_HIDDEN_FROM_UI = {
     "SCANNER_BACKUP_KEEP_DAILY",
     "SCANNER_BACKUP_KEEP_WEEKLY",
     "LOGIN_LOG_GEOIP_DB_PATH",
-    "LOGIN_LOG_RETENTION_DAYS",
     # First-time setup token / public-bind policy are deployment settings.
     "ADMIN_SETUP_TOKEN",
     "DSA_REQUIRE_AUTH_FOR_PUBLIC",
@@ -3307,6 +3306,31 @@ _FIELD_DEFINITIONS: Dict[str, Dict[str, Any]] = {
             },
         ],
         "warning_codes": ["restart_required"],
+    },
+    "LOGIN_LOG_RETENTION_DAYS": {
+        "title": "Login Log Retention (days)",
+        "description": "How many days administrator login audit records are kept before cleanup. Range 1-3650; default 90.",
+        "category": "system",
+        "data_type": "integer",
+        "ui_control": "number",
+        "is_sensitive": False,
+        "is_required": False,
+        "is_editable": True,
+        "default_value": "90",
+        "options": [],
+        "validation": {"min": 1, "max": 3650},
+        "display_order": 32,
+        "help_key": "settings.system.LOGIN_LOG_RETENTION_DAYS",
+        "examples": [
+            "LOGIN_LOG_RETENTION_DAYS=90",
+            "LOGIN_LOG_RETENTION_DAYS=30",
+        ],
+        "docs": [
+            {
+                "label": "登录日志",
+                "href": "https://github.com/ZhuLinsen/daily_stock_analysis/blob/main/docs/login-log.md",
+            },
+        ],
     },
     "LOG_DIR": {
         "title": "Log Directory",

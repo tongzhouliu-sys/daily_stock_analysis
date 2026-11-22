@@ -84,32 +84,32 @@ class CustomWebhookSender:
                     templated_payload = self._build_custom_webhook_template_payload(content)
                     if templated_payload is not None:
                         if self._post_custom_webhook(url, templated_payload, timeout=30):
-                            logger.info(f"自定义 Webhook {i+1}（钉钉模板）推送成功")
+                            logger.info('自定义 Webhook %s（钉钉模板）推送成功', i + 1)
                             success_count += 1
                         elif self._send_dingtalk_chunked(url, content, max_bytes=20000):
-                            logger.info(f"自定义 Webhook {i+1}（钉钉模板失败，回退分批）推送成功")
+                            logger.info('自定义 Webhook %s（钉钉模板失败，回退分批）推送成功', i + 1)
                             success_count += 1
                         else:
-                            logger.error(f"自定义 Webhook {i+1}（钉钉模板）推送失败")
+                            logger.error('自定义 Webhook %s（钉钉模板）推送失败', i + 1)
                     elif self._send_dingtalk_chunked(url, content, max_bytes=20000):
-                        logger.info(f"自定义 Webhook {i+1}（钉钉）推送成功")
+                        logger.info('自定义 Webhook %s（钉钉）推送成功', i + 1)
                         success_count += 1
                     else:
-                        logger.error(f"自定义 Webhook {i+1}（钉钉）推送失败")
+                        logger.error('自定义 Webhook %s（钉钉）推送失败', i + 1)
                     continue
 
                 # 其他 Webhook：单次发送
                 payload = self._build_custom_webhook_payload(url, content)
                 if self._post_custom_webhook(url, payload, timeout=30):
-                    logger.info(f"自定义 Webhook {i+1} 推送成功")
+                    logger.info('自定义 Webhook %s 推送成功', i + 1)
                     success_count += 1
                 else:
-                    logger.error(f"自定义 Webhook {i+1} 推送失败")
+                    logger.error('自定义 Webhook %s 推送失败', i + 1)
                     
             except Exception as e:
-                logger.error(f"自定义 Webhook {i+1} 推送异常: {e}")
+                logger.error('自定义 Webhook %s 推送异常: %s', i + 1, e)
         
-        logger.info(f"自定义 Webhook 推送完成：成功 {success_count}/{len(self._custom_webhook_urls)}")
+        logger.info('自定义 Webhook 推送完成：成功 %s/%s', success_count, len(self._custom_webhook_urls))
         return success_count > 0
 
     
@@ -170,8 +170,8 @@ class CustomWebhookSender:
         response = requests.post(url, data=body, headers=headers, timeout=timeout, verify=self._webhook_verify_ssl)
         if response.status_code == 200:
             return True
-        logger.error(f"自定义 Webhook 推送失败: HTTP {response.status_code}")
-        logger.debug(f"响应内容: {response.text[:200]}")
+        logger.error('自定义 Webhook 推送失败: HTTP %s', response.status_code)
+        logger.debug('响应内容: %s', response.text[:200])
         return False
 
     def test_custom_webhooks(self, content: str, *, timeout_seconds: float = 20.0) -> List[Dict[str, Any]]:
@@ -406,7 +406,7 @@ class CustomWebhookSender:
             if self._post_custom_webhook(url, payload, timeout=30):
                 ok += 1
             else:
-                logger.error(f"钉钉分批发送失败: 第 {idx+1}/{total} 批")
+                logger.error('钉钉分批发送失败: 第 %s/%s 批', idx + 1, total)
 
             if idx < total - 1:
                 _time.sleep(1)

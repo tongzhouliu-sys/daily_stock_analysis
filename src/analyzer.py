@@ -1885,7 +1885,7 @@ def get_stock_name_multi_source(
             from data_provider.base import DataFetcherManager
             data_manager = DataFetcherManager()
         except Exception as e:
-            logger.debug(f"无法初始化 DataFetcherManager: {e}")
+            logger.debug('无法初始化 DataFetcherManager: %s', e)
 
     if data_manager:
         try:
@@ -1895,7 +1895,7 @@ def get_stock_name_multi_source(
                 STOCK_NAME_MAP[stock_code] = name
                 return name
         except Exception as e:
-            logger.debug(f"从数据源获取股票名称失败: {e}")
+            logger.debug('从数据源获取股票名称失败: %s', e)
 
     # 4. 返回默认名称
     return f'股票{stock_code}'
@@ -3020,10 +3020,7 @@ Output strictly in the following JSON format. This is a complete Decision Dashbo
                 unique_models = list(dict.fromkeys(
                     e['litellm_params']['model'] for e in model_list
                 ))
-                logger.info(
-                    f"Analyzer LLM: Router initialized from channels/YAML — "
-                    f"{len(router_model_list)} deployment(s), models: {unique_models}"
-                )
+                logger.info('Analyzer LLM: Router initialized from channels/YAML — %s deployment(s), models: %s', len(router_model_list), unique_models)
                 return
 
         # --- Legacy path: build Router for multi-key, or use single key ---
@@ -3062,19 +3059,13 @@ Output strictly in the following JSON format. This is a complete Decision Dashbo
                 logger.debug("Analyzer LLM: Legacy Router constructor signature not compatible; using legacy model_list fallback")
                 self._router = None
             else:
-                logger.info(
-                    f"Analyzer LLM: Legacy Router initialized with {len(legacy_model_list)} keys "
-                    f"for {litellm_model}"
-                )
+                logger.info('Analyzer LLM: Legacy Router initialized with %s keys for %s', len(legacy_model_list), litellm_model)
                 return
 
         if keys:
-            logger.info(f"Analyzer LLM: litellm initialized (model={litellm_model})")
+            logger.info('Analyzer LLM: litellm initialized (model=%s)', litellm_model)
         else:
-            logger.info(
-                f"Analyzer LLM: litellm initialized (model={litellm_model}, "
-                f"API key from environment)"
-            )
+            logger.info('Analyzer LLM: litellm initialized (model=%s, API key from environment)', litellm_model)
 
     def is_available(self) -> bool:
         """Check whether the configured generation backend is available."""
@@ -4252,7 +4243,7 @@ Output strictly in the following JSON format. This is a complete Decision Dashbo
         # 请求前增加延时（防止连续请求触发限流）
         request_delay = config.gemini_request_delay
         if request_delay > 0:
-            logger.debug(f"[LLM] 请求前等待 {request_delay:.1f} 秒...")
+            logger.debug('[LLM] 请求前等待 %.1f 秒...', request_delay)
             _emit_progress(65, f"{code}：LLM 请求前等待 {request_delay:.1f} 秒")
             time.sleep(request_delay)
         
@@ -4384,19 +4375,19 @@ Output strictly in the following JSON format. This is a complete Decision Dashbo
             if backend_id in LOCAL_CLI_GENERATION_BACKEND_IDS:
                 model_name = backend_id
                 legacy_audit_context["transport"] = backend_id
-            logger.info(f"========== AI 分析 {name}({code}) ==========")
-            logger.info(f"[LLM配置] 模型: {model_name}")
-            logger.info(f"[LLM配置] Prompt 长度: {len(prompt)} 字符")
-            logger.info(f"[LLM配置] 是否包含新闻: {'是' if news_context else '否'}")
+            logger.info('========== AI 分析 %s(%s) ==========', name, code)
+            logger.info('[LLM配置] 模型: %s', model_name)
+            logger.info('[LLM配置] Prompt 长度: %s 字符', len(prompt))
+            logger.info('[LLM配置] 是否包含新闻: %s', '是' if news_context else '否')
 
             # 本地 CLI backend 是进程执行能力，不记录完整 prompt。
             if backend_id in LOCAL_CLI_GENERATION_BACKEND_IDS:
                 prompt_preview = redact_diagnostic_text(prompt, limit=500)
             else:
                 prompt_preview = prompt[:500] + "..." if len(prompt) > 500 else prompt
-            logger.info(f"[LLM Prompt 预览]\n{prompt_preview}")
+            logger.info('[LLM Prompt 预览]\n%s', prompt_preview)
             if backend_id not in LOCAL_CLI_GENERATION_BACKEND_IDS:
-                logger.debug(f"=== 完整 Prompt ({len(prompt)}字符) ===\n{prompt}\n=== End Prompt ===")
+                logger.debug('=== 完整 Prompt (%s字符) ===\n%s\n=== End Prompt ===', len(prompt), prompt)
 
             # 设置生成配置
             generation_config = {
@@ -4404,7 +4395,7 @@ Output strictly in the following JSON format. This is a complete Decision Dashbo
                 "max_output_tokens": 8192,
             }
 
-            logger.info(f"[LLM调用] 开始调用 {model_name}...")
+            logger.info('[LLM调用] 开始调用 %s...', model_name)
             _emit_progress(68, f"{name}：LLM 已接收请求，等待响应")
 
             # 使用 litellm 调用（支持完整性校验重试）
@@ -4468,19 +4459,14 @@ Output strictly in the following JSON format. This is a complete Decision Dashbo
                 elapsed = time.time() - start_time
 
                 # 记录响应信息
-                logger.info(
-                    f"[LLM返回] {_describe_llm_result_model(model_name, model_used, llm_usage.get('route_model'))} 响应成功, "
-                    f"耗时 {elapsed:.2f}s, 响应长度 {len(response_text)} 字符"
-                )
+                logger.info('[LLM返回] %s 响应成功, 耗时 %.2fs, 响应长度 %s 字符', _describe_llm_result_model(model_name, model_used, llm_usage.get('route_model')), elapsed, len(response_text))
                 if backend_id in LOCAL_CLI_GENERATION_BACKEND_IDS:
                     response_preview = redact_diagnostic_text(response_text, limit=300)
                 else:
                     response_preview = response_text[:300] + "..." if len(response_text) > 300 else response_text
-                logger.info(f"[LLM返回 预览]\n{response_preview}")
+                logger.info('[LLM返回 预览]\n%s', response_preview)
                 if backend_id not in LOCAL_CLI_GENERATION_BACKEND_IDS:
-                    logger.debug(
-                        f"=== {model_used or model_name} 完整响应 ({len(response_text)}字符) ===\n{response_text}\n=== End Response ==="
-                    )
+                    logger.debug('=== %s 完整响应 (%s字符) ===\n%s\n=== End Response ===', model_used or model_name, len(response_text), response_text)
                 # Keep parser/retry progress monotonic so task progress/message never "goes backward".
                 parse_progress = min(99, 93 + retry_count * 2)
                 _emit_progress(parse_progress, f"{name}：LLM 返回完成，正在解析 JSON")
@@ -4550,7 +4536,7 @@ Output strictly in the following JSON format. This is a complete Decision Dashbo
             if should_persist_usage_telemetry(llm_usage):
                 persist_llm_usage(llm_usage, model_used, call_type="analysis", stock_code=code)
 
-            logger.info(f"[LLM解析] {name}({code}) 分析完成: {result.trend_prediction}, 评分 {result.sentiment_score}")
+            logger.info('[LLM解析] %s(%s) 分析完成: %s, 评分 %s', name, code, result.trend_prediction, result.sentiment_score)
 
             return result
 
@@ -5881,7 +5867,7 @@ Output the complete Decision Dashboard in JSON format."""
             )
                 
         except json.JSONDecodeError as e:
-            logger.warning(f"JSON 解析失败: {e}，标记为解析失败")
+            logger.warning('JSON 解析失败: %s，标记为解析失败', e)
             return self._parse_text_response(response_text, code, name)
     
     def _fix_json_string(self, json_str: str) -> str:
@@ -6034,7 +6020,7 @@ Output the complete Decision Dashboard in JSON format."""
         
         for i, context in enumerate(contexts):
             if i > 0:
-                logger.debug(f"等待 {delay_between} 秒后继续...")
+                logger.debug('等待 %s 秒后继续...', delay_between)
                 time.sleep(delay_between)
             
             result = self.analyze(context)
