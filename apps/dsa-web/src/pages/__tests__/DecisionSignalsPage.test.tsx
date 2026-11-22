@@ -889,8 +889,10 @@ describe('DecisionSignalsPage', () => {
     fireEvent.click(within(dialog).getByRole('button', { name: '标记失效' }));
     fireEvent.click(await screen.findByRole('button', { name: '确定' }));
     await waitFor(() => expect(decisionSignalsApi.updateStatus).toHaveBeenCalledWith(88, { status: 'invalidated' }));
-    expect(within(screen.getByRole('dialog')).getByText('已保存为新的 DecisionSignal #88。')).toBeInTheDocument();
-    expect(within(screen.getByRole('dialog')).getByText('已失效')).toBeInTheDocument();
+    await waitFor(() => {
+      expect(within(screen.getByRole('dialog')).getByText('已保存为新的 DecisionSignal #88。')).toBeInTheDocument();
+      expect(within(screen.getByRole('dialog')).getByText('已失效')).toBeInTheDocument();
+    });
   });
 
   it('keeps the authoritative persist result visible after refreshing a timeline-sourced detail', async () => {
