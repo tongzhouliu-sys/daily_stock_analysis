@@ -11,7 +11,7 @@
 
 | 目录 | 职责 | 文件数 | 行数 |
 | --- | --- | --- | --- |
-| `src/core/` | 主流程编排：pipeline、配置装配、调度入口 | 14 | 14191 |
+| `src/core/` | 主流程编排：pipeline、配置装配、调度入口 | 14 | 14215 |
 | `src/services/` | 业务服务层：分析、筛选、通知、系统配置、任务与诊断 | 212 | 84829 |
 | `src/repositories/` | 数据访问层：数据库读写封装 | 12 | 4040 |
 | `src/schemas/` | API / 报告数据结构定义 | 10 | 2107 |
@@ -20,7 +20,7 @@
 | `data_provider/` | 多数据源适配、优先级与 fallback | 22 | 19281 |
 | `api/` | FastAPI 应用与 v1 路由 | 45 | 13505 |
 | `bot/` | IM / 机器人接入 | 22 | 5514 |
-| `apps/dsa-web/src/` | Web 前端（React + Vite） | 340 | 112980 |
+| `apps/dsa-web/src/` | Web 前端（React + Vite） | 340 | 112996 |
 | `apps/dsa-desktop/` | Electron 桌面端壳与打包配置 | 8 | 8519 |
 | `scripts/` | 本地与 CI 脚本 | 52 | 10795 |
 | `.github/scripts/` | GitHub Actions 专用脚本 | 2 | 652 |
@@ -35,7 +35,7 @@
 | `src/services/system_config_service.py` | 6088 | `ConfigValidationError`:123, `ConfigConflictError`:131, `ConfigImportError`:139, `_LLMDiagnostic`:148, `SystemConfigService`:158 | 31 |
 | `src/analyzer.py` | 6085 | `_describe_llm_result_model`:115, `_localized_text`:129, `_normalize_risk_warning_values`:139, `_today_has_realtime_overlay`:164, `_today_looks_complete_daily_bar`:177, `_phase_aware_quote_labels`:210 | 239 |
 | `src/storage.py` | 5553 | `utc_naive_now`:81, `to_utc_naive_datetime`:86, `to_utc_isoformat`:93, `DatabaseSchemaMigration`:111, `StockDaily`:121, `NewsIntel`:201 | 385 |
-| `src/core/config_registry.py` | 5344 | `get_category_definitions`:5168, `get_registered_field_keys`:5173, `_extract_option_values`:5178, `get_field_definition`:5192, `build_schema_response`:5227, `_is_sensitive_key`:5250 | 24 |
+| `src/core/config_registry.py` | 5368 | `get_category_definitions`:5192, `get_registered_field_keys`:5197, `_extract_option_values`:5202, `get_field_definition`:5216, `build_schema_response`:5251, `_is_sensitive_key`:5274 | 24 |
 | `data_provider/base.py` | 5189 | `_resolve_fundamental_timeout_worker_limit`:52, `interactive_mode`:76, `unwrap_exception`:93, `summarize_exception`:110, `normalize_stock_code`:120, `_is_us_market`:205 | 242 |
 | `src/search_service.py` | 5000 | `_terminate_search_process`:58, `_search_topic_news_process_worker`:69, `_call_topic_news_in_subprocess`:97, `_post_with_retry`:188, `_get_with_retry`:200, `_is_public_http_url`:207 | 73 |
 | `src/services/screening_service.py` | 4384 | `_safe_float`:97, `_utc_now_iso`:109, `_resolve_screening_data_dir`:113, `_screening_hotspot_cache_path`:120, `_screening_hotspot_history_path`:126, `_screening_hotspot_detail_cache_dir`:132 | 23 |
@@ -70,7 +70,7 @@
 | --- | --- |
 | `apps/dsa-web/src/i18n/uiText.ts` | 3195 |
 | `apps/dsa-web/src/components/settings/LLMChannelEditor.tsx` | 2845 |
-| `apps/dsa-web/src/locales/settingsHelp.ts` | 2558 |
+| `apps/dsa-web/src/locales/settingsHelp.ts` | 2574 |
 | `apps/dsa-web/src/pages/StockScreeningPage.tsx` | 2354 |
 | `apps/dsa-web/src/pages/PortfolioPage.tsx` | 2252 |
 | `apps/dsa-web/src/pages/HomePage.tsx` | 1964 |
@@ -83,9 +83,9 @@
 
 ## 规模快照
 
-- Python 源码（不含测试）：503 个文件，231905 行
+- Python 源码（不含测试）：503 个文件，231934 行
 - Python 测试：380 个文件，192384 行
-- 前端 TS/TSX：332 个文件，104363 行
+- 前端 TS/TSX：332 个文件，104379 行
 - ≥400 行的 Python 文件：155 个
 
 规模数字只用于判断改动影响面，不是质量指标。

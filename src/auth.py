@@ -566,7 +566,12 @@ def get_client_ip(request) -> str:
 
 
 def check_rate_limit(ip: str) -> bool:
-    """Return True if under limit, False if rate limited."""
+    """Return True if under limit, False if rate limited.
+
+    State is an in-process dict: a restart clears it and multiple workers or
+    replicas count independently. That is intentional for the supported
+    single-process deployment; use a shared store before scaling out.
+    """
     lock = _get_lock()
     now = time.time()
     with lock:

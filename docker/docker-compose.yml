@@ -70,3 +70,9 @@ services:
     # 若使用 network_mode: host，则以下 ports 映射无效，端口由 command 中的 --port 指定
     ports:
       - "${API_PORT:-8000}:${API_PORT:-8000}"
+    # 公网部署必须开启管理员认证；首次启动后请立即设置强密码。
+    # 如确需无认证公网访问，请显式评估风险后再保留 ADMIN_AUTH_ENABLED=false。
+    # environment:
+    #   ADMIN_AUTH_ENABLED: "true"
+    #   # 可选：未开启认证且监听非回环地址时直接拒绝启动
+    #   # DSA_REQUIRE_AUTH_FOR_PUBLIC: "true"
