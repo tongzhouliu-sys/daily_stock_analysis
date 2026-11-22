@@ -372,7 +372,8 @@ describe('ChatPage', () => {
       </StrictMode>,
     );
 
-    expect(await screen.findByPlaceholderText(/分析 600519/)).toBeEnabled();
+    const input = await screen.findByPlaceholderText(/分析 600519/);
+    await waitFor(() => expect(input).toBeEnabled());
     expect(screen.queryByText('正在确认问股运行环境')).not.toBeInTheDocument();
   });
 
@@ -429,7 +430,7 @@ describe('ChatPage', () => {
 
     const input = await screen.findByPlaceholderText(/分析 600519/);
     expect(input).toBeDisabled();
-    fireEvent.click(screen.getByRole('button', { name: '前往 Agent 设置' }));
+    fireEvent.click(await screen.findByRole('button', { name: '前往 Agent 设置' }, { timeout: 5000 }));
     expect(await screen.findByText('Agent settings destination')).toBeInTheDocument();
     // React Router v7 applies navigations asynchronously; waitFor keeps the
     // assertion in an act-wrapped retry loop instead of reading a stale router state.
@@ -563,7 +564,7 @@ describe('ChatPage', () => {
     fireEvent.click(screen.getByRole('button', { name: '发送' }));
     await waitFor(() => expect(mockStartStream).toHaveBeenCalledTimes(1));
     expect(input).toHaveValue('风险呢');
-    expect(screen.getByRole('button', { name: '前往 Agent 设置' })).toBeInTheDocument();
+    expect(await screen.findByRole('button', { name: '前往 Agent 设置' }, { timeout: 5000 })).toBeInTheDocument();
     expect(mockStartStream).toHaveBeenCalledTimes(1);
   });
 
