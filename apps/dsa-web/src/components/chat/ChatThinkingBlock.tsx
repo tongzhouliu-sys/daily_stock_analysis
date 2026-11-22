@@ -176,6 +176,51 @@ function buildSummaryText(
   return parts.join(' · ');
 }
 
+const PREDICTION_MARKET_TEXT = {
+  zh: {
+    label: '预测市场',
+    disclaimer: '群体定价，非投资建议。',
+  },
+  en: {
+    label: 'Prediction markets',
+    disclaimer: 'Crowd pricing, not investment advice.',
+  },
+} as const;
+
+function renderPredictionMarketEvidence(
+  detail: Record<string, unknown> | undefined,
+  language: 'zh' | 'en',
+) {
+  const raw = detail?.prediction_markets;
+  if (!Array.isArray(raw) || raw.length === 0) {
+    return null;
+  }
+  const text = PREDICTION_MARKET_TEXT[language];
+  return (
+    <div className="mt-1 space-y-1 pl-4">
+      {raw.slice(0, 5).map((item, index) => {
+        const row = item && typeof item === 'object' ? (item as Record<string, unknown>) : {};
+        const probability = typeof row.implied_probability === 'number'
+          ? `${Math.round(row.implied_probability * 100)}%`
+          : 'N/A';
+        const question = String(row.question || '');
+        const url = String(row.market_url || '');
+        return (
+          <div key={index} className="text-xs text-secondary-text">
+            <span className="font-semibold text-foreground">{probability}</span> {question}
+            {url ? (
+              <a className="ml-1 home-accent-link" href={url} target="_blank" rel="noreferrer">
+                {text.label}
+              </a>
+            ) : null}
+          </div>
+        );
+      })}
+      <div className="text-[11px] text-muted-text opacity-70">{text.disclaimer}</div>
+    </div>
+  );
+}
+
 /**
  * Memoized thinking/progress block (T40).
  *
@@ -272,11 +317,14 @@ function ChatThinkingBlock({
                   const { text, statusClass, iconClass } = describeStep(item.step, t);
                   const fullText = item.repeat > 1 ? `${text} ×${item.repeat}` : text;
                   return (
-                    <div key={idx} className={cn('chat-progress-item chat-thinking-row', statusClass)}>
-                      <span className={cn('chat-progress-dot', iconClass)} />
-                      <Tooltip content={fullText} side="bottom" className="chat-thinking-row-tip">
-                        <span className="chat-thinking-row-text">{fullText}</span>
-                      </Tooltip>
+                    <div key={idx}>
+                      <div className={cn('chat-progress-item chat-thinking-row', statusClass)}>
+                        <span className={cn('chat-progress-dot', iconClass)} />
+                        <Tooltip content={fullText} side="bottom" className="chat-thinking-row-tip">
+                          <span className="chat-thinking-row-text">{fullText}</span>
+                        </Tooltip>
+                      </div>
+                      {renderPredictionMarketEvidence(item.step.detail, language)}
                     </div>
                   );
                 })}

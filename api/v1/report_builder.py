@@ -349,6 +349,7 @@ def build_analysis_report(
             sector_rankings=extracted_boards.get("sector_rankings"),
             concept_rankings=extracted_boards.get("concept_rankings"),
             market_structure=market_structure,
+            prediction_markets=details_data.get("prediction_markets"),
         )
 
     meta = ReportMeta(

@@ -10,6 +10,7 @@ and this project adheres to [Semantic Versioning](https://semver.org/).
 ## [Unreleased]
 - [新功能] 预测市场可见性 P1.5a：多 Agent intel/risk/portfolio 专家可调用 `search_prediction_markets`；Agent 模式分析注入 `prediction_market_context`；新增 `collect_events` 与噪声过滤（`PREDICTION_MARKET_FILTER_NOISE`、`PREDICTION_MARKET_MIN_VOLUME_24H`）。
 - [新功能] 预测市场结构化证据 sidecar：新增 `analysis_prediction_markets` 表与 repository，历史保存后 best-effort 写入、历史删除同步清理，历史详情 `details.prediction_markets` 可读取；详见 [P1.5 任务书](tasks/prediction-market-visibility.md)。
+- [新功能] 预测市场可视化：报告详情新增 `PredictionMarketsPanel` 卡片（事件、概率、24h 成交额、结算时间、来源、免责声明），问股分析过程在 `search_prediction_markets` 结果存在时展示紧凑证据列表；后端 `tool_done.detail` 追加低敏预测市场字段。
 - [修复] 问股「分析过程」无法收起：展开状态改为由已展开分类派生，全部折叠后自动回到折叠态，摘要行新增「收起」按钮；展开明细限制在约 5 行高的滚动容器内，行内单行省略并用 Tooltip 展示完整文案，不再把消息卡片撑高。
 - [新功能] 首页分析运行反馈：主阅读区新增运行卡（五阶段进度条、当前步骤、已用时、取消），窄屏同样可见；运行卡与任务面板共用同一套阶段 / 状态模型，失败任务停留可重试，排队显示队列位置，断线显示重连提示并在断开期间加密轮询；任务 SSE 与任务列表新增 `stage`、`progress_updated_at`，`connected` 事件新增 `heartbeat_interval_s`。
 - [修复] Agent 模式分析进度停滞：`AgentExecutor.run` / `AgentOrchestrator.run` 增加可选进度回调，个股分析在 58%–93% 之间每完成一个工具都更新任务进度，不再长时间停在「正在切换 Agent 分析链路」。

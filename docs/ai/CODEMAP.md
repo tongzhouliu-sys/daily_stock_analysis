@@ -15,12 +15,12 @@
 | `src/services/` | 业务服务层：分析、筛选、通知、系统配置、任务与诊断 | 218 | 86594 |
 | `src/repositories/` | 数据访问层：数据库读写封装 | 14 | 4268 |
 | `src/schemas/` | API / 报告数据结构定义 | 10 | 2110 |
-| `src/agent/` | 问股 Agent：意图解析、编排、工具与流式事件 | 66 | 26826 |
+| `src/agent/` | 问股 Agent：意图解析、编排、工具与流式事件 | 66 | 26848 |
 | `src/llm/` | LLM 调用封装与本地 CLI 生成后端 | 12 | 6466 |
 | `data_provider/` | 多数据源适配、优先级与 fallback | 25 | 20413 |
-| `api/` | FastAPI 应用与 v1 路由 | 47 | 13820 |
+| `api/` | FastAPI 应用与 v1 路由 | 47 | 13826 |
 | `bot/` | IM / 机器人接入 | 22 | 5507 |
-| `apps/dsa-web/src/` | Web 前端（React + Vite） | 352 | 115495 |
+| `apps/dsa-web/src/` | Web 前端（React + Vite） | 354 | 115727 |
 | `apps/dsa-desktop/` | Electron 桌面端壳与打包配置 | 8 | 8519 |
 | `scripts/` | 本地与 CI 脚本 | 53 | 10895 |
 | `.github/scripts/` | GitHub Actions 专用脚本 | 2 | 652 |
@@ -83,9 +83,9 @@
 
 ## 规模快照
 
-- Python 源码（不含测试）：519 个文件，236818 行
+- Python 源码（不含测试）：519 个文件，236846 行
 - Python 测试：389 个文件，194840 行
-- 前端 TS/TSX：344 个文件，106440 行
+- 前端 TS/TSX：346 个文件，106672 行
 - ≥400 行的 Python 文件：161 个
 
 规模数字只用于判断改动影响面，不是质量指标。
