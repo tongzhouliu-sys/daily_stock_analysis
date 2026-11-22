@@ -17,14 +17,14 @@
 | `src/schemas/` | API / 报告数据结构定义 | 10 | 2107 |
 | `src/agent/` | 问股 Agent：意图解析、编排、工具与流式事件 | 65 | 26497 |
 | `src/llm/` | LLM 调用封装与本地 CLI 生成后端 | 12 | 6466 |
-| `data_provider/` | 多数据源适配、优先级与 fallback | 25 | 20093 |
+| `data_provider/` | 多数据源适配、优先级与 fallback | 25 | 20153 |
 | `api/` | FastAPI 应用与 v1 路由 | 47 | 13711 |
 | `bot/` | IM / 机器人接入 | 22 | 5507 |
 | `apps/dsa-web/src/` | Web 前端（React + Vite） | 341 | 113591 |
 | `apps/dsa-desktop/` | Electron 桌面端壳与打包配置 | 8 | 8519 |
 | `scripts/` | 本地与 CI 脚本 | 52 | 10795 |
 | `.github/scripts/` | GitHub Actions 专用脚本 | 2 | 652 |
-| `tests/` | pytest 测试 | 392 | 194018 |
+| `tests/` | pytest 测试 | 392 | 194087 |
 
 ## 大文件（Python，≥400 行）
 
@@ -40,7 +40,7 @@
 | `data_provider/base.py` | 5210 | `_resolve_fundamental_timeout_worker_limit`:58, `interactive_mode`:82, `unwrap_exception`:99, `summarize_exception`:116, `normalize_stock_code`:126, `_is_us_market`:211 | 243 |
 | `src/services/screening_service.py` | 4384 | `_safe_float`:97, `_utc_now_iso`:109, `_resolve_screening_data_dir`:113, `_screening_hotspot_cache_path`:120, `_screening_hotspot_history_path`:126, `_screening_hotspot_detail_cache_dir`:132 | 23 |
 | `src/core/pipeline.py` | 4305 | `_share_image_payload`:132, `_coerce_context_date`:146, `_supports_explicit_keyword`:160, `_symbol_scope_lookup_values`:175, `_measure_fetch_step`:246, `_format_fetch_timings`:261 | 71 |
-| `src/config.py` | 4050 | `ConfigIssue`:81, `_has_ntfy_topic_endpoint`:146, `_has_gotify_base_url`:157, `normalize_tickflow_kline_adjust`:171, `parse_prompt_cache_diagnostics_level`:183, `AgentContextCompressionPreset`:211 | 359 |
+| `src/config.py` | 4059 | `ConfigIssue`:81, `_has_ntfy_topic_endpoint`:146, `_has_gotify_base_url`:157, `normalize_tickflow_kline_adjust`:171, `parse_prompt_cache_diagnostics_level`:183, `AgentContextCompressionPreset`:211 | 359 |
 | `src/notification.py` | 3324 | `_share_image_payload`:95, `_structured_payload_for`:109, `_safe_float`:117, `_format_strategy_skill_items`:137, `_append_strategy_synthesis_block`:157, `NotificationChannel`:208 | 85 |
 | `src/llm/local_cli_backend.py` | 2966 | `_diagnostic_field_name_pattern`:256, `_diagnostic_field_assignment_pattern`:286, `_diagnostic_json_assignment_pattern`:301, `_diagnostic_line_field_pattern`:315, `_diagnostic_double_quoted_yaml_line_pattern`:337, `_diagnostic_yaml_explicit_key_pattern`:357 | 25 |
 | `data_provider/akshare_fetcher.py` | 2640 | `_lots_to_shares`:64, `_is_etf_code`:120, `_is_hk_code`:139, `_normalize_tencent_volume`:171, `_normalize_cn_daily_volume`:203, `_parse_tencent_amount`:240 | 52 |
@@ -62,7 +62,7 @@
 | `src/services/decision_signal_service.py` | 1388 | `DecisionSignalNotFoundError`:75, `DecisionSignalStorageError`:79, `DecisionSignalWriteOutcome`:87, `DecisionSignalService`:110 | 35 |
 | `src/services/alert_service.py` | 1372 | `AlertServiceError`:87, `AlertNotFoundError`:93, `UnsupportedAlertTypeError`:99, `AlertService`:105 | 15 |
 | `src/agent/llm_adapter.py` | 1345 | `_resolve_litellm_exception`:64, `ToolCall`:82, `LLMResponse`:92, `_split_provider_model`:190, `_object_to_dict`:200, `_provider_specific_fields_from`:224 | 122 |
-| …另外 126 个 ≥400 行的文件 | — | — | — |
+| …另外 127 个 ≥400 行的文件 | — | — | — |
 
 ## 大文件（前端，≥400 行）
 
@@ -83,9 +83,9 @@
 
 ## 规模快照
 
-- Python 源码（不含测试）：514 个文件，234729 行
-- Python 测试：383 个文件，193628 行
+- Python 源码（不含测试）：514 个文件，234798 行
+- Python 测试：383 个文件，193697 行
 - 前端 TS/TSX：333 个文件，104966 行
-- ≥400 行的 Python 文件：156 个
+- ≥400 行的 Python 文件：157 个
 
 规模数字只用于判断改动影响面，不是质量指标。

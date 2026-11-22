@@ -1137,6 +1137,11 @@ class Config:
     prediction_market_politics_allowed: bool = False  # 是否采集 politics 类别（默认排除）
     kalshi_api_base_url: str = "https://api.elections.kalshi.com/trade-api/v2"
     kalshi_api_key: Optional[str] = None
+    # 定向拉取的金融 series（Kalshi /markets 默认被体育串关占满，category 参数无效）
+    kalshi_series_tickers: str = (
+        "KXFED,KXCPI,KXCPIYOY,KXCPICORE,KXGDP,KXPAYROLLS,KXU3,KXRECSSNBER,"
+        "KXINX,KXNASDAQ100,KXBTCD,KXETH,KXTSLA"
+    )
     polymarket_api_base_url: str = "https://gamma-api.polymarket.com"
     polymarket_api_key: Optional[str] = None
 
@@ -2130,6 +2135,10 @@ class Config:
             ),
             kalshi_api_base_url=((os.getenv('KALSHI_API_BASE_URL') or '').strip().rstrip('/') or 'https://api.elections.kalshi.com/trade-api/v2'),
             kalshi_api_key=(os.getenv('KALSHI_API_KEY') or '').strip() or None,
+            kalshi_series_tickers=(os.getenv('KALSHI_SERIES_TICKERS') or '').strip() or (
+                "KXFED,KXCPI,KXCPIYOY,KXCPICORE,KXGDP,KXPAYROLLS,KXU3,KXRECSSNBER,"
+                "KXINX,KXNASDAQ100,KXBTCD,KXETH,KXTSLA"
+            ),
             polymarket_api_base_url=((os.getenv('POLYMARKET_API_BASE_URL') or '').strip().rstrip('/') or 'https://gamma-api.polymarket.com'),
             polymarket_api_key=(os.getenv('POLYMARKET_API_KEY') or '').strip() or None,
             agent_backend=(os.getenv('AGENT_BACKEND', 'auto') or 'auto').strip().lower(),

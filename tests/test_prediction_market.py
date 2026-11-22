@@ -28,6 +28,7 @@ def _config(**overrides):
         prediction_market_politics_allowed=False,
         kalshi_api_base_url="https://api.elections.kalshi.com/trade-api/v2",
         kalshi_api_key=None,
+        kalshi_series_tickers="KXFED,KXCPI",
         polymarket_api_base_url="https://gamma-api.polymarket.com",
         polymarket_api_key=None,
     )
@@ -68,6 +69,74 @@ class TestNormalization(unittest.TestCase):
         self.assertEqual(item["implied_probability"], 0.62)
         self.assertEqual(item["category"], "macro")
         self.assertIn("kalshi.com", item["market_url"])
+
+    def test_kalshi_dollar_fields_and_other_filter(self):
+        fetcher = PredictionMarketFetcher(config=_config())
+        markets = [
+            {
+                "ticker": "KXFED-26DEC",
+                "title": "Fed cuts rates in December?",
+                "last_price_dollars": "0.62",
+                "yes_bid_dollars": "0.61",
+                "yes_ask_dollars": "0.63",
+                "volume_fp": "1000",
+                "open_interest_fp": "120",
+            },
+            {
+                "ticker": "KXSPORT-1",
+                "title": "Oklahoma State vs Arizona State",
+                "last_price_dollars": "0.55",
+            },
+        ]
+        items = fetcher._normalize_kalshi_markets(markets, max_items=10)
+        self.assertEqual(len(items), 1)
+        self.assertEqual(items[0]["implied_probability"], 0.62)
+        self.assertEqual(items[0]["volume_24h"], 1000.0)
+        self.assertEqual(items[0]["open_interest"], 120.0)
+
+    def test_polymarket_other_category_is_filtered(self):
+        fetcher = PredictionMarketFetcher(config=_config())
+        markets = [
+            {
+                "id": "0xsport",
+                "question": "Oklahoma State vs. Arizona State",
+                "outcomes": '["Oklahoma State", "Arizona State"]',
+                "outcomePrices": '["0.9995", "0.0005"]',
+                "active": True,
+            }
+        ]
+        self.assertEqual(fetcher._normalize_polymarket_markets(markets, max_items=10), [])
+
+    def test_kalshi_series_allowlist_path(self):
+        fetcher = PredictionMarketFetcher(config=_config(kalshi_series_tickers="KXFED,KXCPI"))
+        calls = []
+
+        def fake_get_json(url, headers=None):
+            calls.append(url)
+            if "KXFED" in url:
+                return {
+                    "markets": [
+                        {
+                            "ticker": "KXFED-1",
+                            "title": "Fed cuts rates in December?",
+                            "last_price_dollars": "0.62",
+                        }
+                    ]
+                }
+            return {
+                "markets": [
+                    {
+                        "ticker": "KXCPI-1",
+                        "title": "Will CPI rise more than 1%?",
+                        "last_price_dollars": "0.31",
+                    }
+                ]
+            }
+
+        fetcher._get_json = fake_get_json  # type: ignore[assignment]
+        items = fetcher.fetch_kalshi()
+        self.assertEqual(len(items), 2)
+        self.assertTrue(len(calls) == 2 and all("series_ticker=" in url for url in calls))
 
     def test_kalshi_politics_is_excluded_by_default(self):
         fetcher = PredictionMarketFetcher(config=_config())

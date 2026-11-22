@@ -33,14 +33,22 @@ _YES_LABELS = {"yes", "y", "true"}
 
 # Best-effort platform category -> DSA category mapping.
 _CATEGORY_KEYWORDS = {
-    "macro": ("fed", "rate", "cpi", "inflation", "gdp", "unemployment", "jobs",
-              "recession", "tariff", "treasury", "yield", "economy", "economic"),
+    "macro": ("fed", "federal funds", "rate", "cpi", "inflation", "gdp", "unemployment",
+              "jobs", "recession", "tariff", "treasury", "yield", "economy", "economic"),
     "commodity": ("oil", "brent", "wti", "gold", "gas", "crude", "copper", "silver"),
-    "crypto": ("btc", "bitcoin", "eth", "ethereum", "crypto", "solana", "token"),
+    "crypto": ("btc", "bitcoin", "eth", "ethereum", "crypto", "solana"),
     "equity": ("earnings", "stock", "shares", "market cap", "revenue", "guidance",
-               "ipo", "merger", "acquisition", "beat", "miss", "close above",
+               "ipo", "merger", "acquisition", "s&p", "nasdaq", "dow jones", "index",
                "nvidia", "apple", "tesla", "microsoft", "amazon", "meta", "google"),
+    "politics": ("politics", "political", "election", "president", "senate", "congress"),
 }
+
+
+def _keyword_hit(text: str, keyword: str) -> bool:
+    """Word-boundary match so 'Vegas' does not match 'gas' or 'beat' ambiguities."""
+    if " " in keyword or "&" in keyword:
+        return keyword in text
+    return re.search(rf"(?<![a-z0-9]){re.escape(keyword)}(?![a-z0-9])", text) is not None
 
 
 def _normalize_probability(value: Any) -> Optional[float]:
@@ -85,6 +93,11 @@ def _first_not_none(*values: Any) -> Any:
     return None
 
 
+def _probability_from(raw: Dict[str, Any], *keys: str) -> Optional[float]:
+    """Read the first present probability field, tolerating cents/dollars units."""
+    return _normalize_probability(_first_not_none(*(raw.get(key) for key in keys)))
+
+
 def _parse_json_list(value: Any) -> List[Any]:
     if isinstance(value, list):
         return value
@@ -99,10 +112,8 @@ def _parse_json_list(value: Any) -> List[Any]:
 
 def _infer_category(question: str, raw_category: Any = None) -> str:
     text = f"{_safe_text(raw_category, 80)} {question}".lower()
-    if "politic" in text or "election" in text or "president" in text or "senate" in text:
-        return "politics"
     for category, keywords in _CATEGORY_KEYWORDS.items():
-        if any(keyword in text for keyword in keywords):
+        if any(_keyword_hit(text, keyword) for keyword in keywords):
             return category
     return "other"
 
@@ -163,6 +174,17 @@ class PredictionMarketFetcher:
         headers: Dict[str, str] = {}
         if self.config.kalshi_api_key:
             headers["Authorization"] = f"Bearer {self.config.kalshi_api_key}"
+
+        series = [
+            token.strip()
+            for token in str(getattr(self.config, "kalshi_series_tickers", "") or "").split(",")
+            if token.strip()
+        ]
+        if series:
+            return self._fetch_kalshi_series(base, headers, series, max_items=max_items)
+
+        # Fallback: the unfiltered listing is dominated by sports parlays and is only
+        # used when no financial series allowlist is configured.
         payload = self._get_json(
             f"{base}/markets?status=open&limit={min(max_items, 200)}",
             headers=headers,
@@ -171,6 +193,36 @@ class PredictionMarketFetcher:
         if not isinstance(markets, list):
             return []
         return self._normalize_kalshi_markets(markets, max_items=max_items)
+
+    def _fetch_kalshi_series(
+        self,
+        base: str,
+        headers: Dict[str, str],
+        series: List[str],
+        *,
+        max_items: int,
+    ) -> List[Dict[str, Any]]:
+        """Fetch open markets for an explicit financial-series allowlist (fail-open per series)."""
+        items: List[Dict[str, Any]] = []
+        # Spread the per-fetch cap across series so one ladder-heavy series cannot
+        # starve the rest (e.g. Fed rate strikes alone can exceed the global cap).
+        per_series = max(3, min(20, max_items // max(1, len(series))))
+        for ticker in series:
+            remaining = max_items - len(items)
+            if remaining <= 0:
+                break
+            try:
+                payload = self._get_json(
+                    f"{base}/markets?status=open&series_ticker={ticker}&limit={min(remaining, per_series)}",
+                    headers=headers,
+                )
+            except Exception as exc:  # fail-open per series
+                logger.debug("kalshi series %s fetch failed: %s", ticker, self._sanitize_error(exc))
+                continue
+            markets = payload.get("markets") if isinstance(payload, dict) else None
+            if isinstance(markets, list):
+                items.extend(self._normalize_kalshi_markets(markets, max_items=min(remaining, per_series)))
+        return items
 
     def _normalize_kalshi_markets(self, markets: List[Any], *, max_items: int) -> List[Dict[str, Any]]:
         items: List[Dict[str, Any]] = []
@@ -186,10 +238,12 @@ class PredictionMarketFetcher:
             category = _infer_category(question, raw.get("category"))
             if category == "politics" and not self.config.prediction_market_politics_allowed:
                 continue
-            yes_bid = _normalize_probability(raw.get("yes_bid"))
-            yes_ask = _normalize_probability(raw.get("yes_ask"))
-            last_price = _normalize_probability(
-                _first_not_none(raw.get("last_price"), raw.get("last_trade_price"))
+            if category == "other":
+                continue
+            yes_bid = _probability_from(raw, "yes_bid", "yes_bid_dollars")
+            yes_ask = _probability_from(raw, "yes_ask", "yes_ask_dollars")
+            last_price = _probability_from(
+                raw, "last_price", "last_price_dollars", "last_trade_price", "last_trade_price_dollars"
             )
             implied = last_price
             if implied is None and yes_bid is not None and yes_ask is not None:
@@ -209,8 +263,12 @@ class PredictionMarketFetcher:
                     "yes_bid": yes_bid,
                     "yes_ask": yes_ask,
                     "last_price": last_price,
-                    "volume_24h": _safe_float(raw.get("volume_24h")),
-                    "open_interest": _safe_float(raw.get("open_interest")),
+                    "volume_24h": _safe_float(
+                        _first_not_none(raw.get("volume_24h"), raw.get("volume"), raw.get("volume_fp"))
+                    ),
+                    "open_interest": _safe_float(
+                        _first_not_none(raw.get("open_interest"), raw.get("open_interest_fp"))
+                    ),
                     "liquidity_usd": _safe_float(raw.get("liquidity")),
                     "status": self._normalize_status(raw.get("status")),
                     "category": category if (category in _ALLOWED_CATEGORIES or category == "politics") else "other",
@@ -259,6 +317,8 @@ class PredictionMarketFetcher:
                 continue
             category = _infer_category(question, raw.get("category") or raw.get("groupItemTitle"))
             if category == "politics" and not self.config.prediction_market_politics_allowed:
+                continue
+            if category == "other":
                 continue
             outcomes = _parse_json_list(raw.get("outcomes"))
             prices = _parse_json_list(raw.get("outcomePrices") or raw.get("prices"))
