@@ -8,6 +8,7 @@ and this project adheres to [Semantic Versioning](https://semver.org/).
 > For user-friendly release highlights, see the [GitHub Releases](https://github.com/ZhuLinsen/daily_stock_analysis/releases) page.
 
 ## [Unreleased]
+- [改进] 搜索 Key 支持失效自动切换：同一渠道配置多个 Key 时，当前 Key 返回鉴权失败、配额用尽或限流（401/403/429、`invalid api key`、`quota`、`rate limit`、`run out of searches` 等）会在本次搜索内立即切到下一个 Key 重试；连续失败 3 次的 Key 后续优先跳过。SerpAPI 的 `error` 响应不再被当成空结果的成功响应。
 - [修复] 恢复主干离线测试绿灯：`SCANNER_BACKUP_KEEP_DAILY/WEEKLY` 归入扫描器隐藏配置，飞书 sender 断言同步关键词页脚与 `render_context/include_disclaimer` 契约，单股通知测试替身补齐 `results/report_type` 形参；`pytest -m "not network"` 恢复 0 失败。
 - [修复] 修复前端 lint：`LoginLogCard` 用显式 i18n key 映射替代 `t(key as any)`，`npm run lint` 恢复 0 error。
 - [修复] Docker 健康检查不再恒真：移除 `|| python -c "sys.exit(0)"`，改用 Python `urllib` 探活；API 不可用时容器会标记 unhealthy。
