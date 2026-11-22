@@ -2412,3 +2412,64 @@ a {
 @supports (padding-bottom: env(safe-area-inset-bottom)) {
   .chat-intake-actions { padding-bottom: env(safe-area-inset-bottom); }
 }
+
+/* --- Thinking block: collapse control + height-capped detail list --- */
+
+.chat-thinking-toggle {
+  display: inline-flex;
+  align-items: center;
+  gap: 2px;
+  margin-left: auto;
+  padding: 2px 8px;
+  border: 0;
+  border-radius: 999px;
+  background: transparent;
+  color: hsl(var(--primary));
+  font-size: 11px;
+  line-height: 1.6;
+  cursor: pointer;
+  transition: background-color 150ms ease;
+}
+
+.chat-thinking-toggle:hover {
+  background: hsl(var(--primary) / 0.08);
+}
+
+.chat-thinking-details {
+  display: grid;
+  gap: 0.5rem;
+  /* ~5 rows: keep a long tool trace from pushing the answer off-screen. */
+  max-height: 9rem;
+  overflow-y: auto;
+  overscroll-behavior: contain;
+  padding-right: 4px;
+  scrollbar-width: thin;
+  scrollbar-color: hsl(var(--muted-text) / 0.35) transparent;
+}
+
+.chat-thinking-details::-webkit-scrollbar {
+  width: 6px;
+}
+
+.chat-thinking-details::-webkit-scrollbar-thumb {
+  border-radius: 999px;
+  background: hsl(var(--muted-text) / 0.35);
+}
+
+.chat-thinking-row {
+  min-width: 0;
+}
+
+.chat-thinking-row-tip {
+  display: inline-flex;
+  min-width: 0;
+  flex: 1;
+}
+
+.chat-thinking-row-text {
+  display: block;
+  min-width: 0;
+  overflow: hidden;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+}

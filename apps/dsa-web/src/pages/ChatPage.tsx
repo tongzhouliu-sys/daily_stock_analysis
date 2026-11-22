@@ -165,7 +165,6 @@ const ChatPage: React.FC = () => {
   const [defaultSkillIds, setDefaultSkillIds] = useState<string[]>([]);
   const [showSkillDesc, setShowSkillDesc] = useState<string | null>(null);
   const [advancedOptionsOpen, setAdvancedOptionsOpen] = useState(false);
-  const [expandedThinking, setExpandedThinking] = useState<Set<string>>(new Set());
   const [expandedCategories, setExpandedCategories] = useState<Set<string>>(new Set());
   const [deleteConfirmId, setDeleteConfirmId] = useState<string | null>(null);
   const [sidebarOpen, setSidebarOpen] = useState(false);
@@ -1144,6 +1143,18 @@ const ChatPage: React.FC = () => {
     }
   }, [setSessionPinned, showSendFeedback, t]);
 
+  // A message is "expanded" iff at least one of its categories is open. This is
+  // derived, not accumulated: a separate set used to be added to on every
+  // toggle and never pruned, so the block could never return to collapsed.
+  const expandedMessageIds = useMemo(() => {
+    const ids = new Set<string>();
+    expandedCategories.forEach((key) => {
+      const separator = key.indexOf(':');
+      if (separator > 0) ids.add(key.slice(0, separator));
+    });
+    return ids;
+  }, [expandedCategories]);
+
   const toggleCategory = useCallback((msgId: string, category: string) => {
     const key = `${msgId}:${category}`;
     setExpandedCategories((prev) => {
@@ -1152,11 +1163,20 @@ const ChatPage: React.FC = () => {
       else next.add(key);
       return next;
     });
-    // Also expand the thinking block if not already expanded
-    setExpandedThinking((prev) => {
+  }, []);
+
+  const collapseThinking = useCallback((msgId: string) => {
+    setExpandedCategories((prev) => {
+      const prefix = `${msgId}:`;
       const next = new Set(prev);
-      if (!next.has(msgId)) next.add(msgId);
-      return next;
+      let changed = false;
+      next.forEach((key) => {
+        if (key.startsWith(prefix)) {
+          next.delete(key);
+          changed = true;
+        }
+      });
+      return changed ? next : prev;
     });
   }, []);
 
@@ -1535,9 +1555,10 @@ const ChatPage: React.FC = () => {
                           : 'chat.defaultBackendBadge')
                         : null}
                       language={language}
-                      thinkingExpanded={expandedThinking.has(msg.id)}
+                      thinkingExpanded={expandedMessageIds.has(msg.id)}
                       expandedCategories={expandedCategories}
                       onToggleCategory={toggleCategory}
+                      onCollapseThinking={collapseThinking}
                       onFollowUp={handleFollowUpQuestion}
                       clarification={msg.id === activeClarificationMessageId ? msg.stockClarification ?? null : null}
                       clarificationAutoConfirmEnabled={clarificationAutoConfirmEnabled}

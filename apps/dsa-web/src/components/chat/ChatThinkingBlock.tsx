@@ -1,5 +1,7 @@
 import { memo } from 'react';
+import { ChevronUp } from 'lucide-react';
 import { cn } from '../../utils/cn';
+import { Tooltip } from '../common';
 import type { ProgressStep } from '../../stores/agentChatStore';
 import { useUiLanguage, type TranslateFn } from '../../contexts/UiLanguageContext';
 import {
@@ -18,6 +20,8 @@ interface ChatThinkingBlockProps {
   expanded: boolean;
   expandedCategories: Set<string>;
   onToggleCategory: (messageId: string, category: string) => void;
+  /** Collapse every expanded category of this message. */
+  onCollapse: (messageId: string) => void;
   language: 'zh' | 'en';
 }
 
@@ -184,6 +188,7 @@ function ChatThinkingBlock({
   expanded,
   expandedCategories,
   onToggleCategory,
+  onCollapse,
   language,
 }: ChatThinkingBlockProps) {
   const { t } = useUiLanguage();
@@ -211,6 +216,19 @@ function ChatThinkingBlock({
       <div className="flex flex-wrap items-center gap-x-2 gap-y-1 mb-2">
         <span className="text-xs text-muted-text opacity-60">{t('chat.thinking.title')}</span>
         <span className="text-xs text-secondary-text opacity-70">{summaryText}</span>
+        {expanded ? (
+          <button
+            type="button"
+            className="chat-thinking-toggle"
+            onClick={() => onCollapse(messageId)}
+            aria-expanded="true"
+            aria-label={t('chat.thinking.collapse')}
+            data-testid="chat-thinking-collapse"
+          >
+            <ChevronUp size={12} aria-hidden="true" />
+            <span>{t('chat.thinking.collapse')}</span>
+          </button>
+        ) : null}
       </div>
 
       {/* Category tags */}
@@ -242,9 +260,9 @@ function ChatThinkingBlock({
         })}
       </div>
 
-      {/* Expanded category details */}
+      {/* Expanded category details (height-capped scroll area) */}
       {expanded && (
-        <div className="space-y-3 animate-fade-in">
+        <div className="chat-thinking-details animate-fade-in" data-testid="chat-thinking-details">
           {categoryOrder.map((category) => {
             if (!expandedCategories.has(`${messageId}:${category}`)) return null;
             const categorySteps = categoryMap.get(category) || [];
@@ -252,15 +270,13 @@ function ChatThinkingBlock({
               <div key={category} className="pl-4 border-l-2 border-primary/30 space-y-1.5">
                 {categorySteps.map((item, idx) => {
                   const { text, statusClass, iconClass } = describeStep(item.step, t);
+                  const fullText = item.repeat > 1 ? `${text} ×${item.repeat}` : text;
                   return (
-                    <div key={idx} className={cn('chat-progress-item', statusClass)}>
+                    <div key={idx} className={cn('chat-progress-item chat-thinking-row', statusClass)}>
                       <span className={cn('chat-progress-dot', iconClass)} />
-                      <span className="leading-relaxed">
-                        {text}
-                        {item.repeat > 1 && (
-                          <span className="ml-1 opacity-60">×{item.repeat}</span>
-                        )}
-                      </span>
+                      <Tooltip content={fullText} side="bottom" className="chat-thinking-row-tip">
+                        <span className="chat-thinking-row-text">{fullText}</span>
+                      </Tooltip>
                     </div>
                   );
                 })}

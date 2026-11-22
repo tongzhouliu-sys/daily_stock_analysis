@@ -8,6 +8,7 @@ and this project adheres to [Semantic Versioning](https://semver.org/).
 > For user-friendly release highlights, see the [GitHub Releases](https://github.com/ZhuLinsen/daily_stock_analysis/releases) page.
 
 ## [Unreleased]
+- [修复] 问股「分析过程」无法收起：展开状态改为由已展开分类派生，全部折叠后自动回到折叠态，摘要行新增「收起」按钮；展开明细限制在约 5 行高的滚动容器内，行内单行省略并用 Tooltip 展示完整文案，不再把消息卡片撑高。
 - [新功能] 首页分析运行反馈：主阅读区新增运行卡（五阶段进度条、当前步骤、已用时、取消），窄屏同样可见；运行卡与任务面板共用同一套阶段 / 状态模型，失败任务停留可重试，排队显示队列位置，断线显示重连提示并在断开期间加密轮询；任务 SSE 与任务列表新增 `stage`、`progress_updated_at`，`connected` 事件新增 `heartbeat_interval_s`。
 - [修复] Agent 模式分析进度停滞：`AgentExecutor.run` / `AgentOrchestrator.run` 增加可选进度回调，个股分析在 58%–93% 之间每完成一个工具都更新任务进度，不再长时间停在「正在切换 Agent 分析链路」。
 - [改进] 问股运行反馈：发送后用户气泡立即上屏，进行中面板展示三阶段、步骤时间线、每步耗时、总已用时与停止按钮；读取到心跳注释行即视为存活，连续 3 个心跳周期无任何字节时中止本地读取并转入进度恢复（不取消后台任务）；进度文案统一迁入 `uiText.ts`。
