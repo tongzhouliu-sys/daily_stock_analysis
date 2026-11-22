@@ -3228,6 +3228,31 @@
   border-top: 1px solid hsl(var(--border));
 }
 
+.chat-live-steps {
+  display: grid;
+  gap: 4px;
+}
+
+/* Expanded traces stay bounded: the whole live panel must not grow taller than
+   the thread viewport and push the streaming answer off-screen. */
+.chat-live-steps.is-expanded {
+  max-height: 9.5rem;
+  overflow-y: auto;
+  overscroll-behavior: contain;
+  padding-right: 4px;
+  scrollbar-width: thin;
+  scrollbar-color: hsl(var(--muted-text) / 0.35) transparent;
+}
+
+.chat-live-steps.is-expanded::-webkit-scrollbar {
+  width: 6px;
+}
+
+.chat-live-steps.is-expanded::-webkit-scrollbar-thumb {
+  border-radius: 999px;
+  background: hsl(var(--muted-text) / 0.35);
+}
+
 .chat-live-step {
   display: flex;
   min-width: 0;
@@ -3288,11 +3313,33 @@
   cursor: pointer;
 }
 
+.chat-live-more-icon {
+  transition: transform 150ms ease;
+}
+
+.chat-live-more-icon.is-flipped {
+  transform: rotate(180deg);
+}
+
 .chat-streaming-preview {
+  /* Scrollable instead of clipped: a long streamed answer used to lose
+     everything past the first 18rem with no way to reach it. */
   max-height: 18rem;
-  overflow: hidden;
+  overflow-y: auto;
+  overscroll-behavior: contain;
   border-top: 1px solid hsl(var(--border));
   padding-top: 8px;
+  scrollbar-width: thin;
+  scrollbar-color: hsl(var(--muted-text) / 0.35) transparent;
+}
+
+.chat-streaming-preview::-webkit-scrollbar {
+  width: 6px;
+}
+
+.chat-streaming-preview::-webkit-scrollbar-thumb {
+  border-radius: 999px;
+  background: hsl(var(--muted-text) / 0.35);
 }
 
 .chat-streaming-caret {
