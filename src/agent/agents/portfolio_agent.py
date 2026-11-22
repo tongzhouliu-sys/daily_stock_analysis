@@ -48,6 +48,7 @@ class PortfolioAgent(BaseAgent):
     tool_names = [
         "get_realtime_quote",
         "get_stock_info",
+        "search_prediction_markets",
     ] + fxmacrodata_tool_names(
         'data_catalogue',
         'forex',

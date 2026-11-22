@@ -34,6 +34,7 @@ class RiskAgent(BaseAgent):
         "search_stock_news",
         "get_realtime_quote",
         "get_stock_info",
+        "search_prediction_markets",
     ] + fxmacrodata_tool_names(
         'data_catalogue',
         'release_calendar',

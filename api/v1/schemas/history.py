@@ -283,6 +283,10 @@ class ReportDetails(BaseModel):
     sector_rankings: Optional[Any] = Field(None, description="板块涨跌榜（结构 {top, bottom}）")
     concept_rankings: Optional[Any] = Field(None, description="概念板块涨跌榜（结构 {top, bottom}）")
     market_structure: Optional[Any] = Field(None, description="市场结构上下文（题材层 + 个股位置层）")
+    prediction_markets: Optional[Any] = Field(
+        None,
+        description="预测市场结构化证据（sidecar，低敏）",
+    )
 
     @model_validator(mode="after")
     def populate_context_derived_details(self) -> "ReportDetails":

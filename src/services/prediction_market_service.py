@@ -14,7 +14,7 @@ from __future__ import annotations
 import logging
 import threading
 from datetime import datetime
-from typing import Any, Dict, List, Optional
+from typing import Any, Dict, List, Optional, Tuple
 
 from src.config import Config, get_config
 from src.repositories.prediction_market_repo import PredictionMarketRepository
@@ -113,6 +113,7 @@ class PredictionMarketService:
         query: Optional[str] = None,
         limit: int = 20,
         days: Optional[int] = None,
+        filter_noise: bool = False,
     ) -> List[Dict[str, Any]]:
         if not self.is_enabled():
             return []
@@ -125,31 +126,46 @@ class PredictionMarketService:
             days=days,
             limit=limit,
         )
-        return [self._event_to_dict(row) for row in rows]
+        items = [self._event_to_dict(row) for row in rows]
+        if filter_noise:
+            items = [item for item in items if not self._is_noise(item)]
+        return items
 
-    # -------------------------------------------------------------- context
-    def build_evidence_context(
+    def _is_noise(self, item: Dict[str, Any]) -> bool:
+        """Filter extreme-probability and low-volume events for evidence/tool output."""
+        if not getattr(self.config, "prediction_market_filter_noise", True):
+            return False
+        probability = item.get("implied_probability")
+        if probability is None or probability <= 0.0 or probability >= 1.0:
+            return True
+        min_volume = float(getattr(self.config, "prediction_market_min_volume_24h", 0.0) or 0.0)
+        if min_volume > 0:
+            volume = item.get("volume_24h")
+            if volume is None or float(volume) < min_volume:
+                return True
+        return False
+
+    def collect_events(
         self,
         *,
-        symbol: Optional[str],
+        symbol: Optional[str] = None,
         stock_name: Optional[str] = None,
         market: Optional[str] = None,
         limit: int = 6,
-    ) -> Optional[str]:
-        """Return text evidence for stock analysis, or ``None`` when unavailable.
+    ) -> List[Dict[str, Any]]:
+        """Collect deduplicated, noise-filtered events for stock evidence.
 
-        Priority: symbol-specific events, then ``equity`` events for the stock's
-        market, then ``global`` macro events. Crypto/commodity are intentionally
-        excluded from single-stock context (available via the agent tool instead).
+        Priority: symbol-specific → ``equity`` for the stock's market → ``global``
+        macro. Crypto/commodity are excluded from single-stock context.
         """
         if not self.is_enabled():
-            return None
+            return []
         self.refresh_auto()
         collected: List[Dict[str, Any]] = []
         seen: set[str] = set()
 
         def _collect(**filters: Any) -> None:
-            for item in self.query_events(status="open", limit=limit, **filters):
+            for item in self.query_events(status="open", limit=limit, filter_noise=True, **filters):
                 key = f"{item.get('source')}:{item.get('market_id')}"
                 if key in seen:
                     continue
@@ -164,7 +180,39 @@ class PredictionMarketService:
             _collect(market=market, category="equity")
         if len(collected) < limit:
             _collect(market="global", category="macro")
-        return self._format_context(collected, subject=stock_name or symbol)
+        return collected
+
+    # -------------------------------------------------------------- context
+    def collect_evidence(
+        self,
+        *,
+        symbol: Optional[str],
+        stock_name: Optional[str] = None,
+        market: Optional[str] = None,
+        limit: int = 6,
+    ) -> Tuple[Optional[str], List[Dict[str, Any]]]:
+        """Return ``(text_context, structured_events)`` for stock analysis."""
+        events = self.collect_events(
+            symbol=symbol, stock_name=stock_name, market=market, limit=limit
+        )
+        text = self._format_context(events, subject=stock_name or symbol)
+        return text, events
+
+    def build_evidence_context(
+        self,
+        *,
+        symbol: Optional[str],
+        stock_name: Optional[str] = None,
+        market: Optional[str] = None,
+        limit: int = 6,
+    ) -> Optional[str]:
+        """Return text evidence for stock analysis, or ``None`` when unavailable."""
+        if not self.is_enabled():
+            return None
+        text, _events = self.collect_evidence(
+            symbol=symbol, stock_name=stock_name, market=market, limit=limit
+        )
+        return text
 
     def build_market_context(self, *, market: Optional[str], limit: int = 6) -> Optional[str]:
         """Return macro / crypto / commodity / index evidence for market review."""
@@ -181,7 +229,7 @@ class PredictionMarketService:
         if market:
             queries.append({"market": market, "category": "equity"})
         for filters in queries:
-            for item in self.query_events(status="open", limit=limit, **filters):
+            for item in self.query_events(status="open", limit=limit, filter_noise=True, **filters):
                 key = f"{item.get('source')}:{item.get('market_id')}"
                 if key in seen:
                     continue

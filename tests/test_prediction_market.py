@@ -12,6 +12,7 @@ from data_provider.prediction_market_fetcher import (
     PredictionMarketFetcher,
     _normalize_probability,
 )
+from src.repositories.prediction_market_evidence_repo import PredictionMarketEvidenceRepository
 from src.repositories.prediction_market_repo import PredictionMarketRepository
 from src.services.prediction_market_service import PredictionMarketService
 from src.storage import DatabaseManager, PredictionMarketEvent, utc_naive_now
@@ -26,6 +27,8 @@ def _config(**overrides):
         prediction_market_retention_days=30,
         prediction_market_max_items_per_fetch=200,
         prediction_market_politics_allowed=False,
+        prediction_market_filter_noise=True,
+        prediction_market_min_volume_24h=1000.0,
         kalshi_api_base_url="https://api.elections.kalshi.com/trade-api/v2",
         kalshi_api_key=None,
         kalshi_series_tickers="KXFED,KXCPI",
@@ -280,6 +283,28 @@ class TestRepositoryAndService(unittest.TestCase):
         items = service.query_events(query="fed", category="macro", status="open", limit=5)
         self.assertEqual(len(items), 1)
 
+    def test_noise_filter_excludes_extremes_and_low_volume(self):
+        self.repo.upsert_events(
+            [
+                self._event(market_id="ok", implied_probability=0.5, volume_24h=5000),
+                self._event(market_id="zero", implied_probability=0.0, volume_24h=5000),
+                self._event(market_id="one", implied_probability=1.0, volume_24h=5000),
+                self._event(market_id="lowvol", implied_probability=0.5, volume_24h=10),
+            ]
+        )
+        service = PredictionMarketService(repository=self.repo, config=_config())
+        items = service.query_events(status="open", limit=10, filter_noise=True)
+        self.assertEqual([item["market_id"] for item in items], ["ok"])
+
+    def test_noise_filter_can_be_disabled(self):
+        self.repo.upsert_events([self._event(market_id="zero", implied_probability=0.0, volume_24h=0)])
+        service = PredictionMarketService(
+            repository=self.repo,
+            config=_config(prediction_market_filter_noise=False),
+        )
+        items = service.query_events(status="open", limit=10, filter_noise=True)
+        self.assertEqual(len(items), 1)
+
     def test_disabled_service_is_inert(self):
         self.repo.upsert_events([self._event()])
         service = PredictionMarketService(
@@ -314,6 +339,38 @@ class TestAgentTool(unittest.TestCase):
             result = _handle_search_prediction_markets()
         self.assertEqual(result["status"], "disabled")
         self.assertEqual(result["items"], [])
+
+
+class TestEvidenceRepository(unittest.TestCase):
+    def setUp(self):
+        DatabaseManager.reset_instance()
+        self.db = DatabaseManager(db_url="sqlite:///:memory:")
+        self.repo = PredictionMarketEvidenceRepository(db_manager=self.db)
+
+    def tearDown(self):
+        DatabaseManager.reset_instance()
+
+    def test_replace_and_list_roundtrip(self):
+        events = [
+            {"source": "kalshi", "market_id": "A", "question": "Q1", "implied_probability": 0.5, "volume_24h": 5000},
+            {"source": "polymarket", "market_id": "B", "question": "Q2", "implied_probability": 0.6, "volume_24h": 6000},
+        ]
+        self.assertEqual(self.repo.replace_for_history(7, events), 2)
+        rows = self.repo.list_for_history(7)
+        self.assertEqual(len(rows), 2)
+        self.assertEqual(rows[0]["market_id"], "A")
+        self.repo.replace_for_history(7, [events[0]])
+        self.assertEqual(len(self.repo.list_for_history(7)), 1)
+
+
+class TestSpecialistAllowlists(unittest.TestCase):
+    def test_multi_agent_specialists_include_prediction_market_tool(self):
+        from src.agent.agents.intel_agent import IntelAgent
+        from src.agent.agents.portfolio_agent import PortfolioAgent
+        from src.agent.agents.risk_agent import RiskAgent
+
+        for cls in (IntelAgent, RiskAgent, PortfolioAgent):
+            self.assertIn("search_prediction_markets", cls.tool_names, cls.__name__)
 
 
 if __name__ == "__main__":

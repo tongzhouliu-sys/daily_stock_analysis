@@ -139,6 +139,37 @@ cp .env.example .env
 vim .env  # Fill in configuration
 ```
 
+### 3.1 Prediction Markets (optional, default off)
+
+Prediction-market evidence is disabled by default. When enabled, it injects Kalshi / Polymarket event odds into stock analysis, market review and Agent chat.
+
+Docker Compose uses `docker/docker-compose.yml` -> `env_file: ../.env`, so the **server-side repo root `.env`** must contain:
+
+```env
+PREDICTION_MARKET_ENABLED=true
+PREDICTION_MARKET_AUTO_FETCH_ENABLED=true
+PREDICTION_MARKET_FILTER_NOISE=true
+PREDICTION_MARKET_MIN_VOLUME_24H=1000
+KALSHI_SERIES_TICKERS=KXFED,KXCPI,KXCPIYOY,KXCPICORE,KXGDP,KXPAYROLLS,KXU3,KXRECSSNBER,KXINX,KXNASDAQ100,KXBTCD,KXETH,KXTSLA
+```
+
+Recreate the container:
+
+```bash
+docker compose -f docker/docker-compose.yml up -d --force-recreate server
+```
+
+Troubleshooting:
+
+```bash
+docker exec stock-server env | grep -E "PREDICTION_MARKET|KALSHI|POLYMARKET"
+curl -s localhost:8000/api/v1/prediction-markets/providers
+curl -s "localhost:8000/api/v1/prediction-markets/events?limit=5"
+curl -s -X POST localhost:8000/api/v1/prediction-markets/fetch
+```
+
+> GitHub Actions (`00-daily-analysis.yml`) uses an explicit env allowlist and does not pass these variables automatically. To use this capability in scheduled runs, map `PREDICTION_MARKET_*` / `KALSHI_*` / `POLYMARKET_*` in the workflow `env:` block. It is intentionally not mapped by default to avoid unconfirmed external requests.
+
 ### 4. Run
 
 ```bash

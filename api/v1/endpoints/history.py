@@ -659,6 +659,7 @@ def get_history_detail(
                 "raw_result": result.get("raw_result"),
                 "news_content": result.get("news_content"),
                 "empty_news_disclosure": result.get("empty_news_disclosure"),
+                "details": result.get("details"),
             },
             query_id=result.get("query_id", ""),
             stock_code=result.get("stock_code", ""),

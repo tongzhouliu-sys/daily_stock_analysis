@@ -990,6 +990,24 @@ def _execute_tools(
                     if "indicators" in result_data:
                         detail["indicator_count"] = len(result_data["indicators"])
                 
+                # Extract prediction-market evidence (low-sensitivity fields only)
+                elif tool_name == "search_prediction_markets":
+                    items = result_data.get("items")
+                    if isinstance(items, list):
+                        detail["prediction_markets"] = [
+                            {
+                                "source": item.get("source"),
+                                "question": item.get("question"),
+                                "implied_probability": item.get("implied_probability"),
+                                "volume_24h": item.get("volume_24h"),
+                                "close_time": item.get("close_time"),
+                                "market_url": item.get("market_url"),
+                            }
+                            for item in items[:5]
+                            if isinstance(item, dict)
+                        ]
+                        detail["prediction_market_count"] = len(items)
+                
                 # Generic: add top-level keys for other tools
                 else:
                     top_keys = list(result_data.keys())[:5]
@@ -997,7 +1015,11 @@ def _execute_tools(
                         detail["result_keys"] = top_keys
             
             # Fallback: add result preview for non-JSON or empty results
-            if not detail.get("record_count") and not detail.get("result_keys"):
+            if (
+                not detail.get("record_count")
+                and not detail.get("result_keys")
+                and not detail.get("prediction_markets")
+            ):
                 result_preview = result_str[:200] if result_str and len(result_str) > 200 else result_str
                 if result_preview:
                     detail["result_preview"] = result_preview

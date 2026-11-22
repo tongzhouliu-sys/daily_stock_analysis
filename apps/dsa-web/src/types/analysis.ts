@@ -360,6 +360,21 @@ export interface AnalysisContextPackOverview {
   metadata: AnalysisContextPackOverviewMetadata;
 }
 
+
+/** Prediction market evidence (sidecar) */
+export interface PredictionMarketEvent {
+  source: string;
+  marketId: string;
+  question: string;
+  impliedProbability?: number | null;
+  volume24h?: number | null;
+  closeTime?: string | null;
+  category?: string | null;
+  symbol?: string | null;
+  market?: string | null;
+  marketUrl?: string | null;
+}
+
 /** Earnings calendar (next disclosure date) */
 export interface EarningsCalendarEvent {
   reportPeriod?: string | null;
@@ -390,6 +405,7 @@ export interface ReportDetails {
   sectorRankings?: SectorRankings;
   conceptRankings?: SectorRankings;
   marketStructure?: MarketStructureContext | null;
+  predictionMarkets?: PredictionMarketEvent[];
 }
 
 /** Full analysis report */

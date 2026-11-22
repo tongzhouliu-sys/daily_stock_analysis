@@ -1135,6 +1135,8 @@ class Config:
     prediction_market_retention_days: int = 30  # 本地池保留天数
     prediction_market_max_items_per_fetch: int = 200  # 单次每平台最多采集条数
     prediction_market_politics_allowed: bool = False  # 是否采集 politics 类别（默认排除）
+    prediction_market_filter_noise: bool = True  # 证据/工具检索时过滤极端概率与低成交量
+    prediction_market_min_volume_24h: float = 1000.0  # 过滤阈值；0 表示不过滤成交量
     kalshi_api_base_url: str = "https://api.elections.kalshi.com/trade-api/v2"
     kalshi_api_key: Optional[str] = None
     # 定向拉取的金融 series（Kalshi /markets 默认被体育串关占满，category 参数无效）
@@ -2138,6 +2140,16 @@ class Config:
             prediction_market_politics_allowed=parse_env_bool(
                 os.getenv('PREDICTION_MARKET_POLITICS_ALLOWED'),
                 False,
+            ),
+            prediction_market_filter_noise=parse_env_bool(
+                os.getenv('PREDICTION_MARKET_FILTER_NOISE'),
+                True,
+            ),
+            prediction_market_min_volume_24h=parse_env_float(
+                os.getenv('PREDICTION_MARKET_MIN_VOLUME_24H'),
+                1000.0,
+                field_name='PREDICTION_MARKET_MIN_VOLUME_24H',
+                minimum=0.0,
             ),
             kalshi_api_base_url=((os.getenv('KALSHI_API_BASE_URL') or '').strip().rstrip('/') or 'https://api.elections.kalshi.com/trade-api/v2'),
             kalshi_api_key=(os.getenv('KALSHI_API_KEY') or '').strip() or None,

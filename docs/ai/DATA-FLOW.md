@@ -30,6 +30,7 @@
 | 报告中文变体 | `report_text_variants`（`src/storage.py`） | HTML 报告固定中文；按 `record_id + target_language + variant_kind` 缓存字段覆盖表或大盘复盘中文 Markdown |
 | 新闻 / 情报 | `news_intel` 等（`src/storage.py`） | 带来源、时间、情感字段 |
 | 预测市场 | `prediction_market_events`（`src/repositories/prediction_market_repo.py`） | 只读外部事件概率（Kalshi/Polymarket），按 `(source, market_id)` 去重，UTC naive，默认关闭 |
+| 预测市场证据 | `analysis_prediction_markets`（`src/repositories/prediction_market_evidence_repo.py`） | 与 `analysis_history` 弱关联的 sidecar，历史删除同步清理，服务器本地时间 |
 | 会话 | Agent 会话表（`src/services/agent_chat_session_service.py`） | 消息、技能选择、标的上下文 |
 
 数据库访问优先走 `src/repositories/`（`stock_repo`、`analysis_repo`、`portfolio_repo` 等），新增查询不要直接在端点里写 SQL。

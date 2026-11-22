@@ -151,6 +151,37 @@ vim .env  # 填入配置
 >
 > **限流前提**：登录失败限流（5 次 / 5 分钟）与登录审计是进程内状态；重启会清零，多 worker 或多副本会各自计数。当前部署模型为单进程，扩容前需要改为共享存储。
 
+### 3.1 预测市场（可选，默认关闭）
+
+预测市场能力默认关闭。启用后在个股分析、大盘复盘和问股中注入 Kalshi / Polymarket 的事件概率。
+
+Docker Compose 使用 `docker/docker-compose.yml` 的 `env_file: ../.env`，**服务器上的仓库根目录 `.env`** 必须包含：
+
+```env
+PREDICTION_MARKET_ENABLED=true
+PREDICTION_MARKET_AUTO_FETCH_ENABLED=true
+PREDICTION_MARKET_FILTER_NOISE=true
+PREDICTION_MARKET_MIN_VOLUME_24H=1000
+KALSHI_SERIES_TICKERS=KXFED,KXCPI,KXCPIYOY,KXCPICORE,KXGDP,KXPAYROLLS,KXU3,KXRECSSNBER,KXINX,KXNASDAQ100,KXBTCD,KXETH,KXTSLA
+```
+
+重建容器：
+
+```bash
+docker compose -f docker/docker-compose.yml up -d --force-recreate server
+```
+
+排障：
+
+```bash
+docker exec stock-server env | grep -E "PREDICTION_MARKET|KALSHI|POLYMARKET"
+curl -s localhost:8000/api/v1/prediction-markets/providers
+curl -s "localhost:8000/api/v1/prediction-markets/events?limit=5"
+curl -s -X POST localhost:8000/api/v1/prediction-markets/fetch
+```
+
+> GitHub Actions（`00-daily-analysis.yml`）默认使用 env allowlist，不会自动透传这些变量；若要让定时任务也使用该能力，需在 workflow 的 `env:` 中显式映射 `PREDICTION_MARKET_*` / `KALSHI_*` / `POLYMARKET_*`。当前默认不映射，避免未确认的外部请求。
+
 ### 4. 运行
 
 ```bash

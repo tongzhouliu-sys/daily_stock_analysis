@@ -661,7 +661,22 @@ class HistoryService:
             record = self.db.get_analysis_history_by_id(record_id)
             if not record:
                 return None
-            return self._record_to_detail_dict(record)
+            detail = self._record_to_detail_dict(record)
+            try:
+                from src.repositories.prediction_market_evidence_repo import (
+                    PredictionMarketEvidenceRepository,
+                )
+
+                events = PredictionMarketEvidenceRepository(self.db).list_for_history(record.id)
+                if events:
+                    details = detail.get("details")
+                    if not isinstance(details, dict):
+                        details = {}
+                        detail["details"] = details
+                    details["prediction_markets"] = events
+            except Exception as exc:
+                logger.debug("读取预测市场 sidecar 失败（fail-open）: %s", exc)
+            return detail
         except Exception as e:
             logger.error('根据 ID 查询历史详情失败: %s', e, exc_info=True)
             return None
