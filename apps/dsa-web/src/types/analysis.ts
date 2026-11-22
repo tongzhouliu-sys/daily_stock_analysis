@@ -360,6 +360,22 @@ export interface AnalysisContextPackOverview {
   metadata: AnalysisContextPackOverviewMetadata;
 }
 
+/** Earnings calendar (next disclosure date) */
+export interface EarningsCalendarEvent {
+  reportPeriod?: string | null;
+  expectedDisclosureDate?: string | null;
+  actualDisclosureDate?: string | null;
+  disclosureStatus?: 'scheduled' | 'disclosed' | string;
+}
+
+export interface EarningsCalendar {
+  nextEarningsDate?: string | null;
+  daysToNext?: number | null;
+  events?: EarningsCalendarEvent[];
+  coverage?: string | null;
+  asOf?: string | null;
+}
+
 /** Details section */
 export interface ReportDetails {
   newsContent?: string;
@@ -369,6 +385,7 @@ export interface ReportDetails {
   analysisContextPackOverview?: AnalysisContextPackOverview | null;
   financialReport?: Record<string, unknown>;
   dividendMetrics?: Record<string, unknown>;
+  earningsCalendar?: EarningsCalendar | null;
   belongBoards?: RelatedBoard[];
   sectorRankings?: SectorRankings;
   conceptRankings?: SectorRankings;

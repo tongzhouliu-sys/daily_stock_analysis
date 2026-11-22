@@ -66,7 +66,7 @@ from src.agent.runtime_facts import (
     PipelineTerminationFact,
     build_agent_runtime_facts,
 )
-from src.agent.runner import parse_dashboard_json
+from src.agent.runner import parse_dashboard_json, _last_earnings_calendar_snapshot
 from src.agent.stock_scope import StockScopeResolution
 from src.agent.stream_events import (
     stream_event,
@@ -654,6 +654,13 @@ class AgentOrchestrator:
                 except Exception:
                     logger.warning("Answer editor failed", exc_info=True)
                     editor_meta = None
+            calendar_snapshot = _last_earnings_calendar_snapshot(orch_result.tool_calls_log)
+            if calendar_snapshot:
+                if editor_meta is not None:
+                    editor_meta.earnings_calendar = calendar_snapshot
+                else:
+                    from src.schemas.agent_intake import AnswerMeta
+                    editor_meta = AnswerMeta(earnings_calendar=calendar_snapshot)
             answer_meta_payload = (editor_meta.model_dump(mode="json", exclude_none=True)
                                    if editor_meta is not None else None)
 

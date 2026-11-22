@@ -9,6 +9,7 @@ and this project adheres to [Semantic Versioning](https://semver.org/).
 
 ## [Unreleased]
 - [修复] 问股「分析过程」无法收起：展开状态改为由已展开分类派生，全部折叠后自动回到折叠态，摘要行新增「收起」按钮；展开明细限制在约 5 行高的滚动容器内，行内单行省略并用 Tooltip 展示完整文案，不再把消息卡片撑高。
+- [新功能] 财报日历可见性：把已合入的「下一次财报披露日期」从仅 LLM Prompt / 工具返回，扩展为结构化呈现——分析报告页新增「财报日历」卡片（有未来日期 / 仅已披露 / 空三态，披露日期标「预计」），问股回答新增「下次财报」徽章（来自 `get_stock_info` 结果，经 `AnswerMeta.earnings_calendar` 白名单透传），通知与飞书卡片在「财务摘要」前新增「📅 财报日历」块（飞书复用 Markdown 解析自动跟随）；API `ReportDetails.earnings_calendar` 三处一致。详见 [开发任务书](tasks/earnings-calendar-visibility.md)。
 - [新功能] 首页分析运行反馈：主阅读区新增运行卡（五阶段进度条、当前步骤、已用时、取消），窄屏同样可见；运行卡与任务面板共用同一套阶段 / 状态模型，失败任务停留可重试，排队显示队列位置，断线显示重连提示并在断开期间加密轮询；任务 SSE 与任务列表新增 `stage`、`progress_updated_at`，`connected` 事件新增 `heartbeat_interval_s`。
 - [修复] Agent 模式分析进度停滞：`AgentExecutor.run` / `AgentOrchestrator.run` 增加可选进度回调，个股分析在 58%–93% 之间每完成一个工具都更新任务进度，不再长时间停在「正在切换 Agent 分析链路」。
 - [改进] 问股运行反馈：发送后用户气泡立即上屏，进行中面板展示三阶段、步骤时间线、每步耗时、总已用时与停止按钮；读取到心跳注释行即视为存活，连续 3 个心跳周期无任何字节时中止本地读取并转入进度恢复（不取消后台任务）；进度文案统一迁入 `uiText.ts`。

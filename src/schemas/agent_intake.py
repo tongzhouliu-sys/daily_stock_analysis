@@ -311,6 +311,10 @@ class AnswerMeta(BaseModel):
     )
     source_refs: List[str] = Field(default_factory=list, description="Source references used")
     used_source_refs: List[str] = Field(default_factory=list)
+    earnings_calendar: Optional[Dict[str, Any]] = Field(
+        default=None,
+        description="Bounded earnings-calendar snapshot from get_stock_info (next disclosure date)",
+    )
     validation_codes: List[str] = Field(default_factory=list)
     processing_time_ms: Optional[int] = Field(default=None)
     fallback_reason: Optional[str] = Field(default=None)

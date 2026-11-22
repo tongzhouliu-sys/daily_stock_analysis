@@ -179,5 +179,21 @@ export interface AnswerMeta {
   used_source_refs?: string[];
   // Additive metadata written by other runtime steps on the same message.
   domain_guard?: unknown;
+  // Bounded earnings-calendar snapshot from get_stock_info (snake_case wire keys).
+  earnings_calendar?: AnswerEarningsCalendar | null;
   [key: string]: unknown;
+}
+
+/** Bounded earnings-calendar snapshot surfaced from the answer_meta payload. */
+export interface AnswerEarningsCalendar {
+  next_earnings_date?: string | null;
+  days_to_next?: number | null;
+  events?: Array<{
+    report_period?: string | null;
+    expected_disclosure_date?: string | null;
+    actual_disclosure_date?: string | null;
+    disclosure_status?: 'scheduled' | 'disclosed' | string;
+  }>;
+  coverage?: string | null;
+  as_of?: string | null;
 }

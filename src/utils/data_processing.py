@@ -273,18 +273,20 @@ def extract_fundamental_detail_fields(
         fallback_fundamental_payload=fallback_fundamental_payload,
     )
     if not isinstance(fundamental_ctx, dict):
-        return {"financial_report": None, "dividend_metrics": None}
+        return {"financial_report": None, "dividend_metrics": None, "earnings_calendar": None}
 
     earnings_block = fundamental_ctx.get("earnings")
     earnings_data = earnings_block.get("data") if isinstance(earnings_block, dict) else None
     if not isinstance(earnings_data, dict):
-        return {"financial_report": None, "dividend_metrics": None}
+        return {"financial_report": None, "dividend_metrics": None, "earnings_calendar": None}
 
     financial_report = _non_empty_dict(earnings_data.get("financial_report"))
     dividend_metrics = _non_empty_dict(earnings_data.get("dividend"))
+    earnings_calendar = _non_empty_dict(earnings_data.get("calendar"))
     return {
         "financial_report": financial_report,
         "dividend_metrics": dividend_metrics,
+        "earnings_calendar": earnings_calendar,
     }
 
 
