@@ -1108,6 +1108,7 @@ class Config:
     tavily_api_keys: List[str] = field(default_factory=list)  # Tavily API Keys
     brave_api_keys: List[str] = field(default_factory=list)  # Brave Search API Keys
     serpapi_keys: List[str] = field(default_factory=list)  # SerpAPI Keys
+    serpapi_key_usage_limit: int = 200  # 单 Key 每月用量软上限（达到后切换到下一个 Key，0 表示不限制）
     searxng_base_urls: List[str] = field(default_factory=list)  # SearXNG instance URLs (self-hosted, no quota)
     searxng_public_instances_enabled: bool = False  # Opt in to public discovery when base URLs are absent
     searxng_timeout_seconds: int = 10  # 自建 SearXNG 单次搜索超时（秒）
@@ -2030,6 +2031,12 @@ class Config:
             tavily_api_keys=tavily_api_keys,
             brave_api_keys=brave_api_keys,
             serpapi_keys=serpapi_keys,
+            serpapi_key_usage_limit=parse_env_int(
+                os.getenv('SERPAPI_KEY_USAGE_LIMIT'),
+                200,
+                field_name='SERPAPI_KEY_USAGE_LIMIT',
+                minimum=0,
+            ),
             searxng_base_urls=searxng_base_urls,
             searxng_public_instances_enabled=searxng_public_instances_enabled,
             searxng_timeout_seconds=parse_env_int(

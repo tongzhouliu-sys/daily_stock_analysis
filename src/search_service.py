@@ -11,7 +11,9 @@ A股自选股智能分析系统 - 搜索服务模块
 4. 搜索结果缓存和格式化
 """
 
+import hashlib
 import ipaddress
+import json
 import logging
 import multiprocessing
 import re
@@ -22,7 +24,8 @@ from abc import ABC, abstractmethod
 from dataclasses import dataclass
 from datetime import date, datetime, timedelta, timezone
 from email.utils import parsedate_to_datetime
-from typing import List, Dict, Any, Optional, Tuple
+from pathlib import Path
+from typing import List, Dict, Any, Optional, Set, Tuple
 from itertools import cycle
 from urllib.parse import parse_qsl, unquote, urlparse
 import requests
@@ -359,13 +362,22 @@ class BaseSearchProvider(ABC):
         "429",
     )
 
-    def __init__(self, api_keys: List[str], name: str):
+    def __init__(
+        self,
+        api_keys: List[str],
+        name: str,
+        *,
+        key_usage_limit: Optional[int] = None,
+        key_usage_store_path: Optional[Path] = None,
+    ):
         """
         初始化搜索引擎
-        
+
         Args:
             api_keys: API Key 列表（支持多个 key 负载均衡）
             name: 搜索引擎名称
+            key_usage_limit: 单 Key 每个自然月的用量软上限；None 或 <=0 表示不限制
+            key_usage_store_path: 用量计数持久化文件；None 表示只在当前进程内计数
         """
         self._api_keys = api_keys
         self._name = name
@@ -373,45 +385,195 @@ class BaseSearchProvider(ABC):
         self._key_usage: Dict[str, int] = {key: 0 for key in api_keys}
         self._key_errors: Dict[str, int] = {key: 0 for key in api_keys}
         self._state_lock = threading.RLock()
-    
+        try:
+            parsed_usage_limit = int(key_usage_limit) if key_usage_limit is not None else 0
+        except (TypeError, ValueError):
+            parsed_usage_limit = 0
+        self._key_usage_limit: Optional[int] = parsed_usage_limit if parsed_usage_limit > 0 else None
+        self._key_usage_store_path: Optional[Path] = (
+            Path(key_usage_store_path) if key_usage_store_path else None
+        )
+        self._key_usage_month = self._current_usage_month()
+        self._key_usage_warned: Set[str] = set()
+        self._restore_key_usage()
+
+    @staticmethod
+    def _current_usage_month(now: Optional[datetime] = None) -> str:
+        """返回用量统计所属的计费周期标识（按自然月）。"""
+        return (now or datetime.now()).strftime("%Y-%m")
+
+    @staticmethod
+    def _usage_key_id(api_key: str) -> str:
+        """返回 Key 的稳定哈希，避免明文密钥落到本地文件。"""
+        return hashlib.sha256(api_key.encode("utf-8")).hexdigest()[:16]
+
+    def _key_label(self, api_key: str) -> str:
+        """返回日志里可安全展示的 Key 序号。"""
+        try:
+            return f"#{self._api_keys.index(api_key) + 1}"
+        except ValueError:
+            return "#?"
+
+    def _usage_summary(self) -> str:
+        """返回各 Key 当月用量的可读摘要。"""
+        return ", ".join(
+            f"{self._key_label(key)}={self._key_usage.get(key, 0)}"
+            for key in self._api_keys
+        )
+
+    def _ensure_usage_month(self) -> None:
+        """跨月时重置用量计数，保证软上限跟随新的计费周期。"""
+        current_month = self._current_usage_month()
+        if current_month == self._key_usage_month:
+            return
+        self._key_usage_month = current_month
+        self._key_usage = {key: 0 for key in self._api_keys}
+        self._key_usage_warned = set()
+        logger.info("[%s] 进入新的计费周期 %s，API Key 用量计数已重置", self._name, current_month)
+
+    @staticmethod
+    def _default_usage_store_dir() -> Path:
+        """用量计数默认存放在仓库的 data/cache 下（已被 .gitignore 排除）。"""
+        return Path(__file__).resolve().parents[1] / "data" / "cache"
+
+    def _restore_key_usage(self) -> None:
+        """从本地文件恢复本月已有的用量计数。"""
+        path = self._key_usage_store_path
+        if path is None or self._key_usage_limit is None:
+            return
+        try:
+            payload = json.loads(path.read_text(encoding="utf-8"))
+        except (OSError, ValueError):
+            return
+        if not isinstance(payload, dict) or payload.get("month") != self._key_usage_month:
+            return
+        stored_usage = payload.get("usage")
+        if not isinstance(stored_usage, dict):
+            return
+        with self._state_lock:
+            for api_key in self._api_keys:
+                raw_value = stored_usage.get(self._usage_key_id(api_key))
+                try:
+                    self._key_usage[api_key] = max(0, int(raw_value))
+                except (TypeError, ValueError):
+                    continue
+        logger.info(
+            "[%s] 已恢复 %s 月 Key 用量统计（%s）",
+            self._name,
+            self._key_usage_month,
+            self._usage_summary(),
+        )
+
+    def _persist_key_usage(self) -> None:
+        """把用量计数原子写入本地文件，供后续进程继续累加。"""
+        path = self._key_usage_store_path
+        if path is None or self._key_usage_limit is None:
+            return
+        with self._state_lock:
+            payload = {
+                "month": self._key_usage_month,
+                "usage": {
+                    self._usage_key_id(api_key): usage
+                    for api_key, usage in self._key_usage.items()
+                },
+            }
+            try:
+                path.parent.mkdir(parents=True, exist_ok=True)
+                tmp_path = path.with_name(
+                    f"{path.name}.{threading.get_ident()}.tmp"
+                )
+                tmp_path.write_text(
+                    json.dumps(payload, ensure_ascii=False, indent=2),
+                    encoding="utf-8",
+                )
+                tmp_path.replace(path)
+            except OSError as exc:
+                logger.debug("[%s] 写入 Key 用量统计失败: %s", self._name, exc)
+
+    def _is_key_usage_exhausted(self, api_key: str) -> bool:
+        """判断某个 Key 本月是否已达到用量软上限。"""
+        if self._key_usage_limit is None:
+            return False
+        return self._key_usage.get(api_key, 0) >= self._key_usage_limit
+
     @property
     def name(self) -> str:
         return self._name
-    
+
     @property
     def is_available(self) -> bool:
         """检查是否有可用的 API Key"""
         return bool(self._api_keys)
-    
+
     def _get_next_key(self) -> Optional[str]:
         """
         获取下一个可用的 API Key（负载均衡）
-        
-        策略：轮询 + 跳过错误过多的 key
+
+        策略：轮询 + 跳过错误过多的 key + 跳过本月已达用量软上限的 key
         """
         with self._state_lock:
             if not self._key_cycle:
                 return None
-            
+
+            self._ensure_usage_month()
+
             # 最多尝试所有 key
             for _ in range(len(self._api_keys)):
                 key = next(self._key_cycle)
+                # 跳过本月用量已达软上限的 key，主动切到其它 key
+                if self._is_key_usage_exhausted(key):
+                    continue
                 # 跳过错误次数过多的 key
                 if self._key_errors.get(key, 0) < self._KEY_MAX_ERRORS:
                     return key
-            
-            # 所有 key 都有问题，重置错误计数并返回第一个
+
+            # 所有 Key 都达到用量软上限：继续用消耗最少的那个，避免整条链路空转
+            if all(self._is_key_usage_exhausted(key) for key in self._api_keys):
+                fallback_key = min(
+                    self._api_keys,
+                    key=lambda item: self._key_usage.get(item, 0),
+                )
+                if fallback_key not in self._key_usage_warned:
+                    self._key_usage_warned.add(fallback_key)
+                    logger.warning(
+                        "[%s] 所有 API Key 本月用量都已达到软上限 %s（%s），继续使用消耗最少的 Key",
+                        self._name,
+                        self._key_usage_limit,
+                        self._usage_summary(),
+                    )
+                return fallback_key
+
+            # 剩余 Key 只是错误次数过多，重置错误计数后重新参与轮询
             logger.warning('[%s] 所有 API Key 都有错误记录，重置错误计数', self._name)
             self._key_errors = {key: 0 for key in self._api_keys}
+            for key in self._api_keys:
+                if not self._is_key_usage_exhausted(key):
+                    return key
             return self._api_keys[0] if self._api_keys else None
-    
+
     def _record_success(self, key: str) -> None:
         """记录成功使用"""
         with self._state_lock:
+            self._ensure_usage_month()
             self._key_usage[key] = self._key_usage.get(key, 0) + 1
             # 成功后减少错误计数
             if key in self._key_errors and self._key_errors[key] > 0:
                 self._key_errors[key] -= 1
+            reached_usage_limit = (
+                self._key_usage_limit is not None
+                and self._key_usage[key] == self._key_usage_limit
+            )
+            key_label = self._key_label(key)
+            if reached_usage_limit:
+                self._key_usage_warned.add(key)
+        if reached_usage_limit:
+            logger.warning(
+                "[%s] Key %s 本月用量达到软上限 %s 次，后续轮询将切换到其它 Key",
+                self._name,
+                key_label,
+                self._key_usage_limit,
+            )
+        self._persist_key_usage()
     
     def _record_error(self, key: str) -> None:
         """记录错误"""
@@ -655,11 +817,16 @@ class SerpAPISearchProvider(BaseSearchProvider):
     
     特点：
     - 支持 Google、Bing、百度等多种搜索引擎
-    - 免费版每月 100 次请求
+    - 免费版每月 250 次请求
     - 返回真实的搜索结果
+    - 单 Key 本月用满软上限（默认 200 次）后主动切换到下一个 Key
     
     文档：https://serpapi.com/
     """
+
+    # 免费额度 250 次/月，预留一点缓冲，避免单次分析任务进行到一半才被 API 判定额度耗尽
+    _DEFAULT_KEY_USAGE_LIMIT = 200
+    _USAGE_STORE_FILENAME = "serpapi_key_usage.json"
 
     _ORGANIC_CONTENT_FETCH_LIMIT = 1
     _ORGANIC_CONTENT_FETCH_RANK_LIMIT = 2
@@ -701,9 +868,39 @@ class SerpAPISearchProvider(BaseSearchProvider):
         "resource_file",
     }
     
-    def __init__(self, api_keys: List[str]):
-        super().__init__(api_keys, "SerpAPI")
-    
+    def __init__(
+        self,
+        api_keys: List[str],
+        *,
+        key_usage_limit: Optional[int] = None,
+        key_usage_store_path: Optional[Path] = None,
+    ):
+        """
+        Args:
+            api_keys: SerpAPI Key 列表
+            key_usage_limit: 单 Key 本月用量软上限；None 使用默认 200，<=0 表示不限制
+            key_usage_store_path: 用量计数持久化文件；None 使用 data/cache/serpapi_key_usage.json
+        """
+        super().__init__(
+            api_keys,
+            "SerpAPI",
+            key_usage_limit=(
+                self._DEFAULT_KEY_USAGE_LIMIT
+                if key_usage_limit is None
+                else key_usage_limit
+            ),
+            key_usage_store_path=(
+                self.default_usage_store_path()
+                if key_usage_store_path is None
+                else key_usage_store_path
+            ),
+        )
+
+    @classmethod
+    def default_usage_store_path(cls) -> Path:
+        """默认的用量计数文件路径，供调用方覆盖或排查问题。"""
+        return cls._default_usage_store_dir() / cls._USAGE_STORE_FILENAME
+
     def _do_search(self, query: str, api_key: str, max_results: int, days: int = 7) -> SearchResponse:
         """执行 SerpAPI 搜索"""
         try:
@@ -2500,6 +2697,7 @@ class SearchService:
         anspire_keys: Optional[List[str]] = None,
         brave_keys: Optional[List[str]] = None,
         serpapi_keys: Optional[List[str]] = None,
+        serpapi_key_usage_limit: Optional[int] = None,
         minimax_keys: Optional[List[str]] = None,
         searxng_base_urls: Optional[List[str]] = None,
         searxng_public_instances_enabled: bool = False,
@@ -2516,6 +2714,7 @@ class SearchService:
             anspire_keys: Anspire Search API Key 列表
             brave_keys: Brave Search API Key 列表
             serpapi_keys: SerpAPI Key 列表
+            serpapi_key_usage_limit: 单 Key 本月用量软上限（None 使用 SerpAPI 默认 200，<=0 不限制）
             minimax_keys: MiniMax API Key 列表
             searxng_base_urls: SearXNG 实例地址列表（自建无配额兜底）
             searxng_public_instances_enabled: 未配置自建实例时，是否自动使用公共 SearXNG 实例
@@ -2528,6 +2727,7 @@ class SearchService:
             "anspire_keys": list(anspire_keys or []),
             "brave_keys": list(brave_keys or []),
             "serpapi_keys": list(serpapi_keys or []),
+            "serpapi_key_usage_limit": serpapi_key_usage_limit,
             "minimax_keys": list(minimax_keys or []),
             "searxng_base_urls": list(searxng_base_urls or []),
             "searxng_public_instances_enabled": bool(searxng_public_instances_enabled),
@@ -2569,10 +2769,23 @@ class SearchService:
             self._providers.append(BraveSearchProvider(brave_keys))
             logger.info('已配置 Brave 搜索，共 %s 个 API Key', len(brave_keys))
 
-        # 4. SerpAPI 作为备选（每月 100 次）
+        # 4. SerpAPI 作为备选（免费版每月 250 次，单 Key 用满软上限后自动切换）
         if serpapi_keys:
-            self._providers.append(SerpAPISearchProvider(serpapi_keys))
-            logger.info('已配置 SerpAPI 搜索，共 %s 个 API Key', len(serpapi_keys))
+            self._providers.append(
+                SerpAPISearchProvider(
+                    serpapi_keys,
+                    key_usage_limit=serpapi_key_usage_limit,
+                )
+            )
+            logger.info(
+                '已配置 SerpAPI 搜索，共 %s 个 API Key（单 Key 用量软上限：%s）',
+                len(serpapi_keys),
+                (
+                    SerpAPISearchProvider._DEFAULT_KEY_USAGE_LIMIT
+                    if serpapi_key_usage_limit is None
+                    else serpapi_key_usage_limit
+                ),
+            )
 
         # 5. Anspire Search（可选，位于 SerpAPI 之后）
         if anspire_keys:
@@ -5013,6 +5226,9 @@ def get_search_service() -> SearchService:
                     anspire_keys=config.anspire_api_keys,
                     brave_keys=config.brave_api_keys,
                     serpapi_keys=config.serpapi_keys,
+                    serpapi_key_usage_limit=getattr(
+                        config, "serpapi_key_usage_limit", None
+                    ),
                     minimax_keys=config.minimax_api_keys,
                     searxng_base_urls=config.searxng_base_urls,
                     searxng_public_instances_enabled=config.searxng_public_instances_enabled,

@@ -12,6 +12,7 @@ and this project adheres to [Semantic Versioning](https://semver.org/).
 - [修复] 扫描器财报校验复用 Finnhub 多 Key 池：`FINNHUB_API_KEY=key_a,key_b` 时按 Key 池顺序发起财报日历请求，鉴权失败、配额用尽或限流（401/403/429）切换下一个 Key，网络错误不切换；单个 Key 与未配置时的行为不变，日志不再输出 Key 片段。
 - [改进] 美股数据源 Finnhub / AlphaVantage 支持多 Key：`FINNHUB_API_KEY` / `ALPHAVANTAGE_API_KEY` 可用英文逗号分隔多个账号 Key，鉴权失败、配额用尽或限流时在同一次请求内自动切换到下一个 Key，连续失败的 Key 冷却 5 分钟后恢复；请求错误日志改为不含 Key 的 URL 摘要。
 - [改进] 搜索 Key 支持失效自动切换：同一渠道配置多个 Key 时，当前 Key 返回鉴权失败、配额用尽或限流（401/403/429、`invalid api key`、`quota`、`rate limit`、`run out of searches` 等）会在本次搜索内立即切到下一个 Key 重试；连续失败 3 次的 Key 后续优先跳过。SerpAPI 的 `error` 响应不再被当成空结果的成功响应。
+- [改进] SerpAPI 新增单 Key 月度用量软上限：`SERPAPI_KEY_USAGE_LIMIT`（默认 `200`，免费版每月 250 次留出缓冲，`0` 关闭）达标后主动切换到下一个 Key；用量按自然月累计并持久化到 `data/cache/serpapi_key_usage.json`（仅存 Key 哈希），跨进程/跨天继续叠加、跨月自动归零，全部 Key 触顶时退回消耗最少的 Key 继续搜索。
 - [修复] HTML 报告固定中文：`GET /api/v1/history/{id}/report-html` 不再跟随记录或界面语言，按 `zh` 重新构建章节 / 字段 / 操作建议等结构化文案，`<html lang="zh">` 写死；Web 端「查看 HTML 报告 / 下载 HTML」与抽屉文案也固定中文。模型当年写入的英文自由文本保留原文，详见 [飞书同源 HTML 报告](report-html.md)。
 - [测试] 锁定 HTML 报告中文化契约：英文记录仍输出中文框架与中文免责声明，历史 Markdown 接口默认语言行为不变。
 - [修复] 恢复主干离线测试绿灯：`SCANNER_BACKUP_KEEP_DAILY/WEEKLY` 归入扫描器隐藏配置，飞书 sender 断言同步关键词页脚与 `render_context/include_disclaimer` 契约，单股通知测试替身补齐 `results/report_type` 形参；`pytest -m "not network"` 恢复 0 失败。
