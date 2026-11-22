@@ -1,7 +1,7 @@
 import { useMemo, useState, type ReactNode } from 'react';
 import Markdown, { type Components } from 'react-markdown';
 import remarkGfm from 'remark-gfm';
-import { List, ChevronDown, ChevronRight } from 'lucide-react';
+import { List, ChevronDown, ChevronRight, CalendarDays } from 'lucide-react';
 import { cn } from '../../utils/cn';
 import type { AnswerMeta } from '../../api/agentIntake';
 import { useUiLanguage } from '../../contexts/UiLanguageContext';
@@ -126,6 +126,16 @@ export default function ChatAnswer({
 
       {!isStreaming && answerMeta?.editor_status === 'fallback' && (
         <p className="chat-answer-notice" role="status">{t('chat.answer.preservedOriginal')}</p>
+      )}
+
+      {!isStreaming && answerMeta?.earnings_calendar?.next_earnings_date && (
+        <p className="chat-answer-notice" role="status">
+          <CalendarDays size={13} aria-hidden="true" />{' '}
+          {t('chat.answer.nextEarnings', {
+            date: answerMeta.earnings_calendar.next_earnings_date,
+            days: answerMeta.earnings_calendar.days_to_next ?? '—',
+          })}
+        </p>
       )}
 
       <div className={cn('chat-answer-body', collapsed && 'is-collapsed')}>

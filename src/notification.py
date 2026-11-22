@@ -2277,6 +2277,7 @@ class NotificationService(
                 "financial_report": {},
                 "growth": {},
                 "dividend": {},
+                "earnings_calendar": {},
                 "belong_boards": [],
                 "sector_top": [],
                 "sector_bottom": [],
@@ -2290,6 +2291,7 @@ class NotificationService(
         earnings_data = earnings_block.get("data") if isinstance(earnings_block.get("data"), dict) else {}
         financial_report = earnings_data.get("financial_report") if isinstance(earnings_data.get("financial_report"), dict) else {}
         dividend = earnings_data.get("dividend") if isinstance(earnings_data.get("dividend"), dict) else {}
+        earnings_calendar = earnings_data.get("calendar") if isinstance(earnings_data.get("calendar"), dict) else {}
 
         growth_block = ctx.get("growth") if isinstance(ctx.get("growth"), dict) else {}
         growth_data = growth_block.get("data") if isinstance(growth_block.get("data"), dict) else {}
@@ -2320,6 +2322,7 @@ class NotificationService(
             "financial_report": financial_report,
             "growth": growth_data,
             "dividend": dividend,
+            "earnings_calendar": earnings_calendar,
             "belong_boards": belong_boards,
             "sector_top": sector_top,
             "sector_bottom": sector_bottom,
@@ -2340,10 +2343,58 @@ class NotificationService(
         report_language = self._get_report_language(result)
         labels = get_report_labels(report_language)
 
+        self._append_earnings_calendar(lines, blocks, labels)
         self._append_financial_summary(lines, blocks, labels)
         self._append_shareholder_return(lines, blocks, labels)
         self._append_institutional_flow(lines, blocks, labels)
         self._append_related_boards(lines, blocks, labels)
+
+    def _append_earnings_calendar(
+        self,
+        lines: List[str],
+        blocks: Dict[str, Any],
+        labels: Dict[str, str],
+    ) -> None:
+        """Append the next earnings disclosure date block (plan/estimate).
+
+        Only renders when the calendar carries a future scheduled date, or at
+        least a recently disclosed event (so A-share off-season still explains
+        itself instead of vanishing). Never fabricates a future date.
+        """
+        calendar = blocks.get("earnings_calendar") or {}
+        next_date = calendar.get("next_earnings_date")
+        days_to_next = calendar.get("days_to_next")
+        events = calendar.get("events") if isinstance(calendar.get("events"), list) else []
+
+        if next_date:
+            days_text = (
+                f"（{labels['days_until_label']} {days_to_next} {labels['days_unit']}）"
+                if isinstance(days_to_next, int)
+                else ""
+            )
+            line = f"{labels['next_earnings_date_label']} {next_date}（{labels['expected_tag']}）{days_text}"
+        else:
+            disclosed = [
+                event for event in events
+                if isinstance(event, dict) and event.get("disclosure_status") == "disclosed"
+            ]
+            if not disclosed:
+                return
+            latest = disclosed[0]
+            actual = latest.get("actual_disclosure_date") or latest.get("expected_disclosure_date")
+            if not actual:
+                return
+            line = (
+                f"{labels['latest_disclosure_label']} {actual}（{labels['disclosed_tag']}）；"
+                f"{labels['no_scheduled_disclosure']}"
+            )
+
+        lines.extend([
+            f"### 📅 {labels['earnings_calendar_heading']}",
+            "",
+            line,
+            "",
+        ])
 
     def _append_financial_summary(
         self,
