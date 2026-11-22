@@ -112,6 +112,7 @@ const mockStoreState = {
   stateContract: 'unbound' as 'unbound' | 'authoritative' | 'legacy',
   loading: false,
   hasInitialLoad: true,
+  pendingUserMessage: null as { id: string; content: string } | null,
   intakeDraft: null as import('../../api/agentIntake').IntakeDraft | null,
   intakeStatus: null,
   analysisBrief: null,
@@ -266,6 +267,7 @@ beforeEach(() => {
   mockStoreState.stateContract = 'unbound';
   mockStoreState.selectedSkillIds = null;
   mockStoreState.loading = false;
+  mockStoreState.pendingUserMessage = null;
   mockStoreState.progressSteps = [];
   mockStoreState.chatError = null;
   mockStoreState.terminalStatus = null;
@@ -1993,7 +1995,7 @@ describe('ChatPage', () => {
     );
 
     const viewport = await screen.findByTestId('chat-message-scroll');
-    Object.defineProperty(viewport, 'scrollTop', { configurable: true, value: 0 });
+    Object.defineProperty(viewport, 'scrollTop', { configurable: true, writable: true, value: 0 });
     Object.defineProperty(viewport, 'clientHeight', { configurable: true, value: 400 });
     Object.defineProperty(viewport, 'scrollHeight', { configurable: true, value: 1200 });
 
@@ -2015,7 +2017,79 @@ describe('ChatPage', () => {
 
     fireEvent.click(jumpButton);
 
-    expect(HTMLElement.prototype.scrollIntoView).toHaveBeenCalled();
+    // Auto-follow scrolls the message viewport itself (scrollTop), never
+    // scrollIntoView(): that also moves the document and shifts the whole page.
+    expect(viewport.scrollTop).toBe(1200);
+  });
+
+  it('restores an existing conversation at the newest message after a session switch', async () => {
+    mockStoreState.messages = [
+      { id: 'user-1', role: 'user', content: '请分析 600519' },
+      { id: 'assistant-1', role: 'assistant', content: '趋势偏强', skillName: '趋势分析' },
+    ];
+
+    const { rerender } = render(
+      <MemoryRouter initialEntries={['/chat']}>
+        <ChatPage />
+      </MemoryRouter>
+    );
+
+    const viewport = await screen.findByTestId('chat-message-scroll');
+    Object.defineProperty(viewport, 'scrollTop', { configurable: true, writable: true, value: 0 });
+    Object.defineProperty(viewport, 'clientHeight', { configurable: true, value: 400 });
+    Object.defineProperty(viewport, 'scrollHeight', { configurable: true, value: 1800 });
+
+    fireEvent.scroll(viewport);
+
+    mockStoreState.sessionId = 'session-2';
+    mockStoreState.messages = [
+      { id: 'user-2', role: 'user', content: '另一段历史对话' },
+      { id: 'assistant-2', role: 'assistant', content: '历史回答', skillName: '趋势分析' },
+    ];
+
+    rerender(
+      <MemoryRouter initialEntries={['/chat']}>
+        <ChatPage />
+      </MemoryRouter>
+    );
+
+    await waitFor(() => expect(viewport.scrollTop).toBe(1800));
+  });
+
+  it('reveals the pending question when sending from a scrolled-up position', async () => {
+    mockStoreState.messages = [
+      { id: 'user-1', role: 'user', content: '请分析 600519' },
+      { id: 'assistant-1', role: 'assistant', content: '趋势偏强', skillName: '趋势分析' },
+    ];
+
+    const { rerender } = render(
+      <MemoryRouter initialEntries={['/chat']}>
+        <ChatPage />
+      </MemoryRouter>
+    );
+
+    const viewport = await screen.findByTestId('chat-message-scroll');
+    Object.defineProperty(viewport, 'scrollTop', { configurable: true, writable: true, value: 0 });
+    Object.defineProperty(viewport, 'clientHeight', { configurable: true, value: 400 });
+    Object.defineProperty(viewport, 'scrollHeight', { configurable: true, value: 1600 });
+
+    fireEvent.scroll(viewport);
+
+    fireEvent.change(screen.getByPlaceholderText(/分析 600519/), {
+      target: { value: '继续看支撑位' },
+    });
+    fireEvent.click(screen.getByRole('button', { name: '发送' }));
+    await waitFor(() => expect(mockStartStream).toHaveBeenCalledTimes(1));
+
+    mockStoreState.pendingUserMessage = { id: 'pending-1', content: '继续看支撑位' };
+    mockStoreState.loading = true;
+    rerender(
+      <MemoryRouter initialEntries={['/chat']}>
+        <ChatPage />
+      </MemoryRouter>
+    );
+
+    await waitFor(() => expect(viewport.scrollTop).toBe(1600));
   });
 });
 

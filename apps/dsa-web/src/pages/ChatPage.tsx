@@ -518,7 +518,16 @@ const ChatPage: React.FC = () => {
   }, []);
 
   const scrollToBottom = useCallback((behavior: ScrollBehavior = 'auto') => {
-    messagesEndRef.current?.scrollIntoView({ behavior });
+    const viewport = messagesViewportRef.current;
+    if (!viewport) return;
+    // Scroll the message viewport itself instead of calling scrollIntoView():
+    // the latter also scrolls the document/ancestors, which made the whole
+    // chat page jump when the window was shorter than the workspace.
+    if (behavior === 'smooth' && typeof viewport.scrollTo === 'function') {
+      viewport.scrollTo({ top: viewport.scrollHeight, behavior: 'smooth' });
+      return;
+    }
+    viewport.scrollTop = viewport.scrollHeight;
   }, []);
 
   const requestScrollToBottom = useCallback((behavior: ScrollBehavior = 'auto') => {
@@ -532,8 +541,13 @@ const ChatPage: React.FC = () => {
   }, [syncScrollState]);
 
   useEffect(() => {
-    syncScrollState();
-  }, [syncScrollState, sessionId]);
+    // Opening or switching a conversation starts at the newest message. Deriving
+    // "stick to bottom" from the not-yet-hydrated thread used to latch it off,
+    // which left restored conversations scrolled to the top.
+    shouldStickToBottomRef.current = true;
+    pendingScrollBehaviorRef.current = 'auto';
+    setShowJumpToBottom(false);
+  }, [sessionId]);
 
   useEffect(() => {
     const behavior = pendingScrollBehaviorRef.current;
@@ -546,12 +560,15 @@ const ChatPage: React.FC = () => {
     }
 
     const frame = window.requestAnimationFrame(() => {
-      scrollToBottom(behavior);
+      // A running turn emits steps/deltas every few hundred milliseconds; a
+      // smooth animation restarts on each update and visibly lags behind the
+      // newest content, so live turns always jump instantly.
+      scrollToBottom(loading ? 'auto' : behavior);
       pendingScrollBehaviorRef.current = loading ? 'auto' : 'smooth';
     });
 
     return () => window.cancelAnimationFrame(frame);
-  }, [messages, progressSteps, loading, sessionId, streamingContent, scrollToBottom]);
+  }, [messages, progressSteps, loading, sessionId, streamingContent, pendingUserMessage, scrollToBottom]);
 
   useEffect(() => {
     if (!loading) {
@@ -962,6 +979,9 @@ const ChatPage: React.FC = () => {
       // T5: prevent duplicate submissions during intake creation
       if (!msgText || loading || intakeBusy || agentUnavailable || intakeDraft
         || reportDraftBlocked) return;
+      // Reveal the new question immediately, even if the reader was scrolled up
+      // or the model takes a while to accept the turn.
+      requestScrollToBottom('auto');
       if (overrideMessage !== undefined) {
         setInput(msgText);
       }
