@@ -2606,7 +2606,7 @@
 }
 
 .report-lead {
-  max-width: 82ch;
+  max-width: 100%;
   margin-top: 10px;
   padding-left: 12px;
   border-left: 2px solid hsl(var(--primary) / 0.3);
@@ -2614,6 +2614,7 @@
   font-size: 14.5px;
   line-height: 1.9;
   text-align: left;
+  text-wrap: pretty;
   white-space: pre-wrap;
 }
 
