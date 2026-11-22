@@ -17,14 +17,14 @@
 | `src/schemas/` | API / 报告数据结构定义 | 10 | 2107 |
 | `src/agent/` | 问股 Agent：意图解析、编排、工具与流式事件 | 64 | 26360 |
 | `src/llm/` | LLM 调用封装与本地 CLI 生成后端 | 12 | 6466 |
-| `data_provider/` | 多数据源适配、优先级与 fallback | 22 | 19191 |
+| `data_provider/` | 多数据源适配、优先级与 fallback | 23 | 19482 |
 | `api/` | FastAPI 应用与 v1 路由 | 45 | 13502 |
 | `bot/` | IM / 机器人接入 | 22 | 5507 |
 | `apps/dsa-web/src/` | Web 前端（React + Vite） | 340 | 113015 |
 | `apps/dsa-desktop/` | Electron 桌面端壳与打包配置 | 8 | 8519 |
 | `scripts/` | 本地与 CI 脚本 | 52 | 10795 |
 | `.github/scripts/` | GitHub Actions 专用脚本 | 2 | 652 |
-| `tests/` | pytest 测试 | 389 | 193006 |
+| `tests/` | pytest 测试 | 390 | 193200 |
 
 ## 大文件（Python，≥400 行）
 
@@ -83,8 +83,8 @@
 
 ## 规模快照
 
-- Python 源码（不含测试）：505 个文件，232005 行
-- Python 测试：380 个文件，192616 行
+- Python 源码（不含测试）：506 个文件，232296 行
+- Python 测试：381 个文件，192810 行
 - 前端 TS/TSX：332 个文件，104398 行
 - ≥400 行的 Python 文件：155 个
 

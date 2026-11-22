@@ -8,6 +8,7 @@ and this project adheres to [Semantic Versioning](https://semver.org/).
 > For user-friendly release highlights, see the [GitHub Releases](https://github.com/ZhuLinsen/daily_stock_analysis/releases) page.
 
 ## [Unreleased]
+- [改进] 美股数据源 Finnhub / AlphaVantage 支持多 Key：`FINNHUB_API_KEY` / `ALPHAVANTAGE_API_KEY` 可用英文逗号分隔多个账号 Key，鉴权失败、配额用尽或限流时在同一次请求内自动切换到下一个 Key，连续失败的 Key 冷却 5 分钟后恢复；请求错误日志改为不含 Key 的 URL 摘要。
 - [改进] 搜索 Key 支持失效自动切换：同一渠道配置多个 Key 时，当前 Key 返回鉴权失败、配额用尽或限流（401/403/429、`invalid api key`、`quota`、`rate limit`、`run out of searches` 等）会在本次搜索内立即切到下一个 Key 重试；连续失败 3 次的 Key 后续优先跳过。SerpAPI 的 `error` 响应不再被当成空结果的成功响应。
 - [修复] HTML 报告固定中文：`GET /api/v1/history/{id}/report-html` 不再跟随记录或界面语言，按 `zh` 重新构建章节 / 字段 / 操作建议等结构化文案，`<html lang="zh">` 写死；Web 端「查看 HTML 报告 / 下载 HTML」与抽屉文案也固定中文。模型当年写入的英文自由文本保留原文，详见 [飞书同源 HTML 报告](report-html.md)。
 - [测试] 锁定 HTML 报告中文化契约：英文记录仍输出中文框架与中文免责声明，历史 Markdown 接口默认语言行为不变。
