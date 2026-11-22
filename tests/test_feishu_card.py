@@ -324,3 +324,174 @@ class UnifiedDisclaimerCardTest(unittest.TestCase):
         text = _card_text(card)
         self.assertNotIn("仅供研究参考 · 不构成投资建议", text)
         self.assertIn(REPORT_AI_DISCLAIMER, text)
+
+
+# ---------------------------------------------------------------------------
+# 结构化信号区
+# ---------------------------------------------------------------------------
+
+SINGLE_STOCK_CONTEXT = {
+    "route_type": "report",
+    "report_type": "single",
+    "structured_payload": {
+        "name": "贵州茅台",
+        "code": "600519.SH",
+        "action_label": "观望",
+        "sentiment_score": 58,
+        "trend_prediction": "震荡",
+        "dashboard": {
+            "battle_plan": {
+                "sniper_points": {
+                    "ideal_buy": "1450.00",
+                    "stop_loss": "1420.00",
+                    "take_profit": "1520.00",
+                }
+            }
+        },
+    },
+}
+
+
+def _column_text(card):
+    """收集卡片中所有 column_set 单元格的文本。"""
+    parts = []
+    for element in card["elements"]:
+        if element.get("tag") != "column_set":
+            continue
+        for column in element.get("columns", []):
+            for sub in column.get("elements", []):
+                parts.append(sub.get("text", {}).get("content", ""))
+    return "\n".join(parts)
+
+
+def test_signal_zone_renders_action_score_and_points():
+    card = build_feishu_card(
+        _formatted_report(), max_bytes=20000, render_context=SINGLE_STOCK_CONTEXT
+    )
+
+    assert card["elements"][0]["tag"] == "column_set"
+    zone = _column_text(card)
+    assert "**操作**" in zone
+    assert "<text_tag color='grey'>观望</text_tag>" in zone
+    assert "**评分**" in zone
+    assert "<font color='orange'>**58**</font>/100" in zone
+    assert "**🎯 理想买**" in zone and "1450" in zone
+    assert "**🛑 止损**" in zone and "1420" in zone
+    assert "**🎯 目标**" in zone and "1520" in zone
+
+
+def test_signal_zone_absent_without_render_context():
+    card = build_feishu_card(_formatted_report(), max_bytes=20000)
+
+    assert all(element.get("tag") != "column_set" for element in card["elements"])
+
+
+def test_signal_zone_hidden_when_structured_payload_empty():
+    card = build_feishu_card(
+        _formatted_report(),
+        max_bytes=20000,
+        render_context={"route_type": "report", "structured_payload": None},
+    )
+
+    assert all(element.get("tag") != "column_set" for element in card["elements"])
+
+
+def test_signal_zone_skips_missing_fields():
+    context = {"structured_payload": {"action_label": "买入", "sentiment_score": 72}}
+    card = build_feishu_card(
+        _formatted_report(), max_bytes=20000, render_context=context
+    )
+    zone = _column_text(card)
+
+    assert "<text_tag color='green'>买入</text_tag>" in zone
+    assert "<font color='green'>**72**</font>/100" in zone
+    # 没有 sniper_points 时不渲染点位行。
+    assert "理想买" not in zone
+
+
+def test_signal_score_and_action_color_thresholds():
+    from src.notification_sender.feishu_card import (
+        _signal_action_color,
+        _signal_score_color,
+    )
+
+    assert _signal_action_color("买入") == "green"
+    assert _signal_action_color("卖出") == "red"
+    assert _signal_action_color("观望") == "grey"
+    assert _signal_score_color(72) == "green"
+    assert _signal_score_color(58) == "orange"
+    assert _signal_score_color(30) == "red"
+
+
+def test_market_signal_zone_renders_market_light():
+    market_report = "# 大盘复盘\n\n## 指数表现\n\n" + "盘面描述" * 120
+    context = {
+        "structured_payload": {
+            "kind": "market_review",
+            "market_light": {
+                "status": "green",
+                "label": "可进攻",
+                "score": 72,
+                "temperature_label": "偏热",
+            },
+        }
+    }
+    card = build_feishu_card(
+        format_feishu_markdown(market_report),
+        max_bytes=20000,
+        render_context=context,
+    )
+    zone = _column_text(card)
+
+    assert "市场情绪" in zone
+    assert "<text_tag color='green'>可进攻</text_tag>" in zone
+    assert "情绪分" in zone
+    assert "<font color='green'>**72**</font>/100" in zone
+    assert "温度" in zone
+
+
+@mock.patch("src.notification_sender.feishu_sender.requests.post")
+def test_webhook_forwards_render_context_to_signal_zone(mock_post):
+    response = mock.Mock(status_code=200)
+    response.json.return_value = {"code": 0}
+    mock_post.return_value = response
+    sender = FeishuSender(_config(feishu_webhook_url="https://feishu.example/hook"))
+
+    assert sender.send_to_feishu(REPORT, render_context=SINGLE_STOCK_CONTEXT) is True
+    card = mock_post.call_args.kwargs["json"]["card"]
+    assert any(element.get("tag") == "column_set" for element in card["elements"])
+
+
+@mock.patch.object(FeishuSender, "_app_send_raw", return_value=True)
+@mock.patch.object(FeishuSender, "_ensure_app_client", return_value=object())
+def test_app_bot_forwards_render_context_to_signal_zone(_mock_client, mock_raw):
+    sender = FeishuSender(
+        _config(feishu_app_id="cli_app", feishu_app_secret="secret", feishu_chat_id="oc_chat")
+    )
+
+    assert sender.send_to_feishu(REPORT, render_context=SINGLE_STOCK_CONTEXT) is True
+    card = json.loads(mock_raw.call_args[0][2])
+    assert any(element.get("tag") == "column_set" for element in card["elements"])
+
+
+def test_chunked_send_only_first_chunk_gets_render_context():
+    """分片发送时信号区只作用于首片，续页不重复渲染。"""
+    sender = FeishuSender(_config(feishu_max_bytes=20000))
+    captured = []
+
+    def _fake_send(chunk, **kwargs):
+        captured.append(kwargs.get("render_context"))
+        return True
+
+    long_content = "▎ **区块**\n" + ("内容" * 300)
+    with mock.patch.object(
+        FeishuSender, "_send_feishu_message", side_effect=_fake_send
+    ), mock.patch("src.notification_sender.feishu_sender.time.sleep"):
+        ok = sender._send_feishu_chunked(
+            long_content, 200, render_context=SINGLE_STOCK_CONTEXT
+        )
+
+    assert ok is True
+    assert len(captured) >= 2
+    assert captured[0] == SINGLE_STOCK_CONTEXT
+    assert all(context is None for context in captured[1:])

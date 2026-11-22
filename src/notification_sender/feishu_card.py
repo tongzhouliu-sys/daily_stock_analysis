@@ -28,7 +28,7 @@ from __future__ import annotations
 import json
 import re
 from dataclasses import dataclass, field
-from typing import Any, Dict, List, Optional, Tuple
+from typing import Any, Dict, List, Mapping, Optional, Tuple
 
 from src.report_language import REPORT_AI_DISCLAIMER, is_report_disclaimer_line
 
@@ -527,15 +527,217 @@ def _is_summary_section(title: str) -> bool:
     return any(keyword in title for keyword in _SUMMARY_SECTION_KEYWORDS)
 
 
+# ----------------------------------------------------------------------
+# 结构化信号区
+#
+# 通知链路已经把个股 / 大盘的结构化结果（action_label、sentiment_score、
+# battle_plan.sniper_points、market_light 等）算好放进 render_context，
+# 卡片优先用它渲染「动作徽章 + 评分分级 + 关键点位」；结构化数据缺失时
+# 返回空列表，卡片继续走原有文本解析，行为完全不变。
+#
+# 阈值与 src/share_image.py::_tone_for_score 保持同一口径。
+# ----------------------------------------------------------------------
+
+_SIGNAL_SCORE_POSITIVE = 60
+_SIGNAL_SCORE_NEGATIVE = 40
+_MARKET_STATUS_COLORS = {"green": "green", "yellow": "orange", "red": "red"}
+
+
+def _as_mapping(value: Any) -> Dict[str, Any]:
+    return value if isinstance(value, Mapping) else {}
+
+
+def _lark_text(value: Any) -> str:
+    """转义会破坏 lark_md 的尖括号，避免结构化字段注入标签。"""
+    return str(value or "").replace("<", "‹").replace(">", "›")
+
+
+def _signal_text(value: Any, limit: int = 24) -> str:
+    if value is None:
+        return ""
+    return _clamp(_lark_text(_clean_inline(str(value))), limit)
+
+
+def _signal_number_text(value: Any) -> str:
+    if value is None or isinstance(value, bool):
+        return ""
+    try:
+        number = float(value)
+    except (TypeError, ValueError):
+        return _clamp(_lark_text(_clean_inline(str(value))), 18)
+    return f"{number:.2f}".rstrip("0").rstrip(".")
+
+
+def _signal_sniper_text(value: Any) -> str:
+    """把点位字段（标量 / 字典 / 列表）压成卡片单元格里的短文本。"""
+    if isinstance(value, Mapping):
+        for key in ("value", "price", "text", "level", "target"):
+            nested = value.get(key)
+            if nested not in (None, ""):
+                return _signal_sniper_text(nested)
+        return ""
+    if isinstance(value, (list, tuple)):
+        parts = [_signal_sniper_text(item) for item in value[:2]]
+        return "–".join(part for part in parts if part)
+    return _signal_number_text(value)
+
+
+def _signal_action_color(action: str) -> str:
+    normalized = (action or "").lower()
+    if any(term in normalized for term in ("买", "加仓", "buy", "add")):
+        return "green"
+    if any(term in normalized for term in ("卖", "减仓", "回避", "sell", "reduce", "avoid")):
+        return "red"
+    return "grey"
+
+
+def _signal_score_color(score: Any) -> str:
+    try:
+        value = float(score)
+    except (TypeError, ValueError):
+        return "grey"
+    if value > _SIGNAL_SCORE_POSITIVE:
+        return "green"
+    if value < _SIGNAL_SCORE_NEGATIVE:
+        return "red"
+    return "orange"
+
+
+def _columns_element(cells: List[Tuple[str, str]]) -> Dict[str, Any]:
+    """把若干「标签 + 值」渲染成 Card JSON 1.0 的 column_set 并排卡。"""
+    columns = [
+        {
+            "tag": "column",
+            "width": "weighted",
+            "weight": 1,
+            "vertical_align": "top",
+            "elements": [
+                {
+                    "tag": "div",
+                    "text": {"tag": "lark_md", "content": f"**{label}**\n{value}"},
+                }
+            ],
+        }
+        for label, value in cells
+    ]
+    return {"tag": "column_set", "flex_mode": "none", "columns": columns}
+
+
+def _extract_stock_signal(payload: Mapping[str, Any]) -> Optional[Dict[str, Any]]:
+    dashboard = _as_mapping(payload.get("dashboard"))
+    battle = _as_mapping(dashboard.get("battle_plan"))
+    sniper = _as_mapping(battle.get("sniper_points"))
+
+    action = _signal_text(
+        payload.get("action_label") or payload.get("operation_advice"), 16
+    )
+    score = payload.get("sentiment_score")
+    trend = _signal_text(payload.get("trend_prediction"), 16)
+
+    points: List[Tuple[str, str]] = []
+    for key, label in (
+        ("ideal_buy", "🎯 理想买"),
+        ("stop_loss", "🛑 止损"),
+        ("take_profit", "🎯 目标"),
+    ):
+        value = _signal_sniper_text(sniper.get(key))
+        if value:
+            points.append((label, value))
+
+    if not action and score in (None, "") and not trend and not points:
+        return None
+    return {"action": action, "score": score, "trend": trend, "points": points}
+
+
+def _extract_market_signal(payload: Mapping[str, Any]) -> Optional[Dict[str, Any]]:
+    light = _as_mapping(payload.get("market_light"))
+    if not light:
+        return None
+    label = _signal_text(light.get("label"), 12)
+    score = light.get("score")
+    temperature = _signal_text(light.get("temperature_label"), 12)
+    if not label and score in (None, "") and not temperature:
+        return None
+    return {
+        "status": str(light.get("status") or ""),
+        "label": label,
+        "score": score,
+        "temperature": temperature,
+    }
+
+
+def _render_stock_signal_zone(signal: Dict[str, Any]) -> List[Dict[str, Any]]:
+    elements: List[Dict[str, Any]] = []
+    head: List[Tuple[str, str]] = []
+    if signal.get("action"):
+        color = _signal_action_color(signal["action"])
+        head.append(("操作", f"<text_tag color='{color}'>{signal['action']}</text_tag>"))
+    if signal.get("score") not in (None, ""):
+        color = _signal_score_color(signal["score"])
+        head.append(
+            (
+                "评分",
+                f"<font color='{color}'>**{_signal_number_text(signal['score'])}**</font>/100",
+            )
+        )
+    if signal.get("trend"):
+        head.append(("趋势", signal["trend"]))
+    if head:
+        elements.append(_columns_element(head))
+    if signal.get("points"):
+        elements.append(_columns_element(list(signal["points"])))
+    return elements
+
+
+def _render_market_signal_zone(signal: Dict[str, Any]) -> List[Dict[str, Any]]:
+    color = _MARKET_STATUS_COLORS.get(signal.get("status", ""), "grey")
+    cells: List[Tuple[str, str]] = []
+    if signal.get("label"):
+        cells.append(("市场情绪", f"<text_tag color='{color}'>{signal['label']}</text_tag>"))
+    if signal.get("score") not in (None, ""):
+        cells.append(
+            (
+                "情绪分",
+                f"<font color='{color}'>**{_signal_number_text(signal['score'])}**</font>/100",
+            )
+        )
+    if signal.get("temperature"):
+        cells.append(("温度", signal["temperature"]))
+    return [_columns_element(cells)] if cells else []
+
+
+def _build_signal_zone(render_context: Optional[Dict[str, Any]]) -> List[Dict[str, Any]]:
+    """从 render_context.structured_payload 渲染信号区；不可用时返回空列表。"""
+    if not isinstance(render_context, Mapping):
+        return []
+    payload = render_context.get("structured_payload")
+    if not isinstance(payload, Mapping):
+        return []
+    try:
+        if payload.get("kind") == "market_review" or "market_light" in payload:
+            market_signal = _extract_market_signal(payload)
+            return _render_market_signal_zone(market_signal) if market_signal else []
+        stock_signal = _extract_stock_signal(payload)
+        return _render_stock_signal_zone(stock_signal) if stock_signal else []
+    except Exception:  # 结构化渲染异常时静默回退到文本卡片
+        return []
+
+
 def _build_elements(
     sections: List[_Section],
     preamble: List[str],
     notes: List[str],
     *,
     include_disclaimer: bool = False,
+    render_context: Optional[Dict[str, Any]] = None,
 ) -> List[Dict[str, Any]]:
     elements: List[Dict[str, Any]] = []
     field_blocks = 0
+
+    signal_elements = _build_signal_zone(render_context)
+    if signal_elements:
+        elements.extend(signal_elements)
+        _append_hr(elements)
 
     preamble_text = _render_preamble(preamble)
     if preamble_text:
@@ -584,9 +786,14 @@ def _build_lite_elements(
     notes: List[str],
     *,
     include_disclaimer: bool = False,
+    render_context: Optional[Dict[str, Any]] = None,
 ) -> List[Dict[str, Any]]:
     """轻卡片：按板块合并为少量 div，保留分节但去掉字段/标签开销。"""
     elements: List[Dict[str, Any]] = []
+    signal_elements = _build_signal_zone(render_context)
+    if signal_elements:
+        elements.extend(signal_elements)
+        _append_hr(elements)
     preamble_text = _render_preamble(preamble)
     if preamble_text:
         elements.append(_div(preamble_text))
@@ -661,6 +868,7 @@ def build_feishu_card(
     *,
     max_bytes: Optional[int] = None,
     include_disclaimer: bool = False,
+    render_context: Optional[Dict[str, Any]] = None,
 ) -> Dict[str, Any]:
     """构建飞书 interactive 卡片的 body（不含 ``msg_type`` 外层）。
 
@@ -671,6 +879,9 @@ def build_feishu_card(
             由发送层处理。
         include_disclaimer: 仅分析报告推送为 True，页脚补统一 AI 生成声明；
             其他飞书消息不补声明。
+        render_context: 可选渲染上下文（``route_type`` / ``report_type`` /
+            ``results`` / ``structured_payload``）。有结构化数据时富卡片顶部
+            渲染「信号区」；缺省 None 时行为与旧版逐字节一致。
 
     Returns:
         Card JSON 1.0 字典。任何情况下都不会丢弃正文信息。紧凑卡片超限时返回 None。
@@ -683,7 +894,11 @@ def build_feishu_card(
 
     if len(content) >= _RICH_CARD_MIN_CHARS and body:
         elements = _build_elements(
-            body, preamble, notes, include_disclaimer=include_disclaimer
+            body,
+            preamble,
+            notes,
+            include_disclaimer=include_disclaimer,
+            render_context=render_context,
         )
         if 0 < len(elements) <= _MAX_ELEMENTS:
             card = {"config": _config(), "header": header, "elements": elements}
@@ -691,7 +906,11 @@ def build_feishu_card(
                 return card
 
         lite_elements = _build_lite_elements(
-            body, preamble, notes, include_disclaimer=include_disclaimer
+            body,
+            preamble,
+            notes,
+            include_disclaimer=include_disclaimer,
+            render_context=render_context,
         )
         if 0 < len(lite_elements) <= _MAX_ELEMENTS:
             card = {"config": _config(), "header": header, "elements": lite_elements}
@@ -701,23 +920,27 @@ def build_feishu_card(
     # 紧凑卡片：用已剥离页脚的正文，避免声明同时出现在正文与 note。
     compact_source = "\n".join(body_lines)
     compact_body = _strip_summary_line(_strip_title_line(compact_source, title), summary)
-    compact_elements: List[Dict[str, Any]] = []
-    if compact_body.strip():
-        compact_elements.append(_div(compact_body))
-    note = _note(notes, include_disclaimer=include_disclaimer)
-    if note is not None:
-        compact_elements.append(note)
-    if not compact_elements:
-        compact_elements = [_div("")]
-    compact_card = {
-        "config": _config(),
-        "header": header,
-        "elements": compact_elements,
-    }
-    # 紧凑卡片也要校验大小
-    if _fits(compact_card, max_bytes):
-        return compact_card
-    # 超限返回 None，由发送层处理
+    signal_elements = _build_signal_zone(render_context)
+
+    def _compact_card(include_signal: bool) -> Dict[str, Any]:
+        compact_elements: List[Dict[str, Any]] = []
+        if include_signal:
+            compact_elements.extend(signal_elements)
+        if compact_body.strip():
+            compact_elements.append(_div(compact_body))
+        note = _note(notes, include_disclaimer=include_disclaimer)
+        if note is not None:
+            compact_elements.append(note)
+        if not compact_elements:
+            compact_elements = [_div("")]
+        return {"config": _config(), "header": header, "elements": compact_elements}
+
+    # 优先带信号区；超预算时退回纯紧凑卡片，最后才由发送层走纯文本兜底。
+    attempts = (True, False) if signal_elements else (False,)
+    for include_signal in attempts:
+        compact_card = _compact_card(include_signal)
+        if _fits(compact_card, max_bytes):
+            return compact_card
     return None
 
 
