@@ -12,19 +12,19 @@
 | 目录 | 职责 | 文件数 | 行数 |
 | --- | --- | --- | --- |
 | `src/core/` | 主流程编排：pipeline、配置装配、调度入口 | 14 | 14207 |
-| `src/services/` | 业务服务层：分析、筛选、通知、系统配置、任务与诊断 | 214 | 84983 |
+| `src/services/` | 业务服务层：分析、筛选、通知、系统配置、任务与诊断 | 214 | 84995 |
 | `src/repositories/` | 数据访问层：数据库读写封装 | 12 | 4040 |
 | `src/schemas/` | API / 报告数据结构定义 | 10 | 2107 |
 | `src/agent/` | 问股 Agent：意图解析、编排、工具与流式事件 | 64 | 26360 |
 | `src/llm/` | LLM 调用封装与本地 CLI 生成后端 | 12 | 6466 |
 | `data_provider/` | 多数据源适配、优先级与 fallback | 22 | 19191 |
-| `api/` | FastAPI 应用与 v1 路由 | 45 | 13501 |
+| `api/` | FastAPI 应用与 v1 路由 | 45 | 13502 |
 | `bot/` | IM / 机器人接入 | 22 | 5507 |
-| `apps/dsa-web/src/` | Web 前端（React + Vite） | 340 | 113009 |
+| `apps/dsa-web/src/` | Web 前端（React + Vite） | 340 | 113021 |
 | `apps/dsa-desktop/` | Electron 桌面端壳与打包配置 | 8 | 8519 |
 | `scripts/` | 本地与 CI 脚本 | 52 | 10795 |
 | `.github/scripts/` | GitHub Actions 专用脚本 | 2 | 652 |
-| `tests/` | pytest 测试 | 389 | 192942 |
+| `tests/` | pytest 测试 | 389 | 193006 |
 
 ## 大文件（Python，≥400 行）
 
@@ -51,14 +51,14 @@
 | `src/share_image.py` | 2067 | `Table`:146, `StockPoster`:153, `MarketPoster`:178, `MarketSegment`:202, `_plain`:207, `_clean_value`:217 | 10 |
 | `src/services/portfolio_service.py` | 1846 | `_portfolio_limitations_for_market`:52, `_merge_portfolio_limitations`:64, `PortfolioConflictError`:75, `PortfolioOversellError`:79, `_AvgState`:103, `_ResolvedPositionPrice`:109 | 30 |
 | `src/services/screening/hotspot.py` | 1741 | `HotspotSummary`:40, `HotspotStock`:69, `HotspotTopicResolution`:88, `TimelineEvent`:98, `HotspotRouteItem`:111, `HotspotDetail`:124 | 1 |
-| `src/services/history_service.py` | 1618 | `MarkdownReportGenerationError`:75, `HistoryService`:84 | 29 |
+| `src/services/history_service.py` | 1629 | `MarkdownReportGenerationError`:75, `HistoryService`:84 | 29 |
 | `src/services/run_diagnostics.py` | 1536 | `build_trace_id`:81, `sanitize_diagnostic_text`:86, `safe_diagnostic_key`:106, `sanitize_diagnostic_metadata`:112, `ProviderRun`:143, `LLMRun`:182 | 94 |
 | `src/services/run_flow.py` | 1504 | `build_task_run_flow_snapshot`:77, `build_history_run_flow_snapshot`:183, `_append_provider_runs`:371, `_append_context_blocks`:474, `_append_llm_runs`:536, `_append_history_runs`:611 | 7 |
 | `api/v1/endpoints/analysis.py` | 1472 | `_get_task_trace_id`:90, `_task_asset_type`:100, `_market_review_lock_path`:126, `_build_market_review_runtime`:130, `_with_request_report_language`:134, `_run_market_review_background`:145 | 17 |
 | `data_provider/efinance_fetcher.py` | 1443 | `EfinanceRealtimeQuote`:95, `_lots_to_shares`:139, `_is_etf_code`:180, `_build_eastmoney_etf_secid`:197, `_is_us_code`:209, `_get_ef_executor`:221 | 16 |
 | `data_provider/tushare_fetcher.py` | 1427 | `_is_etf_code`:51, `_is_us_code`:63, `_resolve_tushare_http_url`:75, `_TushareHttpClient`:97, `TushareFetcher`:135 | 14 |
 | `api/v1/endpoints/agent.py` | 1403 | `ChatRequest`:73, `_intake_status_code`:120, `_public_answer_meta`:124, `_needs_object_intake`:135, `_reuse_session_brief`:142, `_build_agent_chat_context`:159 | 25 |
-| `src/report_language.py` | 1400 | `_normalized_disclaimer_candidate`:379, `is_report_disclaimer_line`:386, `strip_report_disclaimers`:399, `ensure_report_disclaimer`:415, `_strip_decision_negation_connectors`:860, `normalize_report_language`:874 | 184 |
+| `src/report_language.py` | 1400 | `_normalized_disclaimer_candidate`:379, `is_report_disclaimer_line`:386, `strip_report_disclaimers`:399, `ensure_report_disclaimer`:415, `_strip_decision_negation_connectors`:860, `normalize_report_language`:874 | 182 |
 | `src/services/decision_signal_service.py` | 1388 | `DecisionSignalNotFoundError`:75, `DecisionSignalStorageError`:79, `DecisionSignalWriteOutcome`:87, `DecisionSignalService`:110 | 35 |
 | `src/services/alert_service.py` | 1372 | `AlertServiceError`:87, `AlertNotFoundError`:93, `UnsupportedAlertTypeError`:99, `AlertService`:105 | 15 |
 | `src/agent/llm_adapter.py` | 1345 | `_resolve_litellm_exception`:64, `ToolCall`:82, `LLMResponse`:92, `_split_provider_model`:190, `_object_to_dict`:200, `_provider_specific_fields_from`:224 | 122 |
@@ -83,9 +83,9 @@
 
 ## 规模快照
 
-- Python 源码（不含测试）：505 个文件，231992 行
-- Python 测试：380 个文件，192552 行
-- 前端 TS/TSX：332 个文件，104392 行
+- Python 源码（不含测试）：505 个文件，232005 行
+- Python 测试：380 个文件，192616 行
+- 前端 TS/TSX：332 个文件，104404 行
 - ≥400 行的 Python 文件：155 个
 
 规模数字只用于判断改动影响面，不是质量指标。

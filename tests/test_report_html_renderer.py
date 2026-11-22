@@ -18,11 +18,10 @@ def _sample(name: str) -> str:
 
 
 @pytest.mark.parametrize("name", SAMPLES)
-@pytest.mark.parametrize("lang", ["zh", "en", "ko"])
-def test_render_structure(name, lang):
-    html = render_report_html(_sample(name), report_language=lang)
+def test_render_structure(name):
+    html = render_report_html(_sample(name))
     assert html.startswith("<!doctype html>")
-    assert f'<html lang="{lang}">' in html
+    assert '<html lang="zh">' in html
     assert "<title>" in html and "</title>" in html
     assert "<style>" in html and "</style>" in html
     assert '<main class="page">' in html
@@ -115,9 +114,15 @@ def test_empty_and_short_content():
 
 
 def test_language_heading_lang():
-    assert '<html lang="zh">' in render_report_html(_sample("single_stock_report"), report_language="zh")
-    assert '<html lang="en">' in render_report_html(_sample("single_stock_report"), report_language="en")
-    assert '<html lang="ko">' in render_report_html(_sample("single_stock_report"), report_language="ko")
+    english_markdown = "# AAPL Analysis\n\n## Core Conclusion\n\n- Hold.\n"
+    html = render_report_html(english_markdown)
+    assert '<html lang="zh">' in html
+    assert "本数据由 RHCLOUD PTE. LTD. 根据 AI 生成，不构成投资建议。" in html
+
+
+def test_renderer_does_not_accept_report_language():
+    with pytest.raises(TypeError):
+        render_report_html("任意内容", report_language="en")  # type: ignore[call-arg]
 
 
 def test_render_error_is_explicit(monkeypatch):

@@ -73,6 +73,8 @@ export const ShareReportButton: React.FC<ShareReportButtonProps> = ({
   const renderDesktopShareImage = desktopRuntime?.renderShareImage;
   const activeRecordId = desktopRuntime && !renderDesktopShareImage ? undefined : recordId;
   const text = getReportText(normalizeReportLanguage(reportLanguage));
+  // HTML 报告固定中文：仅这几个入口使用独立中文文案，其他分享动作保持界面语言。
+  const htmlText = getReportText('zh');
 
   const [menuOpen, setMenuOpen] = useState(false);
   const [busyAction, setBusyAction] = useState<ShareAction | null>(null);
@@ -372,7 +374,7 @@ export const ShareReportButton: React.FC<ShareReportButtonProps> = ({
       setFeedback({
         recordId: activeRecordId,
         kind: 'success',
-        message: text.shareHtmlReady,
+        message: htmlText.shareHtmlReady,
       }, true);
       setMenuOpen(false);
     } catch (error) {
@@ -380,21 +382,23 @@ export const ShareReportButton: React.FC<ShareReportButtonProps> = ({
       setFeedback({
         recordId: activeRecordId,
         kind: 'error',
-        message: `${text.shareHtmlFailed}: ${getParsedApiError(error).message}`,
+        message: `${htmlText.shareHtmlFailed}: ${getParsedApiError(error).message}`,
       });
     } finally {
       setBusyAction(null);
     }
-  }, [activeRecordId, busyAction, clearResetTimer, reportTitle, setFeedback, text.shareHtmlFailed, text.shareHtmlReady]);
+  }, [activeRecordId, busyAction, clearResetTimer, htmlText.shareHtmlFailed, htmlText.shareHtmlReady, reportTitle, setFeedback]);
 
   if (activeRecordId === undefined) return null;
 
   const isBusy = busyAction !== null;
   const triggerLabel = busyAction === 'pdf'
     ? text.sharePreparingPdf
-    : busyAction
-      ? text.generatingShareImage
-      : text.generateShareImage;
+    : busyAction === 'htmlDownload'
+      ? htmlText.sharePreparingHtml
+      : busyAction
+        ? text.generatingShareImage
+        : text.generateShareImage;
   const imageItemLabel = imageAwaitingShare ? text.shareImageReadyToShare : text.shareExportImage;
 
   return (
@@ -442,7 +446,7 @@ export const ShareReportButton: React.FC<ShareReportButtonProps> = ({
             disabled={isBusy}
           >
             <FileCode2 className="h-4 w-4" aria-hidden="true" />
-            <span>{text.shareViewHtml}</span>
+            <span>{htmlText.shareViewHtml}</span>
           </button>
           <button
             type="button"
@@ -452,7 +456,7 @@ export const ShareReportButton: React.FC<ShareReportButtonProps> = ({
             disabled={isBusy}
           >
             <FileDown className="h-4 w-4" aria-hidden="true" />
-            <span>{text.shareDownloadHtml}</span>
+            <span>{htmlText.shareDownloadHtml}</span>
           </button>
           <button
             type="button"
@@ -491,7 +495,6 @@ export const ShareReportButton: React.FC<ShareReportButtonProps> = ({
         <ReportHtmlDrawer
           recordId={htmlDrawerRecordId}
           reportTitle={reportTitle}
-          reportLanguage={reportLanguage}
           onClose={() => setHtmlDrawerRecordId(null)}
         />
       ) : null}

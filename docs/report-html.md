@@ -5,6 +5,7 @@
 ## 能力边界
 
 - HTML 与飞书卡片**信息一致**：两者共用同一份文档解析（`src/notification_sender/feishu_card.py` 的 `parse_report_document()`），不另写一套 Markdown 解析。飞书里展开为字段网格的表格，HTML 同样以字段网格呈现。
+- **固定中文**：HTML 报告不跟随记录语言或 Web 界面语言，文档固定 `<html lang="zh">`，并会按 `zh` 重新构建章节标题、字段键、操作建议、趋势与策略标签。Web 端「查看 HTML 报告 / 下载 HTML」入口与抽屉文案也固定中文。
 - HTML 在视觉上比飞书更丰富：宽屏渐变标题栏、语义色板块标签、双列字段卡片、风险/利好高亮、引用块、页脚声明，支持系统深浅色与打印。
 - 单文件、零脚本、零外部资源：CSS 内联，可离线打开，可作为邮件附件，也可在飞书内置浏览器查看。
 - **不做**：把 HTML 链接推回飞书、多股聚合日报的独立 HTML、生成报告时落盘 `.html`、交互式图表/K 线、手动主题切换。这些能力如需引入，另开任务。
@@ -32,7 +33,7 @@ GET /api/v1/history/{record_id}/report-html
 - 404：记录不存在或报告内容为空。
 - 413：报告超过 500,000 字符（独立上限，不沿用分享图的 `MARKDOWN_TO_IMAGE_MAX_CHARS`）。
 - 500：渲染失败，返回通用错误体，响应不含异常细节。
-- 报告语言取记录自身 `raw_result.report_language`，缺失时回退全局配置，再回退 `zh`。
+- 报告内容固定按 `zh` 重新生成，不再读取记录自身的 `report_language`；大盘复盘正文来自持久化原文，不翻译。
 - 下载文件名 `dsa-report-{id}.html`，ID 经字符白名单过滤，避免路径注入。
 - 鉴权与同 router 其他历史接口一致，不新增例外。
 
@@ -54,7 +55,7 @@ from pathlib import Path
 from src.services.report_html import render_report_html
 
 markdown_text = Path("reports/example.md").read_text(encoding="utf-8")
-html = render_report_html(markdown_text, report_language="zh")
+html = render_report_html(markdown_text)
 Path("report-preview.html").write_text(html, encoding="utf-8")
 ```
 
@@ -74,6 +75,8 @@ ls local/scratch/single_stock_report.html
 
 ## 已知限制
 
+- HTML 报告固定中文；历史记录中由模型当年写入的英文自由文本（趋势分析、风险提示、分析摘要、资讯摘要等）保留原文，无法离线翻译。大盘复盘的持久化正文同样按原文展示。
+- 「固定中文」覆盖页面框架、章节标题、字段键、操作建议、趋势与策略标签、免责声明，以及 Web 端 HTML 入口文案；不覆盖模型自由文本。
 - 摘要里的 `🟢N 🟡N 🔴N` 指标胶囊依赖飞书摘要行的 emoji 计数格式；没有该格式时不显示指标条，不影响正文。
 - 主题跟随系统 `prefers-color-scheme`，不支持手动切换。
 - 打印样式针对 A4 优化，长报告按区块分页（`break-inside: avoid`）。
