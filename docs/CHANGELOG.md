@@ -8,6 +8,7 @@ and this project adheres to [Semantic Versioning](https://semver.org/).
 > For user-friendly release highlights, see the [GitHub Releases](https://github.com/ZhuLinsen/daily_stock_analysis/releases) page.
 
 ## [Unreleased]
+- [chore] AI 协作规则改为「默认合入授权」：完成改动并通过验证后可直接 `git commit` 并合入 `main`，不再逐次等待确认；仍禁止 `git push --force`、改写已推送历史、未要求的 `git tag`/Release、跳过验证合入与夹带他人 WIP。同步更新 `AGENTS.md` 第 1/8/9 节、`.github/copilot-instructions.md` 与 `.claude/skills/fix-issue/SKILL.md`。
 - [新功能] 预测市场可见性 P1.5a：多 Agent intel/risk/portfolio 专家可调用 `search_prediction_markets`；Agent 模式分析注入 `prediction_market_context`；新增 `collect_events` 与噪声过滤（`PREDICTION_MARKET_FILTER_NOISE`、`PREDICTION_MARKET_MIN_VOLUME_24H`）。
 - [新功能] 预测市场结构化证据 sidecar：新增 `analysis_prediction_markets` 表与 repository，历史保存后 best-effort 写入、历史删除同步清理，历史详情 `details.prediction_markets` 可读取；详见 [P1.5 任务书](tasks/prediction-market-visibility.md)。
 - [新功能] 预测市场可视化：报告详情新增 `PredictionMarketsPanel` 卡片（事件、概率、24h 成交额、结算时间、来源、免责声明），问股分析过程在 `search_prediction_markets` 结果存在时展示紧凑证据列表；后端 `tool_done.detail` 追加低敏预测市场字段。
