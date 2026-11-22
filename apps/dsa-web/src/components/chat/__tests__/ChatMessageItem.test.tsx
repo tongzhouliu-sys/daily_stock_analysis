@@ -82,4 +82,37 @@ describe('ChatMessageItem memoization (T40)', () => {
 
     expect(renderSpy).toHaveBeenCalledTimes(2);
   });
+
+  it('shows one summarized row per tool call instead of start/done chatter', () => {
+    const props = buildProps();
+    props.message = {
+      id: 'msg-2',
+      role: 'assistant',
+      content: '茅台趋势向上',
+      thinkingSteps: [
+        { type: 'thinking', message: '正在制定分析路径...' },
+        { type: 'tool_start', tool: 'realtime_quote', call_id: 'c1', display_label: '实时行情' },
+        {
+          type: 'tool_done',
+          tool: 'realtime_quote',
+          call_id: 'c1',
+          display_label: '实时行情',
+          success: true,
+          duration: 0.3,
+          outcome: 'success',
+        },
+        { type: 'thinking', message: '「实时行情」已完成，继续深入分析...' },
+      ],
+    };
+    props.thinkingExpanded = true;
+    props.expandedCategories = new Set(['msg-2:quote']);
+
+    render(<ChatMessageItem {...props} />);
+
+    // The merged tool row is shown once, and the repetitive thinking chatter
+    // is no longer rendered in the expanded details.
+    expect(screen.getAllByText(/实时行情/)).toHaveLength(1);
+    expect(screen.queryByText(/继续深入分析/)).not.toBeInTheDocument();
+    expect(screen.getByText('1 次工具调用')).toBeInTheDocument();
+  });
 });

@@ -16,8 +16,31 @@ interface ChatLiveProgressProps {
  * Live "in progress" panel shown while an answer is streaming (T40).
  */
 function ChatLiveProgress({ steps, streamingContent, language }: ChatLiveProgressProps) {
+  // A finished call is reported twice (start + done). Keep the detailed done
+  // row and hide the matching start row so the live list does not repeat
+  // every tool. Calls still running keep their start row as feedback.
+  const settledTools = new Set(
+    steps
+      .filter((step) => step.type === 'tool_done')
+      .map((step) => step.call_id || `tool:${step.tool || ''}`),
+  );
+  const settledStages = new Set(
+    steps
+      .filter((step) => step.type === 'stage_done')
+      .map((step) => step.stage_id || `stage:${step.stage || ''}`),
+  );
+
   const visibleSteps = steps
     .filter((step) => LIVE_STEP_TYPES.includes(step.type))
+    .filter((step) => {
+      if (step.type === 'tool_start') {
+        return !settledTools.has(step.call_id || `tool:${step.tool || ''}`);
+      }
+      if (step.type === 'stage_start') {
+        return !settledStages.has(step.stage_id || `stage:${step.stage || ''}`);
+      }
+      return true;
+    })
     .slice(-6);
 
   return (
