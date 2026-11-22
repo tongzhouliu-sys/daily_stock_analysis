@@ -285,6 +285,17 @@ describe('ShareReportButton', () => {
     expect(iframe.getAttribute('sandbox')).not.toContain('allow-same-origin');
   });
 
+  it('keeps HTML report entry points Chinese when report language is English', () => {
+    render(<ShareReportButton recordId={17} reportTitle="AAPL Analysis" reportLanguage="en" />);
+
+    fireEvent.click(screen.getByRole('button', { name: 'Share report' }));
+
+    expect(menuItem('查看 HTML 报告')).toBeInTheDocument();
+    expect(menuItem('下载 HTML')).toBeInTheDocument();
+    // 其他分享动作仍跟随界面语言，避免无关功能被牵连。
+    expect(menuItem('Copy link')).toBeInTheDocument();
+  });
+
   it('downloads HTML with a safe filename', async () => {
     render(<ShareReportButton recordId={17} reportTitle="中钨高新-000657" reportLanguage="zh" />);
     openMenu();

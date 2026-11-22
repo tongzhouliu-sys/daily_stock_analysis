@@ -71,6 +71,8 @@ def _history_share_image_payload(result: Mapping[str, Any]) -> Optional[Mapping[
 def _history_share_image_input(
     record_id: str,
     db_manager: DatabaseManager,
+    *,
+    report_language: Optional[str] = None,
 ) -> tuple[Mapping[str, Any], str]:
     """Load the shared persisted input used by PNG and desktop HTML renderers."""
 
@@ -86,7 +88,13 @@ def _history_share_image_input(
         )
 
     try:
-        markdown_content = service.get_markdown_report(record_id)
+        if report_language is None:
+            markdown_content = service.get_markdown_report(record_id)
+        else:
+            markdown_content = service.get_markdown_report(
+                record_id,
+                report_language=report_language,
+            )
     except MarkdownReportGenerationError as exc:
         logger.error("Share image report generation failed for %s: %s", record_id, exc.message)
         raise HTTPException(
@@ -808,15 +816,6 @@ def get_history_share_image_html(
     )
 
 
-def _history_report_language(result: Mapping[str, Any]) -> str:
-    """从持久化结果中解析报告语言，缺失时回退全局配置，再回退 zh。"""
-    raw_result = result.get("raw_result")
-    candidate = raw_result.get("report_language") if isinstance(raw_result, Mapping) else None
-    if not candidate:
-        candidate = getattr(get_config(), "report_language", None)
-    return normalize_report_language(candidate)
-
-
 @router.get(
     "/{record_id}/report-html",
     response_class=HTMLResponse,
@@ -827,14 +826,19 @@ def _history_report_language(result: Mapping[str, Any]) -> str:
         500: {"description": "报告生成失败", "model": ErrorResponse},
     },
     summary="获取历史报告的 HTML 版本",
-    description="根据历史报告生成与飞书推送同源的精美 HTML，支持在线查看与下载",
+    description="根据历史报告生成与飞书推送同源的精美 HTML（固定中文），支持在线查看与下载",
 )
 def get_history_report_html(
     record_id: str,
     download: int = Query(0, ge=0, le=1, description="为 1 时以附件形式下载"),
     db_manager: DatabaseManager = Depends(get_database_manager),
 ) -> HTMLResponse:
-    result, markdown_content = _history_share_image_input(record_id, db_manager)
+    # HTML 报告固定中文：按 zh 重建结构化报告，再交给固定中文的渲染器。
+    result, markdown_content = _history_share_image_input(
+        record_id,
+        db_manager,
+        report_language="zh",
+    )
 
     if len(markdown_content) > _REPORT_HTML_MAX_CHARS:
         raise HTTPException(
@@ -846,10 +850,7 @@ def get_history_report_html(
         )
 
     try:
-        html = render_report_html(
-            markdown_content,
-            report_language=_history_report_language(result),
-        )
+        html = render_report_html(markdown_content)
     except ReportHtmlRenderError as exc:
         logger.error("Report HTML generation failed for %s: %s", record_id, exc)
         raise HTTPException(

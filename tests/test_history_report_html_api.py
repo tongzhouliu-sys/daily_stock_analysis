@@ -14,11 +14,13 @@ class _FakeHistoryService:
     def __init__(self, result, markdown="# 中钨高新 000657 分析报告"):
         self.result = result
         self.markdown = markdown
+        self.report_language_calls = []
 
     def resolve_and_get_detail(self, record_id):
         return self.result
 
-    def get_markdown_report(self, record_id):
+    def get_markdown_report(self, record_id, *, report_language=None):
+        self.report_language_calls.append(report_language)
         return self.markdown
 
 
@@ -69,30 +71,30 @@ def test_report_html_download_filename_is_sanitized(monkeypatch):
     assert disposition.endswith('.html"')
 
 
-def test_report_html_uses_record_language(monkeypatch):
-    _patch_service(monkeypatch, _result(raw_result={"report_language": "en"}))
+def test_report_html_forces_chinese_report_generation(monkeypatch):
+    service = _patch_service(monkeypatch, _result(raw_result={"report_language": "en"}))
     captured = {}
 
     def fake_render(markdown, **kwargs):
         captured.update(kwargs)
-        return "<!doctype html><html lang='en'></html>"
+        return "<!doctype html><html lang='zh'></html>"
 
     monkeypatch.setattr(history_endpoint, "render_report_html", fake_render)
     history_endpoint.get_history_report_html("17", db_manager=object())
-    assert captured["report_language"] == "en"
+    assert service.report_language_calls == ["zh"]
+    assert "report_language" not in captured
 
 
-def test_report_html_falls_back_to_config_language(monkeypatch):
-    _patch_service(monkeypatch, _result(raw_result={}))
-    captured = {}
-
-    def fake_render(markdown, **kwargs):
-        captured.update(kwargs)
-        return "<!doctype html></html>"
-
-    monkeypatch.setattr(history_endpoint, "render_report_html", fake_render)
-    history_endpoint.get_history_report_html("17", db_manager=object())
-    assert captured["report_language"] == "zh"
+def test_report_html_uses_chinese_frame_for_english_markdown(monkeypatch):
+    _patch_service(
+        monkeypatch,
+        _result(raw_result={"report_language": "en"}),
+        markdown="# AAPL Analysis\n\n## Core Conclusion\n\n- Hold.\n",
+    )
+    response = history_endpoint.get_history_report_html("17", db_manager=object())
+    body = response.body.decode("utf-8")
+    assert '<html lang="zh">' in body
+    assert "本数据由 RHCLOUD PTE. LTD. 根据 AI 生成，不构成投资建议。" in body
 
 
 def test_report_html_market_review(monkeypatch):
