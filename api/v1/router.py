@@ -24,6 +24,7 @@ from api.v1.endpoints import (
     history,
     intelligence,
     portfolio,
+    prediction_markets,
     stocks,
     system_config,
     usage,
@@ -115,6 +116,12 @@ router.include_router(
     intelligence.router,
     prefix="/intelligence",
     tags=["Intelligence"]
+)
+
+router.include_router(
+    prediction_markets.router,
+    prefix="/prediction-markets",
+    tags=["PredictionMarkets"]
 )
 
 router.include_router(

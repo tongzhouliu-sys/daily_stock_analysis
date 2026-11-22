@@ -59,6 +59,7 @@ UTC_TIME_TABLES = {
     "SkillOpinionSampleRecord",
     "SkillOpinionOutcomeRecord",
     "LoginAuditLog",
+    "PredictionMarketEvent",
 }
 
 

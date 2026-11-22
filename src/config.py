@@ -1127,6 +1127,24 @@ class Config:
     newsnow_base_url: str = "https://newsnow.busiyi.world"  # NewsNow HTTP API base URL (数据源侧，不影响 LLM/provider base URL)
     bias_threshold: float = 5.0  # 乖离率阈值（%），超过此值提示不追高
 
+    # === 预测市场（Kalshi / Polymarket，只读外部事件概率）===
+    prediction_market_enabled: bool = False  # 总开关；关闭时不发外部请求、不注入上下文
+    prediction_market_auto_fetch_enabled: bool = False  # 分析/问股前是否先 fail-open 刷新本地池
+    prediction_market_refresh_cooldown_min: int = 60  # 进程内自动刷新冷却（分钟）
+    prediction_market_fetch_timeout_sec: float = 10.0  # 单平台拉取超时（秒）
+    prediction_market_retention_days: int = 30  # 本地池保留天数
+    prediction_market_max_items_per_fetch: int = 200  # 单次每平台最多采集条数
+    prediction_market_politics_allowed: bool = False  # 是否采集 politics 类别（默认排除）
+    kalshi_api_base_url: str = "https://api.elections.kalshi.com/trade-api/v2"
+    kalshi_api_key: Optional[str] = None
+    # 定向拉取的金融 series（Kalshi /markets 默认被体育串关占满，category 参数无效）
+    kalshi_series_tickers: str = (
+        "KXFED,KXCPI,KXCPIYOY,KXCPICORE,KXGDP,KXPAYROLLS,KXU3,KXRECSSNBER,"
+        "KXINX,KXNASDAQ100,KXBTCD,KXETH,KXTSLA"
+    )
+    polymarket_api_base_url: str = "https://gamma-api.polymarket.com"
+    polymarket_api_key: Optional[str] = None
+
     # === Agent 模式配置 ===
     agent_backend: str = "auto"
     agent_generation_backend: str = AUTO_AGENT_BACKEND_ID
@@ -2075,6 +2093,54 @@ class Config:
             ),
             newsnow_base_url=((os.getenv('NEWSNOW_BASE_URL') or '').strip().rstrip('/') or 'https://newsnow.busiyi.world'),
             bias_threshold=parse_env_float(os.getenv('BIAS_THRESHOLD'), 5.0, field_name='BIAS_THRESHOLD', minimum=1.0),
+            prediction_market_enabled=parse_env_bool(
+                os.getenv('PREDICTION_MARKET_ENABLED'),
+                False,
+            ),
+            prediction_market_auto_fetch_enabled=parse_env_bool(
+                os.getenv('PREDICTION_MARKET_AUTO_FETCH_ENABLED'),
+                False,
+            ),
+            prediction_market_refresh_cooldown_min=parse_env_int(
+                os.getenv('PREDICTION_MARKET_REFRESH_COOLDOWN_MIN'),
+                60,
+                field_name='PREDICTION_MARKET_REFRESH_COOLDOWN_MIN',
+                minimum=0,
+                maximum=1440,
+            ),
+            prediction_market_fetch_timeout_sec=parse_env_float(
+                os.getenv('PREDICTION_MARKET_FETCH_TIMEOUT_SEC'),
+                10.0,
+                field_name='PREDICTION_MARKET_FETCH_TIMEOUT_SEC',
+                minimum=1.0,
+                maximum=30.0,
+            ),
+            prediction_market_retention_days=parse_env_int(
+                os.getenv('PREDICTION_MARKET_RETENTION_DAYS'),
+                30,
+                field_name='PREDICTION_MARKET_RETENTION_DAYS',
+                minimum=1,
+                maximum=365,
+            ),
+            prediction_market_max_items_per_fetch=parse_env_int(
+                os.getenv('PREDICTION_MARKET_MAX_ITEMS_PER_FETCH'),
+                200,
+                field_name='PREDICTION_MARKET_MAX_ITEMS_PER_FETCH',
+                minimum=1,
+                maximum=1000,
+            ),
+            prediction_market_politics_allowed=parse_env_bool(
+                os.getenv('PREDICTION_MARKET_POLITICS_ALLOWED'),
+                False,
+            ),
+            kalshi_api_base_url=((os.getenv('KALSHI_API_BASE_URL') or '').strip().rstrip('/') or 'https://api.elections.kalshi.com/trade-api/v2'),
+            kalshi_api_key=(os.getenv('KALSHI_API_KEY') or '').strip() or None,
+            kalshi_series_tickers=(os.getenv('KALSHI_SERIES_TICKERS') or '').strip() or (
+                "KXFED,KXCPI,KXCPIYOY,KXCPICORE,KXGDP,KXPAYROLLS,KXU3,KXRECSSNBER,"
+                "KXINX,KXNASDAQ100,KXBTCD,KXETH,KXTSLA"
+            ),
+            polymarket_api_base_url=((os.getenv('POLYMARKET_API_BASE_URL') or '').strip().rstrip('/') or 'https://gamma-api.polymarket.com'),
+            polymarket_api_key=(os.getenv('POLYMARKET_API_KEY') or '').strip() or None,
             agent_backend=(os.getenv('AGENT_BACKEND', 'auto') or 'auto').strip().lower(),
             agent_generation_backend=agent_generation_backend,
             agent_litellm_model=agent_litellm_model,

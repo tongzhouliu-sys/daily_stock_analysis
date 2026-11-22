@@ -105,7 +105,7 @@ def test_factory_registers_tools_for_report_and_chat():
     node = next(node for node in ast.parse(source.read_text(encoding="utf-8")).body
                 if isinstance(node, ast.FunctionDef) and node.name == "_build_tool_registry")
     modules = {}
-    for name in ("data", "analysis", "search", "market", "backtest"):
+    for name in ("data", "analysis", "search", "market", "backtest", "prediction_market"):
         module = types.ModuleType(f"src.agent.tools.{name}_tools")
         setattr(module, f"ALL_{name.upper()}_TOOLS", [])
         modules[module.__name__] = module

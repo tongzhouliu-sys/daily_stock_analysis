@@ -4206,6 +4206,7 @@ Output strictly in the following JSON format. This is a complete Decision Dashbo
         progress_callback: Optional[Callable[[int, str], None]] = None,
         stream_progress_callback: Optional[Callable[[int], None]] = None,
         analysis_context_pack_summary: Optional[str] = None,
+        prediction_market_context: Optional[str] = None,
     ) -> AnalysisResult:
         """
         分析单只股票
@@ -4347,6 +4348,7 @@ Output strictly in the following JSON format. This is a complete Decision Dashbo
                 news_context,
                 report_language=report_language,
                 analysis_context_pack_summary=analysis_context_pack_summary,
+                prediction_market_context=prediction_market_context,
             )
             legacy_audit_context = {
                 "language": report_language,
@@ -4578,6 +4580,7 @@ Output strictly in the following JSON format. This is a complete Decision Dashbo
         news_context: Optional[str] = None,
         report_language: str = "zh",
         analysis_context_pack_summary: Optional[str] = None,
+        prediction_market_context: Optional[str] = None,
     ) -> str:
         """
         格式化分析提示词（决策仪表盘 v2.0）
@@ -5267,6 +5270,33 @@ No recent news was found for this stock. Base the analysis mainly on the technic
         else:
             prompt += """
 未搜索到该股票近期的相关新闻。请主要依据技术面数据进行分析。
+"""
+
+        # 预测市场证据（独立维度；仅在存在证据时注入，不改既有 news 语义）
+        if prediction_market_context:
+            if english:
+                prompt += f"""
+---
+
+## 🎲 Prediction Markets
+
+Below is the current prediction-market pricing for events relevant to **{stock_name}({code})** or its macro backdrop. Treat the implied probability as crowd pricing, not a certainty or a buy/sell instruction.
+
+```
+{prediction_market_context}
+```
+"""
+            else:
+                prompt += f"""
+---
+
+## 🎲 预测市场现状
+
+以下是 **{stock_name}({code})** 或其宏观背景相关的预测市场事件定价。请把隐含概率理解为“群体对事件发生的定价”，不是确定性事实，也不要直接换算成买卖强度。
+
+```
+{prediction_market_context}
+```
 """
 
         # 注入缺失数据警告

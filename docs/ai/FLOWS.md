@@ -64,4 +64,5 @@ SettingsPage → PUT /api/v1/system-config/config
 
 - 选股 / 筛选：`api/v1/endpoints/screening.py` → `src/services/screening_service.py`，热点与日线在 `src/services/screening/`。
 - 回测：`api/v1/endpoints/backtest.py` → `src/services/backtest_service.py`，输入转换脚本 `scripts/signal_scanner/build_rebound_input.py`，报告写 `local/backtests/`。
+- 预测市场（默认关闭）：`src/services/prediction_market_service.py` → 个股分析经 `src/core/pipeline.py::_load_prediction_market_context` 注入 `analyzer.analyze(prediction_market_context=...)`，大盘复盘经 `src/market_analyzer.py::_load_prediction_market_context` 注入复盘 Prompt；问股经 `src/agent/tools/prediction_market_tools.py::search_prediction_markets` 只读工具消费本地池。全链路 fail-open。
 - 飞书同源 HTML 报告：历史报告 Markdown 按 `zh` 重建 → `src/formatters.py format_feishu_markdown()` → `src/notification_sender/feishu_card.py parse_report_document()`（与飞书卡片共用解析）→ `src/services/report_html/renderer.py render_report_html()`（固定中文）→ `GET /api/v1/history/{id}/report-html`；Web 分享菜单用沙箱 iframe 展示。修改飞书章节解析 / 字段布局 / 脚注去重 / 主题映射时，必须同步评估该链路。详见 `docs/report-html.md`。
