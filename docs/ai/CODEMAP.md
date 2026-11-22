@@ -20,7 +20,7 @@
 | `data_provider/` | 多数据源适配、优先级与 fallback | 22 | 19191 |
 | `api/` | FastAPI 应用与 v1 路由 | 45 | 13501 |
 | `bot/` | IM / 机器人接入 | 22 | 5507 |
-| `apps/dsa-web/src/` | Web 前端（React + Vite） | 340 | 113002 |
+| `apps/dsa-web/src/` | Web 前端（React + Vite） | 340 | 113003 |
 | `apps/dsa-desktop/` | Electron 桌面端壳与打包配置 | 8 | 8519 |
 | `scripts/` | 本地与 CI 脚本 | 52 | 10795 |
 | `.github/scripts/` | GitHub Actions 专用脚本 | 2 | 652 |
@@ -85,7 +85,7 @@
 
 - Python 源码（不含测试）：503 个文件，231772 行
 - Python 测试：380 个文件，192392 行
-- 前端 TS/TSX：332 个文件，104385 行
+- 前端 TS/TSX：332 个文件，104386 行
 - ≥400 行的 Python 文件：155 个
 
 规模数字只用于判断改动影响面，不是质量指标。
