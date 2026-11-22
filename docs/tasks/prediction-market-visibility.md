@@ -1,6 +1,6 @@
 # 开发任务书：预测市场能力「可见 + 可用」补齐（P1.5）
 
-> 状态：待实施
+> 状态：已实施（P1.5）
 > 前置：P1 已合并（PR #36）
 > 任务类型：`feat`
 > 需求文档：`docs/tasks/prediction-market-visibility-requirements.md`
@@ -237,3 +237,13 @@ PREDICTION_MARKET_MIN_VOLUME_24H=1000
 - **PR-4（WS-C）**：部署文档 + Actions 透传（按需）。
 
 每个 PR 独立可回滚，均不改变 P1 的只读/默认关闭/fail-open 边界。
+
+---
+
+## 10. 落地说明
+
+- **PR-1**：`intel`/`risk`/`portfolio` 工具白名单、Agent 模式 `prediction_market_context` 注入、`collect_events` + 噪声过滤（`PREDICTION_MARKET_FILTER_NOISE`、`PREDICTION_MARKET_MIN_VOLUME_24H`）。
+- **PR-2**：`analysis_prediction_markets` sidecar、pipeline 写入、历史删除清理、历史详情 `details.prediction_markets`。
+- **PR-3**：`ReportDetails.prediction_markets`、`PredictionMarketsPanel` 报告卡片、问股分析过程紧凑证据、`tool_done.detail` 低敏字段。
+- **PR-4**：`DEPLOY.md` / `DEPLOY_EN.md` 补充 Docker env_file 与 Actions allowlist 说明。
+- 决策落地：两个 UI 面都做；`portfolio` 已加入；结构化证据走独立 sidecar；报告正文保持 LLM 自由发挥 + 卡片兜底；过滤 0%/100% 与低成交量。
