@@ -2034,10 +2034,164 @@ a {
    Backtest Workspace Styles
    ========================================= */
 
+/* Filter bar: a predictable grid so wide date inputs and action buttons never
+   compete for the same row at intermediate widths. */
+.backtest-filter-grid {
+  display: grid;
+  grid-template-columns: minmax(0, 1fr);
+  gap: 0.75rem;
+  align-items: end;
+}
+
+@media (min-width: 640px) and (max-width: 1023px) {
+  .backtest-filter-grid {
+    grid-template-columns: repeat(2, minmax(0, 1fr));
+  }
+}
+
+@media (min-width: 1024px) and (max-width: 1279px) {
+  .backtest-filter-grid {
+    grid-template-columns: repeat(3, minmax(0, 1fr));
+  }
+}
+
+@media (min-width: 1280px) {
+  .backtest-filter-grid {
+    grid-template-columns: repeat(auto-fit, minmax(9rem, 1fr));
+  }
+}
+
+.backtest-field {
+  display: flex;
+  min-width: 0;
+  flex-direction: column;
+  gap: 0.375rem;
+}
+
+.backtest-field-wide {
+  grid-column: 1 / -1;
+}
+
+@media (min-width: 1024px) {
+  .backtest-field-wide {
+    grid-column: span 2;
+  }
+}
+
+.backtest-field-label {
+  font-size: 0.6875rem;
+  letter-spacing: 0.06em;
+  text-transform: uppercase;
+  color: var(--text-muted-text);
+}
+
+.backtest-field-inline {
+  display: flex;
+  min-width: 0;
+  align-items: center;
+  gap: 0.5rem;
+}
+
+.backtest-action-row {
+  display: flex;
+  flex-wrap: wrap;
+  align-items: center;
+  gap: 0.5rem;
+  margin-top: 0.75rem;
+}
+
+.backtest-run-btn {
+  margin-inline-start: auto;
+}
+
+@media (max-width: 639px) {
+  .backtest-field-wide {
+    grid-column: span 1;
+  }
+
+  .backtest-run-btn {
+    margin-inline-start: 0;
+  }
+}
+
+/* Results workspace: on desktop the table owns the viewport height, so the
+   header can stay pinned while rows scroll underneath it. */
+.backtest-workspace {
+  display: flex;
+  min-height: 0;
+  flex-direction: column;
+  gap: 1rem;
+}
+
+.backtest-sidebar {
+  display: flex;
+  flex-direction: column;
+  gap: 0.75rem;
+}
+
+.backtest-results {
+  display: flex;
+  min-width: 0;
+  min-height: 0;
+  flex: 1 1 auto;
+  flex-direction: column;
+}
+
+.backtest-results-body {
+  display: flex;
+  min-height: 0;
+  flex: 1 1 auto;
+  flex-direction: column;
+}
+
+@media (min-width: 768px) and (max-width: 1399px) {
+  .backtest-sidebar {
+    display: grid;
+    grid-template-columns: repeat(auto-fit, minmax(18rem, 1fr));
+  }
+
+  /* Stacked layout: spread the metric rows across the card width so the
+     performance summary does not consume half the viewport height. */
+  .backtest-performance-card .gradient-border-card-inner {
+    display: grid;
+    grid-template-columns: repeat(auto-fit, minmax(13rem, 1fr));
+    column-gap: 1.75rem;
+  }
+
+  .backtest-performance-card .backtest-performance-title,
+  .backtest-performance-card .backtest-metric-footer,
+  .backtest-performance-card .backtest-metric-outcome,
+  .backtest-performance-card .backtest-metric-phase {
+    grid-column: 1 / -1;
+  }
+}
+
+@media (min-width: 1400px) {
+  .backtest-page {
+    height: calc(100dvh - var(--masthead-height));
+    min-height: 34rem;
+  }
+
+  .backtest-workspace {
+    flex: 1 1 auto;
+    flex-direction: row;
+    overflow: hidden;
+  }
+
+  .backtest-sidebar {
+    width: 16rem;
+    max-height: none;
+    flex: 0 0 auto;
+    padding-inline-end: 0.25rem;
+    padding-bottom: 0.25rem;
+  }
+}
+
 .backtest-metric-row {
   display: flex;
-  align-items: center;
+  align-items: baseline;
   justify-content: space-between;
+  gap: 0.75rem;
   padding: 0.5rem 0;
   border-bottom: 1px solid var(--backtest-border-dim);
 }
@@ -2045,14 +2199,21 @@ a {
   border-bottom: none;
 }
 .backtest-metric-row .label {
+  min-width: 0;
+  flex: 1 1 auto;
   font-size: 0.75rem;
+  line-height: 1.4;
   color: var(--text-secondary-text);
+  overflow-wrap: anywhere;
 }
 .backtest-metric-row .value {
+  flex: 0 0 auto;
   font-size: 0.875rem;
-  font-family: monospace;
+  font-family: var(--font-mono);
+  font-variant-numeric: tabular-nums;
   font-weight: 600;
   color: hsl(var(--foreground));
+  white-space: nowrap;
 }
 .backtest-metric-row .value.accent {
   color: hsl(var(--primary));
@@ -2086,6 +2247,7 @@ a {
   flex-basis: 100%;
   line-height: 1.4;
   white-space: normal;
+  overflow-wrap: anywhere;
 }
 .backtest-summary .value {
   color: hsl(var(--foreground));
@@ -2159,56 +2321,186 @@ a {
 }
 
 .backtest-table-wrapper {
-  overflow-x: auto;
+  position: relative;
+  min-height: 0;
+  flex: 1 1 auto;
+  overflow: auto;
   border-radius: 2px;
   border: 1px solid var(--backtest-border-subtle);
   background: var(--backtest-table-bg);
   box-shadow: 0 18px 46px hsl(var(--background) / 0.18);
-  scrollbar-gutter: stable both-edges;
+  scrollbar-gutter: stable;
+  overscroll-behavior: contain;
 }
 
 .backtest-table-toolbar {
   display: flex;
-  align-items: center;
+  flex-wrap: wrap;
+  align-items: flex-end;
   justify-content: space-between;
-  gap: 0.75rem;
+  gap: 0.5rem 0.75rem;
   margin-bottom: 0.75rem;
 }
 
 .backtest-table-toolbar-meta {
   display: flex;
+  min-width: 0;
   flex-direction: column;
   gap: 0.25rem;
 }
 
+@media (min-width: 641px) {
+  .backtest-table-toolbar-meta {
+    flex: 1 1 16rem;
+  }
+}
+
+.backtest-toolbar-summary {
+  overflow-wrap: anywhere;
+}
+
 .backtest-table-scroll-hint {
+  flex: 0 0 auto;
   font-size: 0.6875rem;
   color: var(--text-muted-text);
   text-align: right;
 }
 
+.backtest-results-footer {
+  display: flex;
+  flex: 0 0 auto;
+  flex-wrap: wrap;
+  align-items: center;
+  justify-content: center;
+  gap: 0.5rem 1rem;
+  margin-top: 0.75rem;
+  padding-bottom: 0.25rem;
+}
+
+.backtest-card-list {
+  display: flex;
+  min-height: 0;
+  flex: 1 1 auto;
+  flex-direction: column;
+  gap: 0.75rem;
+  overflow-y: auto;
+  overscroll-behavior: contain;
+}
+
+.backtest-result-card {
+  display: flex;
+  flex-direction: column;
+  gap: 0.625rem;
+  padding: 0.875rem;
+  border: 1px solid var(--backtest-border-subtle);
+  background: hsl(var(--card));
+}
+
+.backtest-card-head {
+  display: flex;
+  align-items: flex-start;
+  justify-content: space-between;
+  gap: 0.75rem;
+}
+
+.backtest-card-code {
+  font-family: var(--font-mono);
+  font-size: 0.9375rem;
+  font-weight: 600;
+  color: hsl(var(--primary));
+}
+
+.backtest-card-stock-name {
+  margin: 0.125rem 0 0;
+  font-size: 0.75rem;
+  line-height: 1.4;
+  color: var(--text-muted-text);
+  overflow-wrap: anywhere;
+}
+
+.backtest-card-badges {
+  display: flex;
+  flex: 0 0 auto;
+  flex-wrap: wrap;
+  justify-content: flex-end;
+  gap: 0.375rem;
+}
+
+.backtest-card-fields {
+  display: grid;
+  grid-template-columns: repeat(2, minmax(0, 1fr));
+  gap: 0.5rem 0.75rem;
+  margin: 0;
+}
+
+.backtest-card-fields dt {
+  margin: 0 0 0.125rem;
+  font-size: 0.625rem;
+  letter-spacing: 0.06em;
+  text-transform: uppercase;
+  color: var(--text-muted-text);
+}
+
+.backtest-card-fields dd {
+  margin: 0;
+  font-size: 0.75rem;
+  line-height: 1.45;
+  color: hsl(var(--foreground));
+  overflow-wrap: anywhere;
+}
+
+.backtest-card-field-wide {
+  grid-column: 1 / -1;
+}
+
+.backtest-card-advice {
+  margin: 0;
+  padding-top: 0.5rem;
+  border-top: 1px solid var(--backtest-border-dim);
+  font-size: 0.75rem;
+  line-height: 1.5;
+  color: var(--text-secondary-text);
+  overflow-wrap: anywhere;
+  display: -webkit-box;
+  -webkit-box-orient: vertical;
+  -webkit-line-clamp: 2;
+  overflow: hidden;
+}
+
 .backtest-table {
+  table-layout: fixed;
+  min-width: 768px;
   border-collapse: separate;
   border-spacing: 0;
 }
 
+.backtest-col-stock { width: 11%; }
+.backtest-col-date { width: 13%; }
+.backtest-col-phase { width: 10%; }
+.backtest-col-prediction { width: 14%; }
+.backtest-col-actual { width: 13%; }
+.backtest-col-direction { width: 13%; }
+.backtest-col-outcome { width: 11%; }
+.backtest-col-status { width: 15%; }
+
 .backtest-table-head {
-  background: hsl(var(--elevated) / 0.92);
-  box-shadow: inset 0 -1px 0 var(--backtest-border-dim);
+  background: hsl(var(--elevated));
 }
 
 .backtest-table-head-cell {
   position: sticky;
   top: 0;
-  z-index: 1;
+  z-index: 3;
   padding: 0.75rem 0.75rem;
-  font-size: 0.6875rem;
+  font-size: 0.625rem;
   font-weight: 600;
-  letter-spacing: 0.08em;
+  line-height: 1.4;
+  letter-spacing: 0.04em;
   text-transform: uppercase;
   color: var(--text-secondary-text);
-  background: hsl(var(--elevated) / 0.94);
-  backdrop-filter: blur(12px);
+  background: hsl(var(--elevated));
+  overflow-wrap: normal;
+  word-break: normal;
   box-shadow: inset 0 -1px 0 var(--backtest-border-dim);
 }
 
@@ -2216,6 +2508,20 @@ a {
   padding: 0.625rem 0.75rem;
   font-size: 0.75rem;
   vertical-align: middle;
+  overflow: hidden;
+}
+
+.backtest-cell-line {
+  display: block;
+  max-width: 100%;
+  min-width: 0;
+  overflow: hidden;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+}
+
+.backtest-direction-cell {
+  gap: 0.375rem;
 }
 
 .backtest-table-head-cell:first-child,
@@ -2228,24 +2534,45 @@ a {
   padding-right: 1rem;
 }
 
+/* Keep the stock column visible while the table scrolls sideways. The first
+   header cell sits above both the sticky header row and the body rows. */
+.backtest-table-head-cell:first-child {
+  left: 0;
+  z-index: 4;
+}
+
+.backtest-table-cell:first-child {
+  position: sticky;
+  left: 0;
+  z-index: 2;
+  background: inherit;
+  box-shadow: inset -1px 0 0 var(--backtest-border-dim);
+}
+
 .backtest-table-code {
-  font-family: monospace;
+  font-family: var(--font-mono);
   color: hsl(var(--primary));
 }
 
 .backtest-table-return {
-  font-family: monospace;
+  font-family: var(--font-mono);
 }
 
 .backtest-table-row {
-  border-top: 1px solid var(--backtest-border-dim);
+  background: hsl(var(--card));
   transition: background-color 0.15s ease;
 }
-.backtest-table-row:nth-child(even) {
-  background: hsl(var(--foreground) / 0.026);
+
+.backtest-table-row > .backtest-table-cell {
+  border-top: 1px solid var(--backtest-border-dim);
 }
+
+.backtest-table-row:nth-child(even) {
+  background: hsl(var(--elevated));
+}
+
 .backtest-table-row:hover {
-  background: hsl(var(--hover) / 0.9);
+  background: hsl(var(--hover));
 }
 
 .backtest-status-chip {
@@ -2253,9 +2580,9 @@ a {
   align-items: center;
   justify-content: center;
   gap: 0.375rem;
-  min-width: 3rem;
+  min-width: 2.25rem;
   height: 1.75rem;
-  padding: 0 0.5rem;
+  padding: 0 0.375rem;
   border-radius: 9999px;
   border: 1px solid var(--backtest-border-subtle);
   background: hsl(var(--elevated) / 0.7);
@@ -2323,6 +2650,11 @@ a {
 
   .backtest-table-scroll-hint {
     text-align: left;
+  }
+
+  .backtest-results-footer {
+    flex-direction: column;
+    gap: 0.5rem;
   }
 }
 

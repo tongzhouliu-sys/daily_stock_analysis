@@ -1,5 +1,5 @@
 import type React from 'react';
-import { useState, useEffect, useCallback } from 'react';
+import { useState, useEffect, useCallback, useSyncExternalStore } from 'react';
 import { Check, Minus, X } from 'lucide-react';
 import { backtestApi } from '../api/backtest';
 import type { ParsedApiError } from '../api/error';
@@ -30,6 +30,31 @@ const BACKTEST_INPUT_CLASS =
 const BACKTEST_COMPACT_INPUT_CLASS =
   'input-surface input-focus-glow h-10 rounded-xl border bg-transparent px-3 py-2 text-xs transition-all focus:outline-none disabled:cursor-not-allowed disabled:opacity-60';
 type BacktestText = (typeof BACKTEST_TEXT)[UiLanguage];
+
+const COMPACT_RESULT_QUERY = '(max-width: 899px)';
+
+// The result table needs horizontal room; below 900px a card list keeps every
+// value readable without sideways scrolling. matchMedia is absent in jsdom, so
+// the table (desktop) is the safe default.
+function subscribeToCompactResultList(onChange: () => void): () => void {
+  if (typeof window === 'undefined' || typeof window.matchMedia !== 'function') return () => {};
+  const mediaQuery = window.matchMedia(COMPACT_RESULT_QUERY);
+  mediaQuery.addEventListener?.('change', onChange);
+  return () => mediaQuery.removeEventListener?.('change', onChange);
+}
+
+function getCompactResultListSnapshot(): boolean {
+  if (typeof window === 'undefined' || typeof window.matchMedia !== 'function') return false;
+  return window.matchMedia(COMPACT_RESULT_QUERY).matches;
+}
+
+function useCompactResultList(): boolean {
+  return useSyncExternalStore(
+    subscribeToCompactResultList,
+    getCompactResultListSnapshot,
+    () => false,
+  );
+}
 
 // ============ Helpers ============
 
@@ -76,31 +101,43 @@ function labelFromMap(value: string | null | undefined, labels: Record<string, s
 
 function outcomeBadge(outcome: string | undefined, language: UiLanguage) {
   const labels = BACKTEST_OUTCOME_LABELS[language];
-  if (!outcome) return <Badge variant="default">--</Badge>;
+  const label = (variant: 'success' | 'danger' | 'warning' | 'default', text: string, glow = false) => (
+    <Badge variant={variant} glow={glow} className="max-w-full whitespace-nowrap">
+      <span className="min-w-0 truncate" title={text}>{text}</span>
+    </Badge>
+  );
+
+  if (!outcome) return label('default', '--');
   switch (outcome) {
     case 'win':
-      return <Badge variant="success" glow>{labels.win}</Badge>;
+      return label('success', labels.win, true);
     case 'loss':
-      return <Badge variant="danger" glow>{labels.loss}</Badge>;
+      return label('danger', labels.loss, true);
     case 'neutral':
-      return <Badge variant="warning">{labels.neutral}</Badge>;
+      return label('warning', labels.neutral);
     default:
-      return <Badge variant="default">{outcome}</Badge>;
+      return label('default', outcome);
   }
 }
 
 function statusBadge(status: string, language: UiLanguage) {
   const labels = BACKTEST_STATUS_LABELS[language];
+  const label = (variant: 'success' | 'warning' | 'danger' | 'default', text: string) => (
+    <Badge variant={variant} className="max-w-full whitespace-nowrap">
+      <span className="min-w-0 truncate" title={text}>{text}</span>
+    </Badge>
+  );
+
   switch (status) {
     case 'completed':
-      return <Badge variant="success">{labels.completed}</Badge>;
+      return label('success', labels.completed);
     case 'insufficient':
     case 'insufficient_data':
-      return <Badge variant="warning">{labels.insufficient}</Badge>;
+      return label('warning', labels.insufficient);
     case 'error':
-      return <Badge variant="danger">{labels.error}</Badge>;
+      return label('danger', labels.error);
     default:
-      return <Badge variant="default">{status}</Badge>;
+      return label('default', status);
   }
 }
 
@@ -185,8 +222,8 @@ const PerformanceCard: React.FC<{ metrics: PerformanceMetrics; title: string; la
   const text = BACKTEST_TEXT[language];
   const phaseText = phaseBreakdownText(metrics, language);
   return (
-    <Card variant="gradient" padding="md" className="animate-fade-in">
-      <div className="mb-3">
+    <Card variant="gradient" padding="md" className="backtest-performance-card animate-fade-in">
+      <div className="backtest-performance-title mb-3">
         <span className="label-uppercase">{title}</span>
       </div>
       <MetricRow label={text.directionAccuracy} value={pct(metrics.directionAccuracyPct)} accent />
@@ -202,7 +239,7 @@ const PerformanceCard: React.FC<{ metrics: PerformanceMetrics; title: string; la
           {Number(metrics.completedCount)} / {Number(metrics.totalEvaluations)}
         </span>
       </div>
-      <div className="flex items-center justify-between">
+      <div className="backtest-metric-outcome flex items-center justify-between">
         <span className="text-xs text-muted-text">{text.outcomeSummary}</span>
         <span className="text-xs font-mono">
           <span className="text-success">{metrics.winCount}</span>
@@ -213,7 +250,7 @@ const PerformanceCard: React.FC<{ metrics: PerformanceMetrics; title: string; la
         </span>
       </div>
       {phaseText ? (
-        <div className="mt-3 border-t border-white/10 pt-2 text-xs text-muted-text">
+        <div className="backtest-metric-phase mt-3 border-t border-white/10 pt-2 text-xs text-muted-text">
           {formatUiText(text.phaseDistribution, { text: phaseText })}
         </div>
       ) : null}
@@ -293,6 +330,7 @@ const BacktestPage: React.FC = () => {
   const effectiveWindowDays = parseEvalWindowDays(evalDays) ?? overallPerf?.evalWindowDays;
   const isNextDayValidation = effectiveWindowDays === 1;
   const showNextDayActualColumns = isNextDayValidation;
+  const isCompactResultList = useCompactResultList();
 
   // Fetch results
   const fetchResults = useCallback(async (
@@ -492,35 +530,44 @@ const BacktestPage: React.FC = () => {
   };
 
   return (
-    <div className="research-page flex flex-col gap-4">
+    <div className="research-page backtest-page flex flex-col gap-4">
       <PageHeader
         title={t('layout.route.backtest.title')}
         description={t('layout.route.backtest.description')}
       />
-      <header className="shrink-0 border border-border bg-card p-4">
-        <div className="flex max-w-5xl flex-wrap items-center gap-2">
-          <div className="relative min-w-0 flex-[1_1_220px]">
-            <input
-              type="text"
-              value={codeFilter}
-              onChange={(e) => setCodeFilter(e.target.value.toUpperCase())}
-              onKeyDown={handleKeyDown}
-              placeholder={text.codePlaceholder}
-              disabled={isRunning}
-              className={BACKTEST_INPUT_CLASS}
-            />
+      <header className="backtest-filter-card shrink-0 border border-border bg-card p-4">
+        <div className="backtest-filter-grid">
+          <div className="backtest-field backtest-field-wide">
+            <label className="backtest-field-label" htmlFor="backtest-code-filter">
+              {text.codeLabel}
+            </label>
+            <div className="backtest-field-inline">
+              <input
+                id="backtest-code-filter"
+                type="text"
+                value={codeFilter}
+                onChange={(e) => setCodeFilter(e.target.value.toUpperCase())}
+                onKeyDown={handleKeyDown}
+                placeholder={text.codePlaceholder}
+                disabled={isRunning}
+                className={`${BACKTEST_INPUT_CLASS} min-w-0 flex-1`}
+              />
+              <button
+                type="button"
+                onClick={handleFilter}
+                disabled={isLoadingResults}
+                className="btn-secondary flex shrink-0 items-center gap-1.5 whitespace-nowrap"
+              >
+                {text.filter}
+              </button>
+            </div>
           </div>
-          <button
-            type="button"
-            onClick={handleFilter}
-            disabled={isLoadingResults}
-            className="btn-secondary flex items-center gap-1.5 whitespace-nowrap"
-          >
-            {text.filter}
-          </button>
-          <div className="flex items-center gap-2 whitespace-nowrap lg:w-40 lg:justify-between">
-            <span className="text-xs text-muted-text">{text.evalWindow}</span>
+          <div className="backtest-field">
+            <label className="backtest-field-label" htmlFor="backtest-eval-days">
+              {text.evalWindow}
+            </label>
             <input
+              id="backtest-eval-days"
               type="number"
               min={1}
               max={120}
@@ -528,46 +575,57 @@ const BacktestPage: React.FC = () => {
               onChange={(e) => setEvalDays(e.target.value)}
               placeholder="10"
               disabled={isRunning}
-              className={`${BACKTEST_COMPACT_INPUT_CLASS} w-24 text-center tabular-nums`}
+              className={`${BACKTEST_COMPACT_INPUT_CLASS} w-full tabular-nums`}
             />
           </div>
-          <div className="flex items-center gap-2 whitespace-nowrap">
-            <span className="text-xs text-muted-text">{text.phase}</span>
+          <div className="backtest-field">
+            <label className="backtest-field-label" htmlFor="backtest-phase">
+              {text.phase}
+            </label>
             <select
+              id="backtest-phase"
               value={phaseFilter}
               onChange={(e) => setPhaseFilter(e.target.value as BacktestPhaseFilter)}
               disabled={isRunning}
-              className={`${BACKTEST_COMPACT_INPUT_CLASS} w-28`}
+              className={`${BACKTEST_COMPACT_INPUT_CLASS} w-full`}
             >
               {phaseFilterOptions.map((option) => (
                 <option key={option.value} value={option.value}>{option.label}</option>
               ))}
             </select>
           </div>
-          <div className="flex items-center gap-2 whitespace-nowrap">
-            <span className="text-xs text-muted-text">{text.startDate}</span>
+          <div className="backtest-field">
+            <label className="backtest-field-label" htmlFor="backtest-date-from">
+              {text.startDate}
+            </label>
             <input
+              id="backtest-date-from"
               type="date"
               aria-label={text.startDateAria}
               value={analysisDateFrom}
               onChange={(e) => setAnalysisDateFrom(e.target.value)}
               onKeyDown={handleKeyDown}
               disabled={isRunning}
-              className={`${BACKTEST_COMPACT_INPUT_CLASS} w-40 text-center tabular-nums`}
+              className={`${BACKTEST_COMPACT_INPUT_CLASS} w-full tabular-nums`}
             />
           </div>
-          <div className="flex items-center gap-2 whitespace-nowrap">
-            <span className="text-xs text-muted-text">{text.endDate}</span>
+          <div className="backtest-field">
+            <label className="backtest-field-label" htmlFor="backtest-date-to">
+              {text.endDate}
+            </label>
             <input
+              id="backtest-date-to"
               type="date"
               aria-label={text.endDateAria}
               value={analysisDateTo}
               onChange={(e) => setAnalysisDateTo(e.target.value)}
               onKeyDown={handleKeyDown}
               disabled={isRunning}
-              className={`${BACKTEST_COMPACT_INPUT_CLASS} w-40 text-center tabular-nums`}
+              className={`${BACKTEST_COMPACT_INPUT_CLASS} w-full tabular-nums`}
             />
           </div>
+        </div>
+        <div className="backtest-action-row">
           <button
             type="button"
             onClick={handleShowNextDay}
@@ -590,7 +648,7 @@ const BacktestPage: React.FC = () => {
             type="button"
             onClick={handleRun}
             disabled={isRunning}
-            className="btn-primary flex items-center gap-1.5 whitespace-nowrap"
+            className="backtest-run-btn btn-primary flex items-center gap-1.5 whitespace-nowrap"
           >
             {isRunning ? (
               <>
@@ -606,7 +664,7 @@ const BacktestPage: React.FC = () => {
           </button>
         </div>
         {runResult && (
-          <div className="mt-2 max-w-4xl">
+          <div className="mt-3 max-w-4xl">
             <RunSummary data={runResult} language={language} />
           </div>
         )}
@@ -621,9 +679,9 @@ const BacktestPage: React.FC = () => {
       </header>
 
       {/* Main content */}
-      <div className="flex min-h-0 flex-1 flex-col gap-4 overflow-hidden lg:flex-row">
+      <div className="backtest-workspace">
         {/* Left sidebar - Performance */}
-        <div className="flex max-h-[38vh] flex-col gap-3 overflow-y-auto lg:max-h-none lg:w-60 lg:flex-shrink-0">
+        <aside className="backtest-sidebar">
           {isLoadingPerf ? (
             <div className="flex items-center justify-center py-8">
               <div className="backtest-spinner sm" />
@@ -641,10 +699,10 @@ const BacktestPage: React.FC = () => {
           {stockPerf && (
             <PerformanceCard metrics={stockPerf} title={`${stockPerf.code || codeFilter}`} language={language} />
           )}
-        </div>
+        </aside>
 
         {/* Right content - Results table */}
-        <section className="min-h-0 flex-1 overflow-y-auto">
+        <section className="backtest-results">
           {summaryError ? (
             <ApiErrorAlert error={summaryError} className="mb-3" />
           ) : null}
@@ -668,11 +726,11 @@ const BacktestPage: React.FC = () => {
               )}
             />
           ) : (
-            <div className="animate-fade-in">
+            <div className="backtest-results-body animate-fade-in">
               <div className="backtest-table-toolbar">
                 <div className="backtest-table-toolbar-meta">
                   <span className="label-uppercase">{isNextDayValidation ? text.nextDayValidation : text.resultSet}</span>
-                  <span className="text-xs text-secondary-text">
+                  <span className="text-xs text-secondary-text backtest-toolbar-summary">
                     {appliedFilters.code
                       ? formatUiText(text.filteredStock, { code: appliedFilters.code })
                       : text.allStocks}
@@ -684,22 +742,105 @@ const BacktestPage: React.FC = () => {
                 </div>
                 <span className="backtest-table-scroll-hint">{text.scrollHint}</span>
               </div>
+              {isCompactResultList ? (
+                <div className="backtest-card-list" data-testid="backtest-card-list">
+                  {results.map((row) => {
+                    const actionLabel = getDecisionActionLabel(row.action, row.actionLabel, null, null, actionLabels);
+                    const phaseText = phaseLabel(row, language);
+                    const actualLabel = showNextDayActualColumns ? text.actualPerformance : text.windowReturn;
+                    const directionLabel = showNextDayActualColumns ? text.accuracy : text.directionMatch;
+
+                    return (
+                      <article key={row.analysisHistoryId} className="backtest-result-card">
+                        <div className="backtest-card-head">
+                          <div className="min-w-0">
+                            <p className="backtest-card-code">{row.code}</p>
+                            <p className="backtest-card-stock-name">{row.stockName || '--'}</p>
+                          </div>
+                          <div className="backtest-card-badges">
+                            {outcomeBadge(row.outcome, language)}
+                            {statusBadge(row.evalStatus, language)}
+                          </div>
+                        </div>
+                        <dl className="backtest-card-fields">
+                          <div>
+                            <dt>{text.analysisDate}</dt>
+                            <dd className="tabular-nums">{row.analysisDate || '--'}</dd>
+                          </div>
+                          <div>
+                            <dt>{text.phase}</dt>
+                            <dd>{phaseText}</dd>
+                          </div>
+                          <div className="backtest-card-field-wide">
+                            <dt>{text.aiPrediction}</dt>
+                            <dd>
+                              <span className="block">{actionLabel || row.trendPrediction || '--'}</span>
+                              {actionLabel && row.trendPrediction ? (
+                                <span className="block text-xs text-secondary-text">{row.trendPrediction}</span>
+                              ) : null}
+                            </dd>
+                          </div>
+                          <div>
+                            <dt>{actualLabel}</dt>
+                            <dd>
+                              <span className="inline-flex items-center gap-1.5">
+                                {actualMovementBadge(row.actualMovement, language)}
+                                <span className={
+                                  row.actualReturnPct != null
+                                    ? row.actualReturnPct > 0 ? 'text-success' : row.actualReturnPct < 0 ? 'text-danger' : 'text-secondary-text'
+                                    : 'text-muted-text'
+                                }>
+                                  {pct(row.actualReturnPct)}
+                                </span>
+                              </span>
+                            </dd>
+                          </div>
+                          <div>
+                            <dt>{directionLabel}</dt>
+                            <dd>
+                              <span className="inline-flex items-center gap-1.5">
+                                {boolIcon(row.directionCorrect, text)}
+                                <span className="text-muted-text">
+                                  {row.directionExpected ? labelFromMap(row.directionExpected, BACKTEST_DIRECTION_EXPECTED_LABELS[language]) : ''}
+                                </span>
+                              </span>
+                            </dd>
+                          </div>
+                        </dl>
+                        {row.operationAdvice ? (
+                          <p className="backtest-card-advice">{row.operationAdvice}</p>
+                        ) : null}
+                      </article>
+                    );
+                  })}
+                </div>
+              ) : (
               <div className="backtest-table-wrapper">
-                <table className="backtest-table min-w-[900px] w-full text-sm">
+                <table className="backtest-table w-full text-sm">
+                  <colgroup>
+                    <col className="backtest-col-stock" />
+                    <col className="backtest-col-date" />
+                    <col className="backtest-col-phase" />
+                    <col className="backtest-col-prediction" />
+                    <col className="backtest-col-actual" />
+                    <col className="backtest-col-direction" />
+                    <col className="backtest-col-outcome" />
+                    <col className="backtest-col-status" />
+                  </colgroup>
                   <thead className="backtest-table-head">
                     <tr className="text-left">
-                      <th className="backtest-table-head-cell">{text.stock}</th>
-                      <th className="backtest-table-head-cell">{text.analysisDate}</th>
-                      <th className="backtest-table-head-cell">{text.phase}</th>
-                      <th className="backtest-table-head-cell">{text.aiPrediction}</th>
-                      <th className="backtest-table-head-cell">
+                      <th scope="col" className="backtest-table-head-cell">{text.stock}</th>
+                      <th scope="col" className="backtest-table-head-cell">{text.analysisDate}</th>
+                      <th scope="col" className="backtest-table-head-cell">{text.phase}</th>
+                      <th scope="col" className="backtest-table-head-cell">{text.aiPrediction}</th>
+                      <th scope="col" className="backtest-table-head-cell">
                         {showNextDayActualColumns ? text.actualPerformance : text.windowReturn}
                       </th>
-                      <th className="backtest-table-head-cell">
+                      <th scope="col" className="backtest-table-head-cell">
                         {showNextDayActualColumns ? text.accuracy : text.directionMatch}
                       </th>
-                      <th className="backtest-table-head-cell">{text.result}</th>
-                      <th className="backtest-table-head-cell">{text.status}</th>
+                      <th scope="col" className="backtest-table-head-cell">{text.result}</th>
+                      <th scope="col" className="backtest-table-head-cell">{text.status}</th>
                     </tr>
                   </thead>
                   <tbody>
@@ -707,6 +848,7 @@ const BacktestPage: React.FC = () => {
                       const actionLabel = getDecisionActionLabel(row.action, row.actionLabel, null, null, actionLabels);
                       const predictionParts = [actionLabel, row.trendPrediction, row.operationAdvice]
                         .filter((part): part is string => Boolean(part));
+                      const phaseText = phaseLabel(row, language);
 
                       return (
                         <tr
@@ -714,26 +856,33 @@ const BacktestPage: React.FC = () => {
                           className="backtest-table-row"
                         >
                           <td className="backtest-table-cell backtest-table-code">
-                            <div className="flex flex-col">
-                              <span>{row.code}</span>
-                              <span className="text-xs text-muted-text">{row.stockName || '--'}</span>
+                            <div className="flex min-w-0 flex-col">
+                              <span className="backtest-cell-line font-semibold">{row.code}</span>
+                              <span className="backtest-cell-line text-xs text-muted-text" title={row.stockName || undefined}>
+                                {row.stockName || '--'}
+                              </span>
                             </div>
                           </td>
-                          <td className="backtest-table-cell text-secondary-text">{row.analysisDate || '--'}</td>
-                          <td className="backtest-table-cell text-secondary-text">{phaseLabel(row, language)}</td>
-                          <td className="backtest-table-cell max-w-[220px] text-foreground">
+                          <td className="backtest-table-cell text-secondary-text">
+                            <span className="backtest-cell-line tabular-nums">{row.analysisDate || '--'}</span>
+                          </td>
+                          <td className="backtest-table-cell text-secondary-text">
+                            <span className="backtest-cell-line" title={phaseText}>{phaseText}</span>
+                          </td>
+                          <td className="backtest-table-cell text-foreground">
                             {predictionParts.length ? (
                               <Tooltip
                                 content={predictionParts.join(' / ')}
                                 focusable
+                                className="w-full min-w-0"
                               >
-                                <div className="flex flex-col gap-1">
-                                  <span className="block truncate">{actionLabel || row.trendPrediction || '--'}</span>
+                                <div className="flex w-full min-w-0 flex-col gap-1">
+                                  <span className="backtest-cell-line">{actionLabel || row.trendPrediction || '--'}</span>
                                   {actionLabel && row.trendPrediction && (
-                                    <span className="block truncate text-xs text-secondary-text">{row.trendPrediction}</span>
+                                    <span className="backtest-cell-line text-xs text-secondary-text">{row.trendPrediction}</span>
                                   )}
                                   {row.operationAdvice && (
-                                    <span className="block truncate text-xs text-secondary-text">{row.operationAdvice}</span>
+                                    <span className="backtest-cell-line text-xs text-secondary-text">{row.operationAdvice}</span>
                                   )}
                                 </div>
                               </Tooltip>
@@ -742,8 +891,8 @@ const BacktestPage: React.FC = () => {
                             )}
                           </td>
                           <td className="backtest-table-cell">
-                            <div className="flex items-center gap-2">
-                              {actualMovementBadge(row.actualMovement, language)}
+                            <div className="flex min-w-0 items-center gap-2">
+                              <span className="shrink-0">{actualMovementBadge(row.actualMovement, language)}</span>
                               <span className={
                                 row.actualReturnPct != null
                                   ? row.actualReturnPct > 0 ? 'text-success' : row.actualReturnPct < 0 ? 'text-danger' : 'text-secondary-text'
@@ -754,9 +903,12 @@ const BacktestPage: React.FC = () => {
                             </div>
                           </td>
                           <td className="backtest-table-cell">
-                            <span className="flex items-center gap-2">
-                              {boolIcon(row.directionCorrect, text)}
-                              <span className="text-muted-text">
+                            <span className="backtest-direction-cell flex min-w-0 items-center gap-2">
+                              <span className="shrink-0">{boolIcon(row.directionCorrect, text)}</span>
+                              <span
+                                className="backtest-cell-line text-muted-text"
+                                title={row.directionExpected ? labelFromMap(row.directionExpected, BACKTEST_DIRECTION_EXPECTED_LABELS[language]) : undefined}
+                              >
                                 {row.directionExpected ? labelFromMap(row.directionExpected, BACKTEST_DIRECTION_EXPECTED_LABELS[language]) : ''}
                               </span>
                             </span>
@@ -769,19 +921,19 @@ const BacktestPage: React.FC = () => {
                   </tbody>
                 </table>
               </div>
+              )}
 
               {/* Pagination */}
-              <div className="mt-4">
+              <div className="backtest-results-footer">
                 <Pagination
                   currentPage={currentPage}
                   totalPages={totalPages}
                   onPageChange={handlePageChange}
                 />
+                <p className="text-xs text-muted-text text-center">
+                  {formatUiText(text.totalPage, { total: totalResults, page: currentPage, pages: Math.max(totalPages, 1) })}
+                </p>
               </div>
-
-              <p className="text-xs text-muted-text text-center mt-2">
-                {formatUiText(text.totalPage, { total: totalResults, page: currentPage, pages: Math.max(totalPages, 1) })}
-              </p>
             </div>
           )}
         </section>
