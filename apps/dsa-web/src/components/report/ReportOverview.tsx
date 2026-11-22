@@ -1,8 +1,11 @@
 import type React from 'react';
-import type {
-  ReportDetails as ReportDetailsType,
-  ReportMeta,
-  ReportSummary as ReportSummaryType,
+import {
+  getSentimentLabel,
+  getSentimentTone,
+  type ReportDetails as ReportDetailsType,
+  type ReportMeta,
+  type ReportStrategy as ReportStrategyType,
+  type ReportSummary as ReportSummaryType,
 } from '../../types/analysis';
 import { Badge, Button, Card, ScoreGauge } from '../common';
 import { formatDateTime } from '../../utils/format';
@@ -10,10 +13,13 @@ import { getMarketPhaseSummaryLabel, getPartialBarLabel } from '../../utils/mark
 import { getReportText, normalizeReportLanguage } from '../../utils/reportLanguage';
 import { useUiLanguage } from '../../contexts/UiLanguageContext';
 import { ShareReportButton } from './ShareReportButton';
+import { ReportEarningsCalendar } from './ReportEarningsCalendar';
+import { ReportStrategy } from './ReportStrategy';
 
 interface ReportOverviewProps {
   meta: ReportMeta;
   summary: ReportSummaryType;
+  strategy?: ReportStrategyType;
   details?: ReportDetailsType;
   isHistory?: boolean;
   watchlist?: {
@@ -161,10 +167,14 @@ const buildPreparedRelatedBoards = (
 
 /**
  * 报告概览与情绪评分
+ *
+ * 布局：顶部整幅封面（代码/价格/关键指标带/核心洞察），下方左侧结论与点位、
+ * 右侧自选 / 情绪 / 财报等辅助信息，减少单列长滚动和空白。
  */
 export const ReportOverview: React.FC<ReportOverviewProps> = ({
   meta,
   summary,
+  strategy,
   details,
   watchlist,
 }) => {
@@ -201,6 +211,19 @@ export const ReportOverview: React.FC<ReportOverviewProps> = ({
     return text.laggingBoard;
   };
 
+  const actionLabel = (summary.actionLabel || '').trim();
+  const sentimentScore = typeof summary.sentimentScore === 'number' ? summary.sentimentScore : null;
+  const sentimentTone = sentimentScore !== null ? getSentimentTone(sentimentScore) : 'default';
+  const sentimentLabel = sentimentScore !== null ? getSentimentLabel(sentimentScore, reportLanguage) : null;
+  const dataQualityScore = details?.analysisContextPackOverview?.dataQuality?.overallScore;
+  const hasBoards = preparedRelatedBoards.length > 0;
+  const factCount = [
+    Boolean(actionLabel),
+    sentimentScore !== null,
+    hasBoards,
+    typeof dataQualityScore === 'number',
+  ].filter(Boolean).length;
+
   const renderBoardChip = (board: PreparedBoard) => (
     <div key={board.key} className="report-board-chip">
       <span className="report-board-name">{board.name}</span>
@@ -223,77 +246,119 @@ export const ReportOverview: React.FC<ReportOverviewProps> = ({
   );
 
   return (
-    <div className="report-sheet space-y-5">
-      {/* 主信息区 - 两列布局 */}
-      <div className="research-report-grid">
-        {/* 左侧：股票信息与结论 */}
-        <div className="min-w-0 space-y-4">
-          {/* 股票头部 */}
-          <Card variant="gradient" padding="md" className="home-report-hero report-hero">
-            <div className="report-hero-head">
-              <div className="report-hero-meta">
-                <span className="report-code-chip font-mono">{meta.stockCode}</span>
-                {marketPhaseLabel ? (
-                  <Badge variant="info" className="shrink-0 gap-1.5 shadow-none" aria-label={marketPhaseLabel}>
-                    {marketPhaseLabel}
-                  </Badge>
-                ) : null}
-                {partialBarLabel ? (
-                  <Badge variant="warning" className="shrink-0 shadow-none" aria-label={partialBarLabel}>
-                    {partialBarLabel}
-                  </Badge>
-                ) : null}
-                <span className="report-meta-date">
-                  <svg className="h-3.5 w-3.5" fill="none" stroke="currentColor" viewBox="0 0 24 24" aria-hidden="true">
-                    <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M8 7V3m8 4V3m-9 8h10M5 21h14a2 2 0 002-2V7a2 2 0 00-2-2H5a2 2 0 00-2 2v12a2 2 0 002 2z" />
-                  </svg>
-                  {formatDateTime(meta.createdAt)}
+    <div className="report-sheet">
+      {/* 封面：代码 / 名称 / 价格 / 关键指标 / 核心洞察 */}
+      <Card variant="gradient" padding="md" className="home-report-hero report-hero">
+        <div className="report-hero-head">
+          <div className="report-hero-meta">
+            <span className="report-code-chip font-mono">{meta.stockCode}</span>
+            {marketPhaseLabel ? (
+              <Badge variant="info" className="shrink-0 gap-1.5 shadow-none" aria-label={marketPhaseLabel}>
+                {marketPhaseLabel}
+              </Badge>
+            ) : null}
+            {partialBarLabel ? (
+              <Badge variant="warning" className="shrink-0 shadow-none" aria-label={partialBarLabel}>
+                {partialBarLabel}
+              </Badge>
+            ) : null}
+            <span className="report-meta-date">
+              <svg className="h-3.5 w-3.5" fill="none" stroke="currentColor" viewBox="0 0 24 24" aria-hidden="true">
+                <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M8 7V3m8 4V3m-9 8h10M5 21h14a2 2 0 002-2V7a2 2 0 00-2-2H5a2 2 0 00-2 2v12a2 2 0 002 2z" />
+              </svg>
+              {formatDateTime(meta.createdAt)}
+            </span>
+          </div>
+          <ShareReportButton
+            recordId={meta.id}
+            reportTitle={`${meta.stockName || meta.stockCode}-${meta.stockCode}`}
+            reportLanguage={reportLanguage}
+          />
+        </div>
+
+        <div className="report-hero-title-row">
+          <h3 className="report-hero-name">
+            {meta.stockName || meta.stockCode}
+          </h3>
+          {meta.currentPrice != null && (
+            <div className="report-hero-price" data-trend={priceTrend}>
+              <span className="report-hero-price-value font-mono">{meta.currentPrice.toFixed(2)}</span>
+              {meta.changePct !== undefined && meta.changePct !== null ? (
+                <span className="report-hero-price-change font-mono">{formatChangePct(meta.changePct)}</span>
+              ) : null}
+            </div>
+          )}
+        </div>
+
+        {factCount > 0 ? (
+          <div
+            className="report-facts"
+            style={{
+              ['--report-fact-columns' as string]: String(Math.min(factCount, 4)),
+              ['--report-fact-columns-narrow' as string]: String(Math.min(factCount, 2)),
+            }}
+          >
+            {actionLabel ? (
+              <div className="report-fact" data-tone="action">
+                <span className="report-fact-label">{text.actionBias}</span>
+                <span className="report-fact-value">{actionLabel}</span>
+              </div>
+            ) : null}
+            {sentimentScore !== null ? (
+              <div className="report-fact" data-tone={sentimentTone}>
+                <span className="report-fact-label">{text.sentimentIndex}</span>
+                <span className="report-fact-value font-mono">
+                  {Math.round(sentimentScore)}
+                  <span className="report-fact-unit">/100</span>
+                  {sentimentLabel ? <span className="report-fact-tag">{sentimentLabel}</span> : null}
                 </span>
               </div>
-              <ShareReportButton
-                recordId={meta.id}
-                reportTitle={`${meta.stockName || meta.stockCode}-${meta.stockCode}`}
-                reportLanguage={reportLanguage}
-              />
-            </div>
+            ) : null}
+            {hasBoards ? (
+              <div className="report-fact">
+                <span className="report-fact-label">{text.boardCoverage}</span>
+                <span className="report-fact-value font-mono">
+                  {preparedRelatedBoards.length}
+                  <span className="report-fact-unit">{text.boardCountUnit}</span>
+                </span>
+              </div>
+            ) : null}
+            {typeof dataQualityScore === 'number' ? (
+              <div className="report-fact">
+                <span className="report-fact-label">{text.dataQuality}</span>
+                <span className="report-fact-value font-mono">
+                  {Math.round(dataQualityScore)}
+                  <span className="report-fact-unit">/100</span>
+                </span>
+              </div>
+            ) : null}
+          </div>
+        ) : null}
 
-            <div className="report-hero-title-row">
-              <h3 className="report-hero-name">
-                {meta.stockName || meta.stockCode}
-              </h3>
-              {meta.currentPrice != null && (
-                <div className="report-hero-price" data-trend={priceTrend}>
-                  <span className="report-hero-price-value font-mono">{meta.currentPrice.toFixed(2)}</span>
-                  {meta.changePct !== undefined && meta.changePct !== null ? (
-                    <span className="report-hero-price-change font-mono">{formatChangePct(meta.changePct)}</span>
-                  ) : null}
-                </div>
-              )}
-            </div>
+        <div className="report-rule" />
+        <section className="report-key-insight">
+          <h4 className="report-kicker">
+            <span className="report-kicker-index font-mono">01</span>
+            <span>{text.keyInsights}</span>
+          </h4>
+          <p className="report-lead">
+            {summary.analysisSummary || text.noAnalysisSummary}
+          </p>
+          {details?.emptyNewsDisclosure ? (
+            <p
+              role="note"
+              className="report-insight-note"
+            >
+              {details.emptyNewsDisclosure}
+            </p>
+          ) : null}
+        </section>
+      </Card>
 
-            {/* 关键结论 */}
-            <div className="report-rule" />
-            <section className="report-key-insight">
-              <h4 className="report-kicker">
-                <span className="report-kicker-index font-mono">01</span>
-                <span>{text.keyInsights}</span>
-              </h4>
-              <p className="report-lead">
-                {summary.analysisSummary || text.noAnalysisSummary}
-              </p>
-              {details?.emptyNewsDisclosure ? (
-                <p
-                  role="note"
-                  className="mt-4 rounded-sm border border-warning/30 bg-warning/10 px-3 py-2 text-left text-sm leading-6 text-foreground"
-                >
-                  {details.emptyNewsDisclosure}
-                </p>
-              ) : null}
-            </section>
-          </Card>
-
+      <div className="research-report-grid">
+        {/* 左侧：结论与点位 */}
+        <div className="report-main-column">
           <div className="research-report-insights">
-            {/* 操作建议 */}
             <Card
               variant="bordered"
               padding="sm"
@@ -307,15 +372,13 @@ export const ReportOverview: React.FC<ReportOverviewProps> = ({
                     <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={1.5} d="M9 5H7a2 2 0 00-2 2v12a2 2 0 002 2h10a2 2 0 002-2V7a2 2 0 00-2-2h-2M9 5a2 2 0 002 2h2a2 2 0 002-2M9 5a2 2 0 012-2h2a2 2 0 012 2m-6 9l2 2 4-4" />
                   </svg>
                 </div>
-                <span className="report-verdict-index font-mono" aria-hidden="true">01</span>
+                <h4 className="report-verdict-label">{text.actionAdvice}</h4>
               </div>
-              <h4 className="report-verdict-label">{text.actionAdvice}</h4>
               <p className="report-verdict-body">
                 {summary.operationAdvice || text.noAdvice}
               </p>
             </Card>
 
-            {/* 趋势预测 */}
             <Card
               variant="bordered"
               padding="sm"
@@ -329,16 +392,17 @@ export const ReportOverview: React.FC<ReportOverviewProps> = ({
                     <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={1.5} d="M13 7h8m0 0v8m0-8l-8 8-4-4-6 6" />
                   </svg>
                 </div>
-                <span className="report-verdict-index font-mono" aria-hidden="true">02</span>
+                <h4 className="report-verdict-label">{text.trendPrediction}</h4>
               </div>
-              <h4 className="report-verdict-label">{text.trendPrediction}</h4>
               <p className="report-verdict-body">
                 {summary.trendPrediction || text.noPrediction}
               </p>
             </Card>
           </div>
 
-          {preparedRelatedBoards.length > 0 && (
+          <ReportStrategy strategy={strategy} language={reportLanguage} />
+
+          {hasBoards && (
             <Card variant="bordered" padding="sm" className="home-panel-card report-boards min-w-0 max-w-full text-left">
               <section aria-label={text.relatedBoards} className="min-w-0 max-w-full">
                 <div className="report-section-head">
@@ -349,7 +413,7 @@ export const ReportOverview: React.FC<ReportOverviewProps> = ({
                   <span className="report-section-count font-mono">{preparedRelatedBoards.length}</span>
                 </div>
 
-                <div className="home-related-board-list flex min-h-6 w-full min-w-0 max-w-full flex-nowrap items-center gap-2 overflow-x-auto overscroll-x-contain touch-pan-x pb-1">
+                <div className="home-related-board-list report-board-row flex min-h-6 w-full min-w-0 max-w-full flex-nowrap items-center gap-2 overflow-x-auto overscroll-x-contain touch-pan-x pb-1">
                   {preparedRelatedBoards.map(renderBoardChip)}
                 </div>
               </section>
@@ -357,28 +421,31 @@ export const ReportOverview: React.FC<ReportOverviewProps> = ({
           )}
         </div>
 
-        {/* 右侧：情绪指标 / 自选操作 */}
-        <div className="report-rail flex flex-col space-y-4">
+        {/* 右侧：自选 / 情绪 / 财报 */}
+        <div className="report-rail">
           {watchlist && meta.reportType !== 'market_review' && meta.assetType !== 'index' && (
             <Card variant="bordered" padding="sm" className="home-panel-card report-rail-watchlist">
-              <div className="space-y-3">
-                <span className="label-uppercase">{t('report.watchlist')}</span>
-                <div className="report-rail-code font-mono">{meta.stockCode}</div>
+              <div className="report-rail-watch-row">
+                <div className="min-w-0">
+                  <span className="label-uppercase">{t('report.watchlist')}</span>
+                  <div className="report-rail-code font-mono">{meta.stockCode}</div>
+                </div>
                 <Button
                   variant={watchlist.isInWatchlist(meta.stockCode) ? 'danger-subtle' : 'secondary'}
                   size="sm"
                   isLoading={watchlist.isActioning}
                   onClick={() => watchlist.onToggle(meta.stockCode)}
-                  className="w-full text-xs"
+                  className="shrink-0 text-xs"
                 >
                   {watchlist.isInWatchlist(meta.stockCode) ? t('report.removeFromWatchlist') : t('report.addToWatchlist')}
                 </Button>
-                {watchlist.actionMessage && (
-                  <p className="text-[11px] text-secondary-text animate-in fade-in">{watchlist.actionMessage}</p>
-                )}
               </div>
+              {watchlist.actionMessage && (
+                <p className="mt-2 text-[11px] text-secondary-text animate-in fade-in">{watchlist.actionMessage}</p>
+              )}
             </Card>
           )}
+
           <Card variant="bordered" padding="md" className="home-panel-card home-rail-card report-sentiment-card !overflow-visible">
             <div className="report-section-head">
               <div className="report-section-heading">
@@ -388,6 +455,8 @@ export const ReportOverview: React.FC<ReportOverviewProps> = ({
             </div>
             <ScoreGauge score={summary.sentimentScore} size="lg" language={reportLanguage} />
           </Card>
+
+          <ReportEarningsCalendar calendar={details?.earningsCalendar} language={reportLanguage} compact />
         </div>
       </div>
     </div>

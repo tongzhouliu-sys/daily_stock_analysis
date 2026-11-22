@@ -1,8 +1,6 @@
 import React from 'react';
 import type { AnalysisResult, AnalysisReport } from '../../types/analysis';
 import { ReportOverview } from './ReportOverview';
-import { ReportStrategy } from './ReportStrategy';
-import { ReportEarningsCalendar } from './ReportEarningsCalendar';
 import { ReportNews } from './ReportNews';
 import { PredictionMarketsPanel } from './PredictionMarketsPanel';
 import { ReportDetails } from './ReportDetails';
@@ -27,6 +25,10 @@ interface ReportSummaryProps {
 /**
  * 完整报告展示组件
  * 按主体内容优先、透明度信息后置的顺序展示报告。
+ *
+ * 版式：概览封面（含结论与点位）→ 「资讯 / 证据」双列区 → 数据追溯。
+ * 证据类卡片（预测市场、输入数据块、运行诊断、数据追溯）收进右列，
+ * 避免整页单列长滚动。
  */
 export const ReportSummary: React.FC<ReportSummaryProps> = ({
   data,
@@ -60,48 +62,48 @@ export const ReportSummary: React.FC<ReportSummaryProps> = ({
   }
 
   return (
-    <div className="space-y-5 pb-8 animate-fade-in">
-      {/* 概览区（首屏） */}
+    <div className="report-sheet-body animate-fade-in">
+      {/* 概览区（首屏）：封面、结论、点位、情绪与财报 */}
       <ReportOverview
         meta={meta}
         summary={summary}
+        strategy={strategy}
         details={details}
         isHistory={isHistory}
         watchlist={watchlist}
       />
 
-      {/* 财报日历区（下次披露日期，计划/预估） */}
-      <ReportEarningsCalendar calendar={details?.earningsCalendar} language={reportLanguage} />
+      {/* 资讯与证据区：左列资讯，右列结构化证据与诊断 */}
+      <div className="report-support-grid">
+        <div className="report-support-main">
+          <ReportNews recordId={recordId} limit={8} language={reportLanguage} />
+        </div>
+        <div className="report-support-side">
+          {/* 预测市场结构化证据（LLM 自由文本的权威兜底）*/}
+          <PredictionMarketsPanel events={details?.predictionMarkets} language={reportLanguage} />
 
-      {/* 策略点位区 */}
-      <ReportStrategy strategy={strategy} language={reportLanguage} />
+          {/* 输入数据块低敏摘要 */}
+          <AnalysisContextSummary
+            overview={details?.analysisContextPackOverview}
+            language={reportLanguage}
+          />
 
-      {/* 资讯区 */}
-      <ReportNews recordId={recordId} limit={8} language={reportLanguage} />
+          {/* 运行诊断摘要 */}
+          <ReportDiagnostics
+            recordId={recordId}
+            summary={diagnosticSummary}
+            language={reportLanguage}
+            onOpenRunFlow={onOpenRunFlow}
+          />
 
-      {/* 预测市场结构化证据（LLM 自由文本的权威兜底） */}
-      <PredictionMarketsPanel events={details?.predictionMarkets} language={reportLanguage} />
-
-      {/* 输入数据块低敏摘要 */}
-      <AnalysisContextSummary
-        overview={details?.analysisContextPackOverview}
-        language={reportLanguage}
-      />
-
-      {/* 运行诊断摘要 */}
-      <ReportDiagnostics
-        recordId={recordId}
-        summary={diagnosticSummary}
-        language={reportLanguage}
-        onOpenRunFlow={onOpenRunFlow}
-      />
-
-      {/* 透明度与追溯区 */}
-      <ReportDetails details={details} recordId={recordId} language={reportLanguage} />
+          {/* 透明度与追溯区 */}
+          <ReportDetails details={details} recordId={recordId} language={reportLanguage} />
+        </div>
+      </div>
 
       {/* 分析模型标记（Issue #528）— 报告末尾 */}
       {shouldShowModel && (
-        <p className="px-1 text-xs text-muted-text">
+        <p className="report-model-note">
           {text.analysisModel}: {modelUsed}
         </p>
       )}

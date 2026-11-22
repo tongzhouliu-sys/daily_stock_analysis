@@ -457,7 +457,7 @@
 .research-report-insights {
   display: grid;
   grid-template-columns: minmax(0, 1fr);
-  gap: 16px;
+  gap: 14px;
   align-items: start;
 }
 
@@ -469,7 +469,7 @@
 
 @container (min-width: 44rem) {
   .research-report-grid {
-    grid-template-columns: minmax(0, 1fr) minmax(168px, 25%);
+    grid-template-columns: minmax(0, 1fr) minmax(196px, 26%);
   }
 }
 
@@ -2300,6 +2300,55 @@
   padding-bottom: 2px;
 }
 
+/* Report composition: one cover card, then a dense two-column body. */
+.report-sheet,
+.report-sheet-body {
+  display: flex;
+  flex-direction: column;
+  gap: 14px;
+}
+
+.report-main-column {
+  display: flex;
+  min-width: 0;
+  flex-direction: column;
+  gap: 14px;
+}
+
+.report-rail {
+  display: flex;
+  min-width: 0;
+  flex-direction: column;
+  gap: 14px;
+}
+
+.report-support-grid {
+  display: grid;
+  grid-template-columns: minmax(0, 1fr);
+  gap: 14px;
+  align-items: start;
+}
+
+.report-support-main,
+.report-support-side {
+  display: flex;
+  min-width: 0;
+  flex-direction: column;
+  gap: 14px;
+}
+
+@container (min-width: 40rem) {
+  .report-support-grid {
+    grid-template-columns: minmax(0, 1.42fr) minmax(0, 1fr);
+  }
+}
+
+.report-model-note {
+  padding-inline: 2px;
+  color: var(--text-muted-text);
+  font-size: 11px;
+}
+
 
 .report-toolbar [data-variant="home-action-ai"] {
   border-color: transparent;
@@ -2375,8 +2424,8 @@
   flex-wrap: wrap;
   align-items: flex-end;
   justify-content: space-between;
-  gap: 10px 20px;
-  margin-top: 18px;
+  gap: 8px 20px;
+  margin-top: 12px;
 }
 
 .report-hero-name {
@@ -2432,28 +2481,123 @@
 
 .report-rule {
   height: 1px;
-  margin-top: 20px;
+  margin-top: 16px;
   background: var(--home-divider-border);
 }
 
+/* At-a-glance facts strip inside the cover card. */
+.report-facts {
+  display: grid;
+  grid-template-columns: repeat(var(--report-fact-columns-narrow, 2), minmax(0, 1fr));
+  gap: 1px;
+  margin-top: 16px;
+  overflow: hidden;
+  border: 1px solid var(--home-panel-border);
+  border-radius: 4px;
+  background: var(--home-panel-border);
+}
+
+.report-fact {
+  display: flex;
+  min-width: 0;
+  flex-direction: column;
+  gap: 2px;
+  padding: 8px 12px;
+  background: var(--bg-card);
+}
+
+@container (min-width: 36rem) {
+  .report-facts {
+    grid-template-columns: repeat(var(--report-fact-columns, 4), minmax(0, 1fr));
+  }
+}
+
+.report-fact-label {
+  overflow: hidden;
+  color: var(--text-muted-text);
+  font-size: 10px;
+  letter-spacing: 0.12em;
+  text-overflow: ellipsis;
+  text-transform: uppercase;
+  white-space: nowrap;
+}
+
+.report-fact-value {
+  display: flex;
+  min-width: 0;
+  align-items: baseline;
+  gap: 4px;
+  overflow: hidden;
+  color: var(--text-primary);
+  font-size: 15px;
+  font-weight: 600;
+  line-height: 1.3;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+}
+
+.report-fact-unit {
+  color: var(--text-muted-text);
+  font-size: 10px;
+  font-weight: 400;
+}
+
+.report-fact-tag {
+  padding: 1px 6px;
+  border-radius: 999px;
+  background: hsl(var(--muted) / 0.45);
+  color: var(--text-secondary-text);
+  font-size: 10px;
+  font-weight: 500;
+  letter-spacing: 0;
+}
+
+.report-fact[data-tone="action"] .report-fact-value {
+  color: hsl(var(--primary));
+}
+
+.report-fact[data-tone="success"] .report-fact-value {
+  color: hsl(var(--success));
+}
+
+.report-fact[data-tone="warning"] .report-fact-value {
+  color: hsl(var(--warning));
+}
+
+.report-fact[data-tone="danger"] .report-fact-value {
+  color: hsl(var(--destructive));
+}
+
 .report-key-insight {
-  padding-top: 18px;
+  padding-top: 14px;
+}
+
+.report-insight-note {
+  margin-top: 12px;
+  padding: 8px 12px;
+  border: 1px solid hsl(var(--warning) / 0.3);
+  border-radius: 3px;
+  background: hsl(var(--warning) / 0.1);
+  color: var(--text-primary);
+  font-size: 12.5px;
+  line-height: 1.7;
+  text-align: left;
 }
 
 .report-kicker {
   display: flex;
   align-items: center;
-  gap: 10px;
+  gap: 8px;
   margin: 0;
   color: var(--text-secondary-text);
-  font-size: 11px;
+  font-size: 10.5px;
   font-weight: 700;
-  letter-spacing: 0.2em;
+  letter-spacing: 0.18em;
   text-transform: uppercase;
 }
 
 .report-kicker-index {
-  padding: 2px 5px;
+  padding: 1px 5px;
   border: 1px solid hsl(var(--primary) / 0.35);
   border-radius: 2px;
   color: hsl(var(--primary));
@@ -2462,13 +2606,13 @@
 }
 
 .report-lead {
-  max-width: 68ch;
-  margin-top: 12px;
-  padding-left: 14px;
+  max-width: 82ch;
+  margin-top: 10px;
+  padding-left: 12px;
   border-left: 2px solid hsl(var(--primary) / 0.3);
   color: var(--text-primary);
-  font-size: 15.5px;
-  line-height: 1.95;
+  font-size: 14.5px;
+  line-height: 1.9;
   text-align: left;
   white-space: pre-wrap;
 }
@@ -2477,7 +2621,7 @@
 .report-verdict-card {
   display: flex;
   flex-direction: column;
-  gap: 8px;
+  gap: 6px;
 }
 
 .report-verdict-top {
@@ -2489,40 +2633,39 @@
 
 .report-verdict-icon {
   display: grid;
-  width: 32px;
-  height: 32px;
+  width: 28px;
+  height: 28px;
   place-items: center;
   border-radius: 4px;
 }
 
-.report-verdict-index {
-  color: var(--text-muted-text);
-  font-size: 10px;
-  letter-spacing: 0.08em;
-  opacity: 0.65;
+.report-verdict-icon svg {
+  width: 15px;
+  height: 15px;
 }
 
 .report-verdict-label {
-  margin: 2px 0 0;
+  margin: 0;
   color: var(--home-insight-tone);
-  font-size: 11px;
+  font-size: 10.5px;
   font-weight: 700;
-  letter-spacing: 0.18em;
+  letter-spacing: 0.16em;
   text-transform: uppercase;
 }
 
 .report-verdict-body {
   color: var(--text-secondary-text);
-  font-size: 14px;
-  line-height: 1.8;
+  font-size: 13.5px;
+  line-height: 1.75;
 }
 
 /* Shared section heading */
 .report-section-head {
   display: flex;
+  flex-wrap: wrap;
   align-items: flex-end;
   justify-content: space-between;
-  gap: 12px;
+  gap: 6px 12px;
 }
 
 .report-section-heading {
@@ -2539,6 +2682,7 @@
   font-size: 15px;
   font-weight: 600;
   letter-spacing: -0.01em;
+  white-space: nowrap;
 }
 
 .report-section-count {
@@ -2551,8 +2695,16 @@
 }
 
 /* Boards */
-.report-board-chip {
-  display: inline-flex;
+@container (min-width: 40rem) {
+  /* Wide panes can show every related board without a clipped last chip. */
+  .home-related-board-list.report-board-row {
+    flex-wrap: wrap;
+    overflow-x: visible;
+    padding-bottom: 0;
+  }
+}
+
+.report-board-chip {  display: inline-flex;
   flex: none;
   align-items: center;
   gap: 7px;
@@ -2600,15 +2752,66 @@
 
 /* Rail */
 .report-rail-code {
+  margin-top: 3px;
   color: var(--text-muted-text);
   font-size: 12px;
   letter-spacing: 0.04em;
 }
 
+.report-rail-watch-row {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  gap: 10px;
+}
+
 .report-sentiment-card {
   display: flex;
   flex-direction: column;
-  gap: 14px;
+  gap: 10px;
+}
+
+/* Compact earnings card for the cover rail. */
+.report-earnings-compact {
+  display: flex;
+  flex-direction: column;
+  gap: 6px;
+}
+
+.report-earnings-head {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  gap: 8px;
+}
+
+.report-earnings-title {
+  display: inline-flex;
+  min-width: 0;
+  align-items: center;
+  gap: 5px;
+  color: var(--text-muted-text);
+  font-size: 10px;
+  letter-spacing: 0.12em;
+  text-transform: uppercase;
+  white-space: nowrap;
+}
+
+.report-earnings-date {
+  color: var(--text-primary);
+  font-size: 20px;
+  font-weight: 600;
+  line-height: 1.2;
+  letter-spacing: -0.01em;
+}
+
+.report-earnings-source {
+  overflow: hidden;
+  color: var(--text-muted-text);
+  font-size: 10.5px;
+  line-height: 1.5;
+  text-overflow: ellipsis;
+  white-space: nowrap;
 }
 
 /* Sentiment meter */
@@ -2751,10 +2954,10 @@
   --report-strategy-tone: hsl(var(--primary));
 
   display: flex;
-  min-height: 104px;
+  min-height: 88px;
   flex-direction: column;
-  gap: 6px;
-  padding: 12px;
+  gap: 4px;
+  padding: 10px 12px;
   border: 1px solid var(--home-panel-border);
   border-top: 2px solid var(--report-strategy-tone);
   background:
@@ -2771,7 +2974,7 @@
 
 .report-strategy-label {
   color: var(--text-secondary-text);
-  font-size: 10.5px;
+  font-size: 10px;
   letter-spacing: 0.14em;
   text-transform: uppercase;
 }
@@ -2784,7 +2987,7 @@
 
 .report-strategy-value {
   color: var(--report-strategy-tone);
-  font-size: clamp(1.25rem, 1rem + 0.9vw, 1.6rem);
+  font-size: clamp(1.15rem, 0.95rem + 0.75vw, 1.45rem);
   font-weight: 600;
   line-height: 1.15;
   letter-spacing: -0.01em;
@@ -2793,8 +2996,8 @@
 
 .report-strategy-note {
   color: var(--text-secondary-text);
-  font-size: 11.5px;
-  line-height: 1.65;
+  font-size: 11px;
+  line-height: 1.55;
 }
 
 .report-strategy-value[data-empty="true"] {
@@ -2828,6 +3031,110 @@
 
 .report-news-item:last-child {
   padding-bottom: 4px;
+}
+
+/* Collapsed evidence rows (input blocks / run diagnostics).
+   Grid keeps the title readable on narrow panes: meta badges drop to a
+   second row instead of squeezing the heading into a one-character column. */
+.report-collapse-scope {
+  /* Own container so the collapse layout follows the card width inside the
+     support grid, not the much wider reading pane. */
+  container-type: inline-size;
+}
+
+.report-collapse {
+  display: grid;  grid-template-columns: minmax(0, 1fr) auto;
+  grid-template-areas:
+    "lead chevron"
+    "meta meta";
+  gap: 8px 12px;
+  align-items: center;
+  padding: 11px 16px;
+  cursor: pointer;
+  list-style: none;
+}
+
+.report-collapse::-webkit-details-marker {
+  display: none;
+}
+
+.report-collapse-lead {
+  display: flex;
+  min-width: 0;
+  grid-area: lead;
+  align-items: center;
+  gap: 10px;
+}
+
+.report-collapse-icon {
+  display: flex;
+  width: 30px;
+  height: 30px;
+  flex: none;
+  align-items: center;
+  justify-content: center;
+  border-radius: 8px;
+}
+
+.report-collapse-titles {
+  min-width: 0;
+}
+
+.report-collapse-title {
+  display: block;
+  overflow: hidden;
+  color: var(--text-primary);
+  font-size: 14.5px;
+  font-weight: 600;
+  line-height: 1.4;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+}
+
+.report-collapse-subtitle {
+  display: block;
+  overflow: hidden;
+  margin-top: 2px;
+  color: var(--text-muted-text);
+  font-size: 11px;
+  line-height: 1.5;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+}
+
+.report-collapse-meta {
+  display: flex;
+  min-width: 0;
+  grid-area: meta;
+  flex-wrap: wrap;
+  align-items: center;
+  justify-content: flex-start;
+  gap: 6px;
+}
+
+.report-collapse-chevron {
+  width: 15px;
+  height: 15px;
+  grid-area: chevron;
+  flex: none;
+  color: var(--text-muted-text);
+  transition: transform 150ms ease;
+}
+
+.report-collapse[aria-expanded="true"] .report-collapse-chevron,
+details[open] > .report-collapse .report-collapse-chevron {
+  transform: rotate(180deg);
+}
+
+@container (min-width: 34rem) {
+  .report-collapse {
+    grid-template-columns: minmax(0, 1fr) auto auto;
+    grid-template-areas: "lead meta chevron";
+  }
+
+  .report-collapse-meta {
+    justify-content: flex-end;
+  }
 }
 
 .report-news-index {

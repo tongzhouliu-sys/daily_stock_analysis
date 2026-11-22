@@ -335,23 +335,23 @@ export const AnalysisContextSummary: React.FC<AnalysisContextSummaryProps> = ({
 
   return (
     <Card variant="bordered" padding="none" className="home-panel-card">
-      <details data-testid="analysis-context-summary" className="group">
-        <summary className="flex cursor-pointer list-none items-center justify-between gap-3 px-4 py-3">
-          <div className="flex min-w-0 items-center gap-3">
-            <span className="flex h-8 w-8 shrink-0 items-center justify-center rounded-lg bg-cyan/10 text-cyan">
+      <details data-testid="analysis-context-summary" className="report-collapse-scope group">
+        <summary className="report-collapse">
+          <div className="report-collapse-lead">
+            <span className="report-collapse-icon bg-cyan/10 text-cyan">
               <Database className="h-4 w-4" aria-hidden="true" />
             </span>
-            <span className="min-w-0">
+            <span className="report-collapse-titles">
               <span className="label-uppercase">{text.eyebrow}</span>
-              <span className="mt-0.5 block truncate text-base font-semibold text-foreground">
+              <span className="report-collapse-title">
                 {text.title}
               </span>
-              <span className="mt-1 block text-xs leading-5 text-muted-text">
+              <span className="report-collapse-subtitle">
                 {text.evidenceScope}
               </span>
             </span>
           </div>
-          <span className="flex min-w-0 flex-wrap items-center justify-end gap-2">
+          <span className="report-collapse-meta">
             {typeof quality?.overallScore === 'number' ? (
               <Badge variant={qualityStyle?.variant || 'default'} className="gap-1.5 shadow-none">
                 {qualityStyle ? <StatusDot tone={qualityStyle.tone} className="h-1.5 w-1.5" /> : null}
@@ -375,8 +375,8 @@ export const AnalysisContextSummary: React.FC<AnalysisContextSummaryProps> = ({
             <span className="home-accent-chip px-2 py-0.5 text-xs text-muted-text">
               {text.inputScope}
             </span>
-            <ChevronDown className="h-4 w-4 shrink-0 text-muted-text transition-transform group-open:rotate-180" aria-hidden="true" />
           </span>
+          <ChevronDown className="report-collapse-chevron" aria-hidden="true" />
         </summary>
 
         <div className="home-divider border-t px-4 pb-4 pt-3">

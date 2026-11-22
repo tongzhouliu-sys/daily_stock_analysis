@@ -8,6 +8,8 @@ import { DashboardPanelHeader } from '../dashboard';
 interface ReportEarningsCalendarProps {
   calendar?: EarningsCalendar | null;
   language?: ReportLanguage;
+  /** Dense variant for the report cover rail: date-forward, minimal chrome. */
+  compact?: boolean;
 }
 
 const COVERAGE_LABEL: Record<ReportLanguage, Record<string, string>> = {
@@ -26,6 +28,7 @@ const COVERAGE_LABEL: Record<ReportLanguage, Record<string, string>> = {
 export const ReportEarningsCalendar: React.FC<ReportEarningsCalendarProps> = ({
   calendar,
   language = 'zh',
+  compact = false,
 }) => {
   if (!calendar || !calendar.events || calendar.events.length === 0) {
     return null;
@@ -38,6 +41,37 @@ export const ReportEarningsCalendar: React.FC<ReportEarningsCalendarProps> = ({
   const coverage = calendar.coverage
     ? (COVERAGE_LABEL[reportLanguage]?.[calendar.coverage] ?? calendar.coverage)
     : null;
+
+  if (compact) {
+    const latest = calendar.events.find((event) => event.disclosureStatus === 'disclosed');
+    const compactDate = nextDate || latest?.actualDisclosureDate || latest?.expectedDisclosureDate;
+    if (!compactDate) {
+      return null;
+    }
+    const daysText = typeof days === 'number' ? `${days} ${text.daysUnit}` : '';
+
+    return (
+      <Card variant="bordered" padding="sm" className="home-panel-card report-earnings-compact">
+        <div className="report-earnings-head">
+          <span className="report-earnings-title">
+            <CalendarDays className="h-3.5 w-3.5 text-muted-text" aria-hidden="true" />
+            {text.earningsCalendarTitle}
+          </span>
+          {nextDate && daysText ? (
+            <Badge variant="info" className="shadow-none">{text.expectedTag} · {daysText}</Badge>
+          ) : (
+            <Badge variant="default" className="shadow-none">{text.disclosedTag}</Badge>
+          )}
+        </div>
+        <div className="report-earnings-date font-mono">{compactDate}</div>
+        {coverage ? (
+          <div className="report-earnings-source">
+            {text.earningsCalendarSource}: {coverage}
+          </div>
+        ) : null}
+      </Card>
+    );
+  }
 
   let body: React.ReactNode;
   if (nextDate) {
