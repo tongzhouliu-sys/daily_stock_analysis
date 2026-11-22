@@ -58,3 +58,8 @@
 28. **时间字段有两套约定**：`src/storage.py` 同时存在本地 naive 与 UTC naive，新增表必须在 `tests/test_time_basis_contract.py` 登记，并同步 `docs/ai/DATA-FLOW.md`。
 29. **文档与实现一致性**：改配置键、接口上限、能力开关时，同时检查 `.env.example`、`config_registry`、接口 description、专题文档和 CHANGELOG；不要出现“文档已宣称、代码未实现”或“CHANGELOG 已删除、文件仍在”。
 30. **全量离线套件成本**：约 12 分钟、峰值内存约 2.2GB；本地改动优先跑目标文件测试，全量留给 M0 收尾或最终验收。
+
+## CI 与仓库
+
+31. **PR 显示「no checks reported」先查仓库 Actions 开关**：仓库级 `actions/permissions.enabled=false` 时任何 workflow 都不会启动，而 `main` 又要求必需检查，结果是所有 PR 永久 `BLOCKED`（`enforce_admins=true` 时连管理员也无法绕过）。现象 → `gh pr checks <n>` 返回「no checks reported」且 `gh run list` 没有新 run；做法 → `gh api -X PUT repos/{owner}/{repo}/actions/permissions -F enabled=true`，再推一个空提交重新触发 `pull_request` 事件。
+32. **`main` 受保护时只能走 PR**：`git push origin main` 会被 protected branch hook 拒绝（必需检查 `ai-governance`/`backend-gate`/`web-gate`/`docker-build`）。`git commit` 后开短分支推上去、建 PR、等必需检查通过再 `gh pr merge --squash`。
