@@ -1,4 +1,8 @@
 import '@testing-library/jest-dom';
+import { configure } from '@testing-library/react';
+
+// CI 全量并发下渲染比本地慢，放宽 findBy/waitFor 的默认等待窗口。
+configure({ asyncUtilTimeout: 5000 });
 
 class MemoryStorageMock implements Storage {
   private readonly values = new Map<string, string>();
