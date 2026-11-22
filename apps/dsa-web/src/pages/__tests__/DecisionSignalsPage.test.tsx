@@ -439,7 +439,7 @@ describe('DecisionSignalsPage', () => {
     });
     expect(screen.getByText('贵州茅台')).toBeInTheDocument();
     expect(await screen.findByText('信号表现统计')).toBeInTheDocument();
-    expect(screen.getByText('50%')).toBeInTheDocument();
+    expect(await screen.findByText('50%')).toBeInTheDocument();
     expect(screen.getByRole('button', { name: '查看 贵州茅台 AI 建议详情' })).toBeInTheDocument();
     expect(screen.getByText('贵州茅台').closest('button')).toBeNull();
     expect(screen.getByText('放量下跌风险')).toBeInTheDocument();
@@ -458,7 +458,7 @@ describe('DecisionSignalsPage', () => {
     renderPage();
 
     expect(await screen.findByText('信号表现统计')).toBeInTheDocument();
-    expect(screen.getByText('50%')).toBeInTheDocument();
+    expect(await screen.findByText('50%')).toBeInTheDocument();
     expect(screen.queryByRole('heading', { name: '决策风格历史表现' })).not.toBeInTheDocument();
   });
 
@@ -889,8 +889,10 @@ describe('DecisionSignalsPage', () => {
     fireEvent.click(within(dialog).getByRole('button', { name: '标记失效' }));
     fireEvent.click(await screen.findByRole('button', { name: '确定' }));
     await waitFor(() => expect(decisionSignalsApi.updateStatus).toHaveBeenCalledWith(88, { status: 'invalidated' }));
-    expect(within(screen.getByRole('dialog')).getByText('已保存为新的 DecisionSignal #88。')).toBeInTheDocument();
-    expect(within(screen.getByRole('dialog')).getByText('已失效')).toBeInTheDocument();
+    await waitFor(() => {
+      expect(within(screen.getByRole('dialog')).getByText('已保存为新的 DecisionSignal #88。')).toBeInTheDocument();
+      expect(within(screen.getByRole('dialog')).getByText('已失效')).toBeInTheDocument();
+    });
   });
 
   it('keeps the authoritative persist result visible after refreshing a timeline-sourced detail', async () => {
