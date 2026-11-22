@@ -825,6 +825,56 @@ def _resolve_per_tool_timeout(
     return base
 
 
+def _extract_earnings_calendar_from_result(result_str: Optional[str]) -> Optional[Dict[str, Any]]:
+    """Extract a bounded earnings-calendar snapshot from a ``get_stock_info`` result.
+
+    Only the five low-sensitivity fields are kept; the full tool result and any
+    raw provider payload never leave the runner. Returns ``None`` when absent.
+    """
+    if not result_str:
+        return None
+    try:
+        data = json.loads(result_str)
+    except (json.JSONDecodeError, TypeError, ValueError):
+        return None
+    if not isinstance(data, dict):
+        return None
+    fundamental = data.get("fundamental_context") if isinstance(data.get("fundamental_context"), dict) else None
+    if not isinstance(fundamental, dict):
+        return None
+    earnings = fundamental.get("earnings") if isinstance(fundamental.get("earnings"), dict) else None
+    if not isinstance(earnings, dict):
+        return None
+    earnings_data = earnings.get("data") if isinstance(earnings.get("data"), dict) else None
+    calendar = earnings_data.get("calendar") if isinstance(earnings_data, dict) else None
+    if not isinstance(calendar, dict) or not calendar:
+        return None
+    events = calendar.get("events")
+    return {
+        "next_earnings_date": calendar.get("next_earnings_date"),
+        "days_to_next": calendar.get("days_to_next"),
+        "events": events if isinstance(events, list) else [],
+        "coverage": calendar.get("coverage"),
+        "as_of": calendar.get("as_of"),
+    }
+
+
+def _last_earnings_calendar_snapshot(tool_calls_log: Any) -> Optional[Dict[str, Any]]:
+    """Return the last get_stock_info earnings-calendar snapshot from a tool log.
+
+    Shared by the single-agent (chat_executor) and multi-agent (orchestrator)
+    paths, whose tool logs both originate from ``_record`` with a ``tool`` key.
+    """
+    if not isinstance(tool_calls_log, list):
+        return None
+    for entry in reversed(tool_calls_log):
+        if isinstance(entry, dict) and entry.get("tool") == "get_stock_info":
+            calendar = entry.get("earnings_calendar")
+            if isinstance(calendar, dict) and calendar:
+                return calendar
+    return None
+
+
 def _execute_tools(
     tool_calls,
     tool_registry: ToolRegistry,
@@ -1028,6 +1078,10 @@ def _execute_tools(
             })
         if detail:
             log_entry["detail"] = detail
+        if tc_item.name == "get_stock_info" and success:
+            calendar = _extract_earnings_calendar_from_result(result_str)
+            if calendar:
+                log_entry["earnings_calendar"] = calendar
         tool_calls_log.append(log_entry)
         results.append({"tc": tc_item, "result_str": result_str})
 

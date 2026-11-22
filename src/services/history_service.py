@@ -41,6 +41,15 @@ from src.report_language import (
     strategy_invalid_opinion_count,
 )
 from src.storage import DatabaseManager
+from src.services.report_translation_service import (
+    VARIANT_KIND_MARKET_REVIEW,
+    VARIANT_KIND_SINGLE_STOCK,
+    ReportTranslationError,
+    ReportTranslationService,
+    apply_overlay,
+    collect_translatable_texts,
+    source_hash_for_record,
+)
 from src.services.run_diagnostics import build_run_diagnostic_summary
 from src.services.empty_news import (
     empty_news_disclosure,
@@ -79,6 +88,15 @@ class MarkdownReportGenerationError(Exception):
         self.message = message
         self.record_id = record_id
         super().__init__(self.message)
+
+
+class ReportChineseVariantMissing(RuntimeError):
+    """The record has no ready Chinese variant and cannot render a full Chinese HTML report."""
+
+    def __init__(self, record_id: str, *, reason: str = "missing") -> None:
+        self.record_id = record_id
+        self.reason = reason
+        super().__init__(f"Chinese report variant missing for record {record_id} ({reason})")
 
 
 class HistoryService:
@@ -1057,6 +1075,202 @@ class HistoryService:
                 f"Failed to generate markdown report: {str(e)}",
                 record_id=record_id
             ) from e
+
+    @staticmethod
+    def _record_report_language(record, raw_result: Dict[str, Any]) -> str:
+        candidate = raw_result.get("report_language")
+        if not candidate:
+            candidate = getattr(record, "report_language", None) or getattr(get_config(), "report_language", "zh")
+        return normalize_report_language(candidate)
+
+    @staticmethod
+    def _variant_kind_for_record(record) -> str:
+        if getattr(record, "report_type", None) == "market_review":
+            return VARIANT_KIND_MARKET_REVIEW
+        return VARIANT_KIND_SINGLE_STOCK
+
+    def get_chinese_variant(self, record_id: str) -> Optional[Dict[str, Any]]:
+        """Return the persisted Chinese variant for a record, if any."""
+        record = self._resolve_record(record_id)
+        if not record:
+            return None
+        variant = self.db.get_report_text_variant(record.id, variant_kind=self._variant_kind_for_record(record))
+        if variant is None:
+            return None
+        return {
+            "record_id": record.id,
+            "variant_kind": variant.variant_kind,
+            "source_hash": variant.source_hash,
+            "payload_json": variant.payload_json,
+            "status": variant.status,
+            "error_code": variant.error_code,
+            "translator_backend": variant.translator_backend,
+            "translator_model": variant.translator_model,
+        }
+
+    def ensure_chinese_variant(
+        self,
+        record_id: str,
+        *,
+        force: bool = False,
+        translation_service: Optional[ReportTranslationService] = None,
+    ) -> Dict[str, Any]:
+        """Generate and persist a Chinese variant for a non-Chinese record.
+
+        The operation is idempotent: a ready variant with the same source hash is
+        reused unless ``force`` is set.
+        """
+        record = self._resolve_record(record_id)
+        if not record:
+            raise ReportChineseVariantMissing(record_id, reason="record_not_found")
+        raw_result = parse_json_field(record.raw_result)
+        if not isinstance(raw_result, dict) or not raw_result:
+            raise ReportChineseVariantMissing(record_id, reason="empty_raw_result")
+
+        language = self._record_report_language(record, raw_result)
+        if language == "zh":
+            return {
+                "record_id": record.id,
+                "status": "not_needed",
+                "variant_kind": self._variant_kind_for_record(record),
+            }
+
+        kind = self._variant_kind_for_record(record)
+        market_markdown = None
+        if kind == VARIANT_KIND_MARKET_REVIEW:
+            market_markdown = self._extract_market_review_content(record, raw_result)
+            if not market_markdown:
+                raise ReportChineseVariantMissing(record_id, reason="empty_market_review")
+
+        source_hash = source_hash_for_record(raw_result, market_markdown)
+        existing = self.db.get_report_text_variant(record.id, variant_kind=kind)
+        if (
+            existing is not None
+            and existing.status == "ready"
+            and existing.source_hash == source_hash
+            and not force
+        ):
+            logger.info(
+                "Chinese variant cache hit record=%s kind=%s model=%s",
+                record.id,
+                kind,
+                existing.translator_model,
+            )
+            return {
+                "record_id": record.id,
+                "status": "ready",
+                "variant_kind": kind,
+                "cached": True,
+                "translator_model": existing.translator_model,
+            }
+
+        config = get_config()
+        if not bool(getattr(config, "report_zh_variant_enabled", True)):
+            raise ReportChineseVariantMissing(record_id, reason="disabled")
+        if not force and not bool(getattr(config, "report_zh_variant_on_demand", True)):
+            raise ReportChineseVariantMissing(record_id, reason="on_demand_disabled")
+
+        service = translation_service or ReportTranslationService()
+        try:
+            if kind == VARIANT_KIND_MARKET_REVIEW:
+                translated_markdown, backend, model = service.translate_markdown(market_markdown or "")
+                payload = {"markdown": translated_markdown}
+            else:
+                texts = collect_translatable_texts(raw_result)
+                translated, backend, model = service.translate_overlay(texts)
+                payload = {"overlay": translated}
+            payload_json = json.dumps(payload, ensure_ascii=False)
+            self.db.save_report_text_variant(
+                record.id,
+                variant_kind=kind,
+                source_hash=source_hash,
+                payload_json=payload_json,
+                status="ready",
+                translator_backend=backend or None,
+                translator_model=model or None,
+            )
+            logger.info(
+                "Chinese variant generated record=%s kind=%s model=%s",
+                record.id,
+                kind,
+                model,
+            )
+            return {
+                "record_id": record.id,
+                "status": "ready",
+                "variant_kind": kind,
+                "cached": False,
+                "translator_model": model or "",
+            }
+        except ReportTranslationError as exc:
+            self.db.save_report_text_variant(
+                record.id,
+                variant_kind=kind,
+                source_hash=source_hash,
+                payload_json="{}",
+                status="failed",
+                error_code=exc.error_code,
+            )
+            raise
+        except Exception as exc:  # noqa: BLE001 - persist a stable error code
+            logger.exception("Chinese variant generation failed for %s", record_id)
+            self.db.save_report_text_variant(
+                record.id,
+                variant_kind=kind,
+                source_hash=source_hash,
+                payload_json="{}",
+                status="failed",
+                error_code="translation_failed",
+            )
+            raise ReportTranslationError("Chinese variant generation failed") from exc
+
+    def get_markdown_report_zh(self, record_id: str) -> Optional[str]:
+        """Generate a fully Chinese Markdown report for the HTML view.
+
+        Chinese records use the normal path. Non-Chinese records require a ready
+        Chinese variant; missing/stale variants raise
+        :class:`ReportChineseVariantMissing` so the API never returns a mixed
+        Chinese/English page.
+        """
+        record = self._resolve_record(record_id)
+        if not record:
+            return None
+        raw_result = parse_json_field(record.raw_result)
+        if not isinstance(raw_result, dict) or not raw_result:
+            raise MarkdownReportGenerationError("raw_result is empty or invalid", record_id=record_id)
+
+        language = self._record_report_language(record, raw_result)
+        if language == "zh":
+            return self.get_markdown_report(record_id)
+
+        kind = self._variant_kind_for_record(record)
+        market_markdown = None
+        if kind == VARIANT_KIND_MARKET_REVIEW:
+            market_markdown = self._extract_market_review_content(record, raw_result)
+        source_hash = source_hash_for_record(raw_result, market_markdown)
+
+        variant = self.db.get_report_text_variant(record.id, variant_kind=kind)
+        if variant is None or variant.status != "ready" or variant.source_hash != source_hash:
+            reason = "failed" if variant is not None and variant.status == "failed" else "missing"
+            raise ReportChineseVariantMissing(record_id, reason=reason)
+
+        payload = parse_json_field(variant.payload_json)
+        if not isinstance(payload, dict):
+            raise ReportChineseVariantMissing(record_id, reason="invalid_payload")
+
+        if kind == VARIANT_KIND_MARKET_REVIEW:
+            markdown = payload.get("markdown")
+            if not isinstance(markdown, str) or not markdown.strip():
+                raise ReportChineseVariantMissing(record_id, reason="empty_variant")
+            return markdown
+
+        overlay = payload.get("overlay")
+        translated_raw = apply_overlay(raw_result, overlay) if isinstance(overlay, dict) else raw_result
+        result = self._rebuild_analysis_result(translated_raw, record)
+        if not result:
+            raise MarkdownReportGenerationError("Failed to rebuild translated AnalysisResult", record_id=record_id)
+        result.report_language = "zh"
+        return self._generate_single_stock_markdown(result, record)
 
     def _rebuild_analysis_result(
         self,

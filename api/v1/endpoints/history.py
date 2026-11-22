@@ -35,7 +35,12 @@ from src.storage import DatabaseManager
 from src.report_language import (
     normalize_report_language,
 )
-from src.services.history_service import HistoryService, MarkdownReportGenerationError
+from src.services.history_service import (
+    HistoryService,
+    MarkdownReportGenerationError,
+    ReportChineseVariantMissing,
+)
+from src.services.report_translation_service import ReportTranslationError
 from src.services.analysis_service import asset_type_from_canonical_code
 from src.schemas.decision_action import build_action_fields
 from src.utils.data_processing import normalize_model_used
@@ -66,6 +71,65 @@ def _history_share_image_payload(result: Mapping[str, Any]) -> Optional[Mapping[
 
     raw_result = result.get("raw_result")
     return raw_result if isinstance(raw_result, Mapping) else None
+
+
+def _history_report_html_input(
+    record_id: str,
+    db_manager: DatabaseManager,
+) -> tuple[Mapping[str, Any], str]:
+    """Load the persisted input for the fully Chinese HTML report (T78)."""
+
+    service = HistoryService(db_manager)
+    result = service.resolve_and_get_detail(record_id)
+    if result is None:
+        raise HTTPException(
+            status_code=404,
+            detail={
+                "error": "not_found",
+                "message": f"未找到 id/query_id={record_id} 的分析记录",
+            },
+        )
+
+    try:
+        markdown_content = service.get_markdown_report_zh(record_id)
+    except ReportChineseVariantMissing as exc:
+        raise HTTPException(
+            status_code=409,
+            detail={
+                "error": "zh_variant_missing",
+                "message": "该历史报告尚未生成中文版本，请先生成中文版本",
+                "record_id": str(result.get("id") or record_id),
+                "reason": exc.reason,
+            },
+        ) from exc
+    except ReportTranslationError as exc:
+        raise HTTPException(
+            status_code=503,
+            detail={
+                "error": exc.error_code,
+                "message": "中文版本生成失败，请稍后重试",
+                "record_id": str(result.get("id") or record_id),
+            },
+        ) from exc
+    except MarkdownReportGenerationError as exc:
+        logger.error("HTML report generation failed for %s: %s", record_id, exc.message)
+        raise HTTPException(
+            status_code=500,
+            detail={
+                "error": "generation_failed",
+                "message": f"生成 HTML 报告所需内容失败: {exc.message}",
+            },
+        ) from exc
+
+    if not markdown_content:
+        raise HTTPException(
+            status_code=404,
+            detail={
+                "error": "not_found",
+                "message": f"未找到 id/query_id={record_id} 的报告内容",
+            },
+        )
+    return result, markdown_content
 
 
 def _history_share_image_input(
@@ -834,12 +898,8 @@ def get_history_report_html(
     download: int = Query(0, ge=0, le=1, description="为 1 时以附件形式下载"),
     db_manager: DatabaseManager = Depends(get_database_manager),
 ) -> HTMLResponse:
-    # HTML 报告固定中文：按 zh 重建结构化报告，再交给固定中文的渲染器。
-    result, markdown_content = _history_share_image_input(
-        record_id,
-        db_manager,
-        report_language="zh",
-    )
+    # HTML 报告固定中文：优先使用已持久化的中文变体，缺失时返回 409 由 Web 触发生成。
+    result, markdown_content = _history_report_html_input(record_id, db_manager)
 
     if len(markdown_content) > _REPORT_HTML_MAX_CHARS:
         raise HTTPException(
@@ -869,6 +929,53 @@ def get_history_report_html(
         safe_id = "".join(ch for ch in safe_id if ch.isalnum() or ch in "-_")
         headers["Content-Disposition"] = f'attachment; filename="dsa-report-{safe_id}.html"'
     return HTMLResponse(content=html, headers=headers)
+
+
+@router.post(
+    "/{record_id}/report-zh-variant",
+    summary="生成历史报告的中文版本",
+    description="为 en/ko 历史报告生成并缓存中文变体，供 HTML 报告使用；幂等，已就绪时直接返回缓存",
+)
+def ensure_history_report_zh_variant(
+    record_id: str,
+    force: int = Query(0, ge=0, le=1, description="为 1 时忽略缓存重新生成"),
+    db_manager: DatabaseManager = Depends(get_database_manager),
+) -> dict:
+    service = HistoryService(db_manager)
+    result = service.resolve_and_get_detail(record_id)
+    if result is None:
+        raise HTTPException(
+            status_code=404,
+            detail={
+                "error": "not_found",
+                "message": f"未找到 id/query_id={record_id} 的分析记录",
+            },
+        )
+    try:
+        return service.ensure_chinese_variant(record_id, force=bool(force))
+    except ReportChineseVariantMissing as exc:
+        if exc.reason == "record_not_found":
+            raise HTTPException(
+                status_code=404,
+                detail={"error": "not_found", "message": "报告不存在"},
+            ) from exc
+        raise HTTPException(
+            status_code=409,
+            detail={
+                "error": "zh_variant_unavailable",
+                "message": "当前无法生成中文版本",
+                "reason": exc.reason,
+            },
+        ) from exc
+    except ReportTranslationError as exc:
+        logger.error("Chinese variant generation failed for %s: %s", record_id, exc)
+        raise HTTPException(
+            status_code=503,
+            detail={
+                "error": exc.error_code,
+                "message": "中文版本生成失败，请稍后重试",
+            },
+        ) from exc
 
 
 @router.get(

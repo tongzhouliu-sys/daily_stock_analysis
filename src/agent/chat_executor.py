@@ -18,6 +18,7 @@ from src.agent.executor import AgentResult, PreparedAgentChat, prepare_agent_cha
 from src.agent.provider_trace import persist_provider_trace_turns
 from src.agent.stock_scope import StockScopeResolution
 from src.storage import DatabaseManager
+from src.agent.runner import _last_earnings_calendar_snapshot
 
 if TYPE_CHECKING:
     from src.services.agent_chat_session_service import AgentChatSessionService, ResolvedChatTurn
@@ -328,6 +329,16 @@ class AgentChatExecutor:
                 except Exception:
                     logging.getLogger(__name__).warning("Answer editor failed", exc_info=True)
                     editor_meta = None
+            # Attach the bounded earnings-calendar snapshot (from get_stock_info)
+            # so the chat UI can show a "next earnings" badge even when the
+            # answer editor did not run. Never carries raw tool payloads.
+            calendar_snapshot = _last_earnings_calendar_snapshot(result.tool_calls_log)
+            if calendar_snapshot:
+                if editor_meta is not None:
+                    editor_meta.earnings_calendar = calendar_snapshot
+                else:
+                    from src.schemas.agent_intake import AnswerMeta
+                    editor_meta = AnswerMeta(earnings_calendar=calendar_snapshot)
             result.answer_meta = editor_meta
             answer_meta_payload = (
                 editor_meta.model_dump(mode="json", exclude_none=True)

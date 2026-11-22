@@ -278,6 +278,7 @@ class ReportDetails(BaseModel):
     )
     financial_report: Optional[Any] = Field(None, description="结构化财报摘要（来自 fundamental_context）")
     dividend_metrics: Optional[Any] = Field(None, description="结构化分红指标（含 TTM 口径）")
+    earnings_calendar: Optional[Any] = Field(None, description="财报日历（下一次披露日期，来自 fundamental_context）")
     belong_boards: Optional[Any] = Field(None, description="关联板块列表")
     sector_rankings: Optional[Any] = Field(None, description="板块涨跌榜（结构 {top, bottom}）")
     concept_rankings: Optional[Any] = Field(None, description="概念板块涨跌榜（结构 {top, bottom}）")

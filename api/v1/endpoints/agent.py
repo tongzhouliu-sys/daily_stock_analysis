@@ -129,7 +129,7 @@ def _public_answer_meta(result) -> Optional[Dict[str, Any]]:
         return None
     payload = meta.model_dump(mode="json", exclude_none=True) if hasattr(meta, "model_dump") else dict(meta)
     keys = ("schema_version", "editor_version", "editor_status",
-            "brief_snapshot", "source_refs", "used_source_refs")
+            "brief_snapshot", "source_refs", "used_source_refs", "earnings_calendar")
     return {key: payload[key] for key in keys if key in payload}
 
 

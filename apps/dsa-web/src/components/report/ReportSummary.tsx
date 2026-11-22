@@ -2,6 +2,7 @@ import React from 'react';
 import type { AnalysisResult, AnalysisReport } from '../../types/analysis';
 import { ReportOverview } from './ReportOverview';
 import { ReportStrategy } from './ReportStrategy';
+import { ReportEarningsCalendar } from './ReportEarningsCalendar';
 import { ReportNews } from './ReportNews';
 import { PredictionMarketsPanel } from './PredictionMarketsPanel';
 import { ReportDetails } from './ReportDetails';
@@ -68,6 +69,9 @@ export const ReportSummary: React.FC<ReportSummaryProps> = ({
         isHistory={isHistory}
         watchlist={watchlist}
       />
+
+      {/* 财报日历区（下次披露日期，计划/预估） */}
+      <ReportEarningsCalendar calendar={details?.earningsCalendar} language={reportLanguage} />
 
       {/* 策略点位区 */}
       <ReportStrategy strategy={strategy} language={reportLanguage} />

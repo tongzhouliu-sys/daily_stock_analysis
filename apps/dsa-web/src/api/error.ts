@@ -552,6 +552,7 @@ export function parseApiError(error: unknown): ParsedApiError {
       rawMessage,
       status,
       category: 'http_error',
+      code: errorCode ?? undefined,
     });
   }
 

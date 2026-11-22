@@ -27,6 +27,7 @@
 | --- | --- | --- |
 | 日线 | `daily_bars`（`src/storage.py:3656 save_daily_data()`） | 盘中未收盘的当日行不入库；回写只保留到最近已收盘交易日 |
 | 分析历史 | `analysis_history`（`src/storage.py:3156 save_analysis_history()`） | 报告详情、历史页、追问上下文都读这条记录 |
+| 报告中文变体 | `report_text_variants`（`src/storage.py`） | HTML 报告固定中文；按 `record_id + target_language + variant_kind` 缓存字段覆盖表或大盘复盘中文 Markdown |
 | 新闻 / 情报 | `news_intel` 等（`src/storage.py`） | 带来源、时间、情感字段 |
 | 预测市场 | `prediction_market_events`（`src/repositories/prediction_market_repo.py`） | 只读外部事件概率（Kalshi/Polymarket），按 `(source, market_id)` 去重，UTC naive，默认关闭 |
 | 预测市场证据 | `analysis_prediction_markets`（`src/repositories/prediction_market_evidence_repo.py`） | 与 `analysis_history` 弱关联的 sidecar，历史删除同步清理，服务器本地时间 |
@@ -40,7 +41,7 @@
 | --- | --- | --- |
 | 上下文组装 | `src/analyzer.py:4196 analyze()` | 行情、历史 K 线、技术指标、新闻、基本面、持仓、预测市场（默认关闭） |
 | 上下文包 | `docs/analysis-context-pack.md`（契约文档） | Web 追问复用同一份上下文包 |
-| 财报日历 | `data_provider/fundamental_adapter.py`（A股 `stock_report_disclosure` / `stock_yysj_em`）、`data_provider/yfinance_fundamental_adapter.py`（美股 `ticker.calendar` / `earnings_dates`） | 标准化为 `earnings.calendar` 子块（下一次披露日期 + 距今交易日）；计划/预估语义，fail-open，港股暂不支持 |
+| 财报日历 | `data_provider/fundamental_adapter.py`（A股 `stock_report_disclosure` / `stock_yysj_em`）、`data_provider/yfinance_fundamental_adapter.py`（美股 `ticker.calendar` / `earnings_dates`） | 标准化为 `earnings.calendar` 子块（下一次披露日期 + 距今交易日）；计划/预估语义，fail-open，港股暂不支持。消费面：LLM Prompt「业绩与筹码事件」表、报告详情 `earnings_calendar`（`extract_fundamental_detail_fields` → `ReportDetails`）、通知「📅 财报日历」块（飞书复用 Markdown 解析）、问股 `get_stock_info` → `AnswerMeta.earnings_calendar` 徽章 |
 | 提示词 | `src/analyzer.py` 内各 prompt 构造函数 | 数据块降级会写明「落后 N 个交易日」并扣减数据质量分 |
 | 报告语言 | `src/report_language.py` | `REPORT_LANGUAGE` 控制输出语言与固定文案 |
 | 问股 Agent | `src/agent/orchestrator.py` + `src/agent/tools/` | 工具调用结果以 `tool_done` 事件回传，不写进系统提示词以外的全局状态 |

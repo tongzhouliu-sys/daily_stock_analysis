@@ -20,7 +20,7 @@
 | 选股单飞 | 已有 `pending/processing/cancel_requested` 选股任务时再次提交返回 409 | `api/v1/endpoints/screening.py` |
 | 问股页面拆分与记忆化 | 侧栏 / 消息 / 进度 / 输入 / 引导卡独立组件，打字不重渲染历史消息 | `apps/dsa-web/src/components/chat/` |
 | 首次设置令牌 | 未设密码时，公网客户端必须提供 `ADMIN_SETUP_TOKEN` 或启动日志中的随机令牌；回环/私网仍可零配置初始化 | `src/auth.py`、`api/v1/endpoints/auth.py` |
-| 飞书同源 HTML 报告 | 历史报告分享菜单可查看 / 下载与飞书推送同源的自包含 HTML；卡片与 HTML 共用解析，零脚本 + 沙箱 iframe；HTML 固定中文，不跟随记录 / 界面语言 | `src/services/report_html/`、`api/v1/endpoints/history.py`、`src/notification_sender/feishu_card.py` |
+| 飞书同源 HTML 报告 | 历史报告分享菜单可查看 / 下载与飞书推送同源的自包含 HTML；卡片与 HTML 共用解析，零脚本 + 沙箱 iframe；HTML 固定全中文，en/ko 记录使用持久化中文变体，缺变体时 409 + Web 生成按钮 | `src/services/report_html/`、`src/services/report_translation_service.py`、`api/v1/endpoints/history.py`、`src/notification_sender/feishu_card.py` |
 
 **默认关闭**：`WEBUI_ENABLED=false`、`SCHEDULE_ENABLED=false`；通知渠道默认未配置，未配置就不发送。自动打 tag 需要 commit title 含 `#patch/#minor/#major`。
 
@@ -37,7 +37,8 @@
 | T43 | 测试治理：`tests/support/pipeline_factory.py` 统一 pipeline 构造，清理旧常量断言 | 已合入 |
 | T44 | 双语补齐（第一批）：选股页与模型渠道编辑器文案迁入 `uiText.ts` | 已合入 |
 | T45 | 飞书同源 HTML 报告：历史报告可查看 / 下载自包含 HTML，与飞书卡片共用解析 | 已合入 |
-| T77 | HTML 报告固定中文：渲染器写死 `zh`，历史 HTML 接口按 `zh` 重建报告，Web 端 HTML 入口文案固定中文 | 已完成（全量离线 9617 passed） |
+| T77 | HTML 报告固定中文：渲染器写死 `zh`，历史 HTML 接口按 `zh` 重建报告，Web 端 HTML 入口文案固定中文 | 已完成（仅框架/标签层） |
+| T78 | HTML 报告彻底中文化：en/ko 记录生成并缓存中文变体（字段覆盖表 / 大盘复盘 Markdown），HTML 接口 409 + Web 生成按钮，CLI 批量回填 | 已实现（针对性测试通过；全量离线回归中） |
 
 ### 2.1 上线审查任务书进度（`.claude/reviews/release-fix-tasks-20261115.md`）
 

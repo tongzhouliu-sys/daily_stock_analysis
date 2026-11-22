@@ -1673,6 +1673,40 @@ def migrate_daily_volume_to_shares(
     return stats
 
 
+class ReportTextVariant(Base):
+    """Translated report text variants (T78).
+
+    Stores Chinese overlays / market-review Markdown keyed by record and source
+    hash so the HTML report can be served fully in Chinese without re-calling the
+    model on every read.
+    """
+
+    __tablename__ = 'report_text_variants'
+
+    id = Column(Integer, primary_key=True, autoincrement=True)
+    record_id = Column(Integer, ForeignKey('analysis_history.id'), nullable=False, index=True)
+    target_language = Column(String(8), nullable=False, default='zh')
+    variant_kind = Column(String(32), nullable=False)
+    source_hash = Column(String(64), nullable=False)
+    payload_json = Column(Text, nullable=False, default='{}')
+    translator_backend = Column(String(32))
+    translator_model = Column(String(128))
+    status = Column(String(16), nullable=False, default='ready', index=True)
+    error_code = Column(String(64))
+    created_at = Column(DateTime, default=datetime.now)
+    updated_at = Column(DateTime, default=datetime.now, onupdate=datetime.now)
+
+    __table_args__ = (
+        UniqueConstraint(
+            'record_id',
+            'target_language',
+            'variant_kind',
+            name='uq_report_text_variant_record_lang_kind',
+        ),
+        Index('ix_report_text_variant_record_status', 'record_id', 'status'),
+    )
+
+
 class DatabaseManager(metaclass=_DatabaseManagerMeta):
     """
     数据库管理器 - 单例模式
@@ -3719,6 +3753,81 @@ class DatabaseManager(metaclass=_DatabaseManagerMeta):
             ).scalars().first()
             return result
 
+    def get_report_text_variant(
+        self,
+        record_id: int,
+        *,
+        target_language: str = "zh",
+        variant_kind: Optional[str] = None,
+    ) -> Optional[ReportTextVariant]:
+        """Return a persisted translated variant for a history record."""
+        with self.get_session() as session:
+            query = select(ReportTextVariant).where(
+                ReportTextVariant.record_id == int(record_id),
+                ReportTextVariant.target_language == target_language,
+            )
+            if variant_kind:
+                query = query.where(ReportTextVariant.variant_kind == variant_kind)
+            return session.execute(query).scalars().first()
+
+    def save_report_text_variant(
+        self,
+        record_id: int,
+        *,
+        variant_kind: str,
+        source_hash: str,
+        payload_json: str,
+        status: str = "ready",
+        target_language: str = "zh",
+        translator_backend: Optional[str] = None,
+        translator_model: Optional[str] = None,
+        error_code: Optional[str] = None,
+    ) -> Dict[str, Any]:
+        """Idempotently persist a translated variant (insert or update)."""
+        with self.session_scope() as session:
+            row = session.execute(
+                select(ReportTextVariant).where(
+                    ReportTextVariant.record_id == int(record_id),
+                    ReportTextVariant.target_language == target_language,
+                    ReportTextVariant.variant_kind == variant_kind,
+                )
+            ).scalars().first()
+            if row is None:
+                row = ReportTextVariant(
+                    record_id=int(record_id),
+                    target_language=target_language,
+                    variant_kind=variant_kind,
+                    source_hash=source_hash,
+                    payload_json=payload_json,
+                    status=status,
+                    translator_backend=translator_backend,
+                    translator_model=translator_model,
+                    error_code=error_code,
+                )
+                session.add(row)
+            else:
+                row.source_hash = source_hash
+                row.payload_json = payload_json
+                row.status = status
+                row.translator_backend = translator_backend
+                row.translator_model = translator_model
+                row.error_code = error_code
+                row.updated_at = datetime.now()
+            session.flush()
+            session.refresh(row)
+            return {
+                "id": row.id,
+                "record_id": row.record_id,
+                "target_language": row.target_language,
+                "variant_kind": row.variant_kind,
+                "source_hash": row.source_hash,
+                "payload_json": row.payload_json,
+                "status": row.status,
+                "error_code": row.error_code,
+                "translator_backend": row.translator_backend,
+                "translator_model": row.translator_model,
+            }
+
     def delete_analysis_history_records(self, record_ids: List[int]) -> int:
         """
         删除指定的分析历史记录。
@@ -3772,6 +3881,9 @@ class DatabaseManager(metaclass=_DatabaseManagerMeta):
                 )
             session.execute(
                 delete(BacktestResult).where(BacktestResult.analysis_history_id.in_(existing_ids))
+            )
+            session.execute(
+                delete(ReportTextVariant).where(ReportTextVariant.record_id.in_(existing_ids))
             )
             linked_skill_sample_ids = sorted(
                 session.execute(
