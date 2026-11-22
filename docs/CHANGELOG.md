@@ -9,6 +9,8 @@ and this project adheres to [Semantic Versioning](https://semver.org/).
 
 ## [Unreleased]
 - [新功能] 个股分析与问股接入「财报日历」（下一次财报披露日期）：A股经 AkShare 巨潮预约披露 / 东财预约披露、美股经 yfinance `calendar` / `earnings_dates` 取下一次财报披露日期，标准化为 `earnings.calendar` 子块（`next_earnings_date` / `days_to_next` / `events`），进入报告基本面业绩区块与问股 `get_stock_info`；无密钥、fail-open、默认开启，披露日期始终标注「预计/预约」，港股暂标 `not_supported`。详见 [开发任务书](tasks/earnings-calendar.md)。
+- [改进] 飞书推送升级结构化卡片：优先用通知链路已算好的结构化数据渲染信号区（八态动作徽章 / 0–100 评分分级色 / 理想买·止损·目标三列卡 / 大盘情绪灯），卡片无 `render_context` 时输出逐字节不变；`render_context` 从发送层透传到 Webhook 与 App Bot 两条链路，分片时信号区只作用于首片。详见 [开发任务书](tasks/feishu-message-redesign.md)。
+- [文档] 新增飞书消息格式深度优化开发任务书与 P1 落地说明（docs/tasks/feishu-message-redesign.md）。
 - [新功能] 问股与个股/大盘分析接入「预测市场现状」：新增只读预测市场采集层（Kalshi / Polymarket 标准化字段、`(source, market_id)` 去重、retention、fail-open），问股 Agent 新增只读工具 `search_prediction_markets`，个股分析注入独立 `prediction_market_context` 数据块、大盘复盘 Prompt 合并宏观事件；新增 `GET/POST /api/v1/prediction-markets/*` 查询与拉取接口。全能力默认关闭（`PREDICTION_MARKET_ENABLED=false`），不参与评分/仓位，详见 [开发任务书](tasks/prediction-market-intelligence.md)。
 - [新功能] 问股对话列表支持置顶：会话菜单新增「置顶对话 / 取消置顶」，置顶会话在列表顶部独立成组并持久化到新表 `conversation_session_pins`；`GET /api/v1/agent/chat/sessions` 新增 `is_pinned`，新增 `PUT /api/v1/agent/chat/sessions/{session_id}/pin`；置顶排序在 SQL 层先于 `limit` 截断执行，删除会话同步清理置顶记录，失败时前端回滚乐观更新并提示。详见 [开发任务书](tasks/chat-session-pin.md)。
 - [改进] 问股「分析过程」明细收敛重复内容：展开类别时按 `call_id` / `stage_id` 把 `tool_start` 与 `tool_done`、`stage_start` 与 `stage_done` 合并为一行，隐藏「…已完成，继续深入分析…」等重复思考提示，连续相同记录折叠为 `×N`，并在标题旁汇总「N 次工具调用 · M 个分析阶段 · K 项异常」；运行中的进度面板也不再同时展示已完成的 start/done 两行。

@@ -166,6 +166,7 @@ class FeishuSender:
         *,
         max_bytes: Optional[int] = None,
         include_disclaimer: bool = False,
+        render_context: Optional[Dict[str, Any]] = None,
     ) -> dict:
         """Build a Feishu interactive-card body (without the ``msg_type`` wrapper).
 
@@ -173,9 +174,15 @@ class FeishuSender:
         exceeding ``max_bytes`` fall back to a compact single-div card.  The
         original content is never dropped, so the existing text fallback still
         works unchanged.
+
+        ``render_context`` 携带通知链路已算好的结构化数据；有值时卡片顶部渲染
+        信号区，缺省时行为与旧版逐字节一致。
         """
         return build_feishu_card(
-            content, max_bytes=max_bytes, include_disclaimer=include_disclaimer
+            content,
+            max_bytes=max_bytes,
+            include_disclaimer=include_disclaimer,
+            render_context=render_context,
         )
 
     # ------------------------------------------------------------------
@@ -310,9 +317,19 @@ class FeishuSender:
             logger.info(
                 "App Bot 消息超长 (%d 字节)，将分批发送", content_bytes
             )
-            return self._app_send_chunked(client, formatted, include_disclaimer=include_disclaimer)
+            return self._app_send_chunked(
+                client,
+                formatted,
+                include_disclaimer=include_disclaimer,
+                render_context=render_context,
+            )
 
-        return self._app_send_once(client, formatted, include_disclaimer=include_disclaimer)
+        return self._app_send_once(
+            client,
+            formatted,
+            include_disclaimer=include_disclaimer,
+            render_context=render_context,
+        )
 
     def _app_send_chunked(
         self,
@@ -320,6 +337,7 @@ class FeishuSender:
         content: str,
         *,
         include_disclaimer: bool = False,
+        render_context: Optional[Dict[str, Any]] = None,
     ) -> bool:
         """Chunk and send long content through App Bot."""
         try:
@@ -332,7 +350,12 @@ class FeishuSender:
 
         success = True
         for i, chunk in enumerate(chunks):
-            ok = self._app_send_once(client, chunk, include_disclaimer=include_disclaimer)
+            ok = self._app_send_once(
+                client,
+                chunk,
+                include_disclaimer=include_disclaimer,
+                render_context=render_context if i == 0 else None,
+            )
             if not ok:
                 logger.error("App Bot 第 %d/%d 批发送失败", i + 1, len(chunks))
                 success = False
@@ -346,6 +369,7 @@ class FeishuSender:
         content: str,
         *,
         include_disclaimer: bool = False,
+        render_context: Optional[Dict[str, Any]] = None,
     ) -> bool:
         """Single-shot send via App Bot with card-first / text-fallback.
 
@@ -358,6 +382,7 @@ class FeishuSender:
                 content,
                 max_bytes=self._feishu_max_bytes,
                 include_disclaimer=include_disclaimer,
+                render_context=render_context,
             ),
             ensure_ascii=False,
         )
@@ -694,6 +719,7 @@ class FeishuSender:
                 formatted_content,
                 effective_max_bytes,
                 include_disclaimer=include_disclaimer,
+                render_context=render_context,
             )
 
         try:
@@ -701,6 +727,7 @@ class FeishuSender:
                 formatted_content,
                 timeout_seconds=timeout_seconds,
                 include_disclaimer=include_disclaimer,
+                render_context=render_context,
             )
         except Exception as e:
             logger.error("发送飞书消息失败: %s", e)
@@ -712,12 +739,15 @@ class FeishuSender:
         max_bytes: int,
         *,
         include_disclaimer: bool = False,
+        render_context: Optional[Dict[str, Any]] = None,
     ) -> bool:
         """分片发送超长内容，续页继承标题并加页码。
 
         改进点（F1 热修）：
         - 提取原始标题，续页在开头加上「标题 (N/M)」
         - 避免续页因缺少一级标题而回退为通用标题
+
+        结构化渲染上下文只作用于首片，避免每片重复渲染信号区。
         """
         # 提取原始一级标题
         title = self._extract_h1_title(content)
@@ -738,7 +768,11 @@ class FeishuSender:
                     page_header = f"# {title} ({i + 1}/{total_chunks})\n\n"
                     chunk = page_header + chunk
 
-                if self._send_feishu_message(chunk, include_disclaimer=include_disclaimer):
+                if self._send_feishu_message(
+                    chunk,
+                    include_disclaimer=include_disclaimer,
+                    render_context=render_context if i == 0 else None,
+                ):
                     success_count += 1
                     logger.info("飞书第 %d/%d 批发送成功", i + 1, total_chunks)
                 else:
@@ -768,6 +802,7 @@ class FeishuSender:
         *,
         timeout_seconds: Optional[float] = None,
         include_disclaimer: bool = False,
+        render_context: Optional[Dict[str, Any]] = None,
     ) -> bool:
         """Send a single Feishu webhook message (interactive card, fallback text).
 
@@ -776,6 +811,7 @@ class FeishuSender:
         2. 纯文本兜底时去除 lark_md 标记
         3. 限流错误时重试
         4. 关键词不参与标题解析，而是添加到页脚
+        5. 结构化上下文只用于卡片信号区，不影响纯文本兜底
         """
         security_fields = self._build_security_fields()
 
@@ -863,6 +899,7 @@ class FeishuSender:
             content,
             max_bytes=self._feishu_max_bytes,
             include_disclaimer=include_disclaimer,
+            render_context=render_context,
         )
         
         if card_body is not None:
