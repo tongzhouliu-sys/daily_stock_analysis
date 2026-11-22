@@ -421,6 +421,20 @@ describe('BacktestPage', () => {
     expect(screen.getByRole('alert')).toHaveTextContent('summary unavailable');
   });
 
+  it('shows the full prediction in a descriptive hover panel', async () => {
+    render(<BacktestPage />);
+
+    const trend = await screen.findByText('震荡偏多');
+    fireEvent.mouseOver(trend);
+
+    const panel = await screen.findByTestId('backtest-prediction-peek');
+    expect(within(panel).getByText('趋势判断')).toBeInTheDocument();
+    expect(within(panel).getByText('操作建议')).toBeInTheDocument();
+    expect(within(panel).getByText('实际复盘')).toBeInTheDocument();
+    expect(within(panel).getByText('继续持有')).toBeInTheDocument();
+    expect(within(panel).getByText('震荡偏多')).toBeInTheDocument();
+  });
+
   it('paginates with the applied filters, not the live input values', async () => {
     mockGetResults.mockResolvedValue({ total: 45, page: 1, limit: 20, items: [baseResultItem] });
 

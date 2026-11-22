@@ -10,6 +10,10 @@ interface TooltipProps {
   focusable?: boolean;
   className?: string;
   contentClassName?: string;
+  /** `panel` renders a content-owned card instead of the default one-line chip. */
+  variant?: 'default' | 'panel';
+  /** Keep the panel open while the pointer is inside it (needed for scrolling). */
+  interactive?: boolean;
 }
 
 type TooltipStyle = {
@@ -24,13 +28,33 @@ export const Tooltip: React.FC<TooltipProps> = ({
   focusable = false,
   className = '',
   contentClassName = '',
+  variant = 'default',
+  interactive = false,
 }) => {
   const triggerRef = useRef<HTMLSpanElement | null>(null);
   const tooltipRef = useRef<HTMLSpanElement | null>(null);
+  const closeTimerRef = useRef<number | null>(null);
   const tooltipId = useId();
   const [open, setOpen] = useState(false);
   const [resolvedSide, setResolvedSide] = useState<'top' | 'bottom'>(side);
   const [style, setStyle] = useState<TooltipStyle>({ top: 0, left: 0 });
+
+  const cancelClose = useCallback(() => {
+    if (closeTimerRef.current !== null) {
+      window.clearTimeout(closeTimerRef.current);
+      closeTimerRef.current = null;
+    }
+  }, []);
+
+  const scheduleClose = useCallback(() => {
+    cancelClose();
+    closeTimerRef.current = window.setTimeout(() => {
+      closeTimerRef.current = null;
+      setOpen(false);
+    }, 160);
+  }, [cancelClose]);
+
+  useEffect(() => () => cancelClose(), [cancelClose]);
 
   const updatePosition = useCallback(() => {
     const trigger = triggerRef.current;
@@ -106,8 +130,17 @@ export const Tooltip: React.FC<TooltipProps> = ({
       <span
         ref={triggerRef}
         className={cn('inline-flex', className)}
-        onMouseEnter={() => setOpen(true)}
-        onMouseLeave={() => setOpen(false)}
+        onMouseEnter={() => {
+          cancelClose();
+          setOpen(true);
+        }}
+        onMouseLeave={() => {
+          if (interactive) {
+            scheduleClose();
+          } else {
+            setOpen(false);
+          }
+        }}
         onFocus={() => setOpen(true)}
         onBlur={() => setOpen(false)}
         onKeyDown={(event) => {
@@ -132,8 +165,14 @@ export const Tooltip: React.FC<TooltipProps> = ({
                 top: style.top,
                 left: style.left,
               }}
+              onMouseEnter={interactive ? cancelClose : undefined}
+              onMouseLeave={interactive ? scheduleClose : undefined}
               className={cn(
-                'pointer-events-none z-[120] min-w-max max-w-[18rem] rounded-xl border border-border/70 bg-elevated/95 px-3 py-1.5 text-xs leading-5 text-foreground shadow-[0_16px_40px_rgba(3,8,20,0.18)] backdrop-blur-xl',
+                'pointer-events-none z-[120]',
+                interactive && 'pointer-events-auto',
+                variant === 'default'
+                  ? 'min-w-max max-w-[18rem] rounded-xl border border-border/70 bg-elevated/95 px-3 py-1.5 text-xs leading-5 text-foreground shadow-[0_16px_40px_rgba(3,8,20,0.18)] backdrop-blur-xl'
+                  : 'text-left',
                 resolvedSide === 'top' ? 'origin-bottom' : 'origin-top',
                 contentClassName,
               )}

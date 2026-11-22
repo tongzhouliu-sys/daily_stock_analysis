@@ -81,7 +81,7 @@ research-page (flex column, >=1400px 时锁定视口高度)
 - 表头字号 10px、字距 0.04em，允许在词边界换行，避免 `PERFORMANCE` 之类长单词被从中间截断。
 - `table-layout: fixed` + `<colgroup>` 明确列宽（最小宽度 768px），所有正文单元格 `overflow: hidden`，文本统一走「换行 / 省略 + Tooltip」。
 - 首列（股票）在横向滚动时 `sticky left: 0` 并继承行背景，表头首列 `z-index: 4`。
-- 状态/结果徽章内部文本可省略并带 `title`，长英文状态不再把徽章撑成两行。
+- 状态/结果徽章内部文本可省略并带悬浮提示，长英文状态不再把徽章撑成两行。
 
 ### 2.3 指标卡 / 筛选区 / 工具栏
 
@@ -172,9 +172,36 @@ research-page (flex column, >=1400px 时锁定视口高度)
 | --- | --- |
 | `npm run lint` | 通过 |
 | `npm run build` | 通过（仅既有 chunk size 警告） |
-| `npx vitest run src/pages/__tests__/BacktestPage.test.tsx` | 11/11 通过 |
-| `npx playwright test --config playwright.fixture.config.ts e2e/fixtures/backtest-layout.spec.ts` | 3/3 通过（多视口 + 英文 + 吸顶滚动） |
-| `npx playwright test --config playwright.fixture.config.ts`（全量 fixture） | 38/38 通过 |
-| 截图核对 | 1440 / 1280 / 1024 / 768 / 390 五档，中文与英文各一组 |
+| `npx vitest run src/pages/__tests__/BacktestPage.test.tsx` | 12/12 通过 |
+| `npx playwright test --config playwright.fixture.config.ts e2e/fixtures/backtest-layout.spec.ts` | 4/4 通过（多视口 + 英文 + 吸顶滚动 + 瀑布屏） |
+| `npx playwright test --config playwright.fixture.config.ts`（全量 fixture） | 39/39 通过 |
+| 截图核对 | 1440 / 1280 / 1024 / 768 / 390 五档，中文与英文各一组；瀑布屏浅色 + 深色 |
 
 说明：本机 Playwright 默认 Chromium 版本缓存不完整，验证时用同版本 Playwright 的另一个完整 Chromium 可执行文件跑同一套配置；测试代码本身不依赖该路径，CI 仍使用标准 `playwright.fixture.config.ts`。
+
+---
+
+## 9. 追加优化：AI 预测「瀑布屏」悬浮卡（2026-11-23）
+
+### 9.1 问题
+
+结果表里的 AI 预测只把「操作 / 趋势 / 建议」用 ` / ` 拼成一行放进通用 Tooltip，信息没有层级、长建议被压成一条，视觉上很廉价。
+
+### 9.2 方案
+
+- 通用 `Tooltip` 新增 `variant="panel"` 与 `interactive`：
+  - `panel` 只负责定位 / Portal / `role="tooltip"` / 焦点与 Escape，视觉完全交给内容卡片。
+  - `interactive` 在指针进入面板时取消关闭、离开后延迟 160ms 关闭，支持面板内滚动阅读长文。
+- 新增 `PredictionPeek` 卡片：标题（AI 预测详情 + 代码 / 名称）、操作徽章、日期 / 阶段元信息，以及沿左侧发光渐变轨依次下落的「趋势判断 → 操作建议 → 实际复盘」三段瀑布。
+- 实际复盘段展示实际涨跌与收益、方向匹配与预期、结果徽章；无复盘数据时不渲染该段。
+- 动画：各段 0.38s 错峰上浮，左侧轨道 4.2s 缓慢流动；`prefers-reduced-motion` 下全部关闭。
+- 深浅色分别调色：浅色为暖白渐变 + 主色描边，深色提高主色辉光并加深投影，保证与页面有分离度。
+- 可访问性：触发器可聚焦，面板通过 `aria-describedby` 关联；面板文本无截断，长文可在面板内滚动。
+
+### 9.3 验收补充
+
+1. 悬停 / 聚焦 AI 预测单元格，`role="tooltip"` 面板出现，包含「AI 预测详情 / 趋势判断 / 操作建议 / 实际复盘」。
+2. 面板宽度 ≤ 480px、完整落在视口内，长建议完整可见。
+3. 指针移入面板不关闭，移出后自动关闭。
+4. 中英文标签各有断言；浅色与深色各截图核对。
+5. 面板不改变表格 DOM 语义、不阻断原有单元格文本与 Tooltip 焦点行为。

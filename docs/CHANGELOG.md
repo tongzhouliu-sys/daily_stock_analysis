@@ -8,7 +8,8 @@ and this project adheres to [Semantic Versioning](https://semver.org/).
 > For user-friendly release highlights, see the [GitHub Releases](https://github.com/ZhuLinsen/daily_stock_analysis/releases) page.
 
 ## [Unreleased]
-- [修复] 回测结果区文字遮挡：结果表改为不透明吸顶表头 + 固定列宽 + 首列吸附，滚动时行文字不再透出表头、相邻列不再互相挤压；`<900px` 改为卡片列表，消除横向滚动与列被裁切；筛选区改为自适应网格、指标卡在平板宽度分栏展示，长文本统一省略并保留完整 Tooltip / title。详见 [开发任务书](tasks/backtest-result-layout.md)。
+- [改进] 回测 AI 预测悬浮卡：鼠标移入 AI 预测单元格改为瀑布式详情卡（趋势判断 / 操作建议 / 实际复盘，左侧流动光轨 + 错峰上浮动画），长文可在卡内滚动并支持键盘聚焦，深浅色分别调色；通用 Tooltip 新增 `panel` / `interactive` 模式。详见 [开发任务书](tasks/backtest-result-layout.md#9-追加优化ai-预测瀑布屏悬浮卡2026-11-23)。
+- [修复] 回测结果区文字遮挡：结果表改为不透明吸顶表头 + 固定列宽 + 首列吸附，滚动时行文字不再透出表头、相邻列不再互相挤压；`<900px` 改为卡片列表，消除横向滚动与列被裁切；筛选区改为自适应网格、指标卡在平板宽度分栏展示，长文本统一省略并保留完整 Tooltip。详见 [开发任务书](tasks/backtest-result-layout.md)。
 - [chore] 协作规则改为「验证后直接推 main」：关闭 `main` 的管理员强制状态检查（`enforce_admins=false`），管理员改完并通过第 6 节验证后直接 `git commit` + `git push origin main`，不再建短分支/PR；非管理员协作仍走分支 + PR。同步更新 `AGENTS.md`、GitHub Copilot 指令与 `fix-issue` skill。
 - [修复] 问股发送后界面跳到顶部/不跟随：发送时立即把消息列表滚到最新问题，并改为只滚动消息视口，不再用 `scrollIntoView` 连带滚动整页；运行中的自动跟随改为即时滚动，避免平滑动画在频繁更新时掉队；切换或恢复会话默认停在最新消息。
 - [修复] HTML 报告中文化补齐无 `report_language` 的历史记录：按正文内容检测英文/韩文与英文标题、表格、短句，强制生成中文变体，避免回退全局配置后出现中英混排。

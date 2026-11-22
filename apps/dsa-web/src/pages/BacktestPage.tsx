@@ -103,7 +103,7 @@ function outcomeBadge(outcome: string | undefined, language: UiLanguage) {
   const labels = BACKTEST_OUTCOME_LABELS[language];
   const label = (variant: 'success' | 'danger' | 'warning' | 'default', text: string, glow = false) => (
     <Badge variant={variant} glow={glow} className="max-w-full whitespace-nowrap">
-      <span className="min-w-0 truncate" title={text}>{text}</span>
+      <span className="min-w-0 truncate">{text}</span>
     </Badge>
   );
 
@@ -124,7 +124,7 @@ function statusBadge(status: string, language: UiLanguage) {
   const labels = BACKTEST_STATUS_LABELS[language];
   const label = (variant: 'success' | 'warning' | 'danger' | 'default', text: string) => (
     <Badge variant={variant} className="max-w-full whitespace-nowrap">
-      <span className="min-w-0 truncate" title={text}>{text}</span>
+      <span className="min-w-0 truncate">{text}</span>
     </Badge>
   );
 
@@ -255,6 +255,91 @@ const PerformanceCard: React.FC<{ metrics: PerformanceMetrics; title: string; la
         </div>
       ) : null}
     </Card>
+  );
+};
+
+// ============ Prediction Peek ============
+
+const PredictionPeek: React.FC<{
+  row: BacktestResultItem;
+  language: UiLanguage;
+  text: BacktestText;
+  actionLabel?: string | null;
+  phaseText: string;
+}> = ({ row, language, text, actionLabel, phaseText }) => {
+  const expectedLabel = row.directionExpected
+    ? labelFromMap(row.directionExpected, BACKTEST_DIRECTION_EXPECTED_LABELS[language])
+    : '--';
+  const hasReview = row.actualMovement != null
+    || row.actualReturnPct != null
+    || row.directionCorrect != null
+    || Boolean(row.outcome);
+
+  return (
+    <div className="backtest-prediction-peek" data-testid="backtest-prediction-peek">
+      <div className="backtest-peek-head">
+        <div className="backtest-peek-identity">
+          <span className="backtest-peek-eyebrow">{text.predictionPeekTitle}</span>
+          <p className="backtest-peek-stock">
+            <span className="backtest-peek-code">{row.code}</span>
+            <span className="backtest-peek-name">{row.stockName || '--'}</span>
+          </p>
+        </div>
+        {actionLabel ? (
+          <Badge variant="info" size="md" className="backtest-peek-action">{actionLabel}</Badge>
+        ) : null}
+      </div>
+
+      <div className="backtest-peek-meta">
+        <span className="tabular-nums">{row.analysisDate || '--'}</span>
+        <span className="backtest-peek-sep" aria-hidden="true" />
+        <span>{phaseText}</span>
+      </div>
+
+      <div className="backtest-peek-flow">
+        <section className="backtest-peek-section">
+          <span className="backtest-peek-label">{text.trendView}</span>
+          <p className="backtest-peek-body">{row.trendPrediction || '--'}</p>
+        </section>
+
+        <section className="backtest-peek-section">
+          <span className="backtest-peek-label">{text.operationAdvice}</span>
+          <p className="backtest-peek-body">{row.operationAdvice || '--'}</p>
+        </section>
+
+        {hasReview ? (
+          <section className="backtest-peek-section">
+            <span className="backtest-peek-label">{text.actualReview}</span>
+            <dl className="backtest-peek-review">
+              <div>
+                <dt>{text.actualPerformance}</dt>
+                <dd>
+                  {actualMovementBadge(row.actualMovement, language)}
+                  <span className={
+                    row.actualReturnPct != null
+                      ? row.actualReturnPct > 0 ? 'text-success' : row.actualReturnPct < 0 ? 'text-danger' : 'text-secondary-text'
+                      : 'text-muted-text'
+                  }>
+                    {pct(row.actualReturnPct)}
+                  </span>
+                </dd>
+              </div>
+              <div>
+                <dt>{text.directionMatch}</dt>
+                <dd>
+                  {boolIcon(row.directionCorrect, text)}
+                  <span className="text-secondary-text">{expectedLabel}</span>
+                </dd>
+              </div>
+              <div>
+                <dt>{text.result}</dt>
+                <dd>{outcomeBadge(row.outcome, language)}</dd>
+              </div>
+            </dl>
+          </section>
+        ) : null}
+      </div>
+    </div>
   );
 };
 
@@ -858,22 +943,32 @@ const BacktestPage: React.FC = () => {
                           <td className="backtest-table-cell backtest-table-code">
                             <div className="flex min-w-0 flex-col">
                               <span className="backtest-cell-line font-semibold">{row.code}</span>
-                              <span className="backtest-cell-line text-xs text-muted-text" title={row.stockName || undefined}>
-                                {row.stockName || '--'}
-                              </span>
+                              <Tooltip content={row.stockName || undefined} className="w-full min-w-0">
+                                <span className="backtest-cell-line text-xs text-muted-text">{row.stockName || '--'}</span>
+                              </Tooltip>
                             </div>
                           </td>
                           <td className="backtest-table-cell text-secondary-text">
                             <span className="backtest-cell-line tabular-nums">{row.analysisDate || '--'}</span>
                           </td>
                           <td className="backtest-table-cell text-secondary-text">
-                            <span className="backtest-cell-line" title={phaseText}>{phaseText}</span>
+                            <span className="backtest-phase-cell">{phaseText}</span>
                           </td>
                           <td className="backtest-table-cell text-foreground">
                             {predictionParts.length ? (
                               <Tooltip
-                                content={predictionParts.join(' / ')}
+                                content={(
+                                  <PredictionPeek
+                                    row={row}
+                                    language={language}
+                                    text={text}
+                                    actionLabel={actionLabel}
+                                    phaseText={phaseText}
+                                  />
+                                )}
                                 focusable
+                                interactive
+                                variant="panel"
                                 className="w-full min-w-0"
                               >
                                 <div className="flex w-full min-w-0 flex-col gap-1">
@@ -907,7 +1002,6 @@ const BacktestPage: React.FC = () => {
                               <span className="shrink-0">{boolIcon(row.directionCorrect, text)}</span>
                               <span
                                 className="backtest-cell-line text-muted-text"
-                                title={row.directionExpected ? labelFromMap(row.directionExpected, BACKTEST_DIRECTION_EXPECTED_LABELS[language]) : undefined}
                               >
                                 {row.directionExpected ? labelFromMap(row.directionExpected, BACKTEST_DIRECTION_EXPECTED_LABELS[language]) : ''}
                               </span>

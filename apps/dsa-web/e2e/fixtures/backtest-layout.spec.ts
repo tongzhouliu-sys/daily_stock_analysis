@@ -174,6 +174,48 @@ test('backtest results never overlap their text', async ({ page }, testInfo) => 
   }
 });
 
+test('AI prediction hover opens a waterfall detail card', async ({ page }, testInfo) => {
+  for (const width of [1440, 1024]) {
+    await page.setViewportSize({ width, height: 1000 });
+    await mountPage(page);
+
+    const cell = page.locator('.backtest-table tbody tr').first().locator('td').nth(3);
+    if (width === 1024) {
+      await page.evaluate(() => document.documentElement.classList.add('dark'));
+    }
+    await cell.hover();
+
+    const panel = page.getByTestId('backtest-prediction-peek');
+    await expect(panel).toBeVisible();
+    await expect(panel.getByText('AI 预测详情')).toBeVisible();
+    await expect(panel.getByText('趋势判断')).toBeVisible();
+    await expect(panel.getByText('操作建议')).toBeVisible();
+    await expect(panel.getByText('实际复盘')).toBeVisible();
+    await expect(
+      panel.getByText('继续持有，等待突破确认后再考虑分批加仓，跌破支撑则止损离场', { exact: false }),
+    ).toBeVisible();
+
+    const sectionCount = await panel.locator('.backtest-peek-section').count();
+    expect(sectionCount).toBeGreaterThanOrEqual(3);
+
+    await page.waitForTimeout(450);
+    const box = await panel.boundingBox();
+    expect(box).not.toBeNull();
+    expect(box!.x).toBeGreaterThanOrEqual(0);
+    expect(box!.y).toBeGreaterThanOrEqual(0);
+    expect(box!.x + box!.width).toBeLessThanOrEqual(width + 1);
+    expect(box!.y + box!.height).toBeLessThanOrEqual(1000 + 1);
+    expect(box!.width).toBeLessThanOrEqual(480 + 1);
+
+    const screenshot = testInfo.outputPath(`backtest-peek-${width}.png`);
+    await page.screenshot({ path: screenshot, animations: 'disabled' });
+    await testInfo.attach(`backtest-peek-${width}`, { path: screenshot, contentType: 'image/png' });
+
+    await page.mouse.move(1, 1);
+    await expect(panel).toBeHidden();
+  }
+});
+
 test('english labels keep the result table readable', async ({ page }, testInfo) => {
   await page.addInitScript(() => window.localStorage.setItem('dsa.uiLanguage', 'en'));
 
@@ -207,6 +249,13 @@ test('english labels keep the result table readable', async ({ page }, testInfo)
     expect(layout.overlappingCells, `overlapping cells at ${width}px`).toBe(0);
     expect(layout.wrappedBadges, `wrapped badges at ${width}px`).toBe(0);
     expect(layout.docOverflow, `document overflow at ${width}px`).toBe(false);
+
+    await page.locator('.backtest-table tbody tr').first().locator('td').nth(3).hover();
+    const panel = page.getByTestId('backtest-prediction-peek');
+    await expect(panel.getByText('Trend view')).toBeVisible();
+    await expect(panel.getByText('Operation advice')).toBeVisible();
+    await page.mouse.move(1, 1);
+    await expect(panel).toBeHidden();
 
     const screenshot = testInfo.outputPath(`backtest-en-${width}.png`);
     await page.screenshot({ path: screenshot, animations: 'disabled', fullPage: true });
