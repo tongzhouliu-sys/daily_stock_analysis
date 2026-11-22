@@ -8,6 +8,8 @@ and this project adheres to [Semantic Versioning](https://semver.org/).
 > For user-friendly release highlights, see the [GitHub Releases](https://github.com/ZhuLinsen/daily_stock_analysis/releases) page.
 
 ## [Unreleased]
+- [新功能] HTML 报告彻底中文化（T78）：en/ko 历史报告通过 `report_text_variants` 持久化中文变体（个股字段覆盖表 / 大盘复盘中文 Markdown），HTML 接口只读中文变体；缺失时返回 `409 zh_variant_missing`，Web 抽屉提供「生成中文版本」按钮并调用 `POST /api/v1/history/{id}/report-zh-variant`。新增 `scripts/backfill_report_zh_variants.py` 批量回填，以及 `REPORT_ZH_VARIANT_*` 四个可选配置。
+- [测试] 新增中文变体翻译、缓存、409/503 契约与 Web 抽屉生成流程测试；新增 `scripts/check_html_chinese.py` 扫描 HTML 英文句子并保留白名单专名/代码/指标。
 - [修复] 问股「分析过程」无法收起：展开状态改为由已展开分类派生，全部折叠后自动回到折叠态，摘要行新增「收起」按钮；展开明细限制在约 5 行高的滚动容器内，行内单行省略并用 Tooltip 展示完整文案，不再把消息卡片撑高。
 - [新功能] 财报日历可见性：把已合入的「下一次财报披露日期」从仅 LLM Prompt / 工具返回，扩展为结构化呈现——分析报告页新增「财报日历」卡片（有未来日期 / 仅已披露 / 空三态，披露日期标「预计」），问股回答新增「下次财报」徽章（来自 `get_stock_info` 结果，经 `AnswerMeta.earnings_calendar` 白名单透传），通知与飞书卡片在「财务摘要」前新增「📅 财报日历」块（飞书复用 Markdown 解析自动跟随）；API `ReportDetails.earnings_calendar` 三处一致。详见 [开发任务书](tasks/earnings-calendar-visibility.md)。
 - [新功能] 首页分析运行反馈：主阅读区新增运行卡（五阶段进度条、当前步骤、已用时、取消），窄屏同样可见；运行卡与任务面板共用同一套阶段 / 状态模型，失败任务停留可重试，排队显示队列位置，断线显示重连提示并在断开期间加密轮询；任务 SSE 与任务列表新增 `stage`、`progress_updated_at`，`connected` 事件新增 `heartbeat_interval_s`。

@@ -370,6 +370,7 @@ export const ShareReportButton: React.FC<ShareReportButtonProps> = ({
     setBusyAction('htmlDownload');
     try {
       const filename = `${safeFilenamePart(reportTitle)}-${activeRecordId}.html`;
+      await historyApi.ensureReportZhVariant(activeRecordId);
       await historyApi.downloadReportHtml(activeRecordId, filename);
       setFeedback({
         recordId: activeRecordId,

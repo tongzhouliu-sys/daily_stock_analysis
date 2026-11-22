@@ -14,6 +14,8 @@ interface ReportHtmlDrawerProps {
 type LoadState =
   | { status: 'loading'; recordId: number }
   | { status: 'ready'; recordId: number; html: string }
+  | { status: 'missing'; recordId: number }
+  | { status: 'generating'; recordId: number }
   | { status: 'error'; recordId: number; message: string };
 
 /**
@@ -45,14 +47,39 @@ export const ReportHtmlDrawer: React.FC<ReportHtmlDrawerProps> = ({
         }
       })
       .catch((error: unknown) => {
-        if (active && loadTokenRef.current === token) {
-          setState({ status: 'error', recordId, message: getParsedApiError(error).message });
+        if (!active || loadTokenRef.current !== token) return;
+        const parsed = getParsedApiError(error);
+        if (parsed.code === 'zh_variant_missing') {
+          setState({ status: 'missing', recordId });
+          return;
         }
+        setState({ status: 'error', recordId, message: parsed.message });
       });
     return () => {
       active = false;
+      loadTokenRef.current += 1;
     };
   }, [recordId]);
+
+  const handleGenerateChinese = useCallback(async () => {
+    const token = loadTokenRef.current + 1;
+    loadTokenRef.current = token;
+    setState({ status: 'generating', recordId });
+    try {
+      await historyApi.ensureReportZhVariant(recordId);
+      const html = await historyApi.getReportHtml(recordId);
+      if (loadTokenRef.current === token) {
+        setState({ status: 'ready', recordId, html });
+      }
+    } catch (error: unknown) {
+      if (loadTokenRef.current !== token) return;
+      setState({
+        status: 'error',
+        recordId,
+        message: `${text.zhVariantFailed}: ${getParsedApiError(error).message}`,
+      });
+    }
+  }, [recordId, text.zhVariantFailed]);
 
   const handleClose = useCallback(() => {
     setIsOpen(false);
@@ -88,6 +115,24 @@ export const ReportHtmlDrawer: React.FC<ReportHtmlDrawerProps> = ({
             <div className="flex h-64 flex-col items-center justify-center">
               <div className="home-spinner h-10 w-10 animate-spin border-[3px]" />
               <p className="mt-4 text-sm text-secondary-text">{text.loadingReport}</p>
+            </div>
+          ) : null}
+          {currentState.status === 'generating' ? (
+            <div className="flex h-64 flex-col items-center justify-center">
+              <div className="home-spinner h-10 w-10 animate-spin border-[3px]" />
+              <p className="mt-4 text-sm text-secondary-text">{text.generatingZhVariant}</p>
+            </div>
+          ) : null}
+          {currentState.status === 'missing' ? (
+            <div className="flex h-64 flex-col items-center justify-center px-6 text-center">
+              <p className="text-sm text-secondary-text">{text.zhVariantMissing}</p>
+              <button
+                type="button"
+                onClick={() => void handleGenerateChinese()}
+                className="home-surface-button mt-4 rounded-lg px-4 py-2 text-sm text-secondary-text"
+              >
+                {text.generateZhVariant}
+              </button>
             </div>
           ) : null}
           {currentState.status === 'error' ? (

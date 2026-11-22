@@ -27,6 +27,7 @@
 | --- | --- | --- |
 | 日线 | `daily_bars`（`src/storage.py:3656 save_daily_data()`） | 盘中未收盘的当日行不入库；回写只保留到最近已收盘交易日 |
 | 分析历史 | `analysis_history`（`src/storage.py:3156 save_analysis_history()`） | 报告详情、历史页、追问上下文都读这条记录 |
+| 报告中文变体 | `report_text_variants`（`src/storage.py`） | HTML 报告固定中文；按 `record_id + target_language + variant_kind` 缓存字段覆盖表或大盘复盘中文 Markdown |
 | 新闻 / 情报 | `news_intel` 等（`src/storage.py`） | 带来源、时间、情感字段 |
 | 预测市场 | `prediction_market_events`（`src/repositories/prediction_market_repo.py`） | 只读外部事件概率（Kalshi/Polymarket），按 `(source, market_id)` 去重，UTC naive，默认关闭 |
 | 会话 | Agent 会话表（`src/services/agent_chat_session_service.py`） | 消息、技能选择、标的上下文 |

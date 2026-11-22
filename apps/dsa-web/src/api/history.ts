@@ -102,6 +102,16 @@ export const historyApi = {
   },
 
   /**
+   * 为 en/ko 历史报告生成中文变体（幂等，已就绪时命中缓存）。
+   */
+  ensureReportZhVariant: async (recordId: number, force = false): Promise<{ status: string }> => {
+    const response = await apiClient.post<{ status: string }>(
+      `/api/v1/history/${recordId}/report-zh-variant${force ? '?force=1' : ''}`,
+    );
+    return response.data;
+  },
+
+  /**
    * 以附件形式下载 HTML 报告。
    * 使用 blob + 前端 download 而非 window.location，避免触发 SPA 路由与鉴权跳转。
    */
