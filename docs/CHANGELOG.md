@@ -8,6 +8,7 @@ and this project adheres to [Semantic Versioning](https://semver.org/).
 > For user-friendly release highlights, see the [GitHub Releases](https://github.com/ZhuLinsen/daily_stock_analysis/releases) page.
 
 ## [Unreleased]
+- [chore] 协作规则改为「验证后直接推 main」：关闭 `main` 的管理员强制状态检查（`enforce_admins=false`），管理员改完并通过第 6 节验证后直接 `git commit` + `git push origin main`，不再建短分支/PR；非管理员协作仍走分支 + PR。同步更新 `AGENTS.md`、GitHub Copilot 指令与 `fix-issue` skill。
 - [修复] 问股发送后界面跳到顶部/不跟随：发送时立即把消息列表滚到最新问题，并改为只滚动消息视口，不再用 `scrollIntoView` 连带滚动整页；运行中的自动跟随改为即时滚动，避免平滑动画在频繁更新时掉队；切换或恢复会话默认停在最新消息。
 - [修复] 问股流式回复布局：进行中面板的流式正文改为可滚动并自动跟随最新行，不再把 18rem 之后的内容直接裁掉；流式正文不再提前渲染「本页目录 / 展开全文」，避免回合结束时布局跳动；「展开更早步骤」改为可收起的限高滚动区，长分析过程不再把回答区挤出屏幕。
 - [chore] AI 协作规则改为「默认合入授权」：完成改动并通过验证后可直接 `git commit` 并合入 `main`，不再逐次等待确认；仍禁止 `git push --force`、改写已推送历史、未要求的 `git tag`/Release、跳过验证合入与夹带他人 WIP。同步更新 `AGENTS.md` 第 1/8/9 节、`.github/copilot-instructions.md` 与 `.claude/skills/fix-issue/SKILL.md`。

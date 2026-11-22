@@ -95,7 +95,7 @@ git pull --ff-only
 - 标题只描述实际改动，建议不添加 `[codex]`、`codex`、`autocode`、`copilot` 或其他工具/agent 来源前缀
 - 该约定仅用于协作一致性，不应被单独当作 process blocker
 
-按 `AGENTS.md` 第 1 节的本机默认授权，完成修复并通过验证后，可直接 `git commit` 并合入 `main`，无需逐次等待用户确认；`main` 受保护时走短分支 + PR，必需检查通过后由同一操作者合并。以下动作仍需用户明确确认：
+按 `AGENTS.md` 第 1 节的本机默认授权，完成修复并通过验证后，可直接 `git commit` 并推送到 `main`，无需逐次等待用户确认；仓库管理员不建短分支、不建 PR（`main` 已关闭管理员强制检查），非管理员协作仍走短分支 + PR。以下动作仍需用户明确确认：
 
 - `git push --force`、`git tag`、Release
 - 合并他人的 PR
