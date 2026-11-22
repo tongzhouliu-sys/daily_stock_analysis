@@ -810,7 +810,7 @@ Focus on index trend, liquidity, and sector rotation to shape the next-session t
         
         return all_news
     
-    def generate_market_review(self, overview: MarketOverview, news: List) -> str:
+    def generate_market_review(self, overview: MarketOverview, news: List, prediction_market_context: Optional[str] = None) -> str:
         """
         使用大模型生成大盘复盘报告
         
@@ -849,7 +849,7 @@ Focus on index trend, liquidity, and sector rotation to shape the next-session t
             )
 
         # 构建 Prompt
-        prompt = self._build_review_prompt(overview, news)
+        prompt = self._build_review_prompt(overview, news, prediction_market_context=prediction_market_context)
 
         logger.info("[大盘] %s action=generate_review status=start", self._log_context())
         # Use public analyzer APIs so diagnostics reflect the actual execution backend.
@@ -1717,7 +1717,7 @@ Focus on index trend, liquidity, and sector rotation to shape the next-session t
         add_section("风险提示", "（列出需要关注的风险点；最后补充“建议仅供参考，不构成投资建议”。）")
         return "\n\n".join(sections)
 
-    def _build_review_prompt(self, overview: MarketOverview, news: List) -> str:
+    def _build_review_prompt(self, overview: MarketOverview, news: List, prediction_market_context: Optional[str] = None) -> str:
         """构建复盘报告 Prompt"""
         review_language = self._get_review_language()
         # Korean reuses the English structural template but the model is told to
@@ -1836,6 +1836,21 @@ Concept lagging: {bottom_concepts_text if bottom_concepts_text else "N/A"}"""
                 else "2-3句话概括指数表现、新闻线索和整体风险状态，不要补写未提供的市场宽度或资金流数据"
             )
 
+        prediction_markets_block = ""
+        if prediction_market_context:
+            if review_language == "en":
+                prediction_markets_block = (
+                    "\n## Prediction Markets\n"
+                    f"{prediction_market_context}\n"
+                    "Treat these odds as crowd pricing, not certainty or a buy/sell instruction.\n"
+                )
+            else:
+                prediction_markets_block = (
+                    "\n## 预测市场现状\n"
+                    f"{prediction_market_context}\n"
+                    "请把隐含概率理解为群体定价，不是确定性事实，也不要直接换算成买卖强度。\n"
+                )
+
         output_template_sections = self._build_output_template_sections(review_language)
         zh_market_scope_name = self._get_market_scope_name("zh")
         zh_report_title = f"{overview.date} 大盘复盘"
@@ -1877,6 +1892,7 @@ Concept lagging: {bottom_concepts_text if bottom_concepts_text else "N/A"}"""
 
 ## Market News
 {news_placeholder}
+{prediction_markets_block}
 
 {data_no_indices_hint}
 
@@ -1931,6 +1947,7 @@ Output the report content directly, no extra commentary.
 
 ## 市场新闻
 {news_placeholder}
+{prediction_markets_block}
 
 {data_no_indices_hint}
 
@@ -2118,8 +2135,11 @@ Market conditions can change quickly. The data above is for reference only and d
         news = self.search_market_news()
         news = self._merge_persisted_market_intelligence(news)
 
+        # 2.5 读取预测市场宏观事件（默认关闭，fail-open）
+        prediction_market_context = self._load_prediction_market_context()
+
         # 3. 生成复盘报告
-        report = self.generate_market_review(overview, news)
+        report = self.generate_market_review(overview, news, prediction_market_context=prediction_market_context)
         snapshot = self.build_market_light_snapshot(overview) if self._supports_market_light() else None
         structured_payload = self.build_market_review_payload(
             overview,
@@ -2136,6 +2156,19 @@ Market conditions can change quickly. The data above is for reference only and d
             market_light_snapshot=snapshot,
             structured_payload=structured_payload,
         )
+
+    def _load_prediction_market_context(self) -> Optional[str]:
+        """Load macro prediction-market evidence for the review prompt (fail-open)."""
+        try:
+            from src.services.prediction_market_service import PredictionMarketService
+
+            service = PredictionMarketService(config=self.config)
+            if not service.is_enabled():
+                return None
+            return service.build_market_context(market=self.region, limit=6)
+        except Exception as exc:
+            logger.debug("[大盘] 读取预测市场证据失败（fail-open）: %s", exc)
+            return None
 
     def _merge_persisted_market_intelligence(self, news: List) -> List:
         """Merge local persisted market intelligence and search news with bounded prompt/payload slot preservation."""

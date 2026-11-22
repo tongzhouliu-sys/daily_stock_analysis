@@ -843,6 +843,13 @@ class StockAnalysisPipeline:
                     else persisted_intelligence_context
                 )
 
+            # 预测市场证据（默认关闭，fail-open 追加；不改既有 news_context 语义）
+            prediction_market_context = self._load_prediction_market_context(
+                code=code,
+                stock_name=stock_name,
+                market=market or "cn",
+            )
+
             # Step 5: 获取分析上下文（技术面数据）
             self._emit_progress(58, f"{stock_name}：正在整理分析上下文")
             with _measure_fetch_step(fetch_timings, "分析上下文"):
@@ -906,6 +913,7 @@ class StockAnalysisPipeline:
                     news_result_count=news_result_count,
                     query_id=query_id,
                     portfolio_context=portfolio_context,
+                    prediction_market_context=prediction_market_context,
                 ),
                 report_language=report_language,
                 code=code,
@@ -936,6 +944,7 @@ class StockAnalysisPipeline:
                     progress_callback=self._emit_progress,
                     stream_progress_callback=_on_llm_stream,
                     analysis_context_pack_summary=analysis_context_pack_summary,
+                    prediction_market_context=prediction_market_context,
                 )
                 llm_duration_ms = int((time.monotonic() - llm_started_at) * 1000)
                 if result is not None:
@@ -3336,6 +3345,31 @@ class StockAnalysisPipeline:
             logger.debug("读取本地资讯证据失败（fail-open）: %s", exc)
             return None
 
+    def _load_prediction_market_context(
+        self,
+        *,
+        code: str,
+        stock_name: str,
+        market: str,
+        limit: int = 6,
+    ) -> Optional[str]:
+        """Load prediction-market evidence as fail-open context (disabled by default)."""
+        try:
+            from src.services.prediction_market_service import PredictionMarketService
+
+            service = PredictionMarketService(config=self.config)
+            if not service.is_enabled():
+                return None
+            return service.build_evidence_context(
+                symbol=code,
+                stock_name=stock_name,
+                market=market,
+                limit=limit,
+            )
+        except Exception as exc:
+            logger.debug("读取预测市场证据失败（fail-open）: %s", exc)
+            return None
+
     def _build_legacy_analysis_artifacts(
         self,
         *,
@@ -3353,6 +3387,7 @@ class StockAnalysisPipeline:
         news_result_count: Optional[int],
         query_id: str,
         portfolio_context: Optional[Dict[str, Any]] = None,
+        prediction_market_context: Optional[str] = None,
     ) -> PipelineAnalysisArtifacts:
         return PipelineAnalysisArtifacts(
             code=code,
@@ -3372,6 +3407,7 @@ class StockAnalysisPipeline:
                 "trigger_source": self.query_source,
             },
             portfolio_context=dict(portfolio_context) if isinstance(portfolio_context, dict) else None,
+            prediction_market_context=prediction_market_context,
         )
 
     def _build_agent_analysis_artifacts(

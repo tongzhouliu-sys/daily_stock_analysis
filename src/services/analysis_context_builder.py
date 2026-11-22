@@ -72,6 +72,7 @@ class PipelineAnalysisArtifacts:
     news_result_count: Optional[int]
     metadata: Dict[str, Any]
     portfolio_context: Optional[Dict[str, Any]] = None
+    prediction_market_context: Optional[str] = None
 
 
 class AnalysisContextBuilder:
@@ -94,6 +95,7 @@ class AnalysisContextBuilder:
         blocks["chip"] = _build_chip_block(artifacts)
         blocks["fundamentals"] = _build_fundamentals_block(artifacts)
         blocks["news"] = _build_news_block(artifacts)
+        blocks["prediction_market"] = _build_prediction_market_block(artifacts)
         portfolio_block = _build_portfolio_block(artifacts)
         if portfolio_block is not None:
             blocks["portfolio"] = portfolio_block
@@ -470,6 +472,31 @@ def _build_news_block(artifacts: PipelineAnalysisArtifacts) -> AnalysisContextBl
             )
         },
         metadata=metadata,
+    )
+
+
+def _build_prediction_market_block(artifacts: PipelineAnalysisArtifacts) -> AnalysisContextBlock:
+    content = (artifacts.prediction_market_context or "").strip()
+    if not content:
+        return AnalysisContextBlock(
+            status=ContextFieldStatus.MISSING,
+            items={
+                "content": AnalysisContextItem(
+                    status=ContextFieldStatus.MISSING,
+                    missing_reason="prediction_market_context_missing",
+                )
+            },
+            metadata={"auxiliary": True, "quality_weighted": False},
+        )
+    return AnalysisContextBlock(
+        status=ContextFieldStatus.AVAILABLE,
+        items={
+            "content": AnalysisContextItem(
+                status=ContextFieldStatus.AVAILABLE,
+                value=content,
+            )
+        },
+        metadata={"auxiliary": True, "quality_weighted": False},
     )
 
 

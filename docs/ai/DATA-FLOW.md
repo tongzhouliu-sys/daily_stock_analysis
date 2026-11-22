@@ -28,6 +28,7 @@
 | 日线 | `daily_bars`（`src/storage.py:3656 save_daily_data()`） | 盘中未收盘的当日行不入库；回写只保留到最近已收盘交易日 |
 | 分析历史 | `analysis_history`（`src/storage.py:3156 save_analysis_history()`） | 报告详情、历史页、追问上下文都读这条记录 |
 | 新闻 / 情报 | `news_intel` 等（`src/storage.py`） | 带来源、时间、情感字段 |
+| 预测市场 | `prediction_market_events`（`src/repositories/prediction_market_repo.py`） | 只读外部事件概率（Kalshi/Polymarket），按 `(source, market_id)` 去重，UTC naive，默认关闭 |
 | 会话 | Agent 会话表（`src/services/agent_chat_session_service.py`） | 消息、技能选择、标的上下文 |
 
 数据库访问优先走 `src/repositories/`（`stock_repo`、`analysis_repo`、`portfolio_repo` 等），新增查询不要直接在端点里写 SQL。
@@ -36,7 +37,7 @@
 
 | 环节 | 代码锚点 | 说明 |
 | --- | --- | --- |
-| 上下文组装 | `src/analyzer.py:4196 analyze()` | 行情、历史 K 线、技术指标、新闻、基本面、持仓 |
+| 上下文组装 | `src/analyzer.py:4196 analyze()` | 行情、历史 K 线、技术指标、新闻、基本面、持仓、预测市场（默认关闭） |
 | 上下文包 | `docs/analysis-context-pack.md`（契约文档） | Web 追问复用同一份上下文包 |
 | 提示词 | `src/analyzer.py` 内各 prompt 构造函数 | 数据块降级会写明「落后 N 个交易日」并扣减数据质量分 |
 | 报告语言 | `src/report_language.py` | `REPORT_LANGUAGE` 控制输出语言与固定文案 |
@@ -61,7 +62,7 @@
 | 约定 | 默认值 | 使用表 | 序列化 |
 | --- | --- | --- | --- |
 | 服务器本地时间 | `datetime.now` | 行情、分析历史、持仓、告警、会话、用量等老表 | `HistoryService._serialize_created_at` → `value.astimezone().isoformat()` |
-| UTC 时间 | `utc_naive_now` | `screening_runs`、决策信号、技能观点、`login_audit_log` | `storage.to_utc_isoformat()`（假定 naive=UTC） |
+| UTC 时间 | `utc_naive_now` | `screening_runs`、决策信号、技能观点、`login_audit_log`、`prediction_market_events` | `storage.to_utc_isoformat()`（假定 naive=UTC） |
 
 新增 `DateTime` 字段时必须选择其一，并在 `tests/test_time_basis_contract.py` 的 `LOCAL_TIME_TABLES` / `UTC_TIME_TABLES` 登记；跨表比较前先确认两边基准一致（例如决策信号会把历史时间显式转成 UTC-naive）。
 

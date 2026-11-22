@@ -305,6 +305,46 @@ class IntelligenceItem(Base):
     )
 
 
+class PredictionMarketEvent(Base):
+    """预测市场事件合约（Kalshi / Polymarket）标准化沉淀。
+
+    只读外部事件概率，不参与交易、仓位或评分权重。
+    """
+
+    __tablename__ = 'prediction_market_events'
+
+    id = Column(Integer, primary_key=True, autoincrement=True)
+    source = Column(String(16), nullable=False, index=True)  # kalshi / polymarket
+    market_id = Column(String(255), nullable=False, index=True)  # 平台原生合约标识（去重键）
+    event_id = Column(String(255), index=True)
+    question = Column(Text, nullable=False)
+    outcome = Column(String(64))
+    implied_probability = Column(Float)
+    yes_bid = Column(Float)
+    yes_ask = Column(Float)
+    last_price = Column(Float)
+    volume_24h = Column(Float)
+    open_interest = Column(Float)
+    liquidity_usd = Column(Float)
+    status = Column(String(16), nullable=False, default='open', index=True)  # open / closed / settled
+    category = Column(String(32), nullable=False, default='other', index=True)  # macro / equity / commodity / crypto
+    tags = Column(Text)
+    open_time = Column(String(64))
+    close_time = Column(String(64), index=True)
+    resolution = Column(String(255))
+    symbol = Column(String(32), index=True)
+    market = Column(String(16), index=True)  # cn / hk / us / global
+    market_url = Column(Text)
+    fetched_at = Column(DateTime, default=utc_naive_now, index=True)
+    updated_at = Column(DateTime, default=utc_naive_now, index=True)
+
+    __table_args__ = (
+        UniqueConstraint('source', 'market_id', name='uix_prediction_market_source_market'),
+        Index('ix_prediction_market_scope', 'symbol', 'market', 'category', 'status'),
+        Index('ix_prediction_market_fetch_time', 'fetched_at'),
+    )
+
+
 class FundamentalSnapshot(Base):
     """
     基本面上下文快照（P0 write-only）。

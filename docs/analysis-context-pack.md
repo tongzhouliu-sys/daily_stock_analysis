@@ -60,6 +60,7 @@ P1 Block Catalog：
 | `technical` | 技术指标、量价结构和形态 | P1 不生成指标。 |
 | `fundamentals` | 估值、成长、盈利、财报和股东回报 | P1 不新增基本面 fetcher。 |
 | `news` | 新闻、公告、舆情和催化事件输入 | P1 不改变新闻搜索。 |
+| `prediction_market` | 只读预测市场事件概率（Kalshi / Polymarket），默认关闭 | 辅助块，`metadata={"auxiliary": true, "quality_weighted": false}`；不参与固定六块质量评分、不换算买卖强度。 |
 | `portfolio` | 是否持仓、账户摘要、成本、数量、仓位和 stale 摘要 | P1 不纳入交易流水、现金流水或完整账户隐私数据。 |
 | `chip` / `capital_flow` | 筹码、资金流和主力行为 | 后续扩展键，P1 只允许契约表达。 |
 | `events` / `market_context` | 风险事件、市场宽度、指数、板块和热点环境 | 后续扩展键，不把 `market_review` / `market_light` 作为首版单股 pack。 |
