@@ -71,12 +71,12 @@ class DingtalkSender:
                 
                 result = response.json()
                 if result.get("errcode") == 0:
-                    logger.info(f"钉钉消息分段 {index + 1} 发送成功 (Chunk {index + 1} sent successfully)")
+                    logger.info('钉钉消息分段 %s 发送成功 (Chunk %s sent successfully)', index + 1, index + 1)
                 else:
-                    logger.error(f"钉钉消息分段 {index + 1} 发送失败 (DingTalk API error): {result}")
+                    logger.error('钉钉消息分段 %s 发送失败 (DingTalk API error): %s', index + 1, result)
                     all_success = False
             except Exception as e:
-                logger.error(f"发送钉钉消息异常 (Failed to send DingTalk notification chunk {index + 1}): {e}")
+                logger.error('发送钉钉消息异常 (Failed to send DingTalk notification chunk %s): %s', index + 1, e)
                 all_success = False
             
             if len(chunks) > 1 and index < len(chunks) - 1:

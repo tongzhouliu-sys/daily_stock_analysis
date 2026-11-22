@@ -162,13 +162,13 @@ class AnalysisService:
             )
             
             if result is None:
-                logger.warning(f"分析股票 {stock_code} 返回空结果")
+                logger.warning('分析股票 %s 返回空结果', stock_code)
                 self.last_error = self.last_error or f"分析股票 {stock_code} 返回空结果"
                 return None
 
             if not getattr(result, "success", True):
                 self.last_error = getattr(result, "error_message", None) or f"分析股票 {stock_code} 失败"
-                logger.warning(f"分析股票 {stock_code} 未成功完成: {self.last_error}")
+                logger.warning('分析股票 %s 未成功完成: %s', stock_code, self.last_error)
                 return None
             
             # 构建响应
@@ -179,7 +179,7 @@ class AnalysisService:
             raise
         except Exception as e:
             self.last_error = str(e)
-            logger.error(f"分析股票 {stock_code} 失败: {e}", exc_info=True)
+            logger.error('分析股票 %s 失败: %s', stock_code, e, exc_info=True)
             return None
         finally:
             reset_run_diagnostic_context(locals().get("diag_token"))

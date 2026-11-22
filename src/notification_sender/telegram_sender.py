@@ -113,7 +113,7 @@ class TelegramSender:
                 )
 
         except Exception as e:
-            logger.error(f"发送 Telegram 消息失败: {e}")
+            logger.error('发送 Telegram 消息失败: %s', e)
             import traceback
             logger.debug(traceback.format_exc())
             return False
@@ -149,12 +149,11 @@ class TelegramSender:
             except (requests.exceptions.ConnectionError, requests.exceptions.Timeout) as e:
                 if attempt < max_retries:
                     delay = 2 ** attempt  # 2s, 4s
-                    logger.warning(f"Telegram request failed (attempt {attempt}/{max_retries}): {e}, "
-                                   f"retrying in {delay}s...")
+                    logger.warning('Telegram request failed (attempt %s/%s): %s, retrying in %ss...', attempt, max_retries, e, delay)
                     time.sleep(delay)
                     continue
                 else:
-                    logger.error(f"Telegram request failed after {max_retries} attempts: {e}")
+                    logger.error('Telegram request failed after %s attempts: %s', max_retries, e)
                     return False
 
             if response.status_code == 200:
@@ -164,7 +163,7 @@ class TelegramSender:
                     return True
                 else:
                     error_desc = result.get('description', '未知错误')
-                    logger.error(f"Telegram 返回错误: {error_desc}")
+                    logger.error('Telegram 返回错误: %s', error_desc)
 
                     # If Markdown parsing failed, fall back to plain text
                     if self._should_fallback_to_plain_text(error_desc=error_desc):
@@ -175,25 +174,23 @@ class TelegramSender:
             elif response.status_code == 429:
                 if attempt < max_retries:
                     retry_after = self._get_telegram_retry_after_seconds(response, attempt)
-                    logger.warning(f"Telegram rate limited, retrying in {retry_after}s "
-                                   f"(attempt {attempt}/{max_retries})...")
+                    logger.warning('Telegram rate limited, retrying in %ss (attempt %s/%s)...', retry_after, attempt, max_retries)
                     time.sleep(retry_after)
                     continue
                 else:
-                    logger.error(f"Telegram rate limited after {max_retries} attempts")
+                    logger.error('Telegram rate limited after %s attempts', max_retries)
                     return False
             else:
                 if attempt < max_retries and response.status_code >= 500:
                     delay = 2 ** attempt
-                    logger.warning(f"Telegram server error HTTP {response.status_code} "
-                                   f"(attempt {attempt}/{max_retries}), retrying in {delay}s...")
+                    logger.warning('Telegram server error HTTP %s (attempt %s/%s), retrying in %ss...', response.status_code, attempt, max_retries, delay)
                     time.sleep(delay)
                     continue
                 if self._should_fallback_to_plain_text(response_text=response.text):
                     if self._send_plain_text_fallback(api_url, payload, text, timeout_seconds=timeout_seconds):
                         return True
-                logger.error(f"Telegram 请求失败: HTTP {response.status_code}")
-                logger.error(f"响应内容: {response.text}")
+                logger.error('Telegram 请求失败: HTTP %s', response.status_code)
+                logger.error('响应内容: %s', response.text)
                 return False
 
         return False
@@ -246,7 +243,7 @@ class TelegramSender:
         try:
             response = requests.post(api_url, json=plain_payload, timeout=timeout_seconds or 10)
         except (requests.exceptions.ConnectionError, requests.exceptions.Timeout) as e:
-            logger.error(f"Telegram plain-text fallback failed: {e}")
+            logger.error('Telegram plain-text fallback failed: %s', e)
             return False
 
         if response.status_code == 200:
@@ -254,7 +251,7 @@ class TelegramSender:
                 result = response.json()
             except ValueError:
                 logger.error("Telegram 纯文本回退失败: 响应不是有效 JSON")
-                logger.error(f"响应内容: {response.text}")
+                logger.error('响应内容: %s', response.text)
                 return False
 
             if result.get('ok'):
@@ -262,11 +259,11 @@ class TelegramSender:
                 return True
 
             logger.error("Telegram 纯文本回退失败: Telegram API 返回 ok=false")
-            logger.error(f"响应内容: {response.text}")
+            logger.error('响应内容: %s', response.text)
             return False
 
-        logger.error(f"Telegram 纯文本回退失败: HTTP {response.status_code}")
-        logger.error(f"响应内容: {response.text}")
+        logger.error('Telegram 纯文本回退失败: HTTP %s', response.status_code)
+        logger.error('响应内容: %s', response.text)
         return False
 
     def _send_telegram_chunked(
@@ -296,7 +293,7 @@ class TelegramSender:
                 return all_success
 
             chunk_content = "\n---\n".join(current_chunk)
-            logger.info(f"发送 Telegram 消息块 {chunk_index}...")
+            logger.info('发送 Telegram 消息块 %s...', chunk_index)
             chunk_index += 1
             current_chunk = []
             current_length = 0
@@ -326,7 +323,7 @@ class TelegramSender:
                 if not _flush_chunk():
                     return False
                 for long_chunk in _split_long_section(section, max_length):
-                    logger.info(f"发送 Telegram 消息块 {chunk_index}...")
+                    logger.info('发送 Telegram 消息块 %s...', chunk_index)
                     chunk_index += 1
                     if not self._send_telegram_message(
                         api_url,

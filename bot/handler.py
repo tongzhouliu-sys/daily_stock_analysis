@@ -43,7 +43,7 @@ def get_platform(platform_name: str) -> Optional['BotPlatform']:
         if platform_class:
             _platform_instances[platform_name] = platform_class()
         else:
-            logger.warning(f"[BotHandler] 未知平台: {platform_name}")
+            logger.warning('[BotHandler] 未知平台: %s', platform_name)
             return None
 
     return _platform_instances[platform_name]
@@ -69,7 +69,7 @@ def handle_webhook(
     Returns:
         WebhookResponse 响应对象
     """
-    logger.info(f"[BotHandler] 收到 {platform_name} Webhook 请求")
+    logger.info('[BotHandler] 收到 %s Webhook 请求', platform_name)
 
     # 检查机器人功能是否启用
     from src.config import get_config
@@ -88,10 +88,10 @@ def handle_webhook(
     try:
         data = json.loads(body.decode('utf-8')) if body else {}
     except json.JSONDecodeError as e:
-        logger.error(f"[BotHandler] JSON 解析失败: {e}")
+        logger.error('[BotHandler] JSON 解析失败: %s', e)
         return WebhookResponse.error("Invalid JSON", 400)
 
-    logger.debug(f"[BotHandler] 请求数据: {json.dumps(data, ensure_ascii=False)[:500]}")
+    logger.debug('[BotHandler] 请求数据: %s', json.dumps(data, ensure_ascii=False)[:500])
 
     # 处理 Webhook
     message, immediate_response = platform.handle_webhook(headers, body, data)
@@ -122,7 +122,7 @@ def handle_webhook(
         logger.debug("[BotHandler] 无需处理的消息")
         return WebhookResponse.success()
 
-    logger.info(f"[BotHandler] 解析到消息: user={message.user_name}, content={message.content[:50]}")
+    logger.info('[BotHandler] 解析到消息: user=%s, content=%s', message.user_name, message.content[:50])
 
     # 分发到命令处理器
     dispatcher = get_dispatcher()
@@ -147,7 +147,7 @@ async def handle_webhook_async(
     Preferred when called from an async context (e.g. FastAPI endpoint)
     to avoid blocking the event loop.
     """
-    logger.info(f"[BotHandler] 收到 {platform_name} Webhook 请求 (async)")
+    logger.info('[BotHandler] 收到 %s Webhook 请求 (async)', platform_name)
 
     from src.config import get_config
     config = get_config()
@@ -163,10 +163,10 @@ async def handle_webhook_async(
     try:
         data = json.loads(body.decode('utf-8')) if body else {}
     except json.JSONDecodeError as e:
-        logger.error(f"[BotHandler] JSON 解析失败: {e}")
+        logger.error('[BotHandler] JSON 解析失败: %s', e)
         return WebhookResponse.error("Invalid JSON", 400)
 
-    logger.debug(f"[BotHandler] 请求数据: {json.dumps(data, ensure_ascii=False)[:500]}")
+    logger.debug('[BotHandler] 请求数据: %s', json.dumps(data, ensure_ascii=False)[:500])
 
     message, immediate_response = platform.handle_webhook(headers, body, data)
 
@@ -193,7 +193,7 @@ async def handle_webhook_async(
         logger.debug("[BotHandler] 无需处理的消息")
         return WebhookResponse.success()
 
-    logger.info(f"[BotHandler] 解析到消息: user={message.user_name}, content={message.content[:50]}")
+    logger.info('[BotHandler] 解析到消息: user=%s, content=%s', message.user_name, message.content[:50])
 
     dispatcher = get_dispatcher()
     response = await dispatcher.dispatch_async(message)

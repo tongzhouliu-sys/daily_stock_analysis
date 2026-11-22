@@ -624,7 +624,7 @@ def _handle_sync_analysis(
     except HTTPException:
         raise
     except Exception as e:
-        logger.error(f"分析失败: {e}", exc_info=True)
+        logger.error('分析失败: %s', e, exc_info=True)
         raise api_error(500, "internal_error", f"分析过程发生错误: {str(e)}")
 
 
@@ -952,7 +952,7 @@ def get_task_run_flow(task_id: str) -> RunFlowSnapshot:
         if history_snapshot is not None:
             return history_snapshot
     except Exception as e:
-        logger.error(f"查询任务运行流失败: {e}", exc_info=True)
+        logger.error('查询任务运行流失败: %s', e, exc_info=True)
         raise api_error(500, "internal_error", f"查询任务运行流失败: {str(e)}")
 
     raise api_error(404, "not_found", f"任务 {task_id} 不存在或已过期")
@@ -1350,7 +1350,7 @@ def get_analysis_status(task_id: str) -> TaskStatus:
             )
 
     except Exception as e:
-        logger.error(f"查询任务状态失败: {e}", exc_info=True)
+        logger.error('查询任务状态失败: %s', e, exc_info=True)
         raise api_error(500, "internal_error", f"查询任务状态失败: {str(e)}")
 
     # 3. 任务不存在

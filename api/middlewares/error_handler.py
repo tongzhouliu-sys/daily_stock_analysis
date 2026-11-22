@@ -65,11 +65,7 @@ def add_error_handlers(app) -> None:
     @app.exception_handler(Exception)
     async def general_exception_handler(request: Request, exc: Exception):
         """处理通用异常"""
-        logger.error(
-            f"未处理的异常: {exc}\n"
-            f"请求路径: {request.url.path}\n"
-            f"堆栈: {traceback.format_exc()}"
-        )
+        logger.error('未处理的异常: %s\n请求路径: %s\n堆栈: %s', exc, request.url.path, traceback.format_exc())
         return JSONResponse(
             status_code=500,
             content={

@@ -895,13 +895,9 @@ def _run_backtest_pass(config: Config) -> None:
             min_age_days=getattr(config, 'backtest_min_age_days', 14),
             limit=200,
         )
-        logger.info(
-            f"自动回测完成: processed={stats.get('processed')} "
-            f"saved={stats.get('saved')} completed={stats.get('completed')} "
-            f"insufficient={stats.get('insufficient')} errors={stats.get('errors')}"
-        )
+        logger.info('自动回测完成: processed=%s saved=%s completed=%s insufficient=%s errors=%s', stats.get('processed'), stats.get('saved'), stats.get('completed'), stats.get('insufficient'), stats.get('errors'))
     except Exception as exc:
-        logger.warning(f"自动回测失败（已忽略）: {exc}")
+        logger.warning('自动回测失败（已忽略）: %s', exc)
 
 
 def _run_signal_outcome_pass(config: Config) -> None:
@@ -923,7 +919,7 @@ def _run_signal_outcome_pass(config: Config) -> None:
             result.get("skipped"),
         )
     except Exception as exc:
-        logger.warning(f"决策信号事后表现计算失败（已忽略）: {exc}")
+        logger.warning('决策信号事后表现计算失败（已忽略）: %s', exc)
 
 
 def _all_stock_targets_succeeded(
@@ -1243,7 +1239,7 @@ def run_full_analysis(
             review_result = None
             if not can_skip_market_review:
                 if analysis_delay > 0:
-                    logger.info(f"等待 {analysis_delay} 秒后执行大盘复盘（避免API限流）...")
+                    logger.info('等待 %s 秒后执行大盘复盘（避免API限流）...', analysis_delay)
                     time.sleep(analysis_delay)
 
                 review_result = _run_market_review_with_shared_lock(
@@ -1345,10 +1341,7 @@ def run_full_analysis(
             logger.info("\n===== 分析结果摘要 =====")
             for r in sorted(results, key=lambda x: x.sentiment_score, reverse=True):
                 emoji = r.get_emoji()
-                logger.info(
-                    f"{emoji} {r.name}({r.code}): {r.operation_advice} | "
-                    f"评分 {r.sentiment_score} | {r.trend_prediction}"
-                )
+                logger.info('%s %s(%s): %s | 评分 %s | %s', emoji, r.name, r.code, r.operation_advice, r.sentiment_score, r.trend_prediction)
 
         logger.info("\n任务执行完成")
 
@@ -1383,7 +1376,7 @@ def run_full_analysis(
                 # 3. 创建文档
                 doc_url = feishu_doc.create_daily_doc(doc_title, full_content)
                 if doc_url:
-                    logger.info(f"飞书云文档创建成功: {doc_url}")
+                    logger.info('飞书云文档创建成功: %s', doc_url)
                     # 可选：将文档链接也推送到群里
                     if not args.no_notify:
                         pipeline.notifier.send(
@@ -1392,7 +1385,7 @@ def run_full_analysis(
                         )
 
         except Exception as e:
-            logger.error(f"飞书文档生成失败: {e}")
+            logger.error('飞书文档生成失败: %s', e)
 
         final_result = (
             deferred_failure_result
@@ -1429,7 +1422,7 @@ def run_full_analysis(
     except Exception as e:
         if _LAST_ANALYSIS_FAILURE_REASON is None:
             _LAST_ANALYSIS_FAILURE_REASON = "runtime_error"
-        logger.exception(f"分析流程执行失败: {e}")
+        logger.exception('分析流程执行失败: %s', e)
         if raise_errors:
             raise
         return False
@@ -1576,7 +1569,7 @@ def start_api_server(host: str, port: int, config: Config) -> None:
                 f"FastAPI server failed to start: {host}:{port}; {startup_error[0]}"
             )
         if uvicorn_server.started:
-            logger.info(f"FastAPI 服务已启动: http://{host}:{port}")
+            logger.info('FastAPI 服务已启动: http://%s:%s', host, port)
             return
         if not thread.is_alive():
             break
@@ -1585,7 +1578,7 @@ def start_api_server(host: str, port: int, config: Config) -> None:
     if startup_error:
         raise RuntimeError(f"FastAPI server failed to start: {host}:{port}; {startup_error[0]}")
     if uvicorn_server.started:
-        logger.info(f"FastAPI 服务已启动: http://{host}:{port}")
+        logger.info('FastAPI 服务已启动: http://%s:%s', host, port)
         return
     if not thread.is_alive():
         raise RuntimeError(f"FastAPI 服务器启动后立即退出: {host}:{port}")
@@ -1614,7 +1607,7 @@ def start_bot_stream_clients(config: Config) -> None:
                 logger.warning("[Main] Dingtalk Stream enabled but SDK is missing.")
                 logger.warning("[Main] Run: pip install dingtalk-stream")
         except Exception as exc:
-            logger.error(f"[Main] Failed to start Dingtalk Stream client: {exc}")
+            logger.error('[Main] Failed to start Dingtalk Stream client: %s', exc)
 
     # 启动飞书 Stream 客户端
     if getattr(config, 'feishu_stream_enabled', False):
@@ -1629,7 +1622,7 @@ def start_bot_stream_clients(config: Config) -> None:
                 logger.warning("[Main] Feishu Stream enabled but SDK is missing.")
                 logger.warning("[Main] Run: pip install lark-oapi")
         except Exception as exc:
-            logger.error(f"[Main] Failed to start Feishu Stream client: {exc}")
+            logger.error('[Main] Failed to start Feishu Stream client: %s', exc)
 
 
 def _resolve_scheduled_stock_codes(stock_codes: Optional[List[str]]) -> Optional[List[str]]:
@@ -1782,7 +1775,7 @@ def main() -> int:
 
     logger.info("=" * 60)
     logger.info("A股自选股智能分析系统 启动")
-    logger.info(f"运行时间: {datetime.now().strftime('%Y-%m-%d %H:%M:%S')}")
+    logger.info('运行时间: %s', datetime.now().strftime('%Y-%m-%d %H:%M:%S'))
     logger.info("=" * 60)
 
     # 验证配置
@@ -1820,7 +1813,7 @@ def main() -> int:
         if resolved is None:
             return 1
         stock_codes, analysis_targets = resolved
-        logger.info(f"使用命令行指定的股票列表: {stock_codes}")
+        logger.info('使用命令行指定的股票列表: %s', stock_codes)
     elif (
         os.getenv("GITHUB_ACTIONS") == "true"
         and not _skip_stock_entry
@@ -1845,7 +1838,7 @@ def main() -> int:
             if resolved is None:
                 return 1
             stock_codes, analysis_targets = resolved
-            logger.info(f"GitHub Actions 默认 STOCK_LIST: {stock_codes}")
+            logger.info('GitHub Actions 默认 STOCK_LIST: %s', stock_codes)
 
     # === 处理 --webui / --webui-only 参数，映射到 --serve / --serve-only ===
     if args.webui:
@@ -1915,7 +1908,7 @@ def main() -> int:
             start_api_server(host=args.host, port=args.port, config=config)
             bot_clients_started = True
         except Exception as e:
-            logger.error(f"启动 FastAPI 服务失败: {e}")
+            logger.error('启动 FastAPI 服务失败: %s', e)
             if args.serve_only:
                 return 1
             start_serve = False
@@ -1926,9 +1919,9 @@ def main() -> int:
     # === 仅 Web 服务模式：不自动执行分析 ===
     if args.serve_only:
         logger.info("模式: 仅 Web 服务")
-        logger.info(f"Web 服务运行中: http://{args.host}:{args.port}")
+        logger.info('Web 服务运行中: http://%s:%s', args.host, args.port)
         logger.info("通过 /api/v1/analysis/analyze 接口触发分析")
-        logger.info(f"API 文档: http://{args.host}:{args.port}/docs")
+        logger.info('API 文档: http://%s:%s/docs', args.host, args.port)
         logger.info("按 Ctrl+C 退出...")
         try:
             while True:
@@ -1949,10 +1942,7 @@ def main() -> int:
                 force=getattr(args, 'backtest_force', False),
                 eval_window_days=getattr(args, 'backtest_days', None),
             )
-            logger.info(
-                f"回测完成: processed={stats.get('processed')} saved={stats.get('saved')} "
-                f"completed={stats.get('completed')} insufficient={stats.get('insufficient')} errors={stats.get('errors')}"
-            )
+            logger.info('回测完成: processed=%s saved=%s completed=%s insufficient=%s errors=%s', stats.get('processed'), stats.get('saved'), stats.get('completed'), stats.get('insufficient'), stats.get('errors'))
             return 0
 
         # 模式0.5: ETF 轮动（规则化，不调用 LLM）
@@ -2009,7 +1999,7 @@ def main() -> int:
                 # config.schedule_enabled 的组合（均已入 guard），由 API runtime
                 # scheduler 接管；--serve-only 已在上面 serve_only 分支返回。
                 logger.info("模式: Web/API runtime scheduler")
-                logger.info(f"Web 服务运行中: http://{args.host}:{args.port}")
+                logger.info('Web 服务运行中: http://%s:%s', args.host, args.port)
                 logger.info("Web/API runtime scheduler 已接管定时任务，保存设置会作用于当前进程")
                 logger.info("按 Ctrl+C 退出...")
                 try:
@@ -2020,7 +2010,7 @@ def main() -> int:
                 return 0
 
             logger.info("模式: 定时任务")
-            logger.info(f"每日执行时间: {config.schedule_time}")
+            logger.info('每日执行时间: %s', config.schedule_time)
 
             # Determine whether to run immediately:
             # Command line arg --no-run-immediately overrides config if present.
@@ -2029,7 +2019,7 @@ def main() -> int:
             if getattr(args, 'no_run_immediately', False):
                 should_run_immediately = False
 
-            logger.info(f"启动时立即执行: {should_run_immediately}")
+            logger.info('启动时立即执行: %s', should_run_immediately)
 
             from src.scheduler import run_with_schedule
             scheduled_stock_codes = _resolve_scheduled_stock_codes(args.stocks or None)
@@ -2187,7 +2177,7 @@ def main() -> int:
         return 130
 
     except Exception as e:
-        logger.exception(f"程序执行失败: {e}")
+        logger.exception('程序执行失败: %s', e)
         return 1
 
 

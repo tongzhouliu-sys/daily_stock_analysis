@@ -3328,7 +3328,7 @@ _FIELD_DEFINITIONS: Dict[str, Dict[str, Any]] = {
         "docs": [
             {
                 "label": "登录日志",
-                "url": "https://github.com/ZhuLinsen/daily_stock_analysis/blob/main/docs/login-log.md",
+                "href": "https://github.com/ZhuLinsen/daily_stock_analysis/blob/main/docs/login-log.md",
             },
         ],
     },

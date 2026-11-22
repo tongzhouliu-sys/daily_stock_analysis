@@ -186,17 +186,14 @@ class FeishuReplyClient:
                 response = self._client.im.v1.message.create(request)
 
             if not response.success():
-                logger.error(
-                    f"[Feishu Stream] 发送交互卡片失败: code={response.code}, "
-                    f"msg={response.msg}, log_id={response.get_log_id()}"
-                )
+                logger.error('[Feishu Stream] 发送交互卡片失败: code=%s, msg=%s, log_id=%s', response.code, response.msg, response.get_log_id())
                 return False
 
             logger.debug("[Feishu Stream] 发送交互卡片成功")
             return True
 
         except Exception as e:
-            logger.error(f"[Feishu Stream] 发送交互卡片异常: {e}")
+            logger.error('[Feishu Stream] 发送交互卡片异常: %s', e)
             return False
 
     def reply_text(self, message_id: str, text: str, at_user: bool = False,
@@ -219,9 +216,7 @@ class FeishuReplyClient:
         # 检查是否需要分段发送
         content_bytes = len(formatted_text.encode('utf-8'))
         if content_bytes > self._max_bytes:
-            logger.info(
-                f"[Feishu Stream] 回复消息内容超长({content_bytes}字节)，将分批发送"
-            )
+            logger.info('[Feishu Stream] 回复消息内容超长(%s字节)，将分批发送', content_bytes)
             return self._send_to_chat_chunked(
                 formatted_text,
                 lambda chunk: self._send_interactive_card(
@@ -256,9 +251,7 @@ class FeishuReplyClient:
         # 检查是否需要分段发送
         content_bytes = len(formatted_text.encode('utf-8'))
         if content_bytes > self._max_bytes:
-            logger.info(
-                f"[Feishu Stream] 发送消息内容超长({content_bytes}字节)，将分批发送"
-            )
+            logger.info('[Feishu Stream] 发送消息内容超长(%s字节)，将分批发送', content_bytes)
             return self._send_to_chat_chunked(
                 formatted_text,
                 lambda chunk: self._send_interactive_card(
@@ -288,7 +281,7 @@ class FeishuReplyClient:
             if send_func(chunk):
                 success_count += 1
             else:
-                logger.error(f"[Feishu Stream] 发送消息失败: {chunk}")
+                logger.error('[Feishu Stream] 发送消息失败: %s', chunk)
             if i < len(chunks) - 1:
                 time.sleep(1)
         return success_count == len(chunks)
@@ -382,7 +375,7 @@ class FeishuStreamHandler:
                     user_id=bot_message.user_id if response.at_user else None,
                 )
         except Exception as e:
-            self._logger.error(f"[Feishu Stream] 异步处理消息失败: {e}")
+            self._logger.error('[Feishu Stream] 异步处理消息失败: %s', e)
             self._logger.exception(e)
 
     @staticmethod
@@ -426,7 +419,7 @@ class FeishuStreamHandler:
             self._enqueue_message(bot_message)
 
         except Exception as e:
-            self._logger.error(f"[Feishu Stream] 处理消息失败: {e}")
+            self._logger.error('[Feishu Stream] 处理消息失败: %s', e)
             self._logger.exception(e)
 
     def _parse_event_message(self, event: 'P2ImMessageReceiveV1') -> Optional[BotMessage]:
@@ -450,7 +443,7 @@ class FeishuStreamHandler:
             # 只处理文本消息
             message_type = message_data.message_type or ""
             if message_type != "text":
-                self._logger.debug(f"[Feishu Stream] 忽略非文本消息: {message_type}")
+                self._logger.debug('[Feishu Stream] 忽略非文本消息: %s', message_type)
                 return None
 
             # 解析消息内容
@@ -522,7 +515,7 @@ class FeishuStreamHandler:
             )
 
         except Exception as e:
-            self._logger.error(f"[Feishu Stream] 解析消息失败: {e}")
+            self._logger.error('[Feishu Stream] 解析消息失败: %s', e)
             return None
 
     def _extract_command(self, text: str, mentions: list) -> str:
@@ -713,7 +706,7 @@ class FeishuStreamClient:
             try:
                 self.start()
             except Exception as e:
-                logger.error(f"[Feishu Stream] 运行异常: {e}")
+                logger.error('[Feishu Stream] 运行异常: %s', e)
                 if self._running:
                     logger.info("[Feishu Stream] 5 秒后重连...")
                     time.sleep(5)
@@ -743,7 +736,7 @@ def get_feishu_stream_client() -> Optional[FeishuStreamClient]:
         try:
             _stream_client = FeishuStreamClient()
         except (ImportError, ValueError) as e:
-            logger.warning(f"[Feishu Stream] 无法创建客户端: {e}")
+            logger.warning('[Feishu Stream] 无法创建客户端: %s', e)
             return None
 
     return _stream_client

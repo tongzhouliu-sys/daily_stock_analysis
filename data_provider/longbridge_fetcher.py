@@ -653,7 +653,7 @@ class LongbridgeFetcher(BaseFetcher):
                         self._static_cache[symbol] = (info, now)
                 return info
         except Exception as e:
-            logger.debug(f"[Longbridge] static_info({symbol}) 失败: {e}")
+            logger.debug('[Longbridge] static_info(%s) 失败: %s', symbol, e)
             if self._is_connection_error(e):
                 self._mark_connection_cooldown(e)
         return None
@@ -733,7 +733,7 @@ class LongbridgeFetcher(BaseFetcher):
 
             return round(today_volume / avg_vol, 2)
         except Exception as e:
-            logger.debug(f"[Longbridge] 计算量比失败({symbol}): {e}")
+            logger.debug('[Longbridge] 计算量比失败(%s): %s', symbol, e)
             return None
 
     # ------------------------------------------------------------------
@@ -747,7 +747,7 @@ class LongbridgeFetcher(BaseFetcher):
 
         symbol = _to_longbridge_symbol(stock_code)
         if symbol is None:
-            logger.debug(f"[Longbridge] 无法转换代码: {stock_code}")
+            logger.debug('[Longbridge] 无法转换代码: %s', stock_code)
             return None
 
         ctx = self._get_ctx()
@@ -760,7 +760,7 @@ class LongbridgeFetcher(BaseFetcher):
                 return None
             q = quotes[0]
         except Exception as e:
-            logger.info(f"[Longbridge] quote({symbol}) 失败: {e}")
+            logger.info('[Longbridge] quote(%s) 失败: %s', symbol, e)
             if self._is_connection_error(e):
                 self._mark_connection_cooldown(e)
             return None
@@ -855,10 +855,7 @@ class LongbridgeFetcher(BaseFetcher):
             circ_mv=circ_mv,
         )
 
-        logger.info(
-            f"[Longbridge] {symbol} 行情获取成功: "
-            f"价格={price}, 量比={volume_ratio}, 换手率={turnover_rate}"
-        )
+        logger.info('[Longbridge] %s 行情获取成功: 价格=%s, 量比=%s, 换手率=%s', symbol, price, volume_ratio, turnover_rate)
         return quote
 
     # ------------------------------------------------------------------

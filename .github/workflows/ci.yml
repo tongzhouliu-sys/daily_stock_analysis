@@ -327,10 +327,7 @@ jobs:
       - name: 🔎 Lint
         run: npm run lint
       - name: 🧪 Unit tests
-        # ChatPage has 3 pre-existing stale follow-up-context assertions
-        # (tracked as T76 in .claude/reviews/full-repo-audit-tasks-20261121.md);
-        # keep the rest of the suite blocking until that file is updated.
-        run: npm test -- --exclude 'src/pages/__tests__/ChatPage.test.tsx'
+        run: npm test
       - name: 🏗️ Build
         run: npm run build
       - name: 📦 Check first-screen bundle

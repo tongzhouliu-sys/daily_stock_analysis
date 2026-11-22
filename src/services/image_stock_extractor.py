@@ -455,10 +455,7 @@ def extract_stock_codes_from_image(
                     "retrying the same image with compact code extraction"
                 )
                 continue
-            logger.info(
-                f"[ImageExtractor] {model} 提取 {len(items)} 个: "
-                f"{[(i[0], i[1]) for i in items[:5]]}{'...' if len(items) > 5 else ''}"
-            )
+            logger.info('[ImageExtractor] %s 提取 %s 个: %s%s', model, len(items), [(i[0], i[1]) for i in items[:5]], '...' if len(items) > 5 else '')
             return items, raw
         except _VisionOutputTruncated as e:
             last_error = e
@@ -483,7 +480,7 @@ def extract_stock_codes_from_image(
             last_error = e
             if attempt < 2:
                 delay = 2 ** attempt
-                logger.warning(f"[ImageExtractor] 尝试 {attempt + 1}/3 失败，{delay}s 后重试: {e}")
+                logger.warning('[ImageExtractor] 尝试 %s/3 失败，%ss 后重试: %s', attempt + 1, delay, e)
                 time.sleep(delay)
 
     raise ValueError(

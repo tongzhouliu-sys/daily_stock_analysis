@@ -1432,7 +1432,7 @@ describe('ChatPage', () => {
     });
   });
 
-  it('allows sending with base follow-up context before report hydration completes', async () => {
+  it('blocks sending until report hydration completes, then sends with report context', async () => {
     const deferred = createDeferred<Awaited<ReturnType<typeof historyApi.getDetail>>>();
 
     vi.mocked(historyApi.getDetail).mockImplementation(() => deferred.promise);
@@ -1446,25 +1446,8 @@ describe('ChatPage', () => {
     expect(await screen.findByDisplayValue('请深入分析 贵州茅台(600519)')).toBeInTheDocument();
 
     const sendButton = screen.getByRole('button', { name: /发送|处理中\.\.\./ });
-    expect(sendButton).not.toBeDisabled();
-    expect(screen.getByText('正在加载历史分析上下文；现在可直接发送追问。')).toBeInTheDocument();
-
-    fireEvent.click(sendButton);
-
-    await waitFor(() => {
-      expect(mockStartStream).toHaveBeenCalledWith(
-        expect.objectContaining({
-          message: '请深入分析 贵州茅台(600519)',
-          context: {
-            stock_code: '600519',
-            stock_name: '贵州茅台',
-          },
-        }),
-        expect.objectContaining({
-          skillName: '趋势分析',
-        }),
-      );
-    });
+    expect(sendButton).toBeDisabled();
+    expect(screen.getByTestId('chat-report-context')).toHaveAttribute('data-state', 'loading');
 
     deferred.resolve({
       meta: {
@@ -1489,7 +1472,25 @@ describe('ChatPage', () => {
     });
 
     await waitFor(() => {
-      expect(screen.queryByText('正在加载历史分析上下文；现在可直接发送追问。')).not.toBeInTheDocument();
+      expect(screen.getByTestId('chat-report-context')).toHaveAttribute('data-state', 'ready');
+      expect(screen.getByRole('button', { name: /发送|处理中\.\.\./ })).not.toBeDisabled();
+    });
+
+    fireEvent.click(screen.getByRole('button', { name: /发送|处理中\.\.\./ }));
+    await waitFor(() => {
+      expect(mockStartStream).toHaveBeenCalledWith(
+        expect.objectContaining({
+          message: '请深入分析 贵州茅台(600519)',
+          context: expect.objectContaining({
+            stock_code: '600519',
+            stock_name: '贵州茅台',
+            report_record_id: 1,
+          }),
+        }),
+        expect.objectContaining({
+          skillName: '趋势分析',
+        }),
+      );
     });
 
     fireEvent.change(screen.getByPlaceholderText(/分析 600519/), {
@@ -1559,7 +1560,7 @@ describe('ChatPage', () => {
     expect(await screen.findByDisplayValue('请深入分析 贵州茅台(600519)')).toBeInTheDocument();
 
     await waitFor(() => {
-      expect(screen.queryByText('正在加载历史分析上下文；现在可直接发送追问。')).not.toBeInTheDocument();
+      expect(screen.getByTestId('chat-report-context')).toHaveAttribute('data-state', 'ready');
     });
 
     fireEvent.click(screen.getByRole('button', { name: '发送' }));
@@ -1571,11 +1572,7 @@ describe('ChatPage', () => {
           context: expect.objectContaining({
             stock_code: '600519',
             stock_name: '贵州茅台',
-            previous_price: 1523.6,
-            previous_change_pct: 1.8,
-            previous_strategy: expect.objectContaining({
-              stopLoss: '1450',
-            }),
+            report_record_id: 1,
           }),
         }),
         expect.objectContaining({
@@ -1716,7 +1713,7 @@ describe('ChatPage', () => {
     render(<RouterProvider router={router} />);
 
     expect(await screen.findByDisplayValue('请深入分析 贵州茅台(600519)')).toBeInTheDocument();
-    expect(screen.getByText('正在加载历史分析上下文；现在可直接发送追问。')).toBeInTheDocument();
+    expect(screen.getByTestId('chat-report-context')).toHaveAttribute('data-state', 'loading');
 
     await act(async () => {
       await router.navigate('/chat?stock=AAPL&name=Apple&recordId=2');
@@ -1769,7 +1766,7 @@ describe('ChatPage', () => {
     });
 
     await waitFor(() => {
-      expect(screen.queryByText('正在加载历史分析上下文；现在可直接发送追问。')).not.toBeInTheDocument();
+      expect(screen.getByTestId('chat-report-context')).toHaveAttribute('data-state', 'ready');
     });
 
     fireEvent.click(screen.getByRole('button', { name: '发送' }));
@@ -1781,11 +1778,7 @@ describe('ChatPage', () => {
           context: expect.objectContaining({
             stock_code: 'AAPL',
             stock_name: 'Apple',
-            previous_price: 211.5,
-            previous_change_pct: 2.4,
-            previous_strategy: expect.objectContaining({
-              stopLoss: '205',
-            }),
+            report_record_id: 2,
           }),
         }),
         expect.objectContaining({

@@ -143,15 +143,15 @@ class PushoverSender:
                     return True
                 else:
                     errors = result.get('errors', ['未知错误'])
-                    logger.error(f"Pushover 返回错误: {errors}")
+                    logger.error('Pushover 返回错误: %s', errors)
                     return False
             else:
-                logger.error(f"Pushover 请求失败: HTTP {response.status_code}")
-                logger.debug(f"响应内容: {response.text}")
+                logger.error('Pushover 请求失败: HTTP %s', response.status_code)
+                logger.debug('响应内容: %s', response.text)
                 return False
                 
         except Exception as e:
-            logger.error(f"发送 Pushover 消息失败: {e}")
+            logger.error('发送 Pushover 消息失败: %s', e)
             return False
     
     def _send_pushover_chunked(
@@ -210,7 +210,7 @@ class PushoverSender:
         total_chunks = len(chunks)
         success_count = 0
         
-        logger.info(f"Pushover 分批发送：共 {total_chunks} 批")
+        logger.info('Pushover 分批发送：共 %s 批', total_chunks)
         
         for i, chunk in enumerate(chunks):
             # 添加分页标记到标题
@@ -225,9 +225,9 @@ class PushoverSender:
                 timeout_seconds=timeout_seconds,
             ):
                 success_count += 1
-                logger.info(f"Pushover 第 {i+1}/{total_chunks} 批发送成功")
+                logger.info('Pushover 第 %s/%s 批发送成功', i + 1, total_chunks)
             else:
-                logger.error(f"Pushover 第 {i+1}/{total_chunks} 批发送失败")
+                logger.error('Pushover 第 %s/%s 批发送失败', i + 1, total_chunks)
             
             # 批次间隔，避免触发频率限制
             if i < total_chunks - 1:

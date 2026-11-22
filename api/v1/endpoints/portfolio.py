@@ -55,7 +55,7 @@ def _bad_request(exc: Exception) -> HTTPException:
 
 
 def _internal_error(message: str, exc: Exception) -> HTTPException:
-    logger.error(f"{message}: {exc}", exc_info=True)
+    logger.error('%s: %s', message, exc, exc_info=True)
     return api_error(500, "internal_error", f"{message}: {str(exc)}")
 
 

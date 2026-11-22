@@ -765,23 +765,26 @@ const ChatPage: React.FC = () => {
     const loadToken = ++followUpHydrationTokenRef.current;
     setReportDraft((current) => current?.recordId === draft.recordId
       ? { ...current, status: 'loading', error: null }
-      : current);
+      : draft);
     void resolveChatReportDraft({
       stockCode: draft.requestStockCode,
       recordId: draft.recordId,
       index: stockIndex,
     }).then((resolved) => {
       if (!isMountedRef.current || followUpHydrationTokenRef.current !== loadToken) return;
-      setReportDraft((current) => current?.recordId === draft.recordId ? {
-        recordId: draft.recordId,
-        requestStockCode: draft.requestStockCode,
-        requestStockName: draft.requestStockName,
-        stockCode: resolved.stockCode,
-        stockName: resolved.stockName,
-        createdAt: resolved.createdAt,
-        status: 'ready',
-        error: null,
-      } : current);
+      setReportDraft((current) => {
+        if (current && current.recordId !== draft.recordId) return current;
+        return {
+          recordId: draft.recordId,
+          requestStockCode: draft.requestStockCode,
+          requestStockName: draft.requestStockName,
+          stockCode: resolved.stockCode,
+          stockName: resolved.stockName,
+          createdAt: resolved.createdAt,
+          status: 'ready',
+          error: null,
+        };
+      });
     }).catch((error: unknown) => {
       if (!isMountedRef.current || followUpHydrationTokenRef.current !== loadToken) return;
       const detailKey = error instanceof ChatFollowUpLoadError && error.code === 'report_mismatch'
@@ -789,9 +792,19 @@ const ChatPage: React.FC = () => {
         : error instanceof ChatFollowUpLoadError && error.code === 'report_not_supported'
           ? 'chat.reportNotSupportedDetail'
           : 'chat.reportUnavailableDetail';
-      setReportDraft((current) => current?.recordId === draft.recordId
-        ? { ...current, status: 'failed', error: t(detailKey) }
-        : current);
+      setReportDraft((current) => {
+        if (current && current.recordId !== draft.recordId) return current;
+        return {
+          recordId: draft.recordId,
+          requestStockCode: draft.requestStockCode,
+          requestStockName: draft.requestStockName,
+          stockCode: '',
+          stockName: null,
+          createdAt: null,
+          status: 'failed',
+          error: t(detailKey),
+        };
+      });
     });
   }, [stockIndex, t]);
 

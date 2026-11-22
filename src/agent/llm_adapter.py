@@ -386,9 +386,9 @@ class LLMToolAdapter:
                         model_name: pricing
                     }
                 )
-                logger.debug(f"Registered custom pricing for {model_name}")
+                logger.debug('Registered custom pricing for %s', model_name)
             except Exception as e:
-                logger.debug(f"Model {model_name} may already be registered or pricing error: {e}")
+                logger.debug('Model %s may already be registered or pricing error: %s', model_name, e)
 
     def _has_channel_config(self) -> bool:
         """Check if multi-channel config (channels / YAML) is active."""
@@ -503,19 +503,13 @@ class LLMToolAdapter:
             unique_models = list(dict.fromkeys(
                 e['litellm_params']['model'] for e in model_list
             ))
-            logger.info(
-                f"Agent LLM: Router initialized from channels/YAML — "
-                f"{len(model_list)} deployment(s), models: {unique_models}"
-            )
+            logger.info('Agent LLM: Router initialized from channels/YAML — %s deployment(s), models: %s', len(model_list), unique_models)
             return
 
         # --- Legacy path ---
         keys = get_api_keys_for_model(litellm_model, config)
         if not keys:
-            logger.info(
-                f"Agent LLM: litellm initialized (model={litellm_model}, "
-                f"API key from environment)"
-            )
+            logger.info('Agent LLM: litellm initialized (model=%s, API key from environment)', litellm_model)
             self._litellm_available = True
             return
 
@@ -538,12 +532,9 @@ class LLMToolAdapter:
                 routing_strategy="simple-shuffle",
                 num_retries=2,
             )
-            logger.info(
-                f"Agent LLM: Legacy Router initialized with {len(keys)} keys "
-                f"for {litellm_model}"
-            )
+            logger.info('Agent LLM: Legacy Router initialized with %s keys for %s', len(keys), litellm_model)
         else:
-            logger.info(f"Agent LLM: litellm initialized (model={litellm_model})")
+            logger.info('Agent LLM: litellm initialized (model=%s)', litellm_model)
         self._litellm_available = True
 
     @property

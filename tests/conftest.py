@@ -90,11 +90,11 @@ def offline_network_guard(request):
     """
     from tests.support import network_guard
 
-    mode = os.getenv("DSA_OFFLINE_GUARD", "").strip().lower()
-    if mode not in {"warn", "enforce"} or network_guard.is_exempt(request.node):
+    mode = os.getenv("DSA_OFFLINE_GUARD", "").strip().lower() or "enforce"
+    if mode == "off" or network_guard.is_exempt(request.node):
         yield
         return
-    token = network_guard.enable(enforce=mode == "enforce")
+    token = network_guard.enable(enforce=mode != "warn")
     try:
         yield
     finally:

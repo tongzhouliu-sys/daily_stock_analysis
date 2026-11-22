@@ -224,14 +224,11 @@ def _try_load_disk_cache_locked() -> None:
             }
             if name_map:
                 _akshare_cache = (float(ts), name_map)
-                logger.info(
-                    "[NameResolver] AkShare 磁盘缓存已加载: "
-                    f"{len(name_map)} 条, age={time.time() - float(ts):.0f}s"
-                )
+                logger.info('[NameResolver] AkShare 磁盘缓存已加载: %s 条, age=%.0fs', len(name_map), time.time() - float(ts))
     except FileNotFoundError:
         pass
     except Exception as e:
-        logger.debug(f"[NameResolver] AkShare 磁盘缓存不可用，忽略: {e}")
+        logger.debug('[NameResolver] AkShare 磁盘缓存不可用，忽略: %s', e)
 
 
 def _persist_akshare_map(name_map: Dict[str, str]) -> None:
@@ -250,7 +247,7 @@ def _persist_akshare_map(name_map: Dict[str, str]) -> None:
         )
         os.replace(tmp, path)
     except Exception as e:
-        logger.debug(f"[NameResolver] AkShare 磁盘缓存写入失败（非致命）: {e}")
+        logger.debug('[NameResolver] AkShare 磁盘缓存写入失败（非致命）: %s', e)
 
 
 def _spawn_refresh_locked() -> concurrent.futures.Future:
@@ -275,7 +272,7 @@ def _spawn_refresh_locked() -> concurrent.futures.Future:
                     # 空数据视同失败退避：短时间内重试只会得到同样的空结果
                     result = _build_name_map_from_df(df)
             except Exception as e:
-                logger.warning(f"[NameResolver] AkShare fallback failed: {e}")
+                logger.warning('[NameResolver] AkShare fallback failed: %s', e)
         finally:
             # 先清账并唤醒全部等待者，再做日志/落盘等 best-effort 副作用：
             # 慢日志 handler 或慢磁盘不得拖住等待者拿结果（曾把落盘排在
@@ -295,9 +292,7 @@ def _spawn_refresh_locked() -> concurrent.futures.Future:
             # 成功/失败都精确唤醒全部等待者；失败以 result=None 表达
             fut.set_result(result)
             if result:
-                logger.info(
-                    f"[NameResolver] AkShare cache loaded: {len(result)} name->code mappings"
-                )
+                logger.info('[NameResolver] AkShare cache loaded: %s name->code mappings', len(result))
                 _persist_akshare_map(result)
 
     try:
@@ -308,7 +303,7 @@ def _spawn_refresh_locked() -> concurrent.futures.Future:
         # 线程启动失败（如进程线程数耗尽）：归还句柄并唤醒等待者
         _akshare_inflight = None
         fut.set_result(None)
-        logger.warning(f"[NameResolver] AkShare 刷新线程启动失败: {e}")
+        logger.warning('[NameResolver] AkShare 刷新线程启动失败: %s', e)
     return fut
 
 
@@ -352,7 +347,7 @@ def _get_akshare_name_to_code() -> Optional[Dict[str, str]]:
         return None
     except Exception as e:
         # worker 以 result=None 表达失败，这里只可能是 Future 内部异常
-        logger.warning(f"[NameResolver] 等待在途 AkShare 拉取异常: {e}")
+        logger.warning('[NameResolver] 等待在途 AkShare 拉取异常: %s', e)
         return None
     return result
 
@@ -369,7 +364,7 @@ def warmup_akshare_cache() -> None:
         try:
             _get_akshare_name_to_code()
         except Exception as e:  # noqa: BLE001 - 预热必须 best-effort
-            logger.warning(f"[NameResolver] AkShare 预热失败: {e}")
+            logger.warning('[NameResolver] AkShare 预热失败: %s', e)
 
     threading.Thread(target=_warm, name="akshare-warmup", daemon=True).start()
 
@@ -767,7 +762,7 @@ def resolve_name_to_code(name: str) -> Optional[str]:
     if s in local_reverse:
         return local_reverse[s]
     if s in _LOCAL_AMBIGUOUS_NAMES:
-        logger.debug(f"[NameResolver] 命中本地歧义名称，快速返回 None: {s}")
+        logger.debug('[NameResolver] 命中本地歧义名称，快速返回 None: %s', s)
         return None
 
     # 3. Pinyin match (exact)
@@ -782,18 +777,18 @@ def resolve_name_to_code(name: str) -> Optional[str]:
     except ImportError:
         pass
     except Exception as e:
-        logger.debug(f"[NameResolver] Pinyin match failed: {e}")
+        logger.debug('[NameResolver] Pinyin match failed: %s', e)
 
     # Skip AkShare/fuzzy fallback for non-CJK free text such as random Latin noise.
     # These paths are expensive and only meaningfully help Chinese stock names.
     if not _contains_cjk(s):
-        logger.debug(f"[NameResolver] Skip CJK-only fallbacks for non-CJK input: {s}")
+        logger.debug('[NameResolver] Skip CJK-only fallbacks for non-CJK input: %s', s)
         return None
 
     # 4. AkShare fallback
     akshare_map = _get_akshare_name_to_code()
     if akshare_map and s in akshare_map:
-        logger.debug(f"[NameResolver] 命中 AkShare 映射: {s} -> {akshare_map[s]}")
+        logger.debug('[NameResolver] 命中 AkShare 映射: %s -> %s', s, akshare_map[s])
         return akshare_map[s]
 
     # 5. Fuzzy match (local + akshare, local takes precedence)
@@ -807,7 +802,7 @@ def resolve_name_to_code(name: str) -> Optional[str]:
         names = list(all_name_to_code.keys())
         matches = difflib.get_close_matches(s, names, n=1, cutoff=0.8)
         if matches:
-            logger.debug(f"[NameResolver] 命中模糊匹配: input={s}, matched={matches[0]}")
+            logger.debug('[NameResolver] 命中模糊匹配: input=%s, matched=%s', s, matches[0])
             return all_name_to_code[matches[0]]
 
         # Conservative fallback for one-character typo in medium/long names.
@@ -815,8 +810,8 @@ def resolve_name_to_code(name: str) -> Optional[str]:
         # such as "贵州茅苔" -> "贵州茅台".
         typo_matches = difflib.get_close_matches(s, names, n=1, cutoff=0.7)
         if typo_matches and _is_single_char_typo(s, typo_matches[0]):
-            logger.debug(f"[NameResolver] 命中单字误写兜底: input={s}, matched={typo_matches[0]}")
+            logger.debug('[NameResolver] 命中单字误写兜底: input=%s, matched=%s', s, typo_matches[0])
             return all_name_to_code[typo_matches[0]]
 
-    logger.debug(f"[NameResolver] 解析失败: {s}")
+    logger.debug('[NameResolver] 解析失败: %s', s)
     return None

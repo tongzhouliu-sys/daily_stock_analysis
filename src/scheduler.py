@@ -69,7 +69,7 @@ class GracefulShutdown:
         """信号处理函数"""
         with self._lock:
             if not self.shutdown_requested:
-                logger.info(f"收到退出信号 ({signum})，等待当前任务完成...")
+                logger.info('收到退出信号 (%s)，等待当前任务完成...', signum)
                 self.shutdown_requested = True
 
     @property
@@ -252,7 +252,7 @@ class Scheduler:
 
         try:
             logger.info("=" * 50)
-            logger.info(f"定时任务开始执行 - {datetime.now().strftime('%Y-%m-%d %H:%M:%S')}")
+            logger.info('定时任务开始执行 - %s', datetime.now().strftime('%Y-%m-%d %H:%M:%S'))
             logger.info("=" * 50)
 
             if self._pass_scheduled_for:
@@ -260,10 +260,10 @@ class Scheduler:
             else:
                 self._task_callback()
 
-            logger.info(f"定时任务执行完成 - {datetime.now().strftime('%Y-%m-%d %H:%M:%S')}")
+            logger.info('定时任务执行完成 - %s', datetime.now().strftime('%Y-%m-%d %H:%M:%S'))
 
         except Exception as e:
-            logger.exception(f"定时任务执行失败: {e}")
+            logger.exception('定时任务执行失败: %s', e)
 
     def add_background_task(
         self,
@@ -368,7 +368,7 @@ class Scheduler:
                 return
             self._running = True
         logger.info("调度器开始运行...")
-        logger.info(f"下次执行时间: {self._get_next_run_time()}")
+        logger.info('下次执行时间: %s', self._get_next_run_time())
 
         while self._running and not self.shutdown_handler.should_shutdown:
             self._refresh_daily_schedule_if_needed()
@@ -379,7 +379,7 @@ class Scheduler:
 
             # 每小时打印一次心跳
             if datetime.now().minute == 0 and datetime.now().second < 30:
-                logger.info(f"调度器运行中... 下次执行: {self._get_next_run_time()}")
+                logger.info('调度器运行中... 下次执行: %s', self._get_next_run_time())
 
         logger.info("调度器已停止")
 
