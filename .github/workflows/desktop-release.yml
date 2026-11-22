@@ -183,7 +183,7 @@ jobs:
           node -e "const pkg = require('./package.json'); if (pkg.version !== process.env.VERSION) throw new Error('package version mismatch: ' + pkg.version); console.log('desktop version:', pkg.version);"
 
       - name: Cache Electron binaries
-        uses: actions/cache@v5
+        uses: actions/cache@v6
         with:
           path: ~/Library/Caches/electron
           key: electron-macos-${{ matrix.arch }}-${{ hashFiles('apps/dsa-desktop/package-lock.json') }}
