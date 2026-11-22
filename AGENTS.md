@@ -11,7 +11,11 @@
   - Web 前端改动在 `apps/dsa-web/`
   - 桌面端改动在 `apps/dsa-desktop/`
   - 部署与流水线改动在 `scripts/`、`.github/workflows/`、`docker/`
-- 未经明确确认，不执行 `git commit`、`git tag`、`git push`。
+- 本机默认授权（2026-11-22 起生效）：完成当前任务的改动并通过第 6 节验证后，可直接 `git commit` 并合入 `main`，无需逐次等待用户确认。
+  - 若 `main` 受保护（存在必需状态检查），走「短生命周期分支 + PR」；必需检查全部通过后由同一操作者直接合并，同样不逐次确认。
+  - 仍然禁止：`git push --force`、改写已推送历史、未经要求的 `git tag` / Release、跳过验证直接合入、把他人未完成的工作区改动一并提交。
+  - 仍必须遵守第 6 节验证矩阵与第 7 节稳定性护栏；验证未通过时先修问题，不得用"已授权"当作跳过验证的理由。
+  - 提交前确认工作区只含本次任务改动；发现无关改动（尤其是其他会话写入的内容）时先停下来说明，不得夹带提交。
 - commit message 使用中文或英文均可，优先使用中文。
 - 不写死密钥、账号、路径、模型名、端口或环境差异逻辑。
 - 优先复用现有模块、配置入口、脚本和测试，不新增平行实现。
@@ -229,9 +233,9 @@ gh run view <run_id> --log-failed
 
 ## 8. Issue / PR / Skill 工作流
 
-- 一个任务对应一个分支、一个 PR；提交说明只描述当前任务，不夹带其他任务的改动。
+- 一个任务对应一次提交（或一组同主题提交），提交说明只描述当前任务，不夹带其他任务的改动；默认直接提交到 `main`，需要 review 留痕时再开分支 + PR。
 - 普通提交的正文不写 `#patch`、`#minor`、`#major`。自动打 tag 只读取提交标题第一行；只有标题包含版本标记时才触发发布。
-- 同一时间一个分支只由一个会话或工具操作；不直接推 `main`，所有用户可见变更走 PR。
+- 同一时间一个分支只由一个会话或工具操作；默认允许直接提交并合入 `main`（见第 1 节授权），跨机器协作或需要 review 留痕的改动仍走 PR。
 - 仓库内已有以下 skill，可优先复用：
   - `.claude/skills/analyze-issue/SKILL.md`
   - `.claude/skills/analyze-pr/SKILL.md`
@@ -240,7 +244,7 @@ gh run view <run_id> --log-failed
 - skill 中的命令、模板、验证顺序和交付结构必须与 `AGENTS.md` 保持一致。
 - 每次进行 PR 创建 / 更新、PR 审查或 issue 分析前，必须先同步最新代码基线：先检查工作区状态并执行 `git fetch --all --prune`；若工作区干净且当前分支可 fast-forward，则执行 `git pull --ff-only`。如存在本地改动、冲突状态、未跟踪风险文件或无法 fast-forward，不得强行切分支、stash、reset 或覆盖本地状态；PR 审查 / issue 分析可改用已 fetch 的远端 refs/PR head 做分析，并在分析文档中明确记录未更新本地工作树的原因、当前本地 HEAD 与使用的远端基线；PR 创建 / 更新应先说明当前分支与目标基线差异，必要时请求用户确认 rebase、merge 或继续基于当前分支推进。
 - skill 默认优先读取 CI / 工作流证据，再决定是否补本地验证。
-- 除上述 PR 创建 / 更新、PR 审查 / issue 分析的安全 fast-forward 同步外，skill 不得默认执行 `git pull`、`git push`、`git tag`、`gh pr create` 等会改变远端或当前分支状态的操作；这些操作必须要求用户确认。
+- 除上述 PR 创建 / 更新、PR 审查 / issue 分析的安全 fast-forward 同步外，skill 默认可执行 `git fetch`、`git commit`、`git push` 本次任务分支、合入 `main`（含受保护分支下的建 PR → 必需检查通过 → 合并，见第 1 节授权）；但 `git push --force`、`git tag`、合并他人 PR 仍需用户确认。
 - PR 审查默认顺序：
   1. 必要性
   2. 关联性
@@ -295,7 +299,7 @@ CI 通过只能说明自动检查通过，不能替代人工语义收敛，也�
 - 如果是 `docs` 任务，可直接写：`Docs only, tests not run`，但仍需说明是否核对了命令和文件名。
 - 自动 tag 默认不触发，只有 commit title 包含 `#patch`、`#minor`、`#major` 才会触发版本号更新。
 - 手动打 tag 必须使用 annotated tag。
-- 用户可见变更优先通过 PR 合入，并补齐 label 与验证说明。
+- 用户可见变更默认直接合入 `main`（见第 1 节授权），提交说明需写清验证结果与风险；跨机器协作、需要 review 留痕或高风险发布类改动改走 PR 并补齐 label。
 
 ## 10. 回测交付规范
 

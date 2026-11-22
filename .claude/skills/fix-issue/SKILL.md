@@ -86,7 +86,7 @@ git pull --ff-only
 - 回滚方式：
 ```
 
-### Step 6: 需要确认的后续动作
+### Step 6: 提交与后续动作
 
 如用户要求创建 PR、生成 PR 标题或整理 PR 描述，PR title 建议遵循 `AGENTS.md`：
 
@@ -95,12 +95,10 @@ git pull --ff-only
 - 标题只描述实际改动，建议不添加 `[codex]`、`codex`、`autocode`、`copilot` 或其他工具/agent 来源前缀
 - 该约定仅用于协作一致性，不应被单独当作 process blocker
 
-只有在用户明确确认后，才执行：
+按 `AGENTS.md` 第 1 节的本机默认授权，完成修复并通过验证后，可直接 `git commit` 并合入 `main`，无需逐次等待用户确认；`main` 受保护时走短分支 + PR，必需检查通过后由同一操作者合并。以下动作仍需用户明确确认：
 
-- 建分支
-- `git commit`
-- `git push`
-- 创建 PR
+- `git push --force`、`git tag`、Release
+- 合并他人的 PR
 - 在 issue 下回复或关闭 issue
 
 ## Allowed Auto-Actions (No Confirmation Needed)
@@ -110,11 +108,10 @@ git pull --ff-only
 - 应用与当前任务直接相关的最小修复
 - 运行非破坏性的本地验证
 - 更新本地 issue 分析文档
+- `git commit` 并合入 `main`（验证通过后，见 `AGENTS.md` 第 1 节授权）
 
 ## Actions Requiring Confirmation
 
-1. 切换或创建分支
-2. `git commit`
-3. `git push`
-4. 创建 PR
-5. 回复或关闭 issue
+1. `git push --force`、`git tag`
+2. 合并他人的 PR
+3. 回复或关闭 issue
