@@ -15,6 +15,7 @@ vi.mock('../../api/agent', async (importOriginal) => {
       })),
       chatStream: vi.fn(),
       stopChat: vi.fn(async () => ({ success: true, cancelled: true })),
+      pinChatSession: vi.fn(async () => undefined),
     },
     intakeApi: {
       create: vi.fn(),
@@ -226,7 +227,7 @@ describe('agentChatStore authoritative session owner', () => {
     localStorage.setItem('dsa_chat_session_id', 'session-test');
     useAgentChatStore.setState({ hasInitialLoad: false });
     vi.mocked(agentApi.getChatSessions).mockResolvedValue([{ session_id: 'session-test', title: '',
-      message_count: 0, created_at: null, last_active: null }]);
+      message_count: 0, created_at: null, last_active: null, is_pinned: false }]);
     vi.mocked(agentApi.getChatSessionMessages).mockResolvedValue(detailState('g', 0, null, ['risk']));
     await useAgentChatStore.getState().loadInitialSession();
     expect(useAgentChatStore.getState()).toMatchObject({ stateContract: 'authoritative',
@@ -1141,7 +1142,7 @@ describe('agentChatStore running task recovery', () => {
     useAgentChatStore.setState({ hasInitialLoad: false, sessionId: 'running-session' });
     vi.mocked(agentApi.getChatSessions).mockResolvedValue([{
       session_id: 'running-session', title: '分析茅台', message_count: 1,
-      created_at: null, last_active: null,
+      created_at: null, last_active: null, is_pinned: false,
     }]);
     vi.mocked(agentApi.getChatSessionMessages).mockResolvedValue({
       session_id: 'running-session',
@@ -1175,7 +1176,7 @@ describe('agentChatStore running task recovery', () => {
     useAgentChatStore.setState({ hasInitialLoad: false, sessionId: 'pending-session' });
     vi.mocked(agentApi.getChatSessions).mockResolvedValue([{
       session_id: 'pending-session', title: '分析茅台', message_count: 1,
-      created_at: null, last_active: null,
+      created_at: null, last_active: null, is_pinned: false,
     }]);
     vi.mocked(agentApi.getChatSessionMessages).mockResolvedValue({
       session_id: 'pending-session',
@@ -1206,7 +1207,7 @@ describe('agentChatStore running task recovery', () => {
       useAgentChatStore.setState({ hasInitialLoad: false, sessionId: 'poll-session' });
       vi.mocked(agentApi.getChatSessions).mockResolvedValue([{
         session_id: 'poll-session', title: '分析茅台', message_count: 1,
-        created_at: null, last_active: null,
+        created_at: null, last_active: null, is_pinned: false,
       }]);
       const userMessage = { id: 'u1', role: 'user' as const, content: '分析茅台', created_at: null };
       vi.mocked(agentApi.getChatSessionMessages).mockResolvedValueOnce({
@@ -1275,6 +1276,7 @@ describe('agentChatStore session Skill state', () => {
         message_count: 1,
         created_at: null,
         last_active: null,
+        is_pinned: false,
       },
     ]);
     vi.mocked(agentApi.getChatSessionMessages).mockResolvedValue({
@@ -1303,6 +1305,7 @@ describe('agentChatStore session Skill state', () => {
         message_count: 1,
         created_at: null,
         last_active: null,
+        is_pinned: false,
       },
     ]);
     vi.mocked(agentApi.getChatSessionMessages).mockResolvedValue({
@@ -1402,5 +1405,43 @@ describe('agentChatStore first-question intake failures', () => {
     expect(result).toBe(false);
     expect(state.intakeError).toBe('intake_capability_missing');
     expect(agentApi.chatStream).toHaveBeenCalledOnce();
+  });
+});
+
+describe('agentChatStore.setSessionPinned', () => {
+  const session = (sessionId: string, isPinned: boolean) => ({
+    session_id: sessionId,
+    title: sessionId,
+    message_count: 1,
+    created_at: null,
+    last_active: null,
+    is_pinned: isPinned,
+  });
+
+  it('optimistically pins the session and reloads the server order', async () => {
+    useAgentChatStore.setState({ sessions: [session('a', false), session('b', false)] });
+    vi.mocked(agentApi.pinChatSession).mockResolvedValueOnce(undefined);
+    vi.mocked(agentApi.getChatSessions).mockResolvedValueOnce([
+      session('b', true),
+      session('a', false),
+    ]);
+
+    await useAgentChatStore.getState().setSessionPinned('b', true);
+
+    expect(agentApi.pinChatSession).toHaveBeenCalledWith('b', true);
+    expect(agentApi.getChatSessions).toHaveBeenCalledOnce();
+    expect(useAgentChatStore.getState().sessions.map((item) => [item.session_id, item.is_pinned]))
+      .toEqual([['b', true], ['a', false]]);
+  });
+
+  it('rolls the optimistic pin back when the server rejects it', async () => {
+    const before = [session('a', false), session('b', true)];
+    useAgentChatStore.setState({ sessions: before });
+    vi.mocked(agentApi.pinChatSession).mockRejectedValueOnce(new Error('pin failed'));
+
+    await expect(useAgentChatStore.getState().setSessionPinned('a', true))
+      .rejects.toThrow('pin failed');
+
+    expect(useAgentChatStore.getState().sessions).toEqual(before);
   });
 });

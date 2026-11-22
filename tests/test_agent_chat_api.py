@@ -140,6 +140,33 @@ def test_rename_chat_session_persists_and_is_deleted(tmp_path: Path) -> None:
         assert client.get("/api/v1/agent/chat/sessions").json()["sessions"][0]["title"] == "new question"
 
 
+def test_pin_chat_session_api_persists_and_clears_state(tmp_path: Path) -> None:
+    db = DatabaseManager()
+    db.save_conversation_message("pin-session", "user", "pin me")
+    with patch("api.middlewares.auth.is_auth_enabled", return_value=False):
+        client = TestClient(create_app(static_dir=tmp_path / "static"))
+        url = "/api/v1/agent/chat/sessions/pin-session/pin"
+
+        assert client.put(url, json={"pinned": True}).json() == {
+            "session_id": "pin-session", "pinned": True,
+        }
+        listed = client.get("/api/v1/agent/chat/sessions").json()["sessions"]
+        assert listed[0]["session_id"] == "pin-session"
+        assert listed[0]["is_pinned"] is True
+
+        # Pinning is idempotent and unpinning clears the flag.
+        assert client.put(url, json={"pinned": True}).status_code == 200
+        assert client.put(url, json={"pinned": False}).json()["pinned"] is False
+        listed = client.get("/api/v1/agent/chat/sessions").json()["sessions"]
+        assert listed[0]["is_pinned"] is False
+
+        assert client.put(
+            "/api/v1/agent/chat/sessions/missing-session/pin",
+            json={"pinned": True},
+        ).status_code == 404
+        assert client.put(url, json={}).status_code == 422
+
+
 def test_chat_session_messages_api_does_not_expose_provider_trace(tmp_path: Path) -> None:
     db = DatabaseManager(db_url=f"sqlite:///{tmp_path / 'trace.db'}")
     session_id = "api-trace-hidden"

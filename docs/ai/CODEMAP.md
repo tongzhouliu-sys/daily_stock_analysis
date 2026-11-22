@@ -12,19 +12,19 @@
 | 目录 | 职责 | 文件数 | 行数 |
 | --- | --- | --- | --- |
 | `src/core/` | 主流程编排：pipeline、配置装配、调度入口 | 14 | 14212 |
-| `src/services/` | 业务服务层：分析、筛选、通知、系统配置、任务与诊断 | 215 | 85598 |
+| `src/services/` | 业务服务层：分析、筛选、通知、系统配置、任务与诊断 | 215 | 85601 |
 | `src/repositories/` | 数据访问层：数据库读写封装 | 12 | 4040 |
 | `src/schemas/` | API / 报告数据结构定义 | 10 | 2107 |
 | `src/agent/` | 问股 Agent：意图解析、编排、工具与流式事件 | 64 | 26360 |
 | `src/llm/` | LLM 调用封装与本地 CLI 生成后端 | 12 | 6466 |
 | `data_provider/` | 多数据源适配、优先级与 fallback | 24 | 19741 |
-| `api/` | FastAPI 应用与 v1 路由 | 45 | 13511 |
+| `api/` | FastAPI 应用与 v1 路由 | 45 | 13528 |
 | `bot/` | IM / 机器人接入 | 22 | 5507 |
-| `apps/dsa-web/src/` | Web 前端（React + Vite） | 340 | 113080 |
+| `apps/dsa-web/src/` | Web 前端（React + Vite） | 340 | 113268 |
 | `apps/dsa-desktop/` | Electron 桌面端壳与打包配置 | 8 | 8519 |
 | `scripts/` | 本地与 CI 脚本 | 52 | 10795 |
 | `.github/scripts/` | GitHub Actions 专用脚本 | 2 | 652 |
-| `tests/` | pytest 测试 | 391 | 193697 |
+| `tests/` | pytest 测试 | 391 | 193772 |
 
 ## 大文件（Python，≥400 行）
 
@@ -34,7 +34,7 @@
 | --- | --- | --- | --- |
 | `src/services/system_config_service.py` | 6088 | `ConfigValidationError`:123, `ConfigConflictError`:131, `ConfigImportError`:139, `_LLMDiagnostic`:148, `SystemConfigService`:158 | 31 |
 | `src/analyzer.py` | 6071 | `_describe_llm_result_model`:115, `_localized_text`:129, `_normalize_risk_warning_values`:139, `_today_has_realtime_overlay`:164, `_today_looks_complete_daily_bar`:177, `_phase_aware_quote_labels`:210 | 239 |
-| `src/storage.py` | 5553 | `utc_naive_now`:81, `to_utc_naive_datetime`:86, `to_utc_isoformat`:93, `DatabaseSchemaMigration`:111, `StockDaily`:121, `NewsIntel`:201 | 385 |
+| `src/storage.py` | 5598 | `utc_naive_now`:81, `to_utc_naive_datetime`:86, `to_utc_isoformat`:93, `DatabaseSchemaMigration`:111, `StockDaily`:121, `NewsIntel`:201 | 385 |
 | `src/core/config_registry.py` | 5371 | `get_category_definitions`:5195, `get_registered_field_keys`:5200, `_extract_option_values`:5205, `get_field_definition`:5219, `build_schema_response`:5254, `_is_sensitive_key`:5277 | 24 |
 | `src/search_service.py` | 5269 | `_terminate_search_process`:61, `_search_topic_news_process_worker`:72, `_call_topic_news_in_subprocess`:100, `_post_with_retry`:191, `_get_with_retry`:203, `_is_public_http_url`:210 | 73 |
 | `data_provider/base.py` | 5210 | `_resolve_fundamental_timeout_worker_limit`:58, `interactive_mode`:82, `unwrap_exception`:99, `summarize_exception`:116, `normalize_stock_code`:126, `_is_us_market`:211 | 243 |
@@ -57,7 +57,7 @@
 | `api/v1/endpoints/analysis.py` | 1472 | `_get_task_trace_id`:90, `_task_asset_type`:100, `_market_review_lock_path`:126, `_build_market_review_runtime`:130, `_with_request_report_language`:134, `_run_market_review_background`:145 | 17 |
 | `data_provider/efinance_fetcher.py` | 1443 | `EfinanceRealtimeQuote`:95, `_lots_to_shares`:139, `_is_etf_code`:180, `_build_eastmoney_etf_secid`:197, `_is_us_code`:209, `_get_ef_executor`:221 | 16 |
 | `data_provider/tushare_fetcher.py` | 1427 | `_is_etf_code`:51, `_is_us_code`:63, `_resolve_tushare_http_url`:75, `_TushareHttpClient`:97, `TushareFetcher`:135 | 14 |
-| `api/v1/endpoints/agent.py` | 1403 | `ChatRequest`:73, `_intake_status_code`:120, `_public_answer_meta`:124, `_needs_object_intake`:135, `_reuse_session_brief`:142, `_build_agent_chat_context`:159 | 25 |
+| `api/v1/endpoints/agent.py` | 1420 | `ChatRequest`:73, `_intake_status_code`:120, `_public_answer_meta`:124, `_needs_object_intake`:135, `_reuse_session_brief`:142, `_build_agent_chat_context`:159 | 25 |
 | `src/report_language.py` | 1400 | `_normalized_disclaimer_candidate`:379, `is_report_disclaimer_line`:386, `strip_report_disclaimers`:399, `ensure_report_disclaimer`:415, `_strip_decision_negation_connectors`:860, `normalize_report_language`:874 | 182 |
 | `src/services/decision_signal_service.py` | 1388 | `DecisionSignalNotFoundError`:75, `DecisionSignalStorageError`:79, `DecisionSignalWriteOutcome`:87, `DecisionSignalService`:110 | 35 |
 | `src/services/alert_service.py` | 1372 | `AlertServiceError`:87, `AlertNotFoundError`:93, `UnsupportedAlertTypeError`:99, `AlertService`:105 | 15 |
@@ -68,24 +68,24 @@
 
 | 文件 | 行数 |
 | --- | --- |
-| `apps/dsa-web/src/i18n/uiText.ts` | 3207 |
+| `apps/dsa-web/src/i18n/uiText.ts` | 3215 |
 | `apps/dsa-web/src/components/settings/LLMChannelEditor.tsx` | 2845 |
 | `apps/dsa-web/src/locales/settingsHelp.ts` | 2574 |
 | `apps/dsa-web/src/pages/StockScreeningPage.tsx` | 2354 |
 | `apps/dsa-web/src/pages/PortfolioPage.tsx` | 2252 |
 | `apps/dsa-web/src/pages/HomePage.tsx` | 1964 |
+| `apps/dsa-web/src/pages/ChatPage.tsx` | 1754 |
 | `apps/dsa-web/src/pages/SettingsPage.tsx` | 1742 |
-| `apps/dsa-web/src/pages/ChatPage.tsx` | 1720 |
 | `apps/dsa-web/src/pages/DecisionSignalsPage.tsx` | 1633 |
+| `apps/dsa-web/src/stores/agentChatStore.ts` | 1162 |
 | `apps/dsa-web/src/stores/stockPoolStore.ts` | 1153 |
-| `apps/dsa-web/src/stores/agentChatStore.ts` | 1143 |
 | `apps/dsa-web/src/components/scanner/pages/Screen.tsx` | 931 |
 
 ## 规模快照
 
-- Python 源码（不含测试）：508 个文件，233395 行
-- Python 测试：382 个文件，193307 行
-- 前端 TS/TSX：332 个文件，104463 行
+- Python 源码（不含测试）：508 个文件，233460 行
+- Python 测试：382 个文件，193382 行
+- 前端 TS/TSX：332 个文件，104643 行
 - ≥400 行的 Python 文件：156 个
 
 规模数字只用于判断改动影响面，不是质量指标。

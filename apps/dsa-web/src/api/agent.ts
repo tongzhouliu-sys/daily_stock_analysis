@@ -174,6 +174,7 @@ export interface ChatSessionItem {
   message_count: number;
   created_at: string | null;
   last_active: string | null;
+  is_pinned: boolean;
 }
 
 export interface ChatSessionMessage {
@@ -221,7 +222,12 @@ export const agentApi = {
   },
   async getChatSessions(limit = 50): Promise<ChatSessionItem[]> {
     const response = await apiClient.get<{ sessions: ChatSessionItem[] }>('/api/v1/agent/chat/sessions', { params: { limit } });
-    return response.data.sessions;
+    // Newer servers always send is_pinned; an older server (rolling upgrade)
+    // must not surface `undefined` and break the pinned/date split.
+    return response.data.sessions.map((session) => ({
+      ...session,
+      is_pinned: session.is_pinned === true,
+    }));
   },
   async getChatSessionMessages(sessionId: string): Promise<ChatSessionDetail> {
     const response = await apiClient.get<ChatSessionDetail>(`/api/v1/agent/chat/sessions/${sessionId}`);
@@ -233,6 +239,12 @@ export const agentApi = {
   },
   async renameChatSession(sessionId: string, title: string): Promise<void> {
     await apiClient.patch(`/api/v1/agent/chat/sessions/${encodeURIComponent(sessionId)}`, { title });
+  },
+  async pinChatSession(sessionId: string, pinned: boolean): Promise<void> {
+    await apiClient.put(
+      `/api/v1/agent/chat/sessions/${encodeURIComponent(sessionId)}/pin`,
+      { pinned },
+    );
   },
   async sendChat(content: string): Promise<{ success: boolean }> {
     const response = await apiClient.post<{

@@ -672,6 +672,7 @@ class SessionItem(BaseModel):
     message_count: int
     created_at: Optional[str] = None
     last_active: Optional[str] = None
+    is_pinned: bool = False
 
 class SessionsResponse(BaseModel):
     sessions: List[SessionItem]
@@ -760,6 +761,10 @@ class RenameSessionRequest(BaseModel):
     title: str = Field(min_length=1, max_length=60)
 
 
+class PinSessionRequest(BaseModel):
+    pinned: bool
+
+
 @router.patch("/chat/sessions/{session_id}")
 async def rename_chat_session(
     session_id: str,
@@ -772,6 +777,18 @@ async def rename_chat_session(
     if not session_service.rename_session(session_id, title):
         raise HTTPException(status_code=404, detail="Session not found")
     return {"title": title}
+
+
+@router.put("/chat/sessions/{session_id}/pin")
+async def set_chat_session_pin(
+    session_id: str,
+    request: PinSessionRequest,
+    session_service: AgentChatSessionService = Depends(get_agent_chat_session_service),
+):
+    """置顶或取消置顶指定会话；幂等，未知会话返回 404。"""
+    if not session_service.set_session_pinned(session_id, request.pinned):
+        raise HTTPException(status_code=404, detail="Session not found")
+    return {"session_id": session_id, "pinned": request.pinned}
 
 
 @router.delete("/chat/sessions/{session_id}")

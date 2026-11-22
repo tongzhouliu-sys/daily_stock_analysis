@@ -368,6 +368,9 @@ class AgentChatSessionService:
     def rename_session(self, session_id: str, title: str) -> bool:
         return self.db.rename_conversation_session(session_id, title)
 
+    def set_session_pinned(self, session_id: str, pinned: bool) -> bool:
+        return self.db.set_conversation_session_pinned(session_id, pinned)
+
     def prepare_session_turn(
         self, config: Any, session_id: str, message: str,
         requested_skill_ids: Optional[List[str]] = None,

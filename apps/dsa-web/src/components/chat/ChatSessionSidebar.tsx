@@ -1,4 +1,4 @@
-import { Check, MoreHorizontal, PanelLeftClose, Plus, X } from 'lucide-react';
+import { Check, MoreHorizontal, PanelLeftClose, Pin, Plus, X } from 'lucide-react';
 import { DashboardStateBlock } from '../dashboard';
 import { ScrollArea } from '../common';
 import type { TranslateFn } from '../../contexts/UiLanguageContext';
@@ -9,6 +9,7 @@ export type SessionMenuOrigin = 'sidebar' | 'header';
 export interface ChatSidebarSession {
   session_id: string;
   title: string;
+  is_pinned: boolean;
 }
 
 export interface ChatSidebarGroup {
@@ -131,6 +132,11 @@ export default function ChatSessionSidebar({
                           aria-label={`切换到对话 ${session.title}`}
                           aria-current={session.session_id === sessionId ? 'page' : undefined}
                         >
+                          {session.is_pinned ? (
+                            <span className="chat-session-pin" aria-hidden="true">
+                              <Pin size={12} />
+                            </span>
+                          ) : null}
                           <span className="chat-session-title">{session.title}</span>
                         </button>
                         <button

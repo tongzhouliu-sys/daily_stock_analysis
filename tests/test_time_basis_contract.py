@@ -39,6 +39,7 @@ LOCAL_TIME_TABLES = {
     "PortfolioFxRate",
     "ConversationMessage",
     "ConversationSessionState",
+    "ConversationSessionPin",
     "IntakeDraftRecord",
     "ConversationSummary",
     "AgentProviderTurn",

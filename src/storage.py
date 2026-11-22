@@ -837,6 +837,14 @@ class ConversationSessionTitle(Base):
     title = Column(String(60), nullable=False)
 
 
+class ConversationSessionPin(Base):
+    """User-pinned Agent chat sessions; one row only while a session is pinned."""
+
+    __tablename__ = 'conversation_session_pins'
+    session_id = Column(String(100), primary_key=True)
+    pinned_at = Column(DateTime, default=datetime.now, nullable=False)
+
+
 class ChatSessionStateConflict(Exception):
     """A prepared Chat turn no longer belongs to the current session snapshot."""
 
@@ -5104,13 +5112,19 @@ class DatabaseManager(metaclass=_DatabaseManagerMeta):
                 normalized_prefix = session_prefix if session_prefix.endswith(":") else f"{session_prefix}:"
             exact_ids = [sid for sid in (extra_session_ids or []) if sid]
 
-            # 聚合每个 session 的消息数和最后活跃时间
+            # 聚合每个 session 的消息数和最后活跃时间；置顶表只做 LEFT JOIN
+            # 且 pinned_at 是主键，不会放大聚合行数。
             base = (
                 select(
                     ConversationMessage.session_id,
                     func.count(ConversationMessage.id).label("message_count"),
                     func.min(ConversationMessage.created_at).label("created_at"),
                     func.max(ConversationMessage.created_at).label("last_active"),
+                    ConversationSessionPin.pinned_at.label("pinned_at"),
+                )
+                .outerjoin(
+                    ConversationSessionPin,
+                    ConversationSessionPin.session_id == ConversationMessage.session_id,
                 )
             )
             conditions = []
@@ -5122,8 +5136,14 @@ class DatabaseManager(metaclass=_DatabaseManagerMeta):
                 base = base.where(or_(*conditions))
             stmt = (
                 base
-                .group_by(ConversationMessage.session_id)
-                .order_by(desc(func.max(ConversationMessage.created_at)))
+                .group_by(ConversationMessage.session_id, ConversationSessionPin.pinned_at)
+                # 置顶优先，其次置顶时间倒序，最后按最近活跃时间倒序；
+                # 置顶行必须在 LIMIT 截断之前完成排序，否则老会话置顶后会消失。
+                .order_by(
+                    ConversationSessionPin.pinned_at.is_(None),
+                    desc(ConversationSessionPin.pinned_at),
+                    desc(func.max(ConversationMessage.created_at)),
+                )
                 .limit(limit)
             )
             rows = session.execute(stmt).all()
@@ -5179,8 +5199,30 @@ class DatabaseManager(metaclass=_DatabaseManagerMeta):
                     "message_count": row.message_count,
                     "created_at": row.created_at.isoformat() if row.created_at else None,
                     "last_active": row.last_active.isoformat() if row.last_active else None,
+                    "is_pinned": row.pinned_at is not None,
                 })
             return results
+
+    def set_conversation_session_pinned(self, session_id: str, pinned: bool) -> bool:
+        """Pin or unpin an existing session; returns False when it has no messages."""
+        def write(session: Session) -> bool:
+            exists = session.execute(select(ConversationMessage.id).where(
+                ConversationMessage.session_id == session_id
+            ).limit(1)).scalar() is not None
+            if not exists:
+                return False
+            entry = session.get(ConversationSessionPin, session_id)
+            if pinned:
+                if entry is None:
+                    session.add(ConversationSessionPin(
+                        session_id=session_id, pinned_at=datetime.now(),
+                    ))
+                else:
+                    entry.pinned_at = datetime.now()
+            elif entry is not None:
+                session.delete(entry)
+            return True
+        return self._run_write_transaction("set_conversation_session_pinned", write)
 
     def rename_conversation_session(self, session_id: str, title: str) -> bool:
         def write(session: Session) -> bool:
@@ -5229,6 +5271,9 @@ class DatabaseManager(metaclass=_DatabaseManagerMeta):
         def write(session: Session) -> int:
             session.execute(delete(ConversationSessionTitle).where(
                 ConversationSessionTitle.session_id == session_id
+            ))
+            session.execute(delete(ConversationSessionPin).where(
+                ConversationSessionPin.session_id == session_id
             ))
             session.execute(
                 delete(ConversationSessionState).where(
