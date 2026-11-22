@@ -30,6 +30,7 @@ class IntelAgent(BaseAgent):
         "search_comprehensive_intel",
         "get_stock_info",
         "get_capital_flow",
+        "search_prediction_markets",
     ] + fxmacrodata_tool_names()
 
     def system_prompt(self, ctx: AgentContext) -> str:

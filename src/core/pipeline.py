@@ -1736,6 +1736,15 @@ class StockAnalysisPipeline:
                 )
                 logger.info('[%s] Agent mode: local intelligence evidence injected into news_context', code)
 
+            prediction_market_context = self._load_prediction_market_context(
+                code=code,
+                stock_name=stock_name,
+                market=("cn" if is_index else get_market_for_stock(normalize_stock_code(code)) or "cn"),
+            )
+            if prediction_market_context:
+                initial_context["prediction_market_context"] = prediction_market_context
+                logger.info('[%s] Agent mode: prediction market evidence injected into context', code)
+
             # Issue #1066: ensure deep history is in DB before agent tools run
             if analysis_target is None:
                 self._ensure_agent_history(code)
@@ -3480,6 +3489,7 @@ class StockAnalysisPipeline:
                 "trigger_source": self.query_source,
             },
             portfolio_context=dict(portfolio_context) if isinstance(portfolio_context, dict) else None,
+            prediction_market_context=initial_context.get("prediction_market_context"),
         )
 
     def _build_analysis_context_pack_outputs(

@@ -46,6 +46,7 @@ def _handle_search_prediction_markets(
             status=status,
             query=query,
             limit=limit,
+            filter_noise=True,
         )
         return {
             "status": "ok",

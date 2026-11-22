@@ -978,6 +978,10 @@ class AgentExecutor:
                 parts.append(f"\n[系统已获取的筹码分布]\n{json.dumps(context['chip_distribution'], ensure_ascii=False)}")
             if context.get("news_context"):
                 parts.append(f"\n[系统已获取的新闻与舆情情报]\n{context['news_context']}")
+            if context.get("prediction_market_context"):
+                parts.append(
+                    f"\n[系统已获取的预测市场事件概率]\n{context['prediction_market_context']}"
+                )
 
         parts.append("\n请使用可用工具获取缺失的数据（如历史K线、新闻等），然后以决策仪表盘 JSON 格式输出分析结果。")
         return "\n".join(parts)
