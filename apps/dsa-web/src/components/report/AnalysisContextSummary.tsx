@@ -7,7 +7,6 @@ import type {
 } from '../../types/analysis';
 import { normalizeReportLanguage } from '../../utils/reportLanguage';
 import { Badge, Card, StatusDot } from '../common';
-import { DashboardPanelHeader } from '../dashboard';
 
 interface AnalysisContextSummaryProps {
   overview?: AnalysisContextPackOverview | null;
@@ -335,7 +334,7 @@ export const AnalysisContextSummary: React.FC<AnalysisContextSummaryProps> = ({
 
   return (
     <Card variant="bordered" padding="none" className="home-panel-card">
-      <details data-testid="analysis-context-summary" className="report-collapse-scope group">
+      <details data-testid="analysis-context-summary" className="group">
         <summary className="report-collapse">
           <div className="report-collapse-lead">
             <span className="report-collapse-icon bg-cyan/10 text-cyan">
@@ -380,32 +379,23 @@ export const AnalysisContextSummary: React.FC<AnalysisContextSummaryProps> = ({
         </summary>
 
         <div className="home-divider border-t px-4 pb-4 pt-3">
-          <DashboardPanelHeader
-            eyebrow={text.eyebrow}
-            title={text.title}
-            leading={(
-              <span className="flex h-8 w-8 items-center justify-center rounded-lg bg-cyan/10 text-cyan">
-                <Database className="h-4 w-4" aria-hidden="true" />
-              </span>
-            )}
-            actions={metadataItems.length > 0 || typeof quality?.overallScore === 'number' ? (
-              <div className="hidden flex-wrap justify-end gap-2 text-xs text-muted-text md:flex">
-                {typeof quality?.overallScore === 'number' ? (
-                  <span className="home-accent-chip px-2 py-0.5">
-                    {text.qualityScore}: {quality.overallScore}/100{qualityLabel ? ` ${qualityLabel}` : ''}
-                  </span>
-                ) : null}
-                {metadataItems.map((item) => (
-                  <span key={item} className="home-accent-chip px-2 py-0.5">
-                    {item}
-                  </span>
-                ))}
+          {metadataItems.length > 0 || typeof quality?.overallScore === 'number' ? (
+            <div className="report-context-meta">
+              {typeof quality?.overallScore === 'number' ? (
                 <span className="home-accent-chip px-2 py-0.5">
-                  {text.inputScope}
+                  {text.qualityScore}: {quality.overallScore}/100{qualityLabel ? ` ${qualityLabel}` : ''}
                 </span>
-              </div>
-            ) : undefined}
-          />
+              ) : null}
+              {metadataItems.map((item) => (
+                <span key={item} className="home-accent-chip px-2 py-0.5">
+                  {item}
+                </span>
+              ))}
+              <span className="home-accent-chip px-2 py-0.5">
+                {text.inputScope}
+              </span>
+            </div>
+          ) : null}
 
           {visibleCounts.length > 0 ? (
             <div className="mb-3 flex flex-wrap items-center gap-2">
@@ -478,24 +468,6 @@ export const AnalysisContextSummary: React.FC<AnalysisContextSummaryProps> = ({
               );
             })}
           </div>
-
-          {metadataItems.length > 0 || typeof quality?.overallScore === 'number' ? (
-            <div className="mt-3 flex flex-wrap gap-2 text-xs text-muted-text md:hidden">
-              {typeof quality?.overallScore === 'number' ? (
-                <span className="home-accent-chip px-2 py-0.5">
-                  {text.qualityScore}: {quality.overallScore}/100{qualityLabel ? ` ${qualityLabel}` : ''}
-                </span>
-              ) : null}
-              {metadataItems.map((item) => (
-                <span key={item} className="home-accent-chip px-2 py-0.5">
-                  {item}
-                </span>
-              ))}
-              <span className="home-accent-chip px-2 py-0.5">
-                {text.inputScope}
-              </span>
-            </div>
-          ) : null}
         </div>
       </details>
     </Card>

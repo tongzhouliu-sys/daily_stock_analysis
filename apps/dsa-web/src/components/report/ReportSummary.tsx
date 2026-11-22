@@ -26,9 +26,8 @@ interface ReportSummaryProps {
  * 完整报告展示组件
  * 按主体内容优先、透明度信息后置的顺序展示报告。
  *
- * 版式：概览封面（含结论与点位）→ 「资讯 / 证据」双列区 → 数据追溯。
- * 证据类卡片（预测市场、输入数据块、运行诊断、数据追溯）收进右列，
- * 避免整页单列长滚动。
+ * 版式：概览封面（含结论与点位）→ 资讯 → 结构化证据 → 数据追溯。
+ * 证据类卡片统一单列，展开后才有足够宽度承载块状态、链路诊断与原始 JSON。
  */
 export const ReportSummary: React.FC<ReportSummaryProps> = ({
   data,
@@ -73,33 +72,28 @@ export const ReportSummary: React.FC<ReportSummaryProps> = ({
         watchlist={watchlist}
       />
 
-      {/* 资讯与证据区：左列资讯，右列结构化证据与诊断 */}
-      <div className="report-support-grid">
-        <div className="report-support-main">
-          <ReportNews recordId={recordId} limit={8} language={reportLanguage} />
-        </div>
-        <div className="report-support-side">
-          {/* 预测市场结构化证据（LLM 自由文本的权威兜底）*/}
-          <PredictionMarketsPanel events={details?.predictionMarkets} language={reportLanguage} />
+      {/* 资讯与证据区：统一单列，保证展开后的诊断内容有足够宽度 */}
+      <ReportNews recordId={recordId} limit={8} language={reportLanguage} />
 
-          {/* 输入数据块低敏摘要 */}
-          <AnalysisContextSummary
-            overview={details?.analysisContextPackOverview}
-            language={reportLanguage}
-          />
+      {/* 预测市场结构化证据（LLM 自由文本的权威兜底）*/}
+      <PredictionMarketsPanel events={details?.predictionMarkets} language={reportLanguage} />
 
-          {/* 运行诊断摘要 */}
-          <ReportDiagnostics
-            recordId={recordId}
-            summary={diagnosticSummary}
-            language={reportLanguage}
-            onOpenRunFlow={onOpenRunFlow}
-          />
+      {/* 输入数据块低敏摘要 */}
+      <AnalysisContextSummary
+        overview={details?.analysisContextPackOverview}
+        language={reportLanguage}
+      />
 
-          {/* 透明度与追溯区 */}
-          <ReportDetails details={details} recordId={recordId} language={reportLanguage} />
-        </div>
-      </div>
+      {/* 运行诊断摘要 */}
+      <ReportDiagnostics
+        recordId={recordId}
+        summary={diagnosticSummary}
+        language={reportLanguage}
+        onOpenRunFlow={onOpenRunFlow}
+      />
+
+      {/* 透明度与追溯区 */}
+      <ReportDetails details={details} recordId={recordId} language={reportLanguage} />
 
       {/* 分析模型标记（Issue #528）— 报告末尾 */}
       {shouldShowModel && (

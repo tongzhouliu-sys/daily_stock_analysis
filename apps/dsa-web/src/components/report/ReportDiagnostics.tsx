@@ -302,7 +302,7 @@ export const ReportDiagnostics: React.FC<ReportDiagnosticsProps> = ({
 
   return (
     <Card variant="bordered" padding="none" className="home-panel-card text-left">
-      <details data-testid="run-diagnostics" className="report-collapse-scope group">
+      <details data-testid="run-diagnostics" className="group">
         <summary className="report-collapse">
           <div className="report-collapse-lead">
             <span className="report-collapse-icon bg-cyan/10 text-cyan">

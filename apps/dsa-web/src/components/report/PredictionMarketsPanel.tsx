@@ -87,7 +87,7 @@ export const PredictionMarketsPanel: React.FC<PredictionMarketsPanelProps> = ({
         className="report-section-head mb-2"
         titleClassName="report-section-title"
       />
-      <ul className="space-y-2">
+      <ul className="report-prediction-list">
         {events.map((event, index) => {
           const url = event.marketUrl || '';
           const host = hostOf(url);

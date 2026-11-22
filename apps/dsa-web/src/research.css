@@ -2322,27 +2322,6 @@
   gap: 14px;
 }
 
-.report-support-grid {
-  display: grid;
-  grid-template-columns: minmax(0, 1fr);
-  gap: 14px;
-  align-items: start;
-}
-
-.report-support-main,
-.report-support-side {
-  display: flex;
-  min-width: 0;
-  flex-direction: column;
-  gap: 14px;
-}
-
-@container (min-width: 40rem) {
-  .report-support-grid {
-    grid-template-columns: minmax(0, 1.42fr) minmax(0, 1fr);
-  }
-}
-
 .report-model-note {
   padding-inline: 2px;
   color: var(--text-muted-text);
@@ -2695,6 +2674,23 @@
   font-size: 10px;
 }
 
+/* Prediction markets: single column by default, side-by-side odds when the
+   reading pane is wide enough — the cards otherwise stretch into mostly air. */
+.report-prediction-list {
+  display: grid;
+  grid-template-columns: minmax(0, 1fr);
+  gap: 8px;
+  margin: 0;
+  padding: 0;
+  list-style: none;
+}
+
+@container (min-width: 42rem) {
+  .report-prediction-list {
+    grid-template-columns: repeat(auto-fit, minmax(18rem, 1fr));
+  }
+}
+
 /* Boards */
 @container (min-width: 40rem) {
   /* Wide panes can show every related board without a clipped last chip. */
@@ -3035,16 +3031,12 @@
 }
 
 /* Collapsed evidence rows (input blocks / run diagnostics).
-   Grid keeps the title readable on narrow panes: meta badges drop to a
-   second row instead of squeezing the heading into a one-character column. */
-.report-collapse-scope {
-  /* Own container so the collapse layout follows the card width inside the
-     support grid, not the much wider reading pane. */
-  container-type: inline-size;
-}
-
+   The heading always owns the first row and the status badges sit underneath:
+   letting badges share the row squeezed the title into a one-character column
+   once a report carried more than a few of them. */
 .report-collapse {
-  display: grid;  grid-template-columns: minmax(0, 1fr) auto;
+  display: grid;
+  grid-template-columns: minmax(0, 1fr) auto;
   grid-template-areas:
     "lead chevron"
     "meta meta";
@@ -3113,6 +3105,17 @@
   gap: 6px;
 }
 
+/* Metadata chips at the top of an expanded evidence panel. */
+.report-context-meta {
+  display: flex;
+  flex-wrap: wrap;
+  align-items: center;
+  gap: 6px;
+  margin-bottom: 12px;
+  color: var(--text-muted-text);
+  font-size: 12px;
+}
+
 .report-collapse-chevron {
   width: 15px;
   height: 15px;
@@ -3125,17 +3128,6 @@
 .report-collapse[aria-expanded="true"] .report-collapse-chevron,
 details[open] > .report-collapse .report-collapse-chevron {
   transform: rotate(180deg);
-}
-
-@container (min-width: 34rem) {
-  .report-collapse {
-    grid-template-columns: minmax(0, 1fr) auto auto;
-    grid-template-areas: "lead meta chevron";
-  }
-
-  .report-collapse-meta {
-    justify-content: flex-end;
-  }
 }
 
 .report-news-index {
