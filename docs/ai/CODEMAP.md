@@ -20,11 +20,11 @@
 | `data_provider/` | 多数据源适配、优先级与 fallback | 25 | 20413 |
 | `api/` | FastAPI 应用与 v1 路由 | 47 | 13965 |
 | `bot/` | IM / 机器人接入 | 22 | 5507 |
-| `apps/dsa-web/src/` | Web 前端（React + Vite） | 360 | 117846 |
+| `apps/dsa-web/src/` | Web 前端（React + Vite） | 361 | 118125 |
 | `apps/dsa-desktop/` | Electron 桌面端壳与打包配置 | 8 | 8519 |
 | `scripts/` | 本地与 CI 脚本 | 54 | 10995 |
 | `.github/scripts/` | GitHub Actions 专用脚本 | 2 | 652 |
-| `tests/` | pytest 测试 | 401 | 196104 |
+| `tests/` | pytest 测试 | 401 | 196132 |
 
 ## 大文件（Python，≥400 行）
 
@@ -56,10 +56,10 @@
 | `api/v1/endpoints/analysis.py` | 1506 | `_get_task_trace_id`:96, `_task_asset_type`:106, `_task_stage`:132, `_task_progress_updated_at`:142, `_market_review_lock_path`:153, `_build_market_review_runtime`:155 | 17 |
 | `src/services/run_flow.py` | 1504 | `build_task_run_flow_snapshot`:77, `build_history_run_flow_snapshot`:183, `_append_provider_runs`:371, `_append_context_blocks`:474, `_append_llm_runs`:536, `_append_history_runs`:611 | 7 |
 | `api/v1/endpoints/agent.py` | 1476 | `ChatRequest`:74, `_intake_status_code`:121, `_public_answer_meta`:125, `_needs_object_intake`:136, `_reuse_session_brief`:143, `_build_agent_chat_context`:160 | 29 |
+| `src/notification_sender/feishu_card.py` | 1468 | `_Section`:152, `_config`:162, `_clamp`:166, `_clean_inline`:171, `_template_for`:179, `_split_count_tags`:195 | 22 |
 | `data_provider/efinance_fetcher.py` | 1443 | `EfinanceRealtimeQuote`:95, `_lots_to_shares`:139, `_is_etf_code`:180, `_build_eastmoney_etf_secid`:197, `_is_us_code`:209, `_get_ef_executor`:221 | 16 |
 | `data_provider/tushare_fetcher.py` | 1427 | `_is_etf_code`:51, `_is_us_code`:63, `_resolve_tushare_http_url`:75, `_TushareHttpClient`:97, `TushareFetcher`:135 | 14 |
 | `src/report_language.py` | 1424 | `_normalized_disclaimer_candidate`:379, `is_report_disclaimer_line`:386, `strip_report_disclaimers`:399, `ensure_report_disclaimer`:415, `_strip_decision_negation_connectors`:884, `normalize_report_language`:898 | 184 |
-| `src/notification_sender/feishu_card.py` | 1410 | `_Section`:152, `_config`:162, `_clamp`:166, `_clean_inline`:171, `_template_for`:179, `_header`:191 | 22 |
 | `src/services/decision_signal_service.py` | 1388 | `DecisionSignalNotFoundError`:75, `DecisionSignalStorageError`:79, `DecisionSignalWriteOutcome`:87, `DecisionSignalService`:110 | 35 |
 | `src/services/alert_service.py` | 1372 | `AlertServiceError`:87, `AlertNotFoundError`:93, `UnsupportedAlertTypeError`:99, `AlertService`:105 | 15 |
 | …另外 132 个 ≥400 行的文件 | — | — | — |
@@ -83,9 +83,9 @@
 
 ## 规模快照
 
-- Python 源码（不含测试）：521 个文件，238981 行
-- Python 测试：392 个文件，195714 行
-- 前端 TS/TSX：352 个文件，107809 行
+- Python 源码（不含测试）：521 个文件，239039 行
+- Python 测试：392 个文件，195742 行
+- 前端 TS/TSX：353 个文件，108030 行
 - ≥400 行的 Python 文件：162 个
 
 规模数字只用于判断改动影响面，不是质量指标。

@@ -8,6 +8,7 @@ and this project adheres to [Semantic Versioning](https://semver.org/).
 > For user-friendly release highlights, see the [GitHub Releases](https://github.com/ZhuLinsen/daily_stock_analysis/releases) page.
 
 ## [Unreleased]
+- [改进] 「完整分析报告」底部生成时间与免责声明改为一行 11px 小字，去掉多余分隔线与大段行距，减少底部占用空间。
 - [修复] HTML 报告中文化语言检测误判：中文正文包含 URL、英文公司专名（Apple/NVIDIA）或指标缩写（RSI MACD）时不再被误判为英文，避免正常中文报告被要求生成中文变体；同时保留英文短句、英文标题/表格与混排句子的检测。
 - [改进] 飞书卡片「分析结果摘要」视觉打磨：动作列改用彩色 `options` 标签（买绿 / 卖红 / 观望持有橙）、评分列用 `lark_md` 分级色 + `/100` 居中、标的去掉行首信号 emoji；单只股票的摘要也渲染成单行表格，与多股形态一致。
 - [改进] 飞书卡片个股数值改「按分类拆小版块」：行情、技术、点位、盘中不再用「分类 / 指标 / 数值」三列表，改为每类一个灰色分类标题 + 行内「指标 数值」双列（数字不换行），同名指标只保留首次；宽行情快照同样按版块呈现，不再单独占一张表。
