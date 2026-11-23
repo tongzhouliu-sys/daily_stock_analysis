@@ -1073,13 +1073,95 @@
   flex-direction: column;
 }
 
-.chat-thread-scroll {
+.chat-thread-area {
+  display: flex;
   min-height: 0;
   flex: 1;
 }
 
+.chat-thread-scroll {
+  min-height: 0;
+  flex: 1;
+  min-width: 0;
+}
+
 .chat-thread-viewport {
   scrollbar-gutter: stable;
+}
+
+/* --- Question directory (right-hand DeepSeek-style outline) --- */
+
+.chat-outline {
+  display: flex;
+  width: 232px;
+  flex: 0 0 232px;
+  min-height: 0;
+  flex-direction: column;
+  border-inline-start: 1px solid hsl(var(--border) / 0.72);
+  background: hsl(var(--muted) / 0.2);
+}
+
+.chat-outline-head {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  gap: 8px;
+  padding: 10px 10px 6px 14px;
+  border-bottom: 1px solid hsl(var(--border) / 0.5);
+}
+
+.chat-outline-title {
+  color: var(--text-muted-text);
+  font-size: 11px;
+  letter-spacing: 0.04em;
+}
+
+.chat-outline-scroll {
+  min-height: 0;
+  overflow-y: auto;
+  padding: 6px;
+}
+
+.chat-outline-item {
+  display: flex;
+  width: 100%;
+  flex-direction: column;
+  gap: 2px;
+  padding: 7px 9px;
+  border-radius: 8px;
+  color: var(--text-secondary-text);
+  text-align: start;
+  transition: background-color 150ms ease, color 150ms ease;
+}
+
+.chat-outline-item:hover {
+  background: var(--bg-hover);
+  color: var(--text-primary);
+}
+
+.chat-outline-item.is-active {
+  background: hsl(var(--primary) / 0.1);
+  color: hsl(var(--primary));
+}
+
+.chat-outline-item-text {
+  overflow: hidden;
+  font-size: 12.5px;
+  line-height: 1.4;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+}
+
+.chat-outline-item-time {
+  color: var(--text-muted-text);
+  font-size: 10.5px;
+  line-height: 1.2;
+}
+
+@media (max-width: 1100px) {
+  .chat-outline {
+    display: none;
+  }
 }
 
 .chat-thread {
@@ -1160,6 +1242,41 @@
 .chat-action-btn:hover {
   background: var(--bg-hover);
   color: var(--text-primary);
+}
+
+.chat-msg-time {
+  margin-inline-start: 2px;
+  padding: 0 5px;
+  color: var(--text-muted-text);
+  font-size: 11px;
+  line-height: 24px;
+  white-space: nowrap;
+  opacity: 0;
+  transition: opacity 150ms ease;
+}
+
+.chat-message-actions:hover .chat-msg-time,
+.chat-message-actions:focus-within .chat-msg-time {
+  opacity: 1;
+}
+
+@media (hover: none) {
+  .chat-msg-time {
+    opacity: 1;
+  }
+}
+
+.chat-msg.is-highlighted {
+  animation: chat-msg-flash 1.2s ease-out;
+}
+
+@keyframes chat-msg-flash {
+  0% {
+    background: hsl(var(--primary) / 0.14);
+  }
+  100% {
+    background: transparent;
+  }
 }
 
 /* --- Report follow-up source card --- */

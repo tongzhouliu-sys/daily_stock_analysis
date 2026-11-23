@@ -8,6 +8,7 @@ and this project adheres to [Semantic Versioning](https://semver.org/).
 > For user-friendly release highlights, see the [GitHub Releases](https://github.com/ZhuLinsen/daily_stock_analysis/releases) page.
 
 ## [Unreleased]
+- [新功能] 问股历史对话恢复体验：打开/切换历史会话自动定位到「上一次提问」而非消息流底部；消息悬停显示「修改（回填重发）/ 复制」与消息时间（相对时间 + 完整时间 tooltip，zh/en 本地化）；会话内多次提问时右侧新增「提问导航」目录，点击跳转并高亮、随滚动自动切换当前提问，折叠状态本地持久化。纯前端改动：`Message` 补充 `createdAt`（后端 `created_at` 早已返回），新增 `utils/chatTime.ts`、`utils/chatScroll.ts` 的 `scrollToMessage`/`anchorMessageIdAtViewportTop` 与 `ChatOutline` 组件。详见 [开发任务书](tasks/chat-history-ux.md)。
 - [改进] 「完整分析报告」底部生成时间与免责声明改为一行 11px 小字，去掉多余分隔线与大段行距，减少底部占用空间。
 - [修复] HTML 报告中文化语言检测误判：中文正文包含 URL、英文公司专名（Apple/NVIDIA）或指标缩写（RSI MACD）时不再被误判为英文，避免正常中文报告被要求生成中文变体；同时保留英文短句、英文标题/表格与混排句子的检测。
 - [改进] 飞书卡片「分析结果摘要」视觉打磨：动作列改用彩色 `options` 标签（买绿 / 卖红 / 观望持有橙）、评分列用 `lark_md` 分级色 + `/100` 居中、标的去掉行首信号 emoji；单只股票的摘要也渲染成单行表格，与多股形态一致。

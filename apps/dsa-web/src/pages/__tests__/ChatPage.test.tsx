@@ -2022,7 +2022,7 @@ describe('ChatPage', () => {
     expect(viewport.scrollTop).toBe(1200);
   });
 
-  it('restores an existing conversation at the newest message after a session switch', async () => {
+  it('restores an existing conversation at the last question after a session switch', async () => {
     mockStoreState.messages = [
       { id: 'user-1', role: 'user', content: '请分析 600519' },
       { id: 'assistant-1', role: 'assistant', content: '趋势偏强', skillName: '趋势分析' },
@@ -2053,7 +2053,9 @@ describe('ChatPage', () => {
       </MemoryRouter>
     );
 
-    await waitFor(() => expect(viewport.scrollTop).toBe(1800));
+    // The restored conversation anchors to the last question instead of the
+    // thread bottom (scrollHeight == 1800).
+    await waitFor(() => expect(viewport.scrollTop).toBe(0));
   });
 
   it('reveals the pending question when sending from a scrolled-up position', async () => {
@@ -2525,5 +2527,48 @@ describe('watchlist button with code variants', () => {
     // R25: every message item keeps the same props, so memo skips the whole
     // history even though ChatPage owns the composer state.
     expect(mockChatAnswerRenderSpy).not.toHaveBeenCalled();
+  });
+
+  it('prefills the composer when editing a user message', async () => {
+    mockStoreState.messages = [
+      { id: 'u1', role: 'user', content: '分析 600519 的走势', createdAt: '2026-11-22T08:05:03' },
+      { id: 'a1', role: 'assistant', content: '趋势偏强' },
+    ];
+
+    render(
+      <MemoryRouter initialEntries={['/chat']}>
+        <ChatPage />
+      </MemoryRouter>,
+    );
+
+    await screen.findByText('分析 600519 的走势');
+    fireEvent.click(screen.getByRole('button', { name: '修改' }));
+
+    expect(document.querySelector('.chat-composer-input')).toHaveValue('分析 600519 的走势');
+  });
+
+  it('renders a question outline for multi-turn conversations and jumps on click', async () => {
+    mockStoreState.messages = [
+      { id: 'u1', role: 'user', content: '分析 600519', createdAt: '2026-11-20T08:00:00' },
+      { id: 'a1', role: 'assistant', content: '第一个回答' },
+      { id: 'u2', role: 'user', content: '再看看宁德时代', createdAt: '2026-11-21T09:00:00' },
+      { id: 'a2', role: 'assistant', content: '第二个回答' },
+    ];
+
+    render(
+      <MemoryRouter initialEntries={['/chat']}>
+        <ChatPage />
+      </MemoryRouter>,
+    );
+
+    await screen.findByText('提问导航');
+
+    const outline = document.querySelector('.chat-outline');
+    expect(outline).not.toBeNull();
+    const items = outline!.querySelectorAll('.chat-outline-item');
+    expect(items).toHaveLength(2);
+
+    fireEvent.click(items[0] as HTMLElement);
+    expect(items[0]).toHaveAttribute('aria-current', 'step');
   });
 });

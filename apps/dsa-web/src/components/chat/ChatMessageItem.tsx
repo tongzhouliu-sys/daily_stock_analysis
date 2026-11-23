@@ -1,7 +1,8 @@
 import { memo, type MouseEvent } from 'react';
-import { Check, Copy, Download, Sparkles } from 'lucide-react';
+import { Check, Copy, Download, Pencil, Sparkles } from 'lucide-react';
 import { cn } from '../../utils/cn';
 import { Badge } from '../common';
+import { formatChatTimestamp } from '../../utils/chatTime';
 import ChatAnswer from './ChatAnswer';
 import ChatThinkingBlock from './ChatThinkingBlock';
 import StockClarificationCard from './StockClarificationCard';
@@ -24,8 +25,11 @@ interface ChatMessageItemProps {
   copied: boolean;
   copyLabel: string;
   exportLabel: string;
+  editLabel?: string;
+  highlighted?: boolean;
   onCopy: (messageId: string, content: string) => void;
   onExport: (message: Message) => void;
+  onEdit?: (message: Message) => void;
   onRequestComposerFocus: () => void;
   onClarificationDecision: (
     message: Message,
@@ -58,15 +62,21 @@ function ChatMessageItem({
   exportLabel,
   onCopy,
   onExport,
+  editLabel,
+  highlighted,
+  onEdit,
   onRequestComposerFocus,
   onClarificationDecision,
   onMessageContextMenu,
 }: ChatMessageItemProps) {
   const isAssistant = message.role === 'assistant';
+  const timestamp = formatChatTimestamp(message.createdAt, language);
 
   return (
     <div
-      className={cn('chat-msg', isAssistant ? 'chat-msg-ai' : 'chat-msg-user')}
+      className={cn('chat-msg', isAssistant ? 'chat-msg-ai' : 'chat-msg-user', highlighted && 'is-highlighted')}
+      data-message-id={message.id}
+      data-role={message.role}
       onContextMenu={onMessageContextMenu ? (event) => onMessageContextMenu(event, message) : undefined}
     >
       {isAssistant && (skillLabel || backendBadgeLabel) && (
@@ -133,10 +143,52 @@ function ChatMessageItem({
             >
               <Download size={14} aria-hidden="true" />
             </button>
+            {timestamp.full ? (
+              <time
+                className="chat-msg-time"
+                dateTime={message.createdAt ?? undefined}
+                title={timestamp.full}
+              >
+                {timestamp.short}
+              </time>
+            ) : null}
           </div>
         </>
       ) : (
-        <div className="chat-user-bubble">{message.content}</div>
+        <>
+          <div className="chat-user-bubble">{message.content}</div>
+          <div className="chat-message-actions">
+            {onEdit && editLabel ? (
+              <button
+                type="button"
+                onClick={() => onEdit(message)}
+                className="chat-action-btn"
+                aria-label={editLabel}
+              >
+                <Pencil size={14} aria-hidden="true" />
+              </button>
+            ) : null}
+            <button
+              type="button"
+              onClick={() => onCopy(message.id, message.content)}
+              className="chat-action-btn"
+              aria-label={copyLabel}
+            >
+              {copied
+                ? <Check size={14} aria-hidden="true" />
+                : <Copy size={14} aria-hidden="true" />}
+            </button>
+            {timestamp.full ? (
+              <time
+                className="chat-msg-time"
+                dateTime={message.createdAt ?? undefined}
+                title={timestamp.full}
+              >
+                {timestamp.short}
+              </time>
+            ) : null}
+          </div>
+        </>
       )}
     </div>
   );

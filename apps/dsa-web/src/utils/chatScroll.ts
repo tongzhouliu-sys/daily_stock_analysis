@@ -15,3 +15,40 @@ export function isNearBottom(
 
   return distanceFromBottom <= threshold;
 }
+
+/**
+ * Scroll a scroll container so `element` sits `padding` px below its top edge.
+ * Uses viewport-relative rects so the container's own offset/positioned
+ * ancestors never skew the result.
+ */
+export function scrollToMessage(
+  viewport: HTMLElement,
+  element: HTMLElement,
+  padding = 16,
+): void {
+  const viewportRect = viewport.getBoundingClientRect();
+  const elementRect = element.getBoundingClientRect();
+  const target = viewport.scrollTop + (elementRect.top - viewportRect.top) - padding;
+  viewport.scrollTop = Math.max(0, target);
+}
+
+/**
+ * Given user-message DOM nodes in document order, return the `data-message-id`
+ * of the last one whose top has passed the viewport's top edge. This is the
+ * "current question" for the right-hand outline scroll-spy.
+ */
+export function anchorMessageIdAtViewportTop(
+  viewport: HTMLElement,
+  messageElements: HTMLElement[],
+): string | null {
+  const viewportTop = viewport.getBoundingClientRect().top;
+  let current: string | null = null;
+  for (const element of messageElements) {
+    if (element.getBoundingClientRect().top <= viewportTop + 8) {
+      current = element.dataset.messageId ?? null;
+    } else {
+      break;
+    }
+  }
+  return current;
+}

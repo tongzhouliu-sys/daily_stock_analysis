@@ -5,6 +5,7 @@ import {
   Check,
   ChevronDown,
   Download,
+  ListChecks,
   MoreHorizontal,
   PanelLeftOpen,
   Pencil,
@@ -31,6 +32,7 @@ import ChatLiveProgress from '../components/chat/ChatLiveProgress';
 import ChatInputArea from '../components/chat/ChatInputArea';
 import ChatSessionSidebar from '../components/chat/ChatSessionSidebar';
 import ChatGuideCards from '../components/chat/ChatGuideCards';
+import ChatOutline, { type ChatOutlineItem } from '../components/chat/ChatOutline';
 import ReportFollowUpCard from '../components/chat/ReportFollowUpCard';
 import { downloadSessionInFormat, formatSessionAsMarkdown, type ExportFormat } from '../utils/chatExport';
 import { buildScannerFollowUpPrompt } from '../utils/scannerFollowUp';
@@ -44,7 +46,8 @@ import {
   sanitizeFollowUpStockCode,
   sanitizeFollowUpStockName,
 } from '../utils/chatFollowUp';
-import { isNearBottom } from '../utils/chatScroll';
+import { isNearBottom, scrollToMessage, anchorMessageIdAtViewportTop } from '../utils/chatScroll';
+import { formatChatTimestamp } from '../utils/chatTime';
 import { getReportText } from '../utils/reportLanguage';
 import {
   findMatchingStockCode,
@@ -199,6 +202,11 @@ const ChatPage: React.FC = () => {
   const [showJumpToBottom, setShowJumpToBottom] = useState(false);
   const [exportMenuOpen, setExportMenuOpen] = useState(false);
   const [exporting, setExporting] = useState(false);
+  const [outlineCollapsed, setOutlineCollapsed] = useState(
+    () => localStorage.getItem('dsa.chat.outlineCollapsed') === 'true',
+  );
+  const [activeOutlineId, setActiveOutlineId] = useState<string | null>(null);
+  const [highlightedMessageId, setHighlightedMessageId] = useState<string | null>(null);
   const exportMenuRef = useRef<HTMLDivElement>(null);
   const exportButtonRef = useRef<HTMLButtonElement>(null);
   const [watchlistCodes, setWatchlistCodes] = useState<string[]>([]);
@@ -223,6 +231,11 @@ const ChatPage: React.FC = () => {
   const followUpContextRef = useRef<ChatFollowUpContext | null>(null);
   const shouldStickToBottomRef = useRef(true);
   const pendingScrollBehaviorRef = useRef<ScrollBehavior>('auto');
+  // 'auto' → the next hydration should anchor to the last user message instead
+  // of the thread bottom; null → normal stick-to-bottom behaviour.
+  const pendingRestoreAnchorRef = useRef<'auto' | null>(null);
+  const outlineSpyRafRef = useRef<number | null>(null);
+  const outlineItemsRef = useRef<ChatOutlineItem[]>([]);
   const agentStatusRequestIdRef = useRef(0);
 
   // Get localized text (default to Chinese)
@@ -422,6 +435,32 @@ const ChatPage: React.FC = () => {
   const activeSession = sessions.find((session) => session.session_id === sessionId);
   const activeSessionTitle = activeSession?.title?.trim() || t('chat.untitled');
 
+  const handleEditMessage = useCallback((message: Message) => {
+    // "修改" prefills the composer with the original question; the user edits
+    // it and sends as a brand-new turn (history is immutable server-side).
+    setInput(message.content);
+    composerRef.current?.focus();
+  }, []);
+
+  const toggleOutline = useCallback(() => {
+    setOutlineCollapsed((collapsed) => {
+      const next = !collapsed;
+      localStorage.setItem('dsa.chat.outlineCollapsed', String(next));
+      return next;
+    });
+  }, []);
+
+  const outlineItems = useMemo<ChatOutlineItem[]>(() => (
+    messages
+      .filter((message) => message.role === 'user')
+      .map((message) => {
+        const time = formatChatTimestamp(message.createdAt, language);
+        return { id: message.id, label: message.content, time: time.short };
+      })
+  ), [messages, language]);
+  outlineItemsRef.current = outlineItems;
+  const outlineVisible = !outlineCollapsed && outlineItems.length >= 2;
+
   const sessionGroups = useMemo(
     () => groupSessionsByDate(sessions, {
       pinned: t('chat.groupPinned'),
@@ -532,24 +571,72 @@ const ChatPage: React.FC = () => {
 
   const requestScrollToBottom = useCallback((behavior: ScrollBehavior = 'auto') => {
     shouldStickToBottomRef.current = true;
+    pendingRestoreAnchorRef.current = null;
     pendingScrollBehaviorRef.current = behavior;
     setShowJumpToBottom(false);
   }, []);
 
+  const jumpToMessage = useCallback((messageId: string) => {
+    const viewport = messagesViewportRef.current;
+    const element = viewport?.querySelector<HTMLElement>(`[data-message-id="${messageId}"]`);
+    if (!viewport || !element) return;
+    scrollToMessage(viewport, element, 16);
+    setActiveOutlineId(messageId);
+    setHighlightedMessageId(messageId);
+    window.setTimeout(() => {
+      setHighlightedMessageId((current) => (current === messageId ? null : current));
+    }, 1200);
+  }, []);
+
+  const updateActiveOutline = useCallback(() => {
+    const viewport = messagesViewportRef.current;
+    if (!viewport) return;
+    const userElements = Array.from(viewport.querySelectorAll<HTMLElement>('[data-role="user"]'));
+    const active = anchorMessageIdAtViewportTop(viewport, userElements);
+    setActiveOutlineId((current) => (current === active ? current : active));
+  }, []);
+
   const handleMessagesScroll = useCallback(() => {
     syncScrollState();
-  }, [syncScrollState]);
+    if (outlineItemsRef.current.length < 2) return;
+    if (outlineSpyRafRef.current !== null) return;
+    outlineSpyRafRef.current = window.requestAnimationFrame(() => {
+      outlineSpyRafRef.current = null;
+      updateActiveOutline();
+    });
+  }, [syncScrollState, updateActiveOutline]);
 
   useEffect(() => {
-    // Opening or switching a conversation starts at the newest message. Deriving
-    // "stick to bottom" from the not-yet-hydrated thread used to latch it off,
-    // which left restored conversations scrolled to the top.
-    shouldStickToBottomRef.current = true;
+    // Opening/switching a conversation restores to the last question, not the
+    // newest message. The anchor is resolved once the thread hydrates (the
+    // scroll effect below); a live turn still re-pins to the bottom via
+    // `requestScrollToBottom`.
+    shouldStickToBottomRef.current = false;
+    pendingRestoreAnchorRef.current = 'auto';
     pendingScrollBehaviorRef.current = 'auto';
     setShowJumpToBottom(false);
+    setActiveOutlineId(null);
   }, [sessionId]);
 
   useEffect(() => {
+    if (pendingRestoreAnchorRef.current === 'auto') {
+      // Wait until the session has hydrated and no turn is running, then anchor
+      // to the last user message once and hand control back to stick-to-bottom.
+      if (!loading && messages.length > 0) {
+        const lastUser = [...messages].reverse().find((message) => message.role === 'user');
+        const viewport = messagesViewportRef.current;
+        const element = lastUser
+          ? viewport?.querySelector<HTMLElement>(`[data-message-id="${lastUser.id}"]`)
+          : null;
+        if (viewport && element) {
+          pendingRestoreAnchorRef.current = null;
+          scrollToMessage(viewport, element, 16);
+          return;
+        }
+      }
+      return;
+    }
+
     const behavior = pendingScrollBehaviorRef.current;
     const shouldAutoScroll = shouldStickToBottomRef.current;
     if (!shouldAutoScroll) {
@@ -1420,6 +1507,17 @@ const ChatPage: React.FC = () => {
             )}
           </div>
           <div className="chat-topbar-actions">
+            {outlineItems.length >= 2 ? (
+              <button
+                type="button"
+                className="chat-icon-btn"
+                onClick={toggleOutline}
+                aria-label={outlineCollapsed ? t('chat.outlineShow') : t('chat.outlineHide')}
+                aria-expanded={outlineVisible}
+              >
+                <ListChecks size={16} aria-hidden="true" />
+              </button>
+            ) : null}
             {agentStatus ? (
               <Badge
                 variant={agentStatus.errorCode === 'backend_removed' ? 'warning' : 'history'}
@@ -1508,6 +1606,7 @@ const ChatPage: React.FC = () => {
         </header>
 
         <div className="chat-body">
+          <div className="chat-thread-area">
           <ScrollArea
             className="chat-thread-scroll"
             viewportRef={messagesViewportRef}
@@ -1585,8 +1684,11 @@ const ChatPage: React.FC = () => {
                       copied={copiedMessages.has(msg.id)}
                       copyLabel={copiedMessages.has(msg.id) ? text.copied : text.copy}
                       exportLabel={t('chat.exportMessage')}
+                      editLabel={t('chat.editMessage')}
+                      highlighted={highlightedMessageId === msg.id}
                       onCopy={copyMessageToClipboard}
                       onExport={downloadMessageAsMarkdown}
+                      onEdit={msg.role === 'user' ? handleEditMessage : undefined}
                       onRequestComposerFocus={focusComposer}
                       onClarificationDecision={handleMessageClarificationDecision}
                     />
@@ -1630,6 +1732,17 @@ const ChatPage: React.FC = () => {
               <div ref={messagesEndRef} />
             </div>
           </ScrollArea>
+          {outlineVisible ? (
+            <ChatOutline
+              items={outlineItems}
+              activeId={activeOutlineId}
+              title={t('chat.outlineTitle')}
+              hideLabel={t('chat.outlineHide')}
+              onSelect={jumpToMessage}
+              onHide={toggleOutline}
+            />
+          ) : null}
+          </div>
 
           {showJumpToBottom && (
             <div className="chat-jump-wrap">

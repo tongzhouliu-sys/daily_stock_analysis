@@ -113,6 +113,8 @@ export interface Message {
   // T4: Domain guard metadata for non-investment question reminders
   domainGuard?: DomainGuardMeta;
   answerMeta?: AnswerMeta | null;
+  // Message creation time (ISO string) rehydrated from the session detail.
+  createdAt?: string | null;
 }
 
 export interface StreamErrorEvent {
@@ -438,6 +440,7 @@ export const useAgentChatStore = create<AgentChatState & AgentChatActions>((set,
             role: m.role,
             content: m.content,
             thinkingSteps: m.thinking_steps,
+            createdAt: m.created_at,
           }));
 
         if (newMessages.length > 0 && ownsPollIdentity()) {
@@ -493,6 +496,7 @@ export const useAgentChatStore = create<AgentChatState & AgentChatActions>((set,
         role: m.role,
         content: m.content,
         thinkingSteps: m.thinking_steps,
+        createdAt: m.created_at,
         ...(m.answer_meta
           ? { answerMeta: m.answer_meta as unknown as AnswerMeta } : {}),
       }));
@@ -783,6 +787,7 @@ export const useAgentChatStore = create<AgentChatState & AgentChatActions>((set,
       skill: payload.skills?.[0],
       skillNames,
       skillName,
+      createdAt: new Date().toISOString(),
     };
 
     set({
@@ -1060,6 +1065,7 @@ export const useAgentChatStore = create<AgentChatState & AgentChatActions>((set,
               skillName,
               thinkingSteps: finalThinkingSteps ?? [...currentProgressSteps],
               backend: finalBackend,
+              createdAt: new Date().toISOString(),
               ...(finalClarification ? { stockClarification: finalClarification } : {}),
               ...(finalDomainGuard ? { domainGuard: finalDomainGuard } : {}),
               ...(finalAnswerMeta ? { answerMeta: finalAnswerMeta } : {}),

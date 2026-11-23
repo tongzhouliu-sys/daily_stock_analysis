@@ -35,8 +35,10 @@ function buildProps() {
     copied: false,
     copyLabel: '复制',
     exportLabel: '导出',
+    editLabel: '修改',
     onCopy: vi.fn(),
     onExport: vi.fn(),
+    onEdit: vi.fn(),
     onRequestComposerFocus: vi.fn(),
     onClarificationDecision: vi.fn(),
   };
@@ -115,5 +117,53 @@ describe('ChatMessageItem memoization (T40)', () => {
     expect(screen.getAllByText(/实时行情/)).toHaveLength(1);
     expect(screen.queryByText(/继续深入分析/)).not.toBeInTheDocument();
     expect(screen.getByText('1 次工具调用')).toBeInTheDocument();
+  });
+});
+
+describe('ChatMessageItem user message actions', () => {
+  it('exposes data attributes for anchor/scroll and renders edit + copy for a user message', () => {
+    const props = buildProps();
+    props.message = {
+      id: 'user-1',
+      role: 'user',
+      content: '分析 600519',
+      createdAt: '2026-11-22T08:05:03',
+    } as Message;
+    props.editLabel = '修改';
+
+    const { container } = render(<ChatMessageItem {...props} />);
+
+    const msg = container.querySelector('.chat-msg');
+    expect(msg).toHaveAttribute('data-message-id', 'user-1');
+    expect(msg).toHaveAttribute('data-role', 'user');
+
+    fireEvent.click(screen.getByRole('button', { name: '修改' }));
+    expect(props.onEdit).toHaveBeenCalledWith(expect.objectContaining({ id: 'user-1' }));
+
+    fireEvent.click(screen.getByRole('button', { name: '复制' }));
+    expect(props.onCopy).toHaveBeenCalledWith('user-1', '分析 600519');
+  });
+
+  it('shows the message timestamp with a full-time tooltip', () => {
+    const props = buildProps();
+    props.message = {
+      id: 'assistant-1',
+      role: 'assistant',
+      content: '趋势向上',
+      createdAt: '2026-11-22T08:05:03',
+    } as Message;
+
+    render(<ChatMessageItem {...props} />);
+
+    expect(screen.getByTitle('2026-11-22 08:05:03')).toBeInTheDocument();
+  });
+
+  it('does not render an edit button for assistant messages', () => {
+    const props = buildProps();
+    props.editLabel = '修改';
+
+    render(<ChatMessageItem {...props} />);
+
+    expect(screen.queryByRole('button', { name: '修改' })).not.toBeInTheDocument();
   });
 });
