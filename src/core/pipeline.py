@@ -66,7 +66,7 @@ from src.agent.news_evidence import (
     reset_news_evidence_scope,
 )
 from src.services.empty_news import news_evidence_present
-from src.services.news_confidence import reconcile_news_confidence_reason
+from src.services.news_confidence import reconcile_news_claims
 from src.services.analysis_progress import (
     PROGRESS_FUNDAMENTALS,
     PROGRESS_GENERATING,
@@ -1792,7 +1792,7 @@ class StockAnalysisPipeline:
             # Agent 自己调用搜索工具取证，所以披露计数只能来自这些工具的真实返回；
             # 分析结束后补打的 search_stock_news() 与 Agent 消费的证据无关。
             # 累加器对象在这里持有引用，reset 之后仍可安全读取。
-            news_evidence_token = activate_news_evidence_scope()
+            news_evidence_token = activate_news_evidence_scope(report_language)
             news_evidence = get_current_news_evidence()
 
             def _agent_progress(event) -> None:
@@ -1897,14 +1897,14 @@ class StockAnalysisPipeline:
                     analysis_context_pack_summary = rebuilt_summary
                     analysis_context_pack_overview = rebuilt_overview
 
-                if reconcile_news_confidence_reason(
+                if reconcile_news_claims(
                     result,
                     evidence_present=bool(result.news_evidence_present),
                     news_result_count=result.news_result_count,
                     language=report_language,
                 ):
                     logger.info(
-                        '[%s] Agent 模式: 已按真实新闻证据修正置信度理由', code
+                        '[%s] Agent 模式: 已按真实新闻证据修正新闻状态表述', code
                     )
             record_llm_run(
                 success=bool(result and getattr(result, "success", True)),
@@ -2078,6 +2078,18 @@ class StockAnalysisPipeline:
                                 else None
                             ),
                         )
+                    )
+
+            # 定稿前再兜底一次：护栏或其他后处理若再次写入新闻缺失表述，这里统一清理。
+            if result and news_evidence is not None:
+                if reconcile_news_claims(
+                    result,
+                    evidence_present=bool(result.news_evidence_present),
+                    news_result_count=result.news_result_count,
+                    language=report_language,
+                ):
+                    logger.info(
+                        '[%s] Agent 模式: 定稿前已清理残留的新闻缺失表述', code
                     )
 
             if result:

@@ -108,13 +108,82 @@ def format_news_evidence_summary(
     return "\n".join(lines)
 
 
+def format_news_evidence_runtime_section(
+    accumulator: "NewsEvidenceAccumulator",
+) -> str:
+    """给 Agent 最终生成前的实时新闻状态提示。
+
+    模型在分析开始时看到的 context pack 尚未包含 Agent 自己检索到的新闻，
+    容易据此写出「新闻缺失」。每次 LLM 调用前注入本段，确保最终报告看到的是
+    本次运行的真实检索结果。
+    """
+    if accumulator is None or accumulator.attempts == 0:
+        return ""
+
+    count = accumulator.total
+    sources = accumulator.sources()
+    language = str(accumulator.language or "zh").strip().lower()
+    source_text = ", ".join(sources) if sources else ""
+
+    if count > 0:
+        if language == "en":
+            source_clause = f" (sources: {source_text})" if source_text else ""
+            return (
+                "【Runtime news evidence】\n"
+                f"This run has already retrieved {count} news result(s){source_clause}. "
+                "When describing news status, use this real result; do not write "
+                "\"news data block missing\", \"news block missing\", "
+                "\"news context missing\", or \"news data missing\"."
+            )
+        if language == "ko":
+            source_clause = f" (출처: {source_text})" if source_text else ""
+            return (
+                "【실시간 뉴스 근거】\n"
+                f"이번 실행에서 뉴스 결과 {count}건을 이미 검색했습니다{source_clause}. "
+                "뉴스 상태를 설명할 때 이 실제 결과를 사용하고 "
+                "\"뉴스 데이터 누락\", \"뉴스 블록 누락\", "
+                "\"뉴스 컨텍스트 누락\", \"뉴스 데이터 부족\"이라고 쓰지 마세요."
+            )
+        source_clause = f"（来源：{source_text}）" if source_text else ""
+        return (
+            "【实时新闻证据】\n"
+            f"本次运行已经检索到 {count} 条新闻结果{source_clause}。"
+            "描述新闻状态时必须使用这个真实结果，不要写「新闻数据块缺失」"
+            "「新闻块缺失」「新闻上下文缺失」「新闻数据缺失」。"
+        )
+
+    if language == "en":
+        return (
+            "【Runtime news evidence】\n"
+            "This run attempted news search but retrieved 0 results. "
+            "You may state that news data is missing or insufficient."
+        )
+    if language == "ko":
+        return (
+            "【실시간 뉴스 근거】\n"
+            "이번 실행에서 뉴스 검색을 시도했지만 결과가 0건입니다. "
+            "뉴스 데이터가 부족하거나 누락되었다고 설명할 수 있습니다."
+        )
+    return (
+        "【实时新闻证据】\n"
+        "本次运行已发起新闻检索，但结果为 0 条。"
+        "可以如实说明新闻数据缺失或不足。"
+    )
+
+
 class NewsEvidenceAccumulator:
     """线程安全地累计 Agent 本次分析实际消费的新闻条数与条目。"""
 
-    def __init__(self) -> None:
+    def __init__(self, language: str = "zh") -> None:
         self._lock = threading.Lock()
         self._total = 0
+        self._attempts = 0
         self._items: List[Dict[str, str]] = []
+        self._language = language or "zh"
+
+    @property
+    def language(self) -> str:
+        return self._language
 
     def record(self, count: int, items: Optional[Iterable[Any]] = None) -> None:
         """记录一次搜索工具真实返回的条数与条目；零命中也必须记录（记 0）。"""
@@ -126,6 +195,7 @@ class NewsEvidenceAccumulator:
             value = 0
         normalized = _normalize_items(items)
         with self._lock:
+            self._attempts += 1
             self._total += value
             self._items.extend(normalized)
 
@@ -133,6 +203,12 @@ class NewsEvidenceAccumulator:
     def total(self) -> int:
         with self._lock:
             return self._total
+
+    @property
+    def attempts(self) -> int:
+        """本次运行发起过多少次新闻检索（零命中也算一次）。"""
+        with self._lock:
+            return self._attempts
 
     @property
     def items(self) -> List[Dict[str, str]]:
@@ -182,13 +258,18 @@ _CURRENT_ACCUMULATOR: ContextVar[Optional[NewsEvidenceAccumulator]] = ContextVar
 )
 
 
-def activate_news_evidence_scope() -> Token:
+def activate_news_evidence_scope(language: str = "zh") -> Token:
     """开启一次 Agent 运行的证据作用域，返回重置令牌。"""
-    return _CURRENT_ACCUMULATOR.set(NewsEvidenceAccumulator())
+    return _CURRENT_ACCUMULATOR.set(NewsEvidenceAccumulator(language=language))
 
 
 def get_current_news_evidence() -> Optional[NewsEvidenceAccumulator]:
     return _CURRENT_ACCUMULATOR.get()
+
+
+def current_news_evidence_runtime_section() -> str:
+    """返回当前证据作用域下的实时新闻状态提示；无检索记录时为空。"""
+    return format_news_evidence_runtime_section(_CURRENT_ACCUMULATOR.get())
 
 
 def reset_news_evidence_scope(token: Optional[Token]) -> None:

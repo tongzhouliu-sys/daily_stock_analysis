@@ -52,11 +52,41 @@ def _build_pipeline():
     return pipeline
 
 
+_NEWS_MISSING_MARKERS = (
+    "新闻数据块缺失",
+    "新闻块缺失",
+    "新闻上下文缺失",
+    "新闻数据缺失",
+)
+
+
 def _news_block(overview):
     for block in overview["blocks"]:
         if block["key"] == "news":
             return block
     raise AssertionError("overview 缺少 news 数据块")
+
+
+def _all_strings(value):
+    if isinstance(value, str):
+        yield value
+    elif isinstance(value, list):
+        for item in value:
+            yield from _all_strings(item)
+    elif isinstance(value, dict):
+        for item in value.values():
+            yield from _all_strings(item)
+
+
+def _assert_no_news_missing(result):
+    texts = list(_all_strings(getattr(result, "dashboard", None) or {}))
+    for attribute in ("analysis_summary", "operation_advice", "trend_prediction"):
+        value = getattr(result, attribute, None)
+        if isinstance(value, str):
+            texts.append(value)
+    for text in texts:
+        for marker in _NEWS_MISSING_MARKERS:
+            assert marker not in text, f"残留新闻缺失表述：{text}"
 
 
 def _run_agent(pipeline, dashboard, *, news_items=None):
@@ -96,6 +126,20 @@ def _dashboard(confidence_reason):
         "operation_advice": "持有",
         "decision_type": "hold",
         "analysis_summary": "新闻与行情共同支持当前判断。",
+        "intelligence": {
+            "risk_alerts": [
+                "新闻数据块缺失，无法评估消息面风险。",
+                "估值处于历史高位。",
+            ],
+        },
+        "strategy_synthesis": {
+            "supporting_skills": [
+                {
+                    "skill_id": "trend",
+                    "reasoning": "筹码、新闻数据缺失，置信度下调。",
+                },
+            ],
+        },
         "phase_decision": {
             "phase_context": "intraday",
             "confidence_reason": confidence_reason,
@@ -134,7 +178,7 @@ def test_agent_news_evidence_backfills_pack_quality_and_history():
 
     result = _run_agent(
         pipeline,
-        _dashboard("实时行情可用，但新闻数据块缺失，置信度受限。"),
+        _dashboard("新闻上下文缺失；技术面偏弱。"),
         news_items=news_items,
     )
 
@@ -146,8 +190,10 @@ def test_agent_news_evidence_backfills_pack_quality_and_history():
     assert "测试资讯" in (news_block["source"] or "")
     assert overview["data_quality"]["block_scores"]["news"] == 100
 
+    _assert_no_news_missing(result)
     confidence_reason = result.dashboard["phase_decision"]["confidence_reason"]
-    assert "新闻数据块缺失" not in confidence_reason
+    assert "技术面偏弱" in confidence_reason
+    assert result.dashboard["intelligence"]["risk_alerts"] == ["估值处于历史高位。"]
 
     saved = pipeline.db.save_analysis_history.call_args.kwargs
     assert saved["news_content"]
@@ -209,6 +255,9 @@ def test_agent_without_news_evidence_reports_missing_in_confidence_reason():
     assert result.news_result_count == 0
     confidence_reason = result.dashboard["phase_decision"]["confidence_reason"]
     assert "新闻数据缺失或不足" in confidence_reason
+    # 真的没有新闻时必须保留缺失提示，不能误删。
+    assert "新闻数据块缺失" in result.dashboard["intelligence"]["risk_alerts"][0]
+    assert "新闻数据缺失" in result.dashboard["strategy_synthesis"]["supporting_skills"][0]["reasoning"]
 
     overview = result.analysis_context_pack_overview
     assert overview["metadata"]["news_result_count"] == 0

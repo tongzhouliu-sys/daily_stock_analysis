@@ -28,6 +28,7 @@ from typing import Any, Callable, Dict, List, Optional
 
 from src.agent.llm_adapter import LLMToolAdapter
 from src.agent.dashboard_payload import sanitize_agent_dashboard_payload
+from src.agent.news_evidence import current_news_evidence_runtime_section
 from src.agent.protocols import StageFailureReason
 from src.agent.stream_events import (
     stream_event,
@@ -392,6 +393,24 @@ def run_agent_loop(
     models_used: List[str] = []
     _cumulative_llm_seconds = 0.0
     _cumulative_tool_seconds = 0.0
+    _runtime_news_index: Optional[int] = None
+
+    def _refresh_runtime_news_message() -> None:
+        """Inject the live news evidence status before each LLM call.
+
+        The Agent discovers news during the run, so the context pack summary
+        prepared before the run cannot know the result.  Keeping one refreshed
+        message at the tail makes the final report generation see the actual
+        count instead of the pre-run "news missing" state.
+        """
+        nonlocal _runtime_news_index
+        if _runtime_news_index is not None and _runtime_news_index < len(messages):
+            messages.pop(_runtime_news_index)
+            _runtime_news_index = None
+        section = current_news_evidence_runtime_section()
+        if section:
+            messages.append({"role": "user", "content": section})
+            _runtime_news_index = len(messages) - 1
 
     def _cancelled() -> bool:
         return cancel_event is not None and cancel_event.is_set()
@@ -533,6 +552,7 @@ def run_agent_loop(
                 _streamed_any = False
                 _generating_emitted = False
 
+        _refresh_runtime_news_message()
         _llm_t0 = time.monotonic()
         response = llm_adapter.call_with_tools(
             messages,
