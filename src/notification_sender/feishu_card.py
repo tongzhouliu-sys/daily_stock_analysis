@@ -516,7 +516,7 @@ def _fields_element(
                 "tag": "lark_md",
                 # inline 用于数值型字段：标签与数值同行，数字不换行。
                 "content": (
-                    f"**{item['key']}** {item['value']}"
+                    f"**{item['key']}**：{item['value']}"
                     if inline
                     else f"**{item['key']}**\n{item['value']}"
                 ),
@@ -1053,7 +1053,7 @@ def _columns_element(cells: List[Tuple[str, str]]) -> Dict[str, Any]:
                     "tag": "div",
                     "text": {
                         "tag": "lark_md",
-                        "content": f"<font color='grey'>{label}</font> {value}",
+                        "content": f"<font color='grey'>{label}</font>：{value}",
                     },
                 }
             ],

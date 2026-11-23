@@ -268,8 +268,8 @@ def test_wide_market_snapshot_becomes_per_category_blocks():
         for element in card["elements"]
         for item in element.get("fields", [])
     )
-    assert "**收盘** 251.30" in fields
-    assert "**成交额** 71.2亿" in fields
+    assert "**收盘**：251.30" in fields
+    assert "**成交额**：71.2亿" in fields
 
 
 def test_chunking_can_split_on_formatted_level_two_headings():
@@ -614,11 +614,11 @@ def test_numeric_sections_become_per_category_blocks():
         for item in element.get("fields", [])
     )
     # 指标与数值同行，数字不换行
-    assert "**当前价** 1453.00" in fields
-    assert "**MA5** 1448.20" in fields
+    assert "**当前价**：1453.00" in fields
+    assert "**MA5**：1448.20" in fields
     # 同名指标只保留首次出现
     assert fields.count("**当前价**") == 1
-    assert "**行情来源** 腾讯财经" in fields
+    assert "**行情来源**：腾讯财经" in fields
 
 
 def test_long_text_rows_stay_in_fields_not_tables():
