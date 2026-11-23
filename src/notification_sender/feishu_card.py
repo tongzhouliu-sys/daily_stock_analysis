@@ -8,11 +8,14 @@ Webhook 与 App Bot 两条发送链路共用 :func:`build_feishu_card`。输入�
 - 开头摘要行 -> 卡片副标题（例如「共分析 3 只股票 · 🟢1 🟡2 🔴0」）
 - ``##`` 板块 -> 彩色 ``<text_tag>`` 标签，板块之间只保留一条 ``hr``
 - ``###`` 小节 -> 加粗小标题，靠组件间距分节，不再逐节画横线
-- ``• 键：值`` 紧凑表格行 -> ``fields`` 双列/全宽自适应布局
+- 多标摘要 -> 原生 ``table``（标的 / 动作 / 评分 / 趋势）
+- 个股数值 -> 原生 ``table``（分类 / 指标 / 数值），按章节归类后集中展示
+- 其余 ``• 键：值`` 紧凑表格行 -> ``fields`` 双列/全宽自适应布局
 - 脚注元信息 -> ``note`` 页脚，自动去重并补齐免责声明
 
-只使用官方 Card JSON 1.0 组件（header / div / hr / note / fields）与 lark_md
-支持的 ``<text_tag>``、``<font>`` 标签，不引入需要高版本客户端才能渲染的组件。
+只使用官方 Card JSON 1.0 组件（header / div / hr / note / fields / table）与
+lark_md 支持的 ``<text_tag>``、``<font>`` 标签。原生 ``table`` 需要飞书
+7.4+；低版本客户端对表格显示升级提示，其余组件不受影响。
 
 降级路径按信息密度逐级收敛，避免长报告退化成「一整块文字」：
 
@@ -37,9 +40,15 @@ CARD_SUBTITLE = "仅供研究参考"
 
 # 机器人回复、文件内容、简短告警等保持紧凑卡片，避免无意义的分节。
 _RICH_CARD_MIN_CHARS = 200
-_MAX_ELEMENTS = 60
+# 表格会显著压缩字段块数量；放宽上限让 3~5 只股票的富卡片先过结构检查，
+# 最终是否可发仍由 max_bytes 的真实 JSON 体积决定。
+_MAX_ELEMENTS = 80
 _MAX_FIELD_BLOCKS = 24
 _FIELDS_PER_BLOCK = 12
+# 飞书卡片单卡最多 5 个 table 组件，超出的表格会被客户端降级成文本。
+_MAX_TABLES = 5
+_TABLE_PAGE_SIZE = 10
+_MAX_METRIC_VALUE_CHARS = 24
 _MAX_TITLE_CHARS = 52
 _MAX_SUBTITLE_CHARS = 56
 
@@ -73,11 +82,63 @@ _META_KEYWORDS = (
 _SUMMARY_SECTION_KEYWORDS = ("摘要", "Summary", "概览", "Overview", "今日结论")
 _SUMMARY_LINE_KEYWORDS = ("决策", "结论", "建议", "操作", "Decision", "Action")
 
+# 数值表格：只收「短、含数字、无句读」的键值行，长策略/描述仍走正文。
+_DIGIT_RE = re.compile(r"\d")
+# 句读判定不含 ASCII `.`/`,`：它们是小数点和千分位，不能把 1453.00 判成句子。
+_SENTENCE_PUNCT_RE = re.compile(r"[，。；！？;!?]")
+# 这些键描述对象本身，不是指标；放进数值表会把名称/代码误当行情。
+_METRIC_SKIP_KEYS = frozenset(
+    {
+        "股票",
+        "名称",
+        "代码",
+        "标的",
+        "指数",
+        "信号",
+        "来源",
+        "数据来源",
+        "报告生成时间",
+        "分析模型",
+        "模型",
+    }
+)
+# 章节标题 -> 表格里的短分类；未命中时截取标题前 4 个字符。
+_METRIC_CATEGORY_MAP = {
+    "当日行情": "行情",
+    "行情快照": "行情",
+    "盘面速览": "行情",
+    "指数表现": "指数",
+    "数据透视": "技术",
+    "技术分析": "技术",
+    "盘中决策护栏": "盘中",
+    "盘中护栏": "盘中",
+    "操作点位": "点位",
+    "关键点位": "点位",
+    "仓位建议": "仓位",
+    "信号归因分析": "归因",
+    "检查清单": "清单",
+}
+# 表格分页时第一页先展示最可执行的数据。
+_METRIC_CATEGORY_PRIORITY = {
+    "点位": 0,
+    "行情": 1,
+    "指数": 1,
+    "技术": 2,
+    "盘中": 3,
+    "仓位": 4,
+    "归因": 5,
+    "清单": 6,
+}
+_METRIC_EMOJI_RE = re.compile(
+    r"^[\U0001F000-\U0001FAFF\u2600-\u27BF\uFE0E\uFE0F\u200D\s·▎]+"
+)
+
 # 章节标题颜色规则（按优先级排序）
 _SECTION_COLOR_RULES: Tuple[Tuple[Tuple[str, ...], str], ...] = (
     (("🔴", "🚨", "⚠", "风险", "警报", "预警", "止损", "数据限制"), "red"),
     (("🟢", "✨", "利好", "催化", "机会", "突破"), "green"),
     (("🟡",), "yellow"),
+    (("🟠",), "orange"),
     (("⚪",), "grey"),
     (("📈", "📉", "行情", "技术", "指标", "数据透视", "盘面"), "turquoise"),
     (("🎯", "作战", "计划", "仓位", "点位", "护栏", "策略"), "indigo"),
@@ -430,6 +491,329 @@ def _section_heading(section: _Section) -> str:
     return f"**{section.title}**"
 
 
+# ----------------------------------------------------------------------
+# 原生表格（Card JSON 1.0，飞书 7.4+）
+#
+# 表格只放在卡片根节点（飞书限制：不能嵌套、单卡最多 5 个）。数字类内容
+# 收进表格后，组件数量与半屏空白都明显减少，比 fields 网格更适合行情、
+# 点位这类高密度数据。
+# ----------------------------------------------------------------------
+
+
+def _table_element(
+    columns: List[Dict[str, Any]],
+    rows: List[Dict[str, Any]],
+    *,
+    page_size: int = _TABLE_PAGE_SIZE,
+    freeze_first_column: bool = False,
+    row_height: str = "middle",
+) -> Dict[str, Any]:
+    return {
+        "tag": "table",
+        "page_size": max(1, min(int(page_size or 1), _TABLE_PAGE_SIZE)),
+        "row_height": row_height,
+        "freeze_first_column": bool(freeze_first_column),
+        "header_style": {
+            "text_align": "left",
+            "text_size": "normal",
+            "background_style": "grey",
+            "text_color": "grey",
+            "bold": True,
+            "lines": 1,
+        },
+        "columns": columns,
+        "rows": rows,
+    }
+
+
+def _is_short_text_cell(key: str, value: str) -> bool:
+    """短文本单元可安全进表格；长句/句读文本继续留在正文。"""
+    cleaned_key = _clean_inline(key).strip()
+    cleaned_value = _clean_inline(value).strip()
+    if not cleaned_key or not cleaned_value:
+        return False
+    if cleaned_key in _METRIC_SKIP_KEYS:
+        return False
+    if len(cleaned_value) > _MAX_METRIC_VALUE_CHARS:
+        return False
+    if _SENTENCE_PUNCT_RE.search(cleaned_value):
+        return False
+    return True
+
+
+def _is_metric_cell(key: str, value: str) -> bool:
+    """判断一个键值单元是否适合进数值表。
+
+    只收长度可控、含数字、不带句读的短值；长策略、观察条件、来源说明
+    继续留在正文/字段里，避免表格被大段文字撑开。
+    """
+    if not _is_short_text_cell(key, value):
+        return False
+    return bool(_DIGIT_RE.search(_clean_inline(value)))
+
+
+def _metric_label(text: str) -> str:
+    """去掉标题/键名前的 emoji，表格里保持对齐和窄列宽。"""
+    return _METRIC_EMOJI_RE.sub("", _clean_inline(text)).strip()
+
+
+def _metric_category(title: str) -> str:
+    text = _metric_label(title)
+    if text in _METRIC_CATEGORY_MAP:
+        return _METRIC_CATEGORY_MAP[text]
+    return _clamp(text, 4)
+
+
+def _summary_table(summary_rows: List[Tuple[str, str]]) -> Dict[str, Any]:
+    """多标的摘要表：标的 / 动作 / 评分 / 趋势。"""
+    rows: List[Dict[str, Any]] = []
+    for label, meta in summary_rows:
+        parts = [part.strip() for part in meta.split("|") if part.strip()]
+        action = parts[0] if parts else ""
+        score = ""
+        trend = ""
+        for part in parts[1:]:
+            score_match = re.search(r"评分\s*([\d.]+)", part)
+            if score_match:
+                score = score_match.group(1)
+            elif part:
+                trend = part
+        rows.append(
+            {
+                # table 的 text 列不解析 lark_md，必须先去行内标记。
+                "name": _clean_inline(label),
+                "action": _clean_inline(action),
+                "score": score,
+                "trend": _clean_inline(trend),
+            }
+        )
+    columns = [
+        {"name": "name", "display_name": "标的", "data_type": "text", "width": "46%"},
+        {"name": "action", "display_name": "动作", "data_type": "text", "width": "18%"},
+        {
+            "name": "score",
+            "display_name": "评分",
+            "data_type": "text",
+            "width": "14%",
+            "horizontal_align": "center",
+        },
+        {"name": "trend", "display_name": "趋势", "data_type": "text", "width": "22%"},
+    ]
+    return _table_element(columns, rows)
+
+
+def _metric_table(rows: List[Tuple[str, str, str]]) -> Dict[str, Any]:
+    """个股关键数据表：分类 / 指标 / 数值，按章节归类后集中展示。"""
+    columns = [
+        {
+            "name": "category",
+            "display_name": "分类",
+            "data_type": "text",
+            "width": "16%",
+            "vertical_align": "top",
+        },
+        {
+            "name": "metric",
+            "display_name": "指标",
+            "data_type": "text",
+            "width": "30%",
+            "vertical_align": "top",
+        },
+        {
+            "name": "value",
+            "display_name": "数值",
+            "data_type": "text",
+            "width": "54%",
+            "horizontal_align": "right",
+            "vertical_align": "top",
+        },
+    ]
+    table_rows: List[Dict[str, Any]] = []
+    last_category = ""
+    for category, key, value in rows:
+        # 同组只显示一次分类，后续行留空，表格更干净也省宽度。
+        label = category if category != last_category else ""
+        last_category = category
+        table_rows.append(
+            {
+                "category": label,
+                "metric": key,
+                # table 的 text 列不解析 lark_md，必须先去行内标记。
+                "value": _clean_inline(value),
+            }
+        )
+    return _table_element(columns, table_rows, freeze_first_column=True)
+
+
+def _collect_metric_rows(
+    sections: List[_Section],
+) -> Tuple[List[Tuple[str, str, str]], List[Tuple[_Section, List[str]]]]:
+    """从一组小节里收集数值行，并返回去掉数值行后的正文。
+
+    同一行里的数值单元进表格，短文本单元（如「行情来源：腾讯财经」）一并
+    进表；长策略/观察条件等保留在正文，保证信息不丢。同名指标只保留首次
+    出现，避免「当前价」在行情与技术两处重复占行。表格行按「点位 -> 行情
+    -> 技术 -> 盘中」排序，第一页先给最可执行的数据。
+    """
+    rows: List[Tuple[str, str, str]] = []
+    plans: List[Tuple[_Section, List[str]]] = []
+    seen_keys: set[str] = set()
+
+    for section in sections:
+        category = _metric_category(section.title)
+        section_metrics: List[Tuple[str, str]] = []
+        remaining: List[str] = []
+
+        for line in section.lines:
+            stripped = line.strip()
+            if not stripped:
+                remaining.append(line)
+                continue
+            cells = _parse_field_cells(stripped)
+            if not cells:
+                remaining.append(line)
+                continue
+
+            numeric: List[Tuple[str, str]] = []
+            table_cells: List[Tuple[str, str]] = []
+            has_numeric = False
+            long_text: List[Tuple[str, str]] = []
+            for key, value in cells:
+                if _is_metric_cell(key, value):
+                    numeric.append((_metric_label(key), value))
+                    table_cells.append((_metric_label(key), value))
+                    has_numeric = True
+                elif _is_short_text_cell(key, value):
+                    table_cells.append((_metric_label(key), value))
+                else:
+                    long_text.append((key, value))
+
+            # 只有「数值占多数」的行才整行进表。否则像「指数：上证指数 |
+            # 涨跌幅：+0.8% | 量能：放量」这种行会把标识列（指数名）留在
+            # 正文、只剩涨跌幅进表，读者反而看不懂表格在描述谁。
+            if not has_numeric or len(numeric) * 2 < len(cells):
+                remaining.append(line)
+                continue
+
+            # 与数字同行的短文本（来源、窗口、动作）按原顺序一起进表，
+            # 避免留下只有「行情来源」一行的孤立小节。
+            section_metrics.extend(table_cells)
+            if long_text:
+                rebuilt = " | ".join(f"{key}：{value}" for key, value in long_text)
+                remaining.append(f"• {rebuilt}")
+
+        deduped: List[Tuple[str, str]] = []
+        for key, value in section_metrics:
+            if not key or key in seen_keys:
+                continue
+            seen_keys.add(key)
+            deduped.append((key, value))
+        if deduped:
+            rows.extend((category, key, value) for key, value in deduped)
+
+        plans.append((section, remaining))
+
+    rows.sort(key=lambda row: _METRIC_CATEGORY_PRIORITY.get(row[0], 9))
+    return rows, plans
+
+
+def _build_group_elements(
+    group: List[_Section],
+    *,
+    field_budget: int,
+    table_budget: int,
+    summary_mode: bool = False,
+) -> Tuple[List[Dict[str, Any]], int, int]:
+    """渲染一个板块组（摘要 / 单只股票），返回元素、字段块数和表格数。"""
+    elements: List[Dict[str, Any]] = []
+    used_fields = 0
+    used_tables = 0
+    head, rest = group[0], group[1:]
+
+    if summary_mode:
+        summary_rows: List[Tuple[str, str]] = []
+        other_lines: List[str] = []
+        for line in head.lines:
+            parsed = _parse_stock_summary(line)
+            if parsed:
+                summary_rows.append(parsed)
+            else:
+                other_lines.append(line)
+
+        if len(summary_rows) >= 2 and table_budget > 0:
+            if head.title:
+                elements.append(_div(_section_heading(head)))
+            elements.append(_summary_table(summary_rows))
+            used_tables += 1
+            if any(line.strip() for line in other_lines):
+                blocks, used = _render_blocks(
+                    _Section(0, "", other_lines),
+                    field_budget - used_fields,
+                )
+                elements.extend(blocks)
+                used_fields += used
+        else:
+            # 单只股票时一句摘要用双列字段更紧凑，不占用表格名额。
+            blocks, used = _render_blocks(head, field_budget, summary_mode=True)
+            elements.extend(blocks)
+            used_fields += used
+
+        for section in rest:
+            if not section.has_content():
+                continue
+            blocks, used = _render_blocks(section, field_budget - used_fields)
+            elements.extend(blocks)
+            used_fields += used
+        return elements, used_fields, used_tables
+
+    # 个股组：head 是股票标题，数值行来自其后的行情/技术/点位小节；
+    # 单节文档（如仅一段行情快照）则 head 自身就带数值行。
+    rows, plans = _collect_metric_rows([head] + rest)
+    if len(rows) >= 2 and table_budget > 0:
+        head_section, head_remaining = plans[0]
+        blocks, used = _render_blocks(
+            _Section(
+                head_section.level,
+                head_section.title,
+                head_remaining,
+                head_section.divider_before,
+            ),
+            field_budget,
+        )
+        elements.extend(blocks)
+        used_fields += used
+        elements.append(_metric_table(rows))
+        used_tables = 1
+        for section, remaining in plans[1:]:
+            if not any(line.strip() for line in remaining):
+                continue
+            rebuilt_section = _Section(
+                section.level,
+                section.title,
+                remaining,
+                section.divider_before,
+            )
+            blocks, used = _render_blocks(
+                rebuilt_section,
+                field_budget - used_fields,
+            )
+            elements.extend(blocks)
+            used_fields += used
+        return elements, used_fields, used_tables
+
+    blocks, used = _render_blocks(head, field_budget)
+    elements.extend(blocks)
+    used_fields += used
+    for section in rest:
+        if not section.has_content():
+            continue
+        blocks, used = _render_blocks(section, field_budget - used_fields)
+        elements.extend(blocks)
+        used_fields += used
+
+    return elements, used_fields, used_tables
+
+
 def _render_blocks(
     section: _Section,
     field_budget: int,
@@ -733,6 +1117,7 @@ def _build_elements(
 ) -> List[Dict[str, Any]]:
     elements: List[Dict[str, Any]] = []
     field_blocks = 0
+    table_blocks = 0
 
     signal_elements = _build_signal_zone(render_context)
     if signal_elements:
@@ -743,20 +1128,23 @@ def _build_elements(
     if preamble_text:
         elements.append(_div(preamble_text))
 
-    for section in sections:
-        if not section.has_content():
+    for group in _group_sections(sections):
+        if not group:
             continue
-        blocks, used = _render_blocks(
-            section,
-            _MAX_FIELD_BLOCKS - field_blocks,
-            summary_mode=_is_summary_section(section.title),
+        head = group[0]
+        group_elements, used_fields, used_tables = _build_group_elements(
+            group,
+            field_budget=_MAX_FIELD_BLOCKS - field_blocks,
+            table_budget=_MAX_TABLES - table_blocks,
+            summary_mode=_is_summary_section(head.title),
         )
-        if not blocks:
+        if not group_elements:
             continue
-        field_blocks += used
-        if section.level == 2 or section.divider_before:
+        field_blocks += used_fields
+        table_blocks += used_tables
+        if head.level == 2 or head.divider_before:
             _append_hr(elements)
-        elements.extend(blocks)
+        elements.extend(group_elements)
 
     note = _note(notes, include_disclaimer=include_disclaimer)
     if note is not None:

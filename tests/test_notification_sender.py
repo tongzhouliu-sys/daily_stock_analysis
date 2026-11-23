@@ -387,7 +387,7 @@ class TestFeishuSender(unittest.TestCase):
 
         self.assertTrue(result)
         mock_post.assert_called_once()
-        payload = mock_post.call_args.kwargs["json"]
+        payload = json.loads(mock_post.call_args.kwargs["data"])
         self.assertEqual(payload["timestamp"], "1700000000")
         expected_sign = base64.b64encode(
             hmac.new(
@@ -412,7 +412,7 @@ class TestFeishuSender(unittest.TestCase):
         sender = FeishuSender(cfg)
 
         self.assertTrue(sender.send_to_feishu("hello"))
-        payload = mock_post.call_args.kwargs["json"]
+        payload = json.loads(mock_post.call_args.kwargs["data"])
         self.assertEqual(payload["card"]["elements"][0]["text"]["content"], "hello")
 
     @mock.patch("src.notification_sender.feishu_sender.requests.post")
@@ -432,7 +432,7 @@ class TestFeishuSender(unittest.TestCase):
         result = sender.send_to_feishu(content)
 
         self.assertTrue(result)
-        payload = mock_post.call_args.kwargs["json"]
+        payload = json.loads(mock_post.call_args.kwargs["data"])
         self.assertEqual(payload["card"]["header"]["title"]["content"], "日报")
         rendered = payload["card"]["elements"][0]["text"]["content"]
         self.assertIn("📊 分析结果摘要", rendered)
@@ -808,7 +808,7 @@ class TestFeishuSender(unittest.TestCase):
         result = sender.send_feishu_file("/tmp/report_20260705.md")
         self.assertTrue(result)
         mock_post.assert_called_once()
-        payload = mock_post.call_args.kwargs["json"]
+        payload = json.loads(mock_post.call_args.kwargs["data"])
         rendered = payload["card"]["elements"][0]["text"]["content"]
         self.assertIn("Markdown 文件内容: report_20260705.md", payload["card"]["header"]["title"]["content"])
         self.assertIn("**Test Report**", rendered)
@@ -828,7 +828,7 @@ class TestFeishuSender(unittest.TestCase):
         result = sender.send_feishu_file("/tmp/report.md")
 
         self.assertTrue(result)
-        rendered = mock_post.call_args.kwargs["json"]["card"]["elements"][0]["text"]["content"]
+        rendered = json.loads(mock_post.call_args.kwargs["data"])["card"]["elements"][0]["text"]["content"]
         self.assertNotIn("[dsa-market-region]", rendered)
         self.assertIn("**Test Report**", rendered)
 

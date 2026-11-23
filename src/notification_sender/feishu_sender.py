@@ -83,16 +83,29 @@ _WEBHOOK_RATE_LIMIT_RETRIES = 2
 _WEBHOOK_RATE_LIMIT_BACKOFF_SECONDS = (2.0, 5.0)
 _WEBHOOK_RATE_LIMIT_ERROR_CODES = (11232, 11233)  # 飞书限流错误码
 
+# Webhook 外层 msg_type / card / timestamp / sign 的序列化开销预留。
+_WEBHOOK_ENVELOPE_RESERVE_BYTES = 512
+
 # Sentinel for "client not yet initialised".
 _NO_CLIENT = object()
+
+
+def _encode_webhook_request_body(payload: Dict[str, Any]) -> bytes:
+    """把 Webhook 请求体序列化为 UTF-8 JSON 字节。
+
+    飞书自定义机器人允许标准 UTF-8 JSON，中文按 3 字节发送；不要用
+    ``requests.post(json=...)`` 的默认行为，它会把中文转义成 ``\\uXXXX``
+    （6 字节/字符），让卡片真实体积比预算大 1.4 倍以上。
+    """
+    json_str = json.dumps(payload, ensure_ascii=False, separators=(",", ":"))
+    return json_str.encode("utf-8")
 
 
 def _calculate_webhook_request_body_size(payload: Dict[str, Any]) -> int:
     """计算 Webhook 实际请求体大小（字节）。
 
-    飞书 Webhook 使用 ``requests.post(json=...)`` 发送，requests 默认会将
-    非 ASCII 字符转义为 ``\\uXXXX``（6 字节/字符），而不是 UTF-8 的 3 字节。
-    因此必须按 JSON 序列化后的实际字节数计量，而不是 ``len(text.encode('utf-8'))``。
+    与实际发送保持一致：UTF-8 JSON，不转义非 ASCII 字符。飞书 20 KB
+    限制计量的是请求体字节数，因此预算必须按同一口径计算。
 
     Args:
         payload: 完整的请求体字典（包含 msg_type, card/text, timestamp, sign 等）
@@ -101,9 +114,7 @@ def _calculate_webhook_request_body_size(payload: Dict[str, Any]) -> int:
         序列化后的字节数
     """
     try:
-        # ensure_ascii=True 是 requests 的默认行为，中文会被转义为 \uXXXX
-        json_str = json.dumps(payload, ensure_ascii=True, separators=(",", ":"))
-        return len(json_str.encode("utf-8"))
+        return len(_encode_webhook_request_body(payload))
     except (TypeError, ValueError):
         return 0
 
@@ -377,20 +388,20 @@ class FeishuSender:
         which converts all Markdown constructs to ``lark_md``-compatible format.
         The interactive card uses ``tag: lark_md`` for rendering.
         """
-        card_payload = json.dumps(
-            self._build_card_body(
-                content,
-                max_bytes=self._feishu_max_bytes,
-                include_disclaimer=include_disclaimer,
-                render_context=render_context,
-            ),
-            ensure_ascii=False,
+        card_body = self._build_card_body(
+            content,
+            max_bytes=max(1, self._feishu_max_bytes - _WEBHOOK_ENVELOPE_RESERVE_BYTES),
+            include_disclaimer=include_disclaimer,
+            render_context=render_context,
         )
 
-        if self._app_send_raw(client, "interactive", card_payload):
-            return True
+        if card_body is not None:
+            card_payload = json.dumps(card_body, ensure_ascii=False)
+            if self._app_send_raw(client, "interactive", card_payload):
+                return True
 
-        # Fallback to plain text.
+        # Fallback to plain text. Never send a JSON ``null`` card when the
+        # compact card could not fit the budget.
         text_content = ensure_report_disclaimer(content) if include_disclaimer else content
         text_payload = json.dumps({"text": text_content}, ensure_ascii=False)
         return self._app_send_raw(client, "text", text_payload)
@@ -698,14 +709,14 @@ class FeishuSender:
 
         max_bytes = self._feishu_max_bytes
         keyword_overhead = len(self._get_keyword_prefix().encode("utf-8"))
-        effective_max_bytes = max_bytes - keyword_overhead
+        effective_max_bytes = max_bytes - keyword_overhead - _WEBHOOK_ENVELOPE_RESERVE_BYTES
 
         if effective_max_bytes <= 0:
             logger.error("飞书关键词过长，超过单条消息允许的最大字节数，无法发送")
             return False
 
         content_bytes = len(formatted_content.encode("utf-8")) + keyword_overhead
-        if content_bytes > max_bytes:
+        if content_bytes > max_bytes - _WEBHOOK_ENVELOPE_RESERVE_BYTES:
             min_chunk_bytes = MIN_MAX_BYTES + PAGE_MARKER_SAFE_BYTES
             if effective_max_bytes < min_chunk_bytes:
                 logger.error(
@@ -820,20 +831,28 @@ class FeishuSender:
             request_payload = dict(payload)
             request_payload.update(security_fields)
 
-            # 检查实际请求体大小
-            actual_size = _calculate_webhook_request_body_size(request_payload)
+            # 按真实发送口径（UTF-8 JSON）检查请求体大小；超限时不发，
+            # 避免必然被飞书拒绝后把错误当成“网络失败”重试。
+            try:
+                request_body = _encode_webhook_request_body(request_payload)
+            except (TypeError, ValueError) as e:
+                logger.error("飞书请求体序列化失败: %s", e)
+                return False
+            actual_size = len(request_body)
             if actual_size > self._feishu_max_bytes:
                 logger.warning(
-                    "飞书请求体超限: %d 字节 > %d 字节限制，可能被拒绝",
+                    "飞书请求体超限: %d 字节 > %d 字节限制，跳过发送",
                     actual_size,
                     self._feishu_max_bytes,
                 )
+                return False
 
             for attempt in range(_WEBHOOK_RATE_LIMIT_RETRIES + 1):
                 try:
                     response = requests.post(
                         self._feishu_url,
-                        json=request_payload,
+                        data=request_body,
+                        headers={"Content-Type": "application/json; charset=utf-8"},
                         timeout=timeout_seconds or _WEBHOOK_SEND_TIMEOUT_SECONDS,
                         verify=self._webhook_verify_ssl,
                     )
@@ -897,7 +916,7 @@ class FeishuSender:
         # 尝试发送卡片（不带关键词前缀，关键词稍后添加到页脚）
         card_body = self._build_card_body(
             content,
-            max_bytes=self._feishu_max_bytes,
+            max_bytes=max(1, self._feishu_max_bytes - _WEBHOOK_ENVELOPE_RESERVE_BYTES),
             include_disclaimer=include_disclaimer,
             render_context=render_context,
         )

@@ -53,13 +53,16 @@ class TestCalculateWebhookRequestBodySize:
         assert size > 0
         assert size < 200
 
-    def test_chinese_content_escaped(self):
-        """中文内容：JSON 序列化时会被转义为 \\uXXXX，体积更大。"""
+    def test_chinese_content_uses_utf8_bytes(self):
+        """中文内容按 UTF-8 计量，不再按 \\uXXXX 转义后的体积放大。"""
         payload = {"msg_type": "text", "content": {"text": "测试中文"}}
         size = _calculate_webhook_request_body_size(payload)
-        # 每个中文字符在 JSON 中变成 \uXXXX（6 字节）
-        # "测试中文" 4 个字 = 24 字节转义 + JSON 结构开销
-        assert size > 50  # 明显大于 UTF-8 的 12 字节
+        expected = len(
+            json.dumps(payload, ensure_ascii=False, separators=(",", ":")).encode("utf-8")
+        )
+        # 4 个中文字 = 12 字节，加上 JSON 结构开销仍应远小于转义口径。
+        assert size == expected
+        assert size < 80
 
     def test_mixed_content(self):
         """混合内容：ASCII + 中文。"""
@@ -266,7 +269,7 @@ class TestIntegration:
             assert result is True
             # 验证请求体中包含关键词在页脚，而不是正文开头
             call_args = mock_post.call_args
-            payload = call_args[1]["json"]
+            payload = json.loads(call_args[1]["data"])
             card = payload.get("card", {})
             elements = card.get("elements", [])
             # 最后一个元素应该是 note，包含关键词
@@ -316,7 +319,7 @@ class TestReportDisclaimerScope:
                 render_context={"route_type": "report"},
             )
 
-        payload = mock_post.call_args[1]["json"]
+        payload = json.loads(mock_post.call_args[1]["data"])
         note = payload["card"]["elements"][-1]
         note_text = note["elements"][0]["content"]
         assert note_text.endswith(REPORT_AI_DISCLAIMER)
@@ -331,7 +334,7 @@ class TestReportDisclaimerScope:
                 render_context={"route_type": "alert"},
             )
 
-        payload = mock_post.call_args[1]["json"]
+        payload = json.loads(mock_post.call_args[1]["data"])
         assert REPORT_AI_DISCLAIMER not in json.dumps(payload, ensure_ascii=False)
 
     def test_report_text_fallback_keeps_disclaimer(self):
@@ -353,10 +356,46 @@ class TestReportDisclaimerScope:
                 render_context={"route_type": "report"},
             )
 
-        payload = mock_http.call_args[1]["json"]
+        payload = json.loads(mock_http.call_args[1]["data"])
         assert payload["msg_type"] == "text"
         assert REPORT_AI_DISCLAIMER in payload["content"]["text"]
 
 
 if __name__ == "__main__":
     pytest.main([__file__, "-v"])
+
+
+class TestUtf8WebhookTransport:
+    """Webhook 按 UTF-8 JSON 发送，避免转义把 20KB 预算放大。"""
+
+    def test_request_body_is_utf8_without_ascii_escapes(self):
+        from src.notification_sender.feishu_sender import _encode_webhook_request_body
+
+        payload = {
+            "msg_type": "interactive",
+            "card": {"header": {"title": {"content": "中文标题"}}},
+        }
+        body = _encode_webhook_request_body(payload)
+
+        assert isinstance(body, bytes)
+        assert b"\\u" not in body
+        assert "中文标题".encode("utf-8") in body
+        assert len(body) == _calculate_webhook_request_body_size(payload)
+
+    def test_app_send_once_skips_null_card(self):
+        sender = FeishuSender(
+            _config(
+                feishu_app_id="cli_app",
+                feishu_app_secret="secret",
+                feishu_chat_id="oc_chat",
+            )
+        )
+        with mock.patch.object(
+            FeishuSender, "_build_card_body", return_value=None
+        ), mock.patch.object(
+            FeishuSender, "_app_send_raw", return_value=True
+        ) as raw:
+            assert sender._app_send_once(object(), "# 标题\n\n正文") is True
+
+        # 不能在卡片超限时发送 JSON ``null``，只能走纯文本兜底。
+        assert [call[0][1] for call in raw.call_args_list] == ["text"]

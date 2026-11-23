@@ -78,6 +78,8 @@ def _card_text(card: dict) -> str:
             parts.append(text.get("content", ""))
         for item in element.get("fields", []):
             parts.append(item.get("text", {}).get("content", ""))
+        for row in element.get("rows", []):
+            parts.extend(str(value) for value in row.values())
         for note_element in element.get("elements", []):
             parts.append(note_element.get("content", ""))
     return "\n".join(parts)
@@ -240,7 +242,7 @@ def test_formatter_keeps_heading_hierarchy_and_grey_quotes():
     assert "\n\n\n" not in result
 
 
-def test_wide_market_snapshot_table_becomes_aligned_fields():
+def test_wide_market_snapshot_table_becomes_native_table():
     formatted = format_feishu_markdown(
         "## 行情快照\n\n"
         "| 收盘 | 昨收 | 开盘 | 最高 | 最低 | 涨跌幅 | 涨跌额 | 振幅 | 成交量 | 成交额 |\n"
@@ -249,17 +251,20 @@ def test_wide_market_snapshot_table_becomes_aligned_fields():
         + "盘面描述" * 120
     )
     card = build_feishu_card(formatted, max_bytes=20000)
-    fields = [
-        item
-        for element in card["elements"]
-        for item in element.get("fields", [])
-    ]
-    labels = [item["text"]["content"].split("\n")[0] for item in fields]
+    tables = [element for element in card["elements"] if element["tag"] == "table"]
 
-    assert "**收盘**" in labels
-    assert "**成交额**" in labels
-    assert "指数" not in labels
-    assert all(item["is_short"] for item in fields if item["text"]["content"].startswith("**收盘**"))
+    assert len(tables) == 1
+    table = tables[0]
+    assert [column["display_name"] for column in table["columns"]] == [
+        "分类",
+        "指标",
+        "数值",
+    ]
+    metrics = [row["metric"] for row in table["rows"]]
+    assert "收盘" in metrics
+    assert "成交额" in metrics
+    # 表头字段本身不应被当成指标。
+    assert "指数" not in metrics
 
 
 def test_chunking_can_split_on_formatted_level_two_headings():
@@ -279,7 +284,7 @@ def test_webhook_sends_structured_card(mock_post):
     sender = FeishuSender(_config(feishu_webhook_url="https://feishu.example/hook"))
 
     assert sender.send_to_feishu(REPORT) is True
-    card = mock_post.call_args.kwargs["json"]["card"]
+    card = json.loads(mock_post.call_args.kwargs["data"])["card"]
     assert len(card["elements"]) > 3
     assert "<text_tag" in _card_text(card)
 
@@ -458,7 +463,7 @@ def test_webhook_forwards_render_context_to_signal_zone(mock_post):
     sender = FeishuSender(_config(feishu_webhook_url="https://feishu.example/hook"))
 
     assert sender.send_to_feishu(REPORT, render_context=SINGLE_STOCK_CONTEXT) is True
-    card = mock_post.call_args.kwargs["json"]["card"]
+    card = json.loads(mock_post.call_args.kwargs["data"])["card"]
     assert any(element.get("tag") == "column_set" for element in card["elements"])
 
 
@@ -495,3 +500,166 @@ def test_chunked_send_only_first_chunk_gets_render_context():
     assert len(captured) >= 2
     assert captured[0] == SINGLE_STOCK_CONTEXT
     assert all(context is None for context in captured[1:])
+
+
+# ---------------------------------------------------------------------------
+# 原生表格：多标的摘要 + 个股关键数据
+# ---------------------------------------------------------------------------
+
+MULTI_STOCK_REPORT = """# 🎯 2026-11-09 决策仪表盘
+
+> 共分析 **2** 只股票 | 🟢买入:1 🟡观望:1 🔴卖出:0
+
+## 📊 分析结果摘要
+
+🟢 **五粮液(000858.SZ)**: 买入 | 评分 72 | 震荡
+⚪ **贵州茅台(600519.SH)**: 观望 | 评分 58 | 震荡
+
+---
+
+## 🟢 五粮液 (000858.SZ)
+
+### 📈 当日行情
+
+| 当前价 | 量比 | 换手率 | 行情来源 |
+| --- | --- | --- | --- |
+| 1453.00 | 0.65 | 0.34% | 腾讯财经 |
+
+### 📊 数据透视
+
+| 当前价 | MA5 | MA10 |
+| --- | --- | --- |
+| 1453.00 | 1448.20 | 1432.70 |
+
+### 📌 核心结论
+
+| 持仓情况 | 操作建议 |
+| --- | --- |
+| 🆕 **空仓者** | 暂不追高，等待股价缩量回调至MA10附近观察支撑，企稳后再考虑首仓。 |
+
+---
+
+## ⚪ 贵州茅台 (600519.SH)
+
+### 📈 当日行情
+
+| 收盘 | 涨跌幅 | 成交量 |
+| --- | --- | --- |
+| 1453.00 | -0.86% | 3.42万手 |
+"""
+
+
+def _tables(card):
+    return [element for element in card["elements"] if element["tag"] == "table"]
+
+
+def test_multi_stock_summary_becomes_native_table():
+    card = build_feishu_card(format_feishu_markdown(MULTI_STOCK_REPORT), max_bytes=20000)
+    tables = _tables(card)
+    summary = tables[0]
+
+    assert [column["display_name"] for column in summary["columns"]] == [
+        "标的",
+        "动作",
+        "评分",
+        "趋势",
+    ]
+    assert summary["page_size"] == 10
+    assert summary["row_height"] == "middle"
+    assert summary["header_style"]["background_style"] == "grey"
+    assert all(
+        column["data_type"] == "text" for column in summary["columns"]
+    )
+    assert len(summary["rows"]) == 2
+    assert summary["rows"][0] == {
+        "name": "🟢 五粮液(000858.SZ)",
+        "action": "买入",
+        "score": "72",
+        "trend": "震荡",
+    }
+
+
+def test_numeric_sections_merge_into_one_grouped_table_per_stock():
+    card = build_feishu_card(format_feishu_markdown(MULTI_STOCK_REPORT), max_bytes=20000)
+    tables = _tables(card)
+
+    # 1 张摘要表 + 2 只股票各 1 张数据表。
+    assert len(tables) == 3
+    stock_table = tables[1]
+    assert [column["display_name"] for column in stock_table["columns"]] == [
+        "分类",
+        "指标",
+        "数值",
+    ]
+    metrics = [row["metric"] for row in stock_table["rows"]]
+    # 当前价在行情与技术两处重复，只保留首次出现。
+    assert metrics.count("当前价") == 1
+    assert "行情来源" in metrics  # 与数字同行的短文本一起进表
+    assert "MA5" in metrics
+    # 同组只在第一行写分类，后续留空。
+    assert stock_table["rows"][0]["category"] == "行情"
+    assert stock_table["rows"][1]["category"] == ""
+
+
+def test_long_text_rows_stay_in_fields_not_tables():
+    card = build_feishu_card(format_feishu_markdown(MULTI_STOCK_REPORT), max_bytes=20000)
+    table_values = "\n".join(
+        str(value)
+        for table in _tables(card)
+        for row in table["rows"]
+        for value in row.values()
+    )
+    fields_text = " ".join(
+        item["text"]["content"]
+        for element in card["elements"]
+        for item in element.get("fields", [])
+    )
+
+    assert "暂不追高" not in table_values
+    assert "**🆕 空仓者**" in fields_text
+
+
+def test_table_cells_are_plain_text_without_lark_markup():
+    card = build_feishu_card(format_feishu_markdown(MULTI_STOCK_REPORT), max_bytes=20000)
+    for table in _tables(card):
+        for row in table["rows"]:
+            for value in row.values():
+                assert "**" not in str(value)
+                assert "<font" not in str(value)
+                assert "<text_tag" not in str(value)
+
+
+def test_card_uses_at_most_five_native_tables():
+    stocks = []
+    for index in range(6):
+        stocks.append(
+            f"## 🟢 标的{index} (60000{index}.SH)\n\n"
+            "### 📈 当日行情\n\n"
+            "| 收盘 | 涨跌幅 |\n| --- | --- |\n| 10.00 | +1.20% |\n"
+        )
+    content = (
+        "# 🎯 决策仪表盘\n\n"
+        "> 共分析 **6** 只股票 | 🟢买入:6 🟡观望:0 🔴卖出:0\n\n"
+        "## 📊 分析结果摘要\n\n"
+        + "\n".join(
+            f"🟢 **标的{index}(60000{index}.SH)**: 买入 | 评分 7{index} | 震荡"
+            for index in range(6)
+        )
+        + "\n\n"
+        + "\n".join(stocks)
+    )
+    card = build_feishu_card(format_feishu_markdown(content), max_bytes=20000)
+
+    assert 0 < len(_tables(card)) <= 5
+
+
+def test_single_stock_summary_keeps_fields_instead_of_one_row_table():
+    card = build_feishu_card(_formatted_report(), max_bytes=20000)
+    summary_tables = [
+        table
+        for table in _tables(card)
+        if [column["display_name"] for column in table["columns"]]
+        == ["标的", "动作", "评分", "趋势"]
+    ]
+
+    assert summary_tables == []
