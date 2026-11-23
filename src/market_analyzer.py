@@ -1893,6 +1893,23 @@ Concept lagging: {bottom_concepts_text if bottom_concepts_text else "N/A"}"""
             else "报告要像交易员盘后工作台：先给结论，再按指数、新闻催化和计划展开"
         )
 
+        time_slice_block = ""
+        if self.region == "us":
+            if review_language == "en":
+                time_slice_block = """## Time Clocks (US market)
+- Latest cash close: the most recent completed US regular-session close.
+- Overnight futures: electronic-session quotes; thin liquidity, may change before the cash open.
+- Asia open: a separate session; do not treat it as a US cash print.
+- News cutoff: state the timestamp of the latest news you used.
+Do not present futures or Asia-session data as the US cash close; label each number with its clock."""
+            else:
+                time_slice_block = """## 时间口径（美股）
+- 最新现金收盘：最近一个已完成的美国常规交易时段收盘。
+- 隔夜期货：电子盘报价，流动性偏薄，现金开盘前可能变化。
+- 亚洲开盘：独立时段，不得当作美股现金收盘。
+- 新闻截止：写明所用新闻的最新时间。
+不得把期货或亚洲时段数据写成美股现金收盘，每个数字都要标明所属时点。"""
+
         if review_language == "en":
             report_title = self._get_review_title(overview.date).removeprefix("## ").strip()
             return f"""You are a professional {self._get_market_scope_name('en')} analyst. Please produce a concise market recap report based on the data below.
@@ -1921,6 +1938,8 @@ Concept lagging: {bottom_concepts_text if bottom_concepts_text else "N/A"}"""
 {sector_block}
 
 {data_limits_block}
+
+{time_slice_block}
 
 ## Market News
 {news_placeholder}
@@ -1977,6 +1996,8 @@ Output the report content directly, no extra commentary.
 {sector_block}
 
 {data_limits_block}
+
+{time_slice_block}
 
 ## 市场新闻
 {news_placeholder}
