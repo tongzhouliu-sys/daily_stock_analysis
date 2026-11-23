@@ -2373,6 +2373,11 @@
   font-weight: 600;
 }
 
+.chat-sheet-close {
+  width: 44px;
+  height: 44px;
+}
+
 .chat-sheet-subtitle {
   margin: 0 0 8px;
   padding: 0 12px;
@@ -2549,6 +2554,16 @@
 
   .chat-session {
     min-height: 52px;
+  }
+
+  .chat-session-more {
+    right: 2px;
+    width: 36px;
+    height: 36px;
+  }
+
+  .chat-new-btn-panel {
+    height: 44px;
   }
 
   .chat-session-meta {

@@ -328,6 +328,9 @@ for (const [name, width, height] of [
     await expect(page.locator('.chat-session-meta').first()).not.toBeEmpty();
     const rowBox = (await page.locator('.chat-session').first().boundingBox())!;
     expect(rowBox.height).toBeGreaterThanOrEqual(52);
+    const rowMenuBox = (await page.locator('.chat-session-more').first().boundingBox())!;
+    expect(rowMenuBox.width).toBeGreaterThanOrEqual(SECONDARY_TARGET);
+    expect(rowMenuBox.height).toBeGreaterThanOrEqual(SECONDARY_TARGET);
 
     await search.fill('比亚迪');
     await expect(page.locator('.chat-session-meta')).toHaveCount(4);
@@ -343,6 +346,9 @@ for (const [name, width, height] of [
     await expect(sheet).toBeVisible();
     const sheetItem = (await sheet.getByRole('button', { name: '重命名' }).boundingBox())!;
     expect(sheetItem.height).toBeGreaterThanOrEqual(48);
+    const sheetCloseBox = (await sheet.getByRole('button', { name: '关闭' }).boundingBox())!;
+    expect(sheetCloseBox.width).toBeGreaterThanOrEqual(PRIMARY_TARGET);
+    expect(sheetCloseBox.height).toBeGreaterThanOrEqual(PRIMARY_TARGET);
     await page.keyboard.press('Escape');
     await expect(sheet).toHaveCount(0);
     await context.close();

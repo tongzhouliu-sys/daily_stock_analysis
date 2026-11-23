@@ -113,7 +113,7 @@ export const Drawer: React.FC<DrawerProps> = ({
               type="button"
               ref={closeButtonRef}
               onClick={onClose}
-              className="inline-flex h-10 w-10 items-center justify-center rounded-xl border border-border/70 bg-card/80 text-secondary-text transition-colors hover:bg-hover hover:text-foreground"
+              className="inline-flex h-11 w-11 items-center justify-center rounded-xl border border-border/70 bg-card/80 text-secondary-text transition-colors hover:bg-hover hover:text-foreground"
               aria-label={t('common.closeDrawer')}
             >
               <svg className="w-5 h-5" fill="none" stroke="currentColor" viewBox="0 0 24 24">

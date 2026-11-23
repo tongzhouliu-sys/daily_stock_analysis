@@ -70,7 +70,7 @@ export function BottomSheet({
             type="button"
             ref={closeButtonRef}
             onClick={onClose}
-            className="chat-icon-btn"
+            className="chat-icon-btn chat-sheet-close"
             aria-label={t('common.close')}
           >
             <X size={18} aria-hidden="true" />
