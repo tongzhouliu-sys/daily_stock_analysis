@@ -331,6 +331,65 @@
   background: var(--bg-card);
 }
 
+/* Mobile keeps a one-line summary once a report is open; the full form is one
+   tap away behind 「新分析」. Desktop always shows the form. */
+.research-command-compact {
+  display: none;
+}
+
+.research-command-compact-label {
+  display: flex;
+  min-width: 0;
+  align-items: baseline;
+  gap: 8px;
+  color: var(--text-primary);
+  font-size: 14px;
+  font-weight: 600;
+}
+
+.research-command-compact-label .font-mono {
+  color: var(--text-secondary-text);
+  font-size: 12px;
+  font-weight: 500;
+  letter-spacing: 0.04em;
+}
+
+.research-command-toggle {
+  display: inline-flex;
+  min-height: 44px;
+  flex: none;
+  align-items: center;
+  justify-content: center;
+  border-radius: 999px;
+  padding-inline: 14px;
+  color: hsl(var(--primary));
+  font-size: 13px;
+  font-weight: 600;
+  white-space: nowrap;
+}
+
+@media (max-width: 47.999rem) {
+  .research-command-bar.is-report-open {
+    padding: 9px 12px;
+    margin-bottom: 12px;
+  }
+
+  .research-command-bar.is-report-open .research-command-compact {
+    display: flex;
+    align-items: center;
+    justify-content: space-between;
+    gap: 10px;
+  }
+
+  .research-command-bar.is-report-open.is-collapsed .research-command-body {
+    display: none;
+  }
+
+  .research-command-bar.is-report-open:not(.is-collapsed) .research-command-compact {
+    margin-bottom: 10px;
+  }
+}
+
 .research-desk {
   display: grid;
   flex: 1;
@@ -414,6 +473,24 @@
 .research-report-empty p {
   color: var(--text-secondary-text);
   font-size: 14px;
+}
+
+@media (max-width: 47.999rem) {
+  /* Phone empty state is a card, not a viewport-tall dashed void. */
+  .research-report-empty {
+    height: auto;
+    min-height: 0;
+    padding: 20px;
+    gap: 10px;
+  }
+
+  .research-report-empty h3 {
+    font-size: 20px;
+  }
+
+  .research-home {
+    min-height: 0;
+  }
 }
 
 .research-records {
@@ -2785,7 +2862,48 @@
    ========================================= */
 
 .report-toolbar {
+  display: flex;
+  flex-wrap: wrap;
+  align-items: center;
+  justify-content: flex-end;
+  gap: 8px;
   padding-bottom: 2px;
+}
+
+.report-toolbar-secondary,
+.report-toolbar-main {
+  display: flex;
+  align-items: center;
+  gap: 8px;
+}
+
+.report-toolbar-more {
+  display: none;
+  align-items: center;
+  justify-content: center;
+  width: 44px;
+  height: 44px;
+  flex: none;
+  border: 1px solid var(--home-panel-border);
+  border-radius: 4px;
+  background: var(--bg-card);
+  color: var(--text-secondary-text);
+  transition: background-color 150ms ease, color 150ms ease;
+}
+
+.report-toolbar-more:hover {
+  background: var(--bg-hover);
+  color: var(--text-primary);
+}
+
+.report-toolbar-more[aria-expanded="true"] {
+  border-color: var(--home-action-ai-border);
+  background: var(--home-action-ai-bg);
+  color: var(--home-action-ai-text);
+}
+
+.report-toolbar-label-short {
+  display: none;
 }
 
 /* Report composition: one cover card, then a dense two-column body. */
@@ -2835,10 +2953,105 @@
   color: var(--home-action-ai-text);
 }
 
-@container (max-width: 34rem) {
-  .report-toolbar .report-toolbar-primary {
-    flex: 1 1 100%;
+/* Mobile: one 44px row (ask AI + full report + more); secondary actions open
+   below on demand instead of wrapping into a second permanent row. */
+@media (max-width: 47.999rem) {
+  .report-toolbar {
+    flex-direction: column;
+    align-items: stretch;
+    justify-content: flex-start;
+    gap: 8px;
+  }
+
+  .report-toolbar-secondary {
+    display: none;
+  }
+
+  .report-toolbar-secondary[data-open="true"] {
+    display: grid;
+    grid-template-columns: repeat(2, minmax(0, 1fr));
+    order: 2;
+  }
+
+  .report-toolbar-main {
+    order: 1;
+  }
+
+  .report-toolbar-main .report-toolbar-button,
+  .report-toolbar-secondary .report-toolbar-button {
+    min-height: 44px;
+  }
+
+  .report-toolbar-main .report-toolbar-button {
+    flex: 1 1 auto;
     justify-content: center;
+  }
+
+  .report-toolbar-more {
+    display: inline-flex;
+  }
+
+  .report-toolbar-label-full {
+    display: none;
+  }
+
+  .report-toolbar-label-short {
+    display: inline;
+  }
+}
+
+/* Empty state CTA */
+.research-empty-cta {
+  margin-top: 4px;
+}
+
+/* Report touch targets (phones). Text links keep their look but get a full
+   hit area; secondary panel actions grow to 44px. */
+@media (max-width: 47.999rem) {
+  .research-brand {
+    min-height: 44px;
+  }
+
+  .report-news-refresh {
+    display: inline-flex;
+    min-width: 40px;
+    min-height: 40px;
+    align-items: center;
+    justify-content: center;
+    margin: -8px -8px -8px 0;
+  }
+
+  .report-diagnostics-action,
+  .home-trace-toggle {
+    min-height: 44px;
+  }
+}
+
+/* Long mobile reports: jump back to the cover. */
+.report-back-to-top {
+  position: fixed;
+  right: 16px;
+  bottom: calc(16px + env(safe-area-inset-bottom));
+  z-index: 45;
+  display: none;
+  width: 44px;
+  height: 44px;
+  align-items: center;
+  justify-content: center;
+  border: 1px solid var(--home-panel-border);
+  border-radius: 999px;
+  background: var(--bg-card);
+  color: var(--text-secondary-text);
+  box-shadow: 0 6px 18px hsl(var(--foreground) / 0.14);
+}
+
+.report-back-to-top:active {
+  background: var(--bg-hover);
+}
+
+@media (max-width: 47.999rem) {
+  .report-back-to-top {
+    display: inline-flex;
   }
 }
 
@@ -2895,12 +3108,30 @@
   animation: fadeIn 150ms ease;
 }
 
-@container (max-width: 30rem) {
-  /* On phones let the code/phase/date line use the full width and drop the
-     action buttons to their own right-aligned row instead of squeezing the
-     date onto an orphan line. */
-  .report-hero-meta {
-    flex-basis: 100%;
+@media (max-width: 47.999rem) {
+  /* Icon-only actions keep the code/phase chips and both actions on one row. */
+  .report-hero-actions {
+    gap: 8px;
+  }
+
+  .report-hero-actions .report-share button {
+    width: 40px;
+    padding-inline: 0;
+    gap: 0;
+  }
+
+  .report-hero-actions .report-share button > span {
+    display: none;
+  }
+
+  .report-hero-watch {
+    width: 40px;
+    padding-inline: 0;
+    justify-content: center;
+  }
+
+  .report-hero-watch-label {
+    display: none;
   }
 }
 
@@ -2922,6 +3153,22 @@
   color: var(--text-secondary-text);
   font-size: 11px;
   letter-spacing: 0.06em;
+}
+
+.report-phase-compact {
+  display: none;
+}
+
+@media (max-width: 30rem) {
+  /* Narrow phones: keep the phase chip short enough to sit on the same row
+     as the icon actions. */
+  .report-phase-full {
+    display: none;
+  }
+
+  .report-phase-compact {
+    display: inline-flex;
+  }
 }
 
 .report-meta-date {
@@ -3029,8 +3276,8 @@
 .report-fact-label {
   overflow: hidden;
   color: var(--text-muted-text);
-  font-size: 10px;
-  letter-spacing: 0.12em;
+  font-size: 11px;
+  letter-spacing: 0.08em;
   text-overflow: ellipsis;
   text-transform: uppercase;
   white-space: nowrap;
@@ -3043,7 +3290,7 @@
   gap: 4px;
   overflow: hidden;
   color: var(--text-primary);
-  font-size: 15px;
+  font-size: 16px;
   font-weight: 600;
   line-height: 1.3;
   text-overflow: ellipsis;
@@ -3052,7 +3299,7 @@
 
 .report-fact-unit {
   color: var(--text-muted-text);
-  font-size: 10px;
+  font-size: 11px;
   font-weight: 400;
 }
 
@@ -3119,6 +3366,20 @@
   letter-spacing: 0.04em;
 }
 
+.report-kicker-date {
+  display: inline-flex;
+  align-items: center;
+  gap: 5px;
+  margin-inline-start: auto;
+  color: var(--text-muted-text);
+  font-family: var(--font-mono);
+  font-size: 10.5px;
+  font-weight: 400;
+  letter-spacing: 0.02em;
+  text-transform: none;
+  white-space: nowrap;
+}
+
 .report-lead {
   max-width: 100%;
   margin-top: 10px;
@@ -3174,6 +3435,50 @@
   line-height: 1.75;
 }
 
+/* Phones: tighten the cover so the conclusion starts in the first screen. */
+@media (max-width: 47.999rem) {
+  .report-hero .gradient-border-card-inner {
+    padding: 14px;
+  }
+
+  .report-hero-title-row {
+    gap: 4px 10px;
+    margin-top: 10px;
+  }
+
+  .report-hero-name {
+    font-size: 1.7rem;
+  }
+
+  .report-hero-price-value {
+    font-size: 1.5rem;
+  }
+
+  .report-hero-price-change {
+    font-size: 11px;
+  }
+
+  .report-facts {
+    margin-top: 10px;
+  }
+
+  .report-fact {
+    padding: 7px 10px;
+  }
+
+  .report-rule {
+    margin-top: 12px;
+  }
+
+  .report-key-insight {
+    padding-top: 10px;
+  }
+
+  .report-lead {
+    margin-top: 8px;
+  }
+}
+
 /* Shared section heading */
 .report-section-head {
   display: flex;
@@ -3206,7 +3511,7 @@
   border: 1px solid var(--home-panel-border);
   border-radius: 999px;
   color: var(--text-muted-text);
-  font-size: 10px;
+  font-size: 11px;
 }
 
 /* Prediction markets: single column by default, side-by-side odds when the
@@ -3229,6 +3534,16 @@
 /* Boards */
 @container (min-width: 40rem) {
   /* Wide panes can show every related board without a clipped last chip. */
+  .home-related-board-list.report-board-row {
+    flex-wrap: wrap;
+    overflow-x: visible;
+    padding-bottom: 0;
+  }
+}
+
+@media (max-width: 47.999rem) {
+  /* Phones: wrapping beats a horizontally scrolled row whose last chip is
+     clipped without any hint that it can be swiped. */
   .home-related-board-list.report-board-row {
     flex-wrap: wrap;
     overflow-x: visible;
@@ -3310,7 +3625,7 @@
   align-items: center;
   gap: 5px;
   color: var(--text-muted-text);
-  font-size: 10px;
+  font-size: 11px;
   letter-spacing: 0.12em;
   text-transform: uppercase;
   white-space: nowrap;
@@ -3333,7 +3648,7 @@
 .report-earnings-source {
   overflow: hidden;
   color: var(--text-muted-text);
-  font-size: 10.5px;
+  font-size: 11px;
   line-height: 1.5;
   text-overflow: ellipsis;
   white-space: nowrap;
@@ -3551,7 +3866,7 @@
 
 .report-strategy-label {
   color: var(--text-secondary-text);
-  font-size: 10px;
+  font-size: 11px;
   letter-spacing: 0.14em;
   text-transform: uppercase;
 }
@@ -3708,6 +4023,41 @@
 .report-collapse[aria-expanded="true"] .report-collapse-chevron,
 details[open] > .report-collapse .report-collapse-chevron {
   transform: rotate(180deg);
+}
+
+.report-collapse-mobile-summary {
+  display: none;
+}
+
+@media (max-width: 47.999rem) {
+  /* Collapsed rows are a single compact line: title plus a plain-language
+     status summary. Badges, eyebrow and provenance move into the body. */
+  .report-collapse {
+    padding: 8px 14px;
+    gap: 0;
+  }
+
+  .report-collapse-titles .report-collapse-eyebrow,
+  .report-collapse-titles .report-collapse-subtitle,
+  .report-collapse-meta {
+    display: none;
+  }
+
+  .report-collapse-mobile-summary {
+    display: block;
+    overflow: hidden;
+    margin-top: 1px;
+    color: var(--text-muted-text);
+    font-size: 11px;
+    line-height: 1.5;
+    text-overflow: ellipsis;
+    white-space: nowrap;
+  }
+
+  /* Expanded body already lists the counts; avoid showing them twice. */
+  details[open] > .report-collapse .report-collapse-mobile-summary {
+    display: none;
+  }
 }
 
 .report-news-index {

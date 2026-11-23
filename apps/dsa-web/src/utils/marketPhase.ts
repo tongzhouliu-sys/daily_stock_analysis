@@ -92,7 +92,8 @@ export const getRequestedPhaseLabel = (
   return `${TEXT[reportLanguage].requestPrefix}: ${label}`;
 };
 
-export const getMarketPhaseSummaryLabel = (
+/** `CN · 盘中` — the value without the `市场阶段:` prefix, for narrow layouts. */
+export const getMarketPhaseValueLabel = (
   summary?: MarketPhaseSummary | null,
   language?: ReportLanguage | null,
 ): string | null => {
@@ -107,7 +108,19 @@ export const getMarketPhaseSummaryLabel = (
   }
 
   const market = (summary.market || '').trim().toUpperCase();
-  const value = market ? `${market} · ${phaseLabel}` : phaseLabel;
+  return market ? `${market} · ${phaseLabel}` : phaseLabel;
+};
+
+export const getMarketPhaseSummaryLabel = (
+  summary?: MarketPhaseSummary | null,
+  language?: ReportLanguage | null,
+): string | null => {
+  const value = getMarketPhaseValueLabel(summary, language);
+  if (!value) {
+    return null;
+  }
+
+  const reportLanguage = normalizeReportLanguage(language);
   return `${TEXT[reportLanguage].finalPrefix}: ${value}`;
 };
 

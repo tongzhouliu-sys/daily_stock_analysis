@@ -110,7 +110,7 @@ export const ReportNews: React.FC<ReportNewsProps> = ({ recordId, limit = 8, lan
             <button
               type="button"
               onClick={() => void fetchNews()}
-              className="home-accent-link text-xs"
+              className="home-accent-link report-news-refresh text-xs"
               aria-label={text.refresh}
             >
               {text.refresh}

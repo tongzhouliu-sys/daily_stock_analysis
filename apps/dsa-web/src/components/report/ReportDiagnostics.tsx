@@ -309,9 +309,12 @@ export const ReportDiagnostics: React.FC<ReportDiagnosticsProps> = ({
               <Activity className="h-4 w-4" aria-hidden="true" />
             </span>
             <span className="report-collapse-titles">
-              <span className="label-uppercase">{text.eyebrow}</span>
+              <span className="report-collapse-eyebrow label-uppercase">{text.eyebrow}</span>
               <span className="report-collapse-title">
                 {text.title}
+              </span>
+              <span className="report-collapse-mobile-summary">
+                {`${text.eyebrow} · ${statusLabel}`}
               </span>
             </span>
           </div>
@@ -363,7 +366,8 @@ export const ReportDiagnostics: React.FC<ReportDiagnosticsProps> = ({
               {recordId !== undefined && onOpenRunFlow ? (
                 <Button
                   variant="ghost"
-                  size="xsm"
+                  size="sm"
+                  className="report-diagnostics-action"
                   onClick={() => onOpenRunFlow(recordId)}
                   aria-label={formatUiText(runFlowText['runFlow.openHistoryAria'], { recordId })}
                 >
@@ -373,11 +377,11 @@ export const ReportDiagnostics: React.FC<ReportDiagnosticsProps> = ({
               ) : null}
               <Button
                 variant="ghost"
-                size="xsm"
+                size="sm"
                 disabled={!hasCopyText}
                 onClick={() => void copyDiagnostics()}
                 aria-label={copied ? text.copied : text.copy}
-                className="shrink-0"
+                className="report-diagnostics-action shrink-0"
               >
                 {copied ? <Check className="h-3.5 w-3.5" /> : <Copy className="h-3.5 w-3.5" />}
                 {copied ? text.copied : text.copy}

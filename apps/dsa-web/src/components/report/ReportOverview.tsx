@@ -10,7 +10,7 @@ import {
 } from '../../types/analysis';
 import { Badge, Card, ScoreGauge, Tooltip } from '../common';
 import { formatDateTime } from '../../utils/format';
-import { getMarketPhaseSummaryLabel, getPartialBarLabel } from '../../utils/marketPhase';
+import { getMarketPhaseSummaryLabel, getMarketPhaseValueLabel, getPartialBarLabel } from '../../utils/marketPhase';
 import { getReportText, normalizeReportLanguage } from '../../utils/reportLanguage';
 import { useUiLanguage } from '../../contexts/UiLanguageContext';
 import { ShareReportButton } from './ShareReportButton';
@@ -183,6 +183,7 @@ export const ReportOverview: React.FC<ReportOverviewProps> = ({
   const reportLanguage = normalizeReportLanguage(meta.reportLanguage);
   const text = getReportText(reportLanguage);
   const marketPhaseLabel = getMarketPhaseSummaryLabel(meta.marketPhaseSummary, reportLanguage);
+  const marketPhaseValue = getMarketPhaseValueLabel(meta.marketPhaseSummary, reportLanguage);
   const partialBarLabel = meta.marketPhaseSummary?.isPartialBar === true
     ? getPartialBarLabel(reportLanguage)
     : null;
@@ -261,21 +262,24 @@ export const ReportOverview: React.FC<ReportOverviewProps> = ({
           <div className="report-hero-meta">
             <span className="report-code-chip font-mono">{meta.stockCode}</span>
             {marketPhaseLabel ? (
-              <Badge variant="info" className="shrink-0 gap-1.5 shadow-none" aria-label={marketPhaseLabel}>
-                {marketPhaseLabel}
-              </Badge>
+              <>
+                <Badge variant="info" className="report-phase-full shrink-0 gap-1.5 shadow-none">
+                  {marketPhaseLabel}
+                </Badge>
+                <Badge
+                  variant="info"
+                  className="report-phase-compact shrink-0 gap-1.5 shadow-none"
+                  aria-label={marketPhaseLabel}
+                >
+                  {marketPhaseValue}
+                </Badge>
+              </>
             ) : null}
             {partialBarLabel ? (
               <Badge variant="warning" className="shrink-0 shadow-none" aria-label={partialBarLabel}>
                 {partialBarLabel}
               </Badge>
             ) : null}
-            <span className="report-meta-date">
-              <svg className="h-3.5 w-3.5" fill="none" stroke="currentColor" viewBox="0 0 24 24" aria-hidden="true">
-                <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M8 7V3m8 4V3m-9 8h10M5 21h14a2 2 0 002-2V7a2 2 0 00-2-2H5a2 2 0 00-2 2v12a2 2 0 002 2z" />
-              </svg>
-              {formatDateTime(meta.createdAt)}
-            </span>
           </div>
           <div className="report-hero-actions">
             {showWatchlist && watchlist ? (
@@ -292,7 +296,7 @@ export const ReportOverview: React.FC<ReportOverviewProps> = ({
                     className={inWatchlist ? 'h-5 w-5 fill-current text-primary' : 'h-5 w-5'}
                     aria-hidden="true"
                   />
-                  <span>{t('report.watchlist')}</span>
+                  <span className="report-hero-watch-label">{t('report.watchlist')}</span>
                 </button>
               </Tooltip>
             ) : null}
@@ -374,6 +378,12 @@ export const ReportOverview: React.FC<ReportOverviewProps> = ({
           <h4 className="report-kicker">
             <span className="report-kicker-index font-mono">01</span>
             <span>{text.keyInsights}</span>
+            <span className="report-kicker-date">
+              <svg className="h-3.5 w-3.5" fill="none" stroke="currentColor" viewBox="0 0 24 24" aria-hidden="true">
+                <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M8 7V3m8 4V3m-9 8h10M5 21h14a2 2 0 002-2V7a2 2 0 00-2-2H5a2 2 0 00-2 2v12a2 2 0 002 2z" />
+              </svg>
+              {formatDateTime(meta.createdAt)}
+            </span>
           </h4>
           <p className="report-lead">
             {summary.analysisSummary || text.noAnalysisSummary}

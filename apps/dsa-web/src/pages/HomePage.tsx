@@ -1,6 +1,6 @@
 import type React from 'react';
 import { useCallback, useEffect, useMemo, useRef, useState } from 'react';
-import { ArrowUpRight, BarChart3, Check, FileText, PanelRight, SlidersHorizontal, X } from 'lucide-react';
+import { ArrowUp, ArrowUpRight, BarChart3, Check, FileText, MoreHorizontal, PanelRight, SlidersHorizontal, X } from 'lucide-react';
 import { useLocation, useNavigate, useSearchParams } from 'react-router-dom';
 import { getParsedApiError, type ParsedApiError } from '../api/error';
 import { analysisApi, DuplicateTaskError } from '../api/analysis';
@@ -317,6 +317,9 @@ const HomePage: React.FC = () => {
   const [runFlowDrawer, setRunFlowDrawer] = useState<RunFlowDrawerState>({ open: false });
   const [duplicateBannerVisible, setDuplicateBannerVisible] = useState(false);
   const [sidebarWorkspaceTab, setSidebarWorkspaceTab] = useState<HomeWorkspaceTab>('history');
+  const [mobileComposerOpen, setMobileComposerOpen] = useState(false);
+  const [mobileActionsOpen, setMobileActionsOpen] = useState(false);
+  const [showBackToTop, setShowBackToTop] = useState(false);
   const [isTaskPanelCollapsed, setIsTaskPanelCollapsed] = useState<boolean>(() => (
     readTaskPanelCollapsedPreference() ?? false
   ));
@@ -342,6 +345,7 @@ const HomePage: React.FC = () => {
   const stockBarLoadStartedRef = useRef(false);
   const taskPanelPreferenceSettledRef = useRef(readTaskPanelCollapsedPreference() !== null);
   const dashboardScrollRef = useRef<HTMLDivElement | null>(null);
+  const commandBarRef = useRef<HTMLDivElement | null>(null);
   const strategyMenuRef = useRef<HTMLDivElement | null>(null);
   const strategyButtonRef = useRef<HTMLButtonElement | null>(null);
   const strategyItemRefs = useRef<Array<HTMLButtonElement | null>>([]);
@@ -1645,14 +1649,56 @@ const HomePage: React.FC = () => {
     ],
   );
 
+  const isReportOpen = Boolean(selectedReport) || Boolean(marketReviewReport);
+
+  // A newly opened report collapses the mobile composer so the conclusion is
+  // visible in the first screen; the full form stays one tap away.
+  useEffect(() => {
+    setMobileComposerOpen(false);
+    setMobileActionsOpen(false);
+  }, [selectedReport?.meta.id, marketReviewReport]);
+
+  useEffect(() => {
+    const onScroll = () => setShowBackToTop(window.scrollY > 800);
+    onScroll();
+    window.addEventListener('scroll', onScroll, { passive: true });
+    return () => window.removeEventListener('scroll', onScroll);
+  }, []);
+
   return (
     <div
       data-testid="home-dashboard"
       className="research-home"
     >
       <div className="research-home-content">
-        <div className="research-command-bar">
-          <div className="flex min-w-0 flex-1 flex-col gap-2.5 md:flex-row md:items-center">
+        <div
+          ref={commandBarRef}
+          className={`research-command-bar${isReportOpen ? ' is-report-open' : ''}${isReportOpen && !mobileComposerOpen ? ' is-collapsed' : ''}`}
+        >
+          {isReportOpen ? (
+            <div className="research-command-compact">
+              <span className="research-command-compact-label">
+                {selectedReport ? (
+                  <>
+                    <span className="font-mono">{selectedReport.meta.stockCode}</span>
+                    <span className="truncate">{selectedReport.meta.stockName || selectedReport.meta.stockCode}</span>
+                  </>
+                ) : (
+                  <span className="truncate">{t('home.marketReview')}</span>
+                )}
+              </span>
+              <button
+                type="button"
+                className="home-surface-button research-command-toggle"
+                aria-expanded={mobileComposerOpen}
+                onClick={() => setMobileComposerOpen((open) => !open)}
+              >
+                {mobileComposerOpen ? t('home.collapseComposer') : t('home.newAnalysis')}
+              </button>
+            </div>
+          ) : null}
+          <div className="research-command-body">
+            <div className="flex min-w-0 flex-1 flex-col gap-2.5 md:flex-row md:items-center">
             <div className="flex min-w-0 flex-1 items-center gap-2.5">
               <div className="relative min-w-0 flex-1">
                 <StockAutocomplete
@@ -1758,6 +1804,7 @@ const HomePage: React.FC = () => {
                 <ArrowUpRight className="h-4 w-4" aria-hidden="true" />
               </Button>
             </div>
+          </div>
           </div>
         </div>
 
@@ -1896,12 +1943,16 @@ const HomePage: React.FC = () => {
                 </div>
               ) : !marketReviewReport && selectedReport ? (
                 <div className="space-y-4 pb-4">
-                  <div className="report-toolbar flex flex-wrap items-center justify-end gap-2">
-                    {!isMarketReviewHistoryReport ? (
-                      <>
+                  <div className="report-toolbar">
+                    <div
+                      className="report-toolbar-secondary"
+                      data-open={mobileActionsOpen ? 'true' : 'false'}
+                    >
+                      {!isMarketReviewHistoryReport ? (
                         <Button
                           variant="home-action-ai"
                           size="sm"
+                          className="report-toolbar-button"
                           disabled={isAnalyzing || selectedReport.meta.id === undefined}
                           onClick={handleReanalyze}
                         >
@@ -1910,9 +1961,43 @@ const HomePage: React.FC = () => {
                           </svg>
                           {t('home.reanalyze')}
                         </Button>
+                      ) : (
                         <Button
                           variant="home-action-ai"
                           size="sm"
+                          className="report-toolbar-button"
+                          disabled={isSubmittingMarketReview}
+                          isLoading={isSubmittingMarketReview}
+                          loadingText={t('home.submitMarketReview')}
+                          onClick={() => void handleTriggerMarketReview()}
+                        >
+                          <BarChart3 className="h-4 w-4" />
+                          {t('home.rerunMarketReview')}
+                        </Button>
+                      )}
+                      <Button
+                        variant="home-action-ai"
+                        size="sm"
+                        className="report-toolbar-button"
+                        disabled={selectedReport.meta.id === undefined || isHistoryTrendUnavailable}
+                        onClick={() => {
+                          if (isHistoryTrendOpen) {
+                            closeHistoryTrend();
+                            return;
+                          }
+                          void openHistoryTrend();
+                        }}
+                      >
+                        <BarChart3 className={isHistoryTrendOpen ? 'h-4 w-4 text-primary' : 'h-4 w-4'} />
+                        {t('home.historyTrend')}
+                      </Button>
+                    </div>
+                    <div className="report-toolbar-main">
+                      {!isMarketReviewHistoryReport ? (
+                        <Button
+                          variant="home-action-ai"
+                          size="sm"
+                          className="report-toolbar-button"
                           onClick={handleAskFollowUp}
                         >
                           <svg className="h-4 w-4" fill="none" stroke="currentColor" viewBox="0 0 24 24">
@@ -1920,48 +2005,31 @@ const HomePage: React.FC = () => {
                           </svg>
                           {t('home.askAi')}
                         </Button>
-                      </>
-                    ) : (
+                      ) : null}
                       <Button
                         variant="home-action-ai"
                         size="sm"
-                        disabled={isSubmittingMarketReview}
-                        isLoading={isSubmittingMarketReview}
-                        loadingText={t('home.submitMarketReview')}
-                        onClick={() => void handleTriggerMarketReview()}
+                        className="report-toolbar-button report-toolbar-primary"
+                        disabled={selectedReport.meta.id === undefined}
+                        onClick={openMarkdownDrawer}
+                        aria-label={t('home.fullReport')}
                       >
-                        <BarChart3 className="h-4 w-4" />
-                        {t('home.rerunMarketReview')}
+                        <svg className="h-4 w-4" fill="none" stroke="currentColor" viewBox="0 0 24 24" aria-hidden="true">
+                          <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M9 12h6m-6 4h6m2 5H7a2 2 0 01-2-2V5a2 2 0 012-2h5.586a1 1 0 01.707.293l5.414 5.414a1 1 0 01.293.707V19a2 2 0 01-2 2z" />
+                        </svg>
+                        <span aria-hidden="true" className="report-toolbar-label-full">{t('home.fullReport')}</span>
+                        <span aria-hidden="true" className="report-toolbar-label-short">{t('home.fullReportShort')}</span>
                       </Button>
-                    )}
-                    <Button
-                      variant="home-action-ai"
-                      size="sm"
-                      disabled={selectedReport.meta.id === undefined || isHistoryTrendUnavailable}
-                      className={isHistoryTrendOpen ? 'border-primary/70 bg-primary/15 text-primary shadow-glow-cyan' : undefined}
-                      onClick={() => {
-                        if (isHistoryTrendOpen) {
-                          closeHistoryTrend();
-                          return;
-                        }
-                        void openHistoryTrend();
-                      }}
-                    >
-                      <BarChart3 className="h-4 w-4" />
-                      {t('home.historyTrend')}
-                    </Button>
-                    <Button
-                      variant="home-action-ai"
-                      size="sm"
-                      disabled={selectedReport.meta.id === undefined}
-                      onClick={openMarkdownDrawer}
-                      className="report-toolbar-primary"
-                    >
-                      <svg className="h-4 w-4" fill="none" stroke="currentColor" viewBox="0 0 24 24">
-                        <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M9 12h6m-6 4h6m2 5H7a2 2 0 01-2-2V5a2 2 0 012-2h5.586a1 1 0 01.707.293l5.414 5.414a1 1 0 01.293.707V19a2 2 0 01-2 2z" />
-                      </svg>
-                      {t('home.fullReport')}
-                    </Button>
+                      <button
+                        type="button"
+                        className="report-toolbar-more"
+                        aria-label={t('home.moreActions')}
+                        aria-expanded={mobileActionsOpen}
+                        onClick={() => setMobileActionsOpen((open) => !open)}
+                      >
+                        <MoreHorizontal className="h-5 w-5" aria-hidden="true" />
+                      </button>
+                    </div>
                   </div>
                   {askAiWaitHint && !isMarketReviewHistoryReport ? (
                     <div
@@ -2009,6 +2077,18 @@ const HomePage: React.FC = () => {
                   <span className="research-empty-icon"><FileText size={25} strokeWidth={1.4} aria-hidden="true" /></span>
                   <h3>{t('home.startAnalysisTitle')}</h3>
                   <p>{t('home.startAnalysisDescription')}</p>
+                  <Button
+                    variant="secondary"
+                    size="md"
+                    className="research-empty-cta"
+                    onClick={() => {
+                      window.scrollTo({ top: 0, behavior: 'smooth' });
+                      commandBarRef.current?.querySelector('input')?.focus();
+                    }}
+                  >
+                    {t('home.startAnalysisCta')}
+                    <ArrowUpRight className="h-4 w-4" aria-hidden="true" />
+                  </Button>
                 </div>
               ) : null}
             </div>
@@ -2063,6 +2143,17 @@ const HomePage: React.FC = () => {
             title={runFlowDrawer.title}
           />
         </Drawer>
+      ) : null}
+
+      {isReportOpen && showBackToTop ? (
+        <button
+          type="button"
+          className="report-back-to-top"
+          aria-label={t('home.backToTop')}
+          onClick={() => window.scrollTo({ top: 0, behavior: 'smooth' })}
+        >
+          <ArrowUp className="h-5 w-5" aria-hidden="true" />
+        </button>
       ) : null}
 
     </div>

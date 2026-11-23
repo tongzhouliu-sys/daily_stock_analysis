@@ -341,9 +341,12 @@ export const AnalysisContextSummary: React.FC<AnalysisContextSummaryProps> = ({
               <Database className="h-4 w-4" aria-hidden="true" />
             </span>
             <span className="report-collapse-titles">
-              <span className="label-uppercase">{text.eyebrow}</span>
+              <span className="report-collapse-eyebrow label-uppercase">{text.eyebrow}</span>
               <span className="report-collapse-title">
                 {text.title}
+              </span>
+              <span className="report-collapse-mobile-summary">
+                {summaryCounts.map(({ status, value }) => `${text.status[status]} ${value}`).join(' · ')}
               </span>
               <span className="report-collapse-subtitle">
                 {text.evidenceScope}
@@ -352,7 +355,7 @@ export const AnalysisContextSummary: React.FC<AnalysisContextSummaryProps> = ({
           </div>
           <span className="report-collapse-meta">
             {typeof quality?.overallScore === 'number' ? (
-              <Badge variant={qualityStyle?.variant || 'default'} className="gap-1.5 shadow-none">
+              <Badge variant={qualityStyle?.variant || 'default'} className="report-collapse-quality gap-1.5 shadow-none">
                 {qualityStyle ? <StatusDot tone={qualityStyle.tone} className="h-1.5 w-1.5" /> : null}
                 {text.qualityScore} {quality.overallScore}/100{qualityLabel ? ` ${qualityLabel}` : ''}
               </Badge>
@@ -367,11 +370,11 @@ export const AnalysisContextSummary: React.FC<AnalysisContextSummaryProps> = ({
               );
             })}
             {triggerSource ? (
-              <span className="home-accent-chip px-2 py-0.5 text-xs text-muted-text">
+              <span className="report-collapse-extra home-accent-chip px-2 py-0.5 text-xs text-muted-text">
                 {text.triggerSource}: {triggerSource}
               </span>
             ) : null}
-            <span className="home-accent-chip px-2 py-0.5 text-xs text-muted-text">
+            <span className="report-collapse-extra home-accent-chip px-2 py-0.5 text-xs text-muted-text">
               {text.inputScope}
             </span>
           </span>
@@ -379,27 +382,9 @@ export const AnalysisContextSummary: React.FC<AnalysisContextSummaryProps> = ({
         </summary>
 
         <div className="home-divider border-t px-4 pb-4 pt-3">
-          {metadataItems.length > 0 || typeof quality?.overallScore === 'number' ? (
-            <div className="report-context-meta">
-              {typeof quality?.overallScore === 'number' ? (
-                <span className="home-accent-chip px-2 py-0.5">
-                  {text.qualityScore}: {quality.overallScore}/100{qualityLabel ? ` ${qualityLabel}` : ''}
-                </span>
-              ) : null}
-              {metadataItems.map((item) => (
-                <span key={item} className="home-accent-chip px-2 py-0.5">
-                  {item}
-                </span>
-              ))}
-              <span className="home-accent-chip px-2 py-0.5">
-                {text.inputScope}
-              </span>
-            </div>
-          ) : null}
-
-          {visibleCounts.length > 0 ? (
+          {visibleCounts.length > 0 || metadataItems.length > 0 ? (
             <div className="mb-3 flex flex-wrap items-center gap-2">
-              <span className="label-uppercase">{text.counts}</span>
+              {visibleCounts.length > 0 ? <span className="label-uppercase">{text.counts}</span> : null}
               {visibleCounts.map(({ status, value }) => {
                 const style = STATUS_STYLE[status];
                 return (
@@ -409,6 +394,11 @@ export const AnalysisContextSummary: React.FC<AnalysisContextSummaryProps> = ({
                   </Badge>
                 );
               })}
+              {metadataItems.map((item) => (
+                <span key={item} className="home-accent-chip px-2 py-0.5 text-xs text-muted-text">
+                  {item}
+                </span>
+              ))}
             </div>
           ) : null}
 
