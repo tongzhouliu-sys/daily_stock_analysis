@@ -9,6 +9,9 @@ and this project adheres to [Semantic Versioning](https://semver.org/).
 
 ## [Unreleased]
 - [修复] HTML 报告中文化语言检测误判：中文正文包含 URL、英文公司专名（Apple/NVIDIA）或指标缩写（RSI MACD）时不再被误判为英文，避免正常中文报告被要求生成中文变体；同时保留英文短句、英文标题/表格与混排句子的检测。
+- [改进] 飞书卡片「分析结果摘要」视觉打磨：动作列改用彩色 `options` 标签（买绿 / 卖红 / 观望持有橙）、评分列用 `lark_md` 分级色 + `/100` 居中、标的去掉行首信号 emoji；单只股票的摘要也渲染成单行表格，与多股形态一致。
+- [改进] 飞书卡片个股数值改「按分类拆小版块」：行情、技术、点位、盘中不再用「分类 / 指标 / 数值」三列表，改为每类一个灰色分类标题 + 行内「指标 数值」双列（数字不换行），同名指标只保留首次；宽行情快照同样按版块呈现，不再单独占一张表。
+- [改进] 飞书卡片「决策仪表盘开头」视觉打磨：买卖计数提升为标题栏三枚彩色后缀标签（副标题只留「共分析 N 只股票」）；结构化信号区改为灰色小字标签 + 强调值同行展示（数字不换行），动作色板补齐「观望 / 持有」→ 橙色。详见 [任务书](tasks/feishu-summary-dashboard-polish.md)。
 - [新功能] 预测市场全景：新增 `build_overview()` 聚合活跃合约数、类别/来源分布、Top 事件、关注集中度与启发式 risk-on/risk-off 倾向；新增只读工具 `get_prediction_market_overview`、`GET /api/v1/prediction-markets/overview`，并把概览注入个股分析与大盘复盘 Prompt；详见 [任务书](tasks/prediction-market-overview.md)。
 - [新功能] 报告详情新增「预测市场全景」摘要卡：展示活跃合约数、类别分布、关注集中度、Top 事件与风险定价倾向；卡片读取 `/prediction-markets/overview?refresh=false`，未启用或池为空时不渲染。
 - [修复] Agent 模式分析结束后用本次搜索工具返回的真实新闻回填 context pack 新闻块，重算质量分 `news` 维度与 `metadata.news_result_count`，并按真实结果修正「新闻数据块缺失」的置信度误报；本次消费的新闻摘要写入 `analysis_history.news_content`，真零命中时才提示新闻缺失或不足。经典路径不变。

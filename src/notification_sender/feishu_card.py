@@ -9,7 +9,7 @@ Webhook 与 App Bot 两条发送链路共用 :func:`build_feishu_card`。输入�
 - ``##`` 板块 -> 彩色 ``<text_tag>`` 标签，板块之间只保留一条 ``hr``
 - ``###`` 小节 -> 加粗小标题，靠组件间距分节，不再逐节画横线
 - 多标摘要 -> 原生 ``table``（标的 / 动作 / 评分 / 趋势）
-- 个股数值 -> 原生 ``table``（分类 / 指标 / 数值），按章节归类后集中展示
+- 个股数值 -> 按分类拆成小版块（灰色分类标题 + 行内「指标 数值」双列）
 - 其余 ``• 键：值`` 紧凑表格行 -> ``fields`` 双列/全宽自适应布局
 - 脚注元信息 -> ``note`` 页脚，自动去重并补齐免责声明
 
@@ -188,15 +188,53 @@ def _template_for(title: str, content: str = "") -> str:
     return "blue"
 
 
+_COUNT_TOKEN_RE = re.compile(r"([🟢🟡🔴])\s*([^\s:：]*)\s*[:：]\s*(\d+)")
+_COUNT_TAG_COLORS = {"🟢": "green", "🟡": "yellow", "🔴": "red"}
+
+
+def _split_count_tags(summary: str) -> Tuple[str, List[Dict[str, Any]]]:
+    """把「🟢买入:0 🟡观望:1 🔴卖出:0」拆成标题栏彩色后缀标签。
+
+    只有整段都是计数时提升为标签，避免误伤「买入 0 只，观望 1 只」这类句子。
+    """
+    if not summary:
+        return "", []
+    parts = [part.strip() for part in re.split(r"[|｜]", summary) if part.strip()]
+    kept: List[str] = []
+    tags: List[Dict[str, Any]] = []
+    for part in parts:
+        tokens = list(_COUNT_TOKEN_RE.finditer(part))
+        if not tokens or _COUNT_TOKEN_RE.sub("", part).strip():
+            kept.append(part)
+            continue
+        for token in tokens:
+            emoji, label, count = token.groups()
+            tags.append(
+                {
+                    "tag": "text_tag",
+                    "text": {
+                        "tag": "plain_text",
+                        "content": f"{emoji} {label} {count}".strip(),
+                    },
+                    "color": _COUNT_TAG_COLORS[emoji],
+                }
+            )
+    return " · ".join(kept), tags[:3]
+
+
 def _header(title: str, subtitle: str, content: str) -> Dict[str, Any]:
-    return {
+    summary_text, tags = _split_count_tags(subtitle)
+    header: Dict[str, Any] = {
         "template": _template_for(title, content),
         "title": {"tag": "plain_text", "content": _clamp(title or CARD_TITLE, _MAX_TITLE_CHARS)},
         "subtitle": {
             "tag": "plain_text",
-            "content": _clamp(subtitle or CARD_SUBTITLE, _MAX_SUBTITLE_CHARS),
+            "content": _clamp(summary_text or subtitle or CARD_SUBTITLE, _MAX_SUBTITLE_CHARS),
         },
     }
+    if tags:
+        header["text_tag_list"] = tags
+    return header
 
 
 def _color_for_title(title: str) -> str:
@@ -463,6 +501,7 @@ def _fields_element(
     force_full: bool = False,
     short_limit: int = 28,
     short_key_limit: int = 12,
+    inline: bool = False,
 ) -> Dict[str, Any]:
     grid = plan_field_grid(
         cells,
@@ -473,7 +512,15 @@ def _fields_element(
     fields = [
         {
             "is_short": not item["full"],
-            "text": {"tag": "lark_md", "content": f"**{item['key']}**\n{item['value']}"},
+            "text": {
+                "tag": "lark_md",
+                # inline 用于数值型字段：标签与数值同行，数字不换行。
+                "content": (
+                    f"**{item['key']}** {item['value']}"
+                    if inline
+                    else f"**{item['key']}**\n{item['value']}"
+                ),
+            },
         }
         for item in grid
     ]
@@ -565,7 +612,11 @@ def _metric_category(title: str) -> str:
 
 
 def _summary_table(summary_rows: List[Tuple[str, str]]) -> Dict[str, Any]:
-    """多标的摘要表：标的 / 动作 / 评分 / 趋势。"""
+    """多标的摘要表：标的 / 动作 / 评分 / 趋势。
+
+    动作用彩色选项标签、评分用分级色 + ``/100`` 居中，把「结论」做成
+    一眼可辨的视觉锚点；标的去掉行首信号 emoji，避免与动作颜色重复。
+    """
     rows: List[Dict[str, Any]] = []
     for label, meta in summary_rows:
         parts = [part.strip() for part in meta.split("|") if part.strip()]
@@ -578,23 +629,41 @@ def _summary_table(summary_rows: List[Tuple[str, str]]) -> Dict[str, Any]:
                 score = score_match.group(1)
             elif part:
                 trend = part
+
+        name = _METRIC_EMOJI_RE.sub("", _clean_inline(label)).strip()
+        action_text = _clean_inline(action)
+        score_cell = ""
+        if score:
+            score_cell = (
+                f"<font color='{_signal_score_color(score)}'>"
+                f"**{_signal_number_text(score)}**</font>/100"
+            )
         rows.append(
             {
-                # table 的 text 列不解析 lark_md，必须先去行内标记。
-                "name": _clean_inline(label),
-                "action": _clean_inline(action),
-                "score": score,
+                "name": name,
+                "action": (
+                    [{"text": action_text, "color": _signal_action_color(action_text)}]
+                    if action_text
+                    else ""
+                ),
+                "score": score_cell,
                 "trend": _clean_inline(trend),
             }
         )
     columns = [
-        {"name": "name", "display_name": "标的", "data_type": "text", "width": "46%"},
-        {"name": "action", "display_name": "动作", "data_type": "text", "width": "18%"},
+        {"name": "name", "display_name": "标的", "data_type": "text", "width": "40%"},
+        {
+            "name": "action",
+            "display_name": "动作",
+            "data_type": "options",
+            "width": "20%",
+            "horizontal_align": "center",
+        },
         {
             "name": "score",
             "display_name": "评分",
-            "data_type": "text",
-            "width": "14%",
+            "data_type": "lark_md",
+            "width": "18%",
             "horizontal_align": "center",
         },
         {"name": "trend", "display_name": "趋势", "data_type": "text", "width": "22%"},
@@ -602,47 +671,23 @@ def _summary_table(summary_rows: List[Tuple[str, str]]) -> Dict[str, Any]:
     return _table_element(columns, rows)
 
 
-def _metric_table(rows: List[Tuple[str, str, str]]) -> Dict[str, Any]:
-    """个股关键数据表：分类 / 指标 / 数值，按章节归类后集中展示。"""
-    columns = [
-        {
-            "name": "category",
-            "display_name": "分类",
-            "data_type": "text",
-            "width": "16%",
-            "vertical_align": "top",
-        },
-        {
-            "name": "metric",
-            "display_name": "指标",
-            "data_type": "text",
-            "width": "30%",
-            "vertical_align": "top",
-        },
-        {
-            "name": "value",
-            "display_name": "数值",
-            "data_type": "text",
-            "width": "54%",
-            "horizontal_align": "right",
-            "vertical_align": "top",
-        },
-    ]
-    table_rows: List[Dict[str, Any]] = []
-    last_category = ""
+def _metric_block_elements(rows: List[Tuple[str, str, str]]) -> List[Dict[str, Any]]:
+    """个股关键数据按分类拆成小版块：灰色分类标题 + 行内「指标 数值」双列。
+
+    比「分类 / 指标 / 数值」三列表更贴合阅读习惯：每类数据自成一个小块，
+    指标与数值同行，数字不换行。
+    """
+    grouped: Dict[str, List[Tuple[str, str]]] = {}
     for category, key, value in rows:
-        # 同组只显示一次分类，后续行留空，表格更干净也省宽度。
-        label = category if category != last_category else ""
-        last_category = category
-        table_rows.append(
-            {
-                "category": label,
-                "metric": key,
-                # table 的 text 列不解析 lark_md，必须先去行内标记。
-                "value": _clean_inline(value),
-            }
-        )
-    return _table_element(columns, table_rows, freeze_first_column=True)
+        grouped.setdefault(category, []).append((key, value))
+
+    elements: List[Dict[str, Any]] = []
+    for category, cells in grouped.items():
+        if not cells:
+            continue
+        elements.append(_div(f"<font color='grey'>**{category}**</font>"))
+        elements.append(_fields_element(cells, inline=True))
+    return elements
 
 
 def _collect_metric_rows(
@@ -740,7 +785,7 @@ def _build_group_elements(
             else:
                 other_lines.append(line)
 
-        if len(summary_rows) >= 2 and table_budget > 0:
+        if len(summary_rows) >= 1 and table_budget > 0:
             if head.title:
                 elements.append(_div(_section_heading(head)))
             elements.append(_summary_table(summary_rows))
@@ -769,7 +814,7 @@ def _build_group_elements(
     # 个股组：head 是股票标题，数值行来自其后的行情/技术/点位小节；
     # 单节文档（如仅一段行情快照）则 head 自身就带数值行。
     rows, plans = _collect_metric_rows([head] + rest)
-    if len(rows) >= 2 and table_budget > 0:
+    if len(rows) >= 2:
         head_section, head_remaining = plans[0]
         blocks, used = _render_blocks(
             _Section(
@@ -782,8 +827,7 @@ def _build_group_elements(
         )
         elements.extend(blocks)
         used_fields += used
-        elements.append(_metric_table(rows))
-        used_tables = 1
+        elements.extend(_metric_block_elements(rows))
         for section, remaining in plans[1:]:
             if not any(line.strip() for line in remaining):
                 continue
@@ -967,11 +1011,17 @@ def _signal_sniper_text(value: Any) -> str:
 
 
 def _signal_action_color(action: str) -> str:
+    """动作 -> 标签色：买绿 / 卖红 / 观望持有橙 / 未知灰。
+
+    信号区徽章与摘要表动作列共用同一色板，保证两处结论颜色一致。
+    """
     normalized = (action or "").lower()
-    if any(term in normalized for term in ("买", "加仓", "buy", "add")):
+    if any(term in normalized for term in ("买", "加仓", "buy", "add", "long")):
         return "green"
-    if any(term in normalized for term in ("卖", "减仓", "回避", "sell", "reduce", "avoid")):
+    if any(term in normalized for term in ("卖", "减仓", "回避", "sell", "reduce", "avoid", "short")):
         return "red"
+    if any(term in normalized for term in ("观望", "持有", "中性", "watch", "hold", "neutral")):
+        return "orange"
     return "grey"
 
 
@@ -988,17 +1038,23 @@ def _signal_score_color(score: Any) -> str:
 
 
 def _columns_element(cells: List[Tuple[str, str]]) -> Dict[str, Any]:
-    """把若干「标签 + 值」渲染成 Card JSON 1.0 的 column_set 并排卡。"""
+    """把若干「标签 + 值」渲染成 Card JSON 1.0 的 column_set 并排卡。
+
+    标签灰色小字、值由调用方决定强调样式，两者同行展示，数字不换行。
+    """
     columns = [
         {
             "tag": "column",
             "width": "weighted",
             "weight": 1,
-            "vertical_align": "top",
+            "vertical_align": "center",
             "elements": [
                 {
                     "tag": "div",
-                    "text": {"tag": "lark_md", "content": f"**{label}**\n{value}"},
+                    "text": {
+                        "tag": "lark_md",
+                        "content": f"<font color='grey'>{label}</font> {value}",
+                    },
                 }
             ],
         }
@@ -1065,11 +1121,13 @@ def _render_stock_signal_zone(signal: Dict[str, Any]) -> List[Dict[str, Any]]:
             )
         )
     if signal.get("trend"):
-        head.append(("趋势", signal["trend"]))
+        head.append(("趋势", f"**{signal['trend']}**"))
     if head:
         elements.append(_columns_element(head))
     if signal.get("points"):
-        elements.append(_columns_element(list(signal["points"])))
+        elements.append(
+            _columns_element([(label, f"**{value}**") for label, value in signal["points"]])
+        )
     return elements
 
 
@@ -1086,7 +1144,7 @@ def _render_market_signal_zone(signal: Dict[str, Any]) -> List[Dict[str, Any]]:
             )
         )
     if signal.get("temperature"):
-        cells.append(("温度", signal["temperature"]))
+        cells.append(("温度", f"**{signal['temperature']}**"))
     return [_columns_element(cells)] if cells else []
 
 

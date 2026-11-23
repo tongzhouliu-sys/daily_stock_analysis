@@ -117,8 +117,14 @@ def test_report_title_and_summary_move_into_header():
     card = build_feishu_card(_formatted_report(), max_bytes=20000)
 
     assert card["header"]["title"]["content"] == "🎯 2026-11-09 决策仪表盘"
-    assert "共分析 1 只股票" in card["header"]["subtitle"]["content"]
-    assert "🟡观望:1" in card["header"]["subtitle"]["content"]
+    # 计数提升为标题栏彩色后缀标签，副标题只留标的数量。
+    assert card["header"]["subtitle"]["content"] == "共分析 1 只股票"
+    tags = card["header"]["text_tag_list"]
+    assert [tag["text"]["content"] for tag in tags] == [
+        "🟢 买入 0",
+        "🟡 观望 1",
+        "🔴 卖出 0",
+    ]
 
     body = _card_text(card)
     assert "🎯 2026-11-09 决策仪表盘" not in body
@@ -242,7 +248,7 @@ def test_formatter_keeps_heading_hierarchy_and_grey_quotes():
     assert "\n\n\n" not in result
 
 
-def test_wide_market_snapshot_table_becomes_native_table():
+def test_wide_market_snapshot_becomes_per_category_blocks():
     formatted = format_feishu_markdown(
         "## 行情快照\n\n"
         "| 收盘 | 昨收 | 开盘 | 最高 | 最低 | 涨跌幅 | 涨跌额 | 振幅 | 成交量 | 成交额 |\n"
@@ -253,18 +259,17 @@ def test_wide_market_snapshot_table_becomes_native_table():
     card = build_feishu_card(formatted, max_bytes=20000)
     tables = [element for element in card["elements"] if element["tag"] == "table"]
 
-    assert len(tables) == 1
-    table = tables[0]
-    assert [column["display_name"] for column in table["columns"]] == [
-        "分类",
-        "指标",
-        "数值",
-    ]
-    metrics = [row["metric"] for row in table["rows"]]
-    assert "收盘" in metrics
-    assert "成交额" in metrics
-    # 表头字段本身不应被当成指标。
-    assert "指数" not in metrics
+    # 十列快照不再单独占一张表，数值按分类拆成小版块，指标与数值同行。
+    assert tables == []
+    text = _card_text(card)
+    assert "<font color='grey'>**行情**</font>" in text
+    fields = " ".join(
+        item["text"]["content"]
+        for element in card["elements"]
+        for item in element.get("fields", [])
+    )
+    assert "**收盘** 251.30" in fields
+    assert "**成交额** 71.2亿" in fields
 
 
 def test_chunking_can_split_on_formatted_level_two_headings():
@@ -376,13 +381,13 @@ def test_signal_zone_renders_action_score_and_points():
 
     assert card["elements"][0]["tag"] == "column_set"
     zone = _column_text(card)
-    assert "**操作**" in zone
-    assert "<text_tag color='grey'>观望</text_tag>" in zone
-    assert "**评分**" in zone
+    assert "<font color='grey'>操作</font>" in zone
+    assert "<text_tag color='orange'>观望</text_tag>" in zone
+    assert "<font color='grey'>评分</font>" in zone
     assert "<font color='orange'>**58**</font>/100" in zone
-    assert "**🎯 理想买**" in zone and "1450" in zone
-    assert "**🛑 止损**" in zone and "1420" in zone
-    assert "**🎯 目标**" in zone and "1520" in zone
+    assert "<font color='grey'>🎯 理想买</font>" in zone and "**1450**" in zone
+    assert "<font color='grey'>🛑 止损</font>" in zone and "**1420**" in zone
+    assert "<font color='grey'>🎯 目标</font>" in zone and "**1520**" in zone
 
 
 def test_signal_zone_absent_without_render_context():
@@ -422,7 +427,8 @@ def test_signal_score_and_action_color_thresholds():
 
     assert _signal_action_color("买入") == "green"
     assert _signal_action_color("卖出") == "red"
-    assert _signal_action_color("观望") == "grey"
+    assert _signal_action_color("观望") == "orange"
+    assert _signal_action_color("持有") == "orange"
     assert _signal_score_color(72) == "green"
     assert _signal_score_color(58) == "orange"
     assert _signal_score_color(30) == "red"
@@ -567,38 +573,52 @@ def test_multi_stock_summary_becomes_native_table():
     assert summary["page_size"] == 10
     assert summary["row_height"] == "middle"
     assert summary["header_style"]["background_style"] == "grey"
-    assert all(
-        column["data_type"] == "text" for column in summary["columns"]
-    )
+    assert [column["data_type"] for column in summary["columns"]] == [
+        "text",
+        "options",
+        "lark_md",
+        "text",
+    ]
     assert len(summary["rows"]) == 2
     assert summary["rows"][0] == {
-        "name": "🟢 五粮液(000858.SZ)",
-        "action": "买入",
-        "score": "72",
+        "name": "五粮液(000858.SZ)",
+        "action": [{"text": "买入", "color": "green"}],
+        "score": "<font color='green'>**72**</font>/100",
         "trend": "震荡",
     }
+    assert summary["rows"][1]["name"] == "贵州茅台(600519.SH)"
+    assert summary["rows"][1]["action"] == [{"text": "观望", "color": "orange"}]
+    assert summary["rows"][1]["score"] == "<font color='orange'>**58**</font>/100"
 
 
-def test_numeric_sections_merge_into_one_grouped_table_per_stock():
+def test_numeric_sections_become_per_category_blocks():
     card = build_feishu_card(format_feishu_markdown(MULTI_STOCK_REPORT), max_bytes=20000)
     tables = _tables(card)
 
-    # 1 张摘要表 + 2 只股票各 1 张数据表。
-    assert len(tables) == 3
-    stock_table = tables[1]
-    assert [column["display_name"] for column in stock_table["columns"]] == [
-        "分类",
-        "指标",
-        "数值",
+    # 只有摘要表是原生 table，个股数值改按分类拆成小版块。
+    assert len(tables) == 1
+    assert [column["display_name"] for column in tables[0]["columns"]] == [
+        "标的",
+        "动作",
+        "评分",
+        "趋势",
     ]
-    metrics = [row["metric"] for row in stock_table["rows"]]
-    # 当前价在行情与技术两处重复，只保留首次出现。
-    assert metrics.count("当前价") == 1
-    assert "行情来源" in metrics  # 与数字同行的短文本一起进表
-    assert "MA5" in metrics
-    # 同组只在第一行写分类，后续留空。
-    assert stock_table["rows"][0]["category"] == "行情"
-    assert stock_table["rows"][1]["category"] == ""
+
+    text = _card_text(card)
+    assert "<font color='grey'>**行情**</font>" in text
+    assert "<font color='grey'>**技术**</font>" in text
+
+    fields = " ".join(
+        item["text"]["content"]
+        for element in card["elements"]
+        for item in element.get("fields", [])
+    )
+    # 指标与数值同行，数字不换行
+    assert "**当前价** 1453.00" in fields
+    assert "**MA5** 1448.20" in fields
+    # 同名指标只保留首次出现
+    assert fields.count("**当前价**") == 1
+    assert "**行情来源** 腾讯财经" in fields
 
 
 def test_long_text_rows_stay_in_fields_not_tables():
@@ -619,23 +639,26 @@ def test_long_text_rows_stay_in_fields_not_tables():
     assert "**🆕 空仓者**" in fields_text
 
 
-def test_table_cells_are_plain_text_without_lark_markup():
+def test_plain_text_columns_keep_no_lark_markup():
+    """text 列保持纯文本；动作(options)/评分(lark_md)列才携带语义标记。"""
     card = build_feishu_card(format_feishu_markdown(MULTI_STOCK_REPORT), max_bytes=20000)
     for table in _tables(card):
+        type_by_name = {column["name"]: column["data_type"] for column in table["columns"]}
         for row in table["rows"]:
-            for value in row.values():
-                assert "**" not in str(value)
-                assert "<font" not in str(value)
-                assert "<text_tag" not in str(value)
+            for name, value in row.items():
+                if type_by_name.get(name) == "text":
+                    assert "**" not in str(value)
+                    assert "<font" not in str(value)
+                    assert "<text_tag" not in str(value)
 
 
-def test_card_uses_at_most_five_native_tables():
+def test_many_stocks_use_metric_blocks_not_extra_tables():
     stocks = []
     for index in range(6):
         stocks.append(
             f"## 🟢 标的{index} (60000{index}.SH)\n\n"
             "### 📈 当日行情\n\n"
-            "| 收盘 | 涨跌幅 |\n| --- | --- |\n| 10.00 | +1.20% |\n"
+            "| 收盘 | 涨跌幅 | 成交量 |\n| --- | --- | --- |\n| 10.00 | +1.20% | 3.4万手 |\n"
         )
     content = (
         "# 🎯 决策仪表盘\n\n"
@@ -650,10 +673,12 @@ def test_card_uses_at_most_five_native_tables():
     )
     card = build_feishu_card(format_feishu_markdown(content), max_bytes=20000)
 
-    assert 0 < len(_tables(card)) <= 5
+    # 只有一张摘要表；六只股票的数值都拆成小版块，不再各占一张表。
+    assert len(_tables(card)) == 1
+    assert "**行情**" in _card_text(card)
 
 
-def test_single_stock_summary_keeps_fields_instead_of_one_row_table():
+def test_single_stock_summary_renders_one_row_table():
     card = build_feishu_card(_formatted_report(), max_bytes=20000)
     summary_tables = [
         table
@@ -662,4 +687,7 @@ def test_single_stock_summary_keeps_fields_instead_of_one_row_table():
         == ["标的", "动作", "评分", "趋势"]
     ]
 
-    assert summary_tables == []
+    assert len(summary_tables) == 1
+    assert len(summary_tables[0]["rows"]) == 1
+    assert summary_tables[0]["rows"][0]["name"] == "贵州茅台(600519.SH)"
+    assert summary_tables[0]["rows"][0]["action"] == [{"text": "观望", "color": "orange"}]
