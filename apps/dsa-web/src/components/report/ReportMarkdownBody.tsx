@@ -118,6 +118,15 @@ export const ReportMarkdownBody: React.FC<ReportMarkdownBodyProps> = ({
   testId,
 }) => {
   const { body, footer } = splitReportFooter(content);
+  // Single-stock/daily reports already show the generation time next to the
+  // title; repeating it in the footer is noise. Only keep the footer time when
+  // the body itself has no timestamp (e.g. scanner reports).
+  const footerShowsTime = Boolean(footer?.timeValue)
+    && !FOOTER_TIME_LABELS.some((label) => body.includes(label));
+  const footerTime = footer && footerShowsTime
+    ? `${footer.timeLabel ? `${footer.timeLabel}：` : ''}${footer.timeValue}`
+    : '';
+  const footerDisclaimer = footer?.disclaimer || '';
 
   return (
     <div data-testid={testId}>
@@ -135,21 +144,14 @@ export const ReportMarkdownBody: React.FC<ReportMarkdownBodyProps> = ({
           {body}
         </Markdown>
       </div>
-      {footer ? (
+      {footerTime || footerDisclaimer ? (
         <div
           data-testid="report-markdown-footer"
-          className="mt-4 overflow-x-auto border-t border-border/60 pt-2 text-[11px] leading-4 text-secondary-text"
+          className="mt-4 border-t border-border/60 pt-2 text-[11px] leading-4 text-secondary-text"
         >
-          <span className="whitespace-nowrap">
-            {footer.timeValue ? (
-              <span>
-                {footer.timeLabel ? `${footer.timeLabel}：` : ''}
-                {footer.timeValue}
-              </span>
-            ) : null}
-            {footer.timeValue && footer.disclaimer ? <span className="mx-1.5">·</span> : null}
-            {footer.disclaimer ? <span>{footer.disclaimer}</span> : null}
-          </span>
+          {footerTime ? <span>{footerTime}</span> : null}
+          {footerTime && footerDisclaimer ? <span className="mx-1.5">·</span> : null}
+          {footerDisclaimer ? <span>{footerDisclaimer}</span> : null}
         </div>
       ) : null}
     </div>
