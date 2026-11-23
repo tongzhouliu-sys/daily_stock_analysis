@@ -375,6 +375,39 @@ export interface PredictionMarketEvent {
   marketUrl?: string | null;
 }
 
+export interface PredictionMarketOverviewTopEvent {
+  source: string;
+  marketId?: string | null;
+  question: string;
+  impliedProbability?: number | null;
+  volume24h?: number | null;
+  category?: string | null;
+  marketUrl?: string | null;
+}
+
+export interface PredictionMarketAttitudeBucket {
+  count: number;
+  avgProbability?: number | null;
+}
+
+export interface PredictionMarketOverviewAttitude {
+  label: string;
+  tilt?: number | null;
+  riskOn: PredictionMarketAttitudeBucket;
+  riskOff: PredictionMarketAttitudeBucket;
+}
+
+export interface PredictionMarketOverview {
+  enabled: boolean;
+  totalContracts: number;
+  byCategory: Record<string, number>;
+  bySource: Record<string, number>;
+  topEvents: PredictionMarketOverviewTopEvent[];
+  attentionConcentration: number;
+  attitude: PredictionMarketOverviewAttitude;
+  generatedAt?: string | null;
+}
+
 /** Earnings calendar (next disclosure date) */
 export interface EarningsCalendarEvent {
   reportPeriod?: string | null;

@@ -243,7 +243,9 @@ class PredictionMarketService:
         return self._format_context(collected, subject=None)
 
     # ------------------------------------------------------------- overview
-    def build_overview(self, *, market: Optional[str] = None, limit: int = 200) -> Dict[str, Any]:
+    def build_overview(
+        self, *, market: Optional[str] = None, limit: int = 200, refresh: bool = True
+    ) -> Dict[str, Any]:
         """Aggregate the local pool into a market-wide overview."""
         empty_attitude = {
             "label": "样本不足",
@@ -263,7 +265,8 @@ class PredictionMarketService:
         }
         if not self.is_enabled():
             return base
-        self.refresh_auto()
+        if refresh:
+            self.refresh_auto()
         items = self.query_events(status="open", market=market, limit=limit, filter_noise=True)
         base["total_contracts"] = len(items)
         if not items:

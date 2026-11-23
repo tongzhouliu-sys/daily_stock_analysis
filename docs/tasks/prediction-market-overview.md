@@ -116,3 +116,9 @@
 | 注入 | `pytest tests/test_agent_pipeline.py tests/test_market_analyzer_generate_text.py` |
 | API | `pytest tests/test_api_schema_pydantic.py`；接口冒烟 |
 | 静态 | `py_compile`、`./scripts/ci_gate.sh flake8`、`gen_ai_codemap.py --check` |
+| Web 概览卡 | `npm run lint && npm run build && npx vitest run` |
+
+## 8. 落地说明
+
+- Web 报告新增 `PredictionMarketOverviewPanel` 摘要卡，读取 `GET /api/v1/prediction-markets/overview`；接口使用 `refresh=false`，查看历史报告时不会触发外部刷新。
+- 卡片展示：活跃合约数 + 类别分布、关注集中度、Top 3 事件、risk-on/risk-off 倾向与免责声明；未启用或池为空时整卡不渲染。

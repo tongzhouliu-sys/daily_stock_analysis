@@ -93,7 +93,7 @@ def get_overview(
 ) -> PredictionMarketOverviewResponse:
     try:
         return PredictionMarketOverviewResponse(
-            **PredictionMarketService().build_overview(market=market, limit=limit)
+            **PredictionMarketService().build_overview(market=market, limit=limit, refresh=False)
         )
     except Exception as exc:
         raise _internal_error("Get prediction market overview failed", exc)

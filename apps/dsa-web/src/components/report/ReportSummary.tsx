@@ -3,6 +3,7 @@ import type { AnalysisResult, AnalysisReport } from '../../types/analysis';
 import { ReportOverview } from './ReportOverview';
 import { ReportNews } from './ReportNews';
 import { PredictionMarketsPanel } from './PredictionMarketsPanel';
+import { PredictionMarketOverviewPanel } from './PredictionMarketOverviewPanel';
 import { ReportDetails } from './ReportDetails';
 import { ReportDiagnostics } from './ReportDiagnostics';
 import { AnalysisContextSummary } from './AnalysisContextSummary';
@@ -76,6 +77,9 @@ export const ReportSummary: React.FC<ReportSummaryProps> = ({
       <ReportNews recordId={recordId} limit={8} language={reportLanguage} />
 
       {/* 预测市场结构化证据（LLM 自由文本的权威兜底）*/}
+      {/* 预测市场全景（当前池快照） */}
+      <PredictionMarketOverviewPanel language={reportLanguage} />
+
       <PredictionMarketsPanel events={details?.predictionMarkets} language={reportLanguage} />
 
       {/* 输入数据块低敏摘要 */}
