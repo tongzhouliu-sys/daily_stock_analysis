@@ -14,7 +14,7 @@ interface ReportHtmlDrawerProps {
 type LoadState =
   | { status: 'loading'; recordId: number }
   | { status: 'ready'; recordId: number; html: string }
-  | { status: 'missing'; recordId: number }
+  | { status: 'missing'; recordId: number; message?: string }
   | { status: 'generating'; recordId: number }
   | { status: 'error'; recordId: number; message: string };
 
@@ -46,20 +46,35 @@ export const ReportHtmlDrawer: React.FC<ReportHtmlDrawerProps> = ({
           setState({ status: 'ready', recordId, html });
         }
       })
-      .catch((error: unknown) => {
+      .catch(async (error: unknown) => {
         if (!active || loadTokenRef.current !== token) return;
         const parsed = getParsedApiError(error);
-        if (parsed.code === 'zh_variant_missing') {
-          setState({ status: 'missing', recordId });
+        if (parsed.code !== 'zh_variant_missing') {
+          setState({ status: 'error', recordId, message: parsed.message });
           return;
         }
-        setState({ status: 'error', recordId, message: parsed.message });
+        // 缺中文变体时直接生成，不再让用户先点一次「生成中文版本」。
+        setState({ status: 'generating', recordId });
+        try {
+          await historyApi.ensureReportZhVariant(recordId);
+          const html = await historyApi.getReportHtml(recordId);
+          if (active && loadTokenRef.current === token) {
+            setState({ status: 'ready', recordId, html });
+          }
+        } catch (generateError: unknown) {
+          if (!active || loadTokenRef.current !== token) return;
+          setState({
+            status: 'missing',
+            recordId,
+            message: `${text.zhVariantFailed}: ${getParsedApiError(generateError).message}`,
+          });
+        }
       });
     return () => {
       active = false;
       loadTokenRef.current += 1;
     };
-  }, [recordId]);
+  }, [recordId, text.zhVariantFailed]);
 
   const handleGenerateChinese = useCallback(async () => {
     const token = loadTokenRef.current + 1;
@@ -74,7 +89,7 @@ export const ReportHtmlDrawer: React.FC<ReportHtmlDrawerProps> = ({
     } catch (error: unknown) {
       if (loadTokenRef.current !== token) return;
       setState({
-        status: 'error',
+        status: 'missing',
         recordId,
         message: `${text.zhVariantFailed}: ${getParsedApiError(error).message}`,
       });
@@ -125,7 +140,7 @@ export const ReportHtmlDrawer: React.FC<ReportHtmlDrawerProps> = ({
           ) : null}
           {currentState.status === 'missing' ? (
             <div className="flex h-64 flex-col items-center justify-center px-6 text-center">
-              <p className="text-sm text-secondary-text">{text.zhVariantMissing}</p>
+              <p className="text-sm text-secondary-text">{currentState.message || text.zhVariantMissing}</p>
               <button
                 type="button"
                 onClick={() => void handleGenerateChinese()}

@@ -44,14 +44,14 @@ POST /api/v1/history/{record_id}/report-zh-variant
 
 - 200：返回 `text/html; charset=utf-8`，响应头含 `Cache-Control: no-store`、`Content-Security-Policy: default-src 'none'; img-src data:; style-src 'unsafe-inline'`、`X-Content-Type-Options: nosniff`。
 - 404：记录不存在或报告内容为空。
-- 409：en/ko 记录尚未生成中文变体（`zh_variant_missing`），Web 端据此展示「生成中文版本」按钮并调用 POST 接口。
+- 409：en/ko 记录尚未生成中文变体（`zh_variant_missing`）；Web 抽屉收到 409 后会**自动调用 POST 接口生成**，不再要求用户先点按钮。生成失败时才显示「生成中文版本」重试按钮。
 - 413：报告超过 500,000 字符（独立上限，不沿用分享图的 `MARKDOWN_TO_IMAGE_MAX_CHARS`）。
 - 500 / 503：渲染失败或中文变体生成失败，返回通用错误体，响应不含异常细节。
 - 中文记录直接使用正常中文链路；en/ko 记录必须命中已就绪且 `source_hash` 一致的中文变体。缺少 `report_language` 的历史记录按正文内容检测（英文/韩文/英文标题、表格、短句），不会回退成中英混排。
 - 下载文件名 `dsa-report-{id}.html`，ID 经字符白名单过滤，避免路径注入。
 - 鉴权与同 router 其他历史接口一致，不新增例外。
 
-Web 端用法：历史报告页面的「分享」菜单 → 查看 HTML 报告（抽屉内预览）/ 下载 HTML（直接下载）。点击才请求，页面加载时不预取。若返回 409，抽屉显示「该历史报告尚未生成中文版本」与「生成中文版本」按钮，生成完成后自动重新加载；下载动作会先幂等调用 `POST /report-zh-variant`，再下载文件。桌面端复用同一 HTTP 接口，无需额外 IPC。
+Web 端用法：历史报告页面的「分享」菜单 → 查看 HTML 报告（抽屉内预览）/ 下载 HTML（直接下载）。点击才请求，页面加载时不预取。若返回 409，抽屉会直接进入「正在生成中文版本...」并自动重试加载；只有生成失败时才显示「生成中文版本」按钮供手动重试。下载动作会先幂等调用 `POST /report-zh-variant`，再下载文件。桌面端复用同一 HTTP 接口，无需额外 IPC。
 
 ## 安全边界
 

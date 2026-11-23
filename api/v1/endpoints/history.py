@@ -93,11 +93,16 @@ def _history_report_html_input(
     try:
         markdown_content = service.get_markdown_report_zh(record_id)
     except ReportChineseVariantMissing as exc:
+        logger.info(
+            "HTML report Chinese variant missing record=%s reason=%s",
+            record_id,
+            exc.reason,
+        )
         raise HTTPException(
             status_code=409,
             detail={
                 "error": "zh_variant_missing",
-                "message": "该历史报告尚未生成中文版本，请先生成中文版本",
+                "message": "该历史报告需要生成中文版本",
                 "record_id": str(result.get("id") or record_id),
                 "reason": exc.reason,
             },

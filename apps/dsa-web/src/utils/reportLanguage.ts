@@ -59,7 +59,7 @@ const REPORT_TEXT = {
     shareHtmlFailed: 'HTML 报告生成失败',
     htmlReportTitle: 'HTML 报告',
     htmlReportClose: '关闭',
-    zhVariantMissing: '该历史报告尚未生成中文版本',
+    zhVariantMissing: '该历史报告需要生成中文版本',
     generateZhVariant: '生成中文版本',
     generatingZhVariant: '正在生成中文版本...',
     zhVariantFailed: '中文版本生成失败',

@@ -1,4 +1,4 @@
-import { fireEvent, render, screen, waitFor } from '@testing-library/react';
+import { render, screen, waitFor } from '@testing-library/react';
 import { afterEach, beforeEach, describe, expect, it, vi } from 'vitest';
 import { historyApi } from '../../../api/history';
 import { ReportHtmlDrawer } from '../ReportHtmlDrawer';
@@ -54,7 +54,7 @@ describe('ReportHtmlDrawer', () => {
     expect(screen.getByTitle('HTML 报告').getAttribute('srcdoc')).toContain('第二份');
   });
 
-  it('offers to generate the Chinese variant when the API returns 409', async () => {
+  it('auto-generates the Chinese variant when the API returns 409', async () => {
     mockedGetReportHtml
       .mockRejectedValueOnce({
         response: {
@@ -67,12 +67,25 @@ describe('ReportHtmlDrawer', () => {
 
     render(<ReportHtmlDrawer recordId={17} reportTitle="Apple" onClose={vi.fn()} />);
 
-    expect(await screen.findByText('该历史报告尚未生成中文版本')).toBeInTheDocument();
-    fireEvent.click(screen.getByRole('button', { name: '生成中文版本' }));
-
     await waitFor(() => expect(mockedEnsureReportZhVariant).toHaveBeenCalledWith(17));
     const iframe = await screen.findByTitle('HTML 报告');
     expect(iframe.getAttribute('srcdoc')).toContain('中文版本');
+    expect(screen.queryByRole('button', { name: '生成中文版本' })).not.toBeInTheDocument();
+  });
+
+  it('shows a retry button when automatic generation fails', async () => {
+    mockedGetReportHtml.mockRejectedValue({
+      response: {
+        status: 409,
+        data: { detail: { error: 'zh_variant_missing', message: '缺少中文版本' } },
+      },
+    });
+    mockedEnsureReportZhVariant.mockRejectedValue(new Error('translation unavailable'));
+
+    render(<ReportHtmlDrawer recordId={17} reportTitle="Apple" onClose={vi.fn()} />);
+
+    expect(await screen.findByText(/中文版本生成失败/)).toBeInTheDocument();
+    expect(screen.getByRole('button', { name: '生成中文版本' })).toBeInTheDocument();
   });
 
   it('shows an error message when loading fails', async () => {
