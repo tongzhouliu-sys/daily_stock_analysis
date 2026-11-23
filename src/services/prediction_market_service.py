@@ -12,6 +12,7 @@ the analysis caller.
 from __future__ import annotations
 
 import logging
+import re
 import threading
 from datetime import datetime
 from typing import Any, Dict, List, Optional, Tuple
@@ -240,6 +241,170 @@ class PredictionMarketService:
             if len(collected) >= limit:
                 break
         return self._format_context(collected, subject=None)
+
+    # ------------------------------------------------------------- overview
+    def build_overview(self, *, market: Optional[str] = None, limit: int = 200) -> Dict[str, Any]:
+        """Aggregate the local pool into a market-wide overview."""
+        empty_attitude = {
+            "label": "样本不足",
+            "tilt": None,
+            "risk_on": {"count": 0, "avg_probability": None},
+            "risk_off": {"count": 0, "avg_probability": None},
+        }
+        base: Dict[str, Any] = {
+            "enabled": self.is_enabled(),
+            "total_contracts": 0,
+            "by_category": {},
+            "by_source": {},
+            "top_events": [],
+            "attention_concentration": 0.0,
+            "attitude": empty_attitude,
+            "generated_at": datetime.now().isoformat(),
+        }
+        if not self.is_enabled():
+            return base
+        self.refresh_auto()
+        items = self.query_events(status="open", market=market, limit=limit, filter_noise=True)
+        base["total_contracts"] = len(items)
+        if not items:
+            return base
+
+        by_category: Dict[str, int] = {}
+        by_source: Dict[str, int] = {}
+        for item in items:
+            category = str(item.get("category") or "other")
+            source = str(item.get("source") or "unknown")
+            by_category[category] = by_category.get(category, 0) + 1
+            by_source[source] = by_source.get(source, 0) + 1
+        base["by_category"] = dict(sorted(by_category.items(), key=lambda kv: kv[1], reverse=True))
+        base["by_source"] = dict(sorted(by_source.items(), key=lambda kv: kv[1], reverse=True))
+
+        ranked = sorted(items, key=lambda item: float(item.get("volume_24h") or 0.0), reverse=True)
+        top_events = ranked[:5]
+        base["top_events"] = [
+            {
+                "source": item.get("source"),
+                "market_id": item.get("market_id"),
+                "question": item.get("question"),
+                "implied_probability": item.get("implied_probability"),
+                "volume_24h": item.get("volume_24h"),
+                "category": item.get("category"),
+                "market_url": item.get("market_url"),
+            }
+            for item in top_events
+        ]
+        total_volume = sum(float(item.get("volume_24h") or 0.0) for item in items)
+        top_volume = sum(float(item.get("volume_24h") or 0.0) for item in top_events)
+        base["attention_concentration"] = round(top_volume / total_volume, 4) if total_volume > 0 else 0.0
+        base["attitude"] = self._build_attitude(items)
+        return base
+
+    def build_overview_context(self, *, market: Optional[str] = None, limit: int = 200) -> Optional[str]:
+        """Render the overview as a Markdown prompt block, or ``None`` when empty."""
+        overview = self.build_overview(market=market, limit=limit)
+        if not overview.get("enabled") or overview.get("total_contracts", 0) == 0:
+            return None
+        categories = " / ".join(
+            f"{name} {count}" for name, count in (overview.get("by_category") or {}).items()
+        )
+        sources = " / ".join(
+            f"{self._source_label(name)} {count}"
+            for name, count in (overview.get("by_source") or {}).items()
+        )
+        lines = ["## 预测市场全景"]
+        lines.append(f"- 活跃合约：{overview['total_contracts']} 个（{categories}；{sources}）")
+        top_events = overview.get("top_events") or []
+        if top_events:
+            focus = "；".join(
+                f"{index}) {event.get('question')}（{self._format_probability(event.get('implied_probability'))}）"
+                for index, event in enumerate(top_events[:3], 1)
+            )
+            lines.append(f"- 关注焦点：{focus}")
+        lines.append(
+            f"- 关注集中度：前 5 个合约占 24h 成交额 {round(float(overview.get('attention_concentration') or 0.0) * 100)}%"
+        )
+        attitude = overview.get("attitude") or {}
+        risk_on = attitude.get("risk_on") or {}
+        risk_off = attitude.get("risk_off") or {}
+        lines.append(
+            "- 风险定价倾向："
+            f"{attitude.get('label')}；"
+            f"risk-on 平均 {self._format_probability(risk_on.get('avg_probability'))}"
+            f"（{risk_on.get('count', 0)} 个） vs "
+            f"risk-off 平均 {self._format_probability(risk_off.get('avg_probability'))}"
+            f"（{risk_off.get('count', 0)} 个）"
+        )
+        lines.append("- 说明：基于本地预测市场事件池的启发式统计，非投资建议。")
+        return "\n".join(lines)
+
+    def _build_attitude(self, items: List[Dict[str, Any]]) -> Dict[str, Any]:
+        risk_on: List[float] = []
+        risk_off: List[float] = []
+        for item in items:
+            probability = item.get("implied_probability")
+            if not isinstance(probability, (int, float)):
+                continue
+            stance = self._classify_stance(str(item.get("question") or ""))
+            if stance == "risk_on":
+                risk_on.append(float(probability))
+            elif stance == "risk_off":
+                risk_off.append(float(probability))
+        avg_on = round(sum(risk_on) / len(risk_on), 4) if risk_on else None
+        avg_off = round(sum(risk_off) / len(risk_off), 4) if risk_off else None
+        if len(risk_on) < 3 or len(risk_off) < 3:
+            label = "样本不足"
+            tilt = None
+        else:
+            tilt = round(avg_on - avg_off, 4)
+            if tilt >= 0.15:
+                label = "偏 risk-on"
+            elif tilt <= -0.15:
+                label = "偏 risk-off"
+            else:
+                label = "中性/分歧"
+        return {
+            "label": label,
+            "tilt": tilt,
+            "risk_on": {"count": len(risk_on), "avg_probability": avg_on},
+            "risk_off": {"count": len(risk_off), "avg_probability": avg_off},
+        }
+
+    @staticmethod
+    def _classify_stance(question: str) -> str:
+        text = (question or "").lower()
+        risk_off_phrases = (
+            "recession", "rate hike", "hike rates", "hikes rates", "raise rates",
+            "cpi above", "inflation above", "unemployment above", "hard landing",
+            "stagflation", "default", "crash", "downturn",
+        )
+        risk_on_phrases = (
+            "rate cut", "cuts rates", "cut rates", "cut interest rates",
+            "soft landing", "all-time high", "record high", "beat earnings",
+            "beats earnings", "exceed expectations", "upside",
+        )
+        for phrase in risk_off_phrases:
+            if PredictionMarketService._phrase_hit(text, phrase):
+                return "risk_off"
+        for phrase in risk_on_phrases:
+            if PredictionMarketService._phrase_hit(text, phrase):
+                return "risk_on"
+        return "neutral"
+
+    @staticmethod
+    def _phrase_hit(text: str, phrase: str) -> bool:
+        if " " in phrase:
+            return phrase in text
+        return re.search(rf"(?<![a-z0-9]){re.escape(phrase)}(?![a-z0-9])", text) is not None
+
+    @staticmethod
+    def _format_probability(value: Any) -> str:
+        if isinstance(value, (int, float)):
+            return f"{round(float(value) * 100)}%"
+        return "N/A"
+
+    @staticmethod
+    def _source_label(source: str) -> str:
+        return {"kalshi": "Kalshi", "polymarket": "Polymarket"}.get(str(source).lower(), str(source))
 
     def _format_context(self, items: List[Dict[str, Any]], *, subject: Optional[str]) -> Optional[str]:
         if not items:

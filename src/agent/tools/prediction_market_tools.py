@@ -133,3 +133,58 @@ search_prediction_markets_tool = ToolDefinition(
 ALL_PREDICTION_MARKET_TOOLS = [
     search_prediction_markets_tool,
 ]
+
+
+def _handle_get_prediction_market_overview(market: str = None, limit: int = 200) -> dict:
+    """Summarize the prediction-market landscape (counts / focus / attitude)."""
+    try:
+        from src.services.prediction_market_service import PredictionMarketService
+
+        service = PredictionMarketService()
+        if not service.is_enabled():
+            return {
+                "status": "disabled",
+                "enabled": False,
+                "total_contracts": 0,
+                "reason": "prediction market is not enabled",
+            }
+        service.refresh_auto()
+        overview = service.build_overview(market=market, limit=limit)
+        return {"status": "ok", **overview}
+    except Exception:  # fail-open, never expose credentials/stack
+        logger.warning("get_prediction_market_overview failed (fail-open)")
+        return {
+            "status": "unavailable",
+            "enabled": False,
+            "total_contracts": 0,
+            "reason": "prediction market service unavailable",
+        }
+
+
+get_prediction_market_overview_tool = ToolDefinition(
+    name="get_prediction_market_overview",
+    description="Summarize the prediction-market landscape: number of open contracts, hottest events "
+                "by 24h volume, category distribution, attention concentration, and a heuristic "
+                "risk-on/risk-off attitude with sample counts. Read-only; not investment advice.",
+    parameters=[
+        ToolParameter(
+            name="market",
+            type="string",
+            description="Optional market scope: 'us', 'cn', 'hk' or 'global'; omit for all",
+            required=False,
+            enum=["cn", "hk", "us", "global"],
+        ),
+        ToolParameter(
+            name="limit",
+            type="integer",
+            description="Maximum number of events to aggregate (default: 200)",
+            required=False,
+            default=200,
+        ),
+    ],
+    handler=_handle_get_prediction_market_overview,
+    category="market",
+    policy=_PREDICTION_MARKET_READ_POLICY,
+)
+
+ALL_PREDICTION_MARKET_TOOLS.append(get_prediction_market_overview_tool)

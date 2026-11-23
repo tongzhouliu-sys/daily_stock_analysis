@@ -2165,7 +2165,9 @@ Market conditions can change quickly. The data above is for reference only and d
             service = PredictionMarketService(config=self.config)
             if not service.is_enabled():
                 return None
-            return service.build_market_context(market=self.region, limit=6)
+            context = service.build_market_context(market=self.region, limit=6)
+            overview = service.build_overview_context(market=self.region)
+            return "\n\n".join(part for part in (overview, context) if part) or None
         except Exception as exc:
             logger.debug("[大盘] 读取预测市场证据失败（fail-open）: %s", exc)
             return None

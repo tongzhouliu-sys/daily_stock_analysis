@@ -14,6 +14,7 @@ from api.v1.schemas.prediction_markets import (
     PredictionMarketEventListResponse,
     PredictionMarketFetchRequest,
     PredictionMarketFetchResponse,
+    PredictionMarketOverviewResponse,
     PredictionMarketProviderItem,
     PredictionMarketProviderListResponse,
 )
@@ -78,6 +79,24 @@ def fetch_events(request: PredictionMarketFetchRequest = PredictionMarketFetchRe
         return PredictionMarketFetchResponse(**PredictionMarketService().fetch(dry_run=request.dry_run))
     except Exception as exc:
         raise _internal_error("Fetch prediction market events failed", exc)
+
+
+@router.get(
+    "/overview",
+    response_model=PredictionMarketOverviewResponse,
+    responses={500: {"model": ErrorResponse}},
+    summary="Summarize the prediction-market landscape",
+)
+def get_overview(
+    market: Optional[str] = Query(None),
+    limit: int = Query(200, ge=1, le=500),
+) -> PredictionMarketOverviewResponse:
+    try:
+        return PredictionMarketOverviewResponse(
+            **PredictionMarketService().build_overview(market=market, limit=limit)
+        )
+    except Exception as exc:
+        raise _internal_error("Get prediction market overview failed", exc)
 
 
 @router.get(

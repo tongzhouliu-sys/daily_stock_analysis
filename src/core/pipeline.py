@@ -3445,12 +3445,15 @@ class StockAnalysisPipeline:
             service = PredictionMarketService(config=self.config)
             if not service.is_enabled():
                 return None, []
-            return service.collect_evidence(
+            text, events = service.collect_evidence(
                 symbol=code,
                 stock_name=stock_name,
                 market=market,
                 limit=limit,
             )
+            overview = service.build_overview_context(market=market)
+            combined = "\n\n".join(part for part in (overview, text) if part)
+            return combined or None, events
         except Exception as exc:
             logger.debug("读取预测市场证据失败（fail-open）: %s", exc)
             return None, []

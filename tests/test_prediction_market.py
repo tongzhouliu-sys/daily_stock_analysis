@@ -277,6 +277,49 @@ class TestRepositoryAndService(unittest.TestCase):
         self.assertIn("宏观事件", text)
         self.assertIn("62%", text)
 
+    def test_build_overview_counts_attention_and_attitude(self):
+        self.repo.upsert_events(
+            [
+                self._event(market_id="rec-26", question="Will there be a recession in 2026?", implied_probability=0.2, volume_24h=1000),
+                self._event(market_id="rec-27", question="Will there be a recession in 2027?", implied_probability=0.3, volume_24h=2000),
+                self._event(market_id="rec-28", question="Will there be a recession in 2028?", implied_probability=0.4, volume_24h=3000),
+                self._event(market_id="cut-dec", question="Will the Fed cut rates in December?", implied_probability=0.7, volume_24h=5000),
+                self._event(market_id="cut-mar", question="Will the Fed cut rates in March?", implied_probability=0.6, volume_24h=4000),
+                self._event(market_id="cut-jun", question="Will the Fed cut rates in June?", implied_probability=0.5, volume_24h=3500),
+                self._event(market_id="btc", question="Will Bitcoin reach 150k?", implied_probability=0.4, volume_24h=9000, category="crypto", market="global"),
+            ]
+        )
+        service = PredictionMarketService(repository=self.repo, config=_config())
+        overview = service.build_overview(limit=50)
+        self.assertTrue(overview["enabled"])
+        self.assertEqual(overview["total_contracts"], 7)
+        self.assertEqual(overview["by_category"]["macro"], 6)
+        self.assertEqual(overview["by_category"]["crypto"], 1)
+        self.assertEqual(overview["top_events"][0]["market_id"], "btc")
+        self.assertGreater(overview["attention_concentration"], 0)
+        attitude = overview["attitude"]
+        self.assertEqual(attitude["risk_on"]["count"], 3)
+        self.assertEqual(attitude["risk_off"]["count"], 3)
+        self.assertEqual(attitude["label"], "偏 risk-on")
+        self.assertAlmostEqual(attitude["tilt"], 0.3, places=3)
+
+    def test_overview_context_contains_sections(self):
+        self.repo.upsert_events([self._event()])
+        service = PredictionMarketService(repository=self.repo, config=_config())
+        text = service.build_overview_context()
+        self.assertIsNotNone(text)
+        for token in ("预测市场全景", "活跃合约", "风险定价倾向", "非投资建议"):
+            self.assertIn(token, text)
+
+    def test_overview_disabled(self):
+        service = PredictionMarketService(
+            repository=self.repo, config=_config(prediction_market_enabled=False)
+        )
+        overview = service.build_overview()
+        self.assertFalse(overview["enabled"])
+        self.assertEqual(overview["total_contracts"], 0)
+        self.assertIsNone(service.build_overview_context())
+
     def test_query_without_market_includes_global_macro(self):
         self.repo.upsert_events([self._event()])
         service = PredictionMarketService(repository=self.repo, config=_config())
@@ -364,13 +407,20 @@ class TestEvidenceRepository(unittest.TestCase):
 
 
 class TestSpecialistAllowlists(unittest.TestCase):
-    def test_multi_agent_specialists_include_prediction_market_tool(self):
+    def test_multi_agent_specialists_include_prediction_market_tools(self):
         from src.agent.agents.intel_agent import IntelAgent
         from src.agent.agents.portfolio_agent import PortfolioAgent
         from src.agent.agents.risk_agent import RiskAgent
 
         for cls in (IntelAgent, RiskAgent, PortfolioAgent):
             self.assertIn("search_prediction_markets", cls.tool_names, cls.__name__)
+            self.assertIn("get_prediction_market_overview", cls.tool_names, cls.__name__)
+
+    def test_registry_exposes_overview_tool(self):
+        from src.agent.tools.prediction_market_tools import ALL_PREDICTION_MARKET_TOOLS
+
+        names = {tool.name for tool in ALL_PREDICTION_MARKET_TOOLS}
+        self.assertIn("get_prediction_market_overview", names)
 
 
 if __name__ == "__main__":

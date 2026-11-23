@@ -8,6 +8,7 @@ and this project adheres to [Semantic Versioning](https://semver.org/).
 > For user-friendly release highlights, see the [GitHub Releases](https://github.com/ZhuLinsen/daily_stock_analysis/releases) page.
 
 ## [Unreleased]
+- [新功能] 预测市场全景：新增 `build_overview()` 聚合活跃合约数、类别/来源分布、Top 事件、关注集中度与启发式 risk-on/risk-off 倾向；新增只读工具 `get_prediction_market_overview`、`GET /api/v1/prediction-markets/overview`，并把概览注入个股分析与大盘复盘 Prompt；详见 [任务书](tasks/prediction-market-overview.md)。
 - [修复] Agent 模式分析结束后用本次搜索工具返回的真实新闻回填 context pack 新闻块，重算质量分 `news` 维度与 `metadata.news_result_count`，并按真实结果修正「新闻数据块缺失」的置信度误报；本次消费的新闻摘要写入 `analysis_history.news_content`，真零命中时才提示新闻缺失或不足。经典路径不变。
 - [修复] FXMacroData MCP 工具名去掉多余的传输层 `mcp_` 前缀（如 `mcp_macro_news` → `fxmacrodata_macro_news`，与 REST 操作重名时保留原前缀），避免模型调用 `fxmacrodata_macro_news` 时注册表找不到工具并反复告警。
 - [改进] 飞书推送卡片改用原生 `table`：多标的摘要渲染「标的 / 动作 / 评分 / 趋势」，个股行情、技术指标、点位、盘中窗口合并为「分类 / 指标 / 数值」并按点位优先排序，单卡最多 5 张表、超出回退 `fields`；长策略与观察条件仍走正文，3 只股票的富卡片从 64 个组件降到 40 余个，不再因元素超限退化成大段纯文本。

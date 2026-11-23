@@ -65,3 +65,14 @@ class PredictionMarketProviderItem(BaseModel):
 
 class PredictionMarketProviderListResponse(BaseModel):
     providers: List[PredictionMarketProviderItem] = Field(default_factory=list)
+
+
+class PredictionMarketOverviewResponse(BaseModel):
+    enabled: bool
+    total_contracts: int = 0
+    by_category: Dict[str, int] = Field(default_factory=dict)
+    by_source: Dict[str, int] = Field(default_factory=dict)
+    top_events: List[Dict[str, Any]] = Field(default_factory=list)
+    attention_concentration: float = 0.0
+    attitude: Dict[str, Any] = Field(default_factory=dict)
+    generated_at: Optional[str] = None
