@@ -14,6 +14,8 @@ interface DrawerProps {
   zIndex?: number;
   side?: 'left' | 'right';
   backdropClassName?: string;
+  /** Replaces the default body padding; layout classes are kept by the caller. */
+  bodyClassName?: string;
 }
 
 /**
@@ -28,6 +30,7 @@ export const Drawer: React.FC<DrawerProps> = ({
   zIndex = 50,
   side = 'right',
   backdropClassName,
+  bodyClassName = 'min-h-0 flex-1 overflow-y-auto p-4 sm:p-6',
 }) => {
   const { t } = useUiLanguage();
   const headingId = useId();
@@ -118,7 +121,7 @@ export const Drawer: React.FC<DrawerProps> = ({
               </svg>
             </button>
           </div>
-          <div className="min-h-0 flex-1 overflow-y-auto p-4 sm:p-6">
+          <div className={bodyClassName}>
             {children}
           </div>
         </div>

@@ -19,6 +19,7 @@
 | 问股断开不取消 | 刷新/关页只断开 SSE，后台继续跑完；取消只认停止接口，断开后取消入口保留到执行体退出 | `api/v1/endpoints/agent.py`、`src/agent/cancellation.py` |
 | 选股单飞 | 已有 `pending/processing/cancel_requested` 选股任务时再次提交返回 409 | `api/v1/endpoints/screening.py` |
 | 问股页面拆分与记忆化 | 侧栏 / 消息 / 进度 / 输入 / 引导卡独立组件，打字不重渲染历史消息 | `apps/dsa-web/src/components/chat/` |
+| 问股手机端形态 | 手机宽度（<48rem）下顶栏带文字的「历史」与「新对话」；历史面板可搜索、每行显示最近活跃时间与消息条数；会话操作为底部面板；消息操作条跟随各自消息；长链接折行、宽表格在自身容器内横滑；回车换行、输入框 16px | `apps/dsa-web/src/pages/ChatPage.tsx`、`components/chat/ChatSessionSidebar.tsx`、`components/common/BottomSheet.tsx`、`hooks/useMediaQuery.ts`、`research.css`、`e2e/fixtures/chat-mobile.spec.ts` |
 | 首次设置令牌 | 未设密码时，公网客户端必须提供 `ADMIN_SETUP_TOKEN` 或启动日志中的随机令牌；回环/私网仍可零配置初始化 | `src/auth.py`、`api/v1/endpoints/auth.py` |
 | 飞书同源 HTML 报告 | 历史报告分享菜单可查看 / 下载与飞书推送同源的自包含 HTML；卡片与 HTML 共用解析，零脚本 + 沙箱 iframe；HTML 固定全中文，en/ko 记录使用持久化中文变体，缺变体时 409 + Web 生成按钮 | `src/services/report_html/`、`src/services/report_translation_service.py`、`api/v1/endpoints/history.py`、`src/notification_sender/feishu_card.py` |
 

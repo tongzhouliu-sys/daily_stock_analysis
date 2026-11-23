@@ -17,6 +17,17 @@ export function isNearBottom(
 }
 
 /**
+ * True when the reader is more than one viewport away from the newest message.
+ * The "back to bottom" affordance stays hidden for small scroll offsets so the
+ * button does not hover over a thread the reader is still following.
+ */
+export function isBeyondOneScreen(metrics: ScrollMetrics): boolean {
+  const distanceFromBottom =
+    metrics.scrollHeight - (metrics.scrollTop + metrics.clientHeight);
+  return distanceFromBottom > metrics.clientHeight;
+}
+
+/**
  * Scroll a scroll container so `element` sits `padding` px below its top edge.
  * Uses viewport-relative rects so the container's own offset/positioned
  * ancestors never skew the result.

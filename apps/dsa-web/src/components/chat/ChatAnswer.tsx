@@ -1,4 +1,4 @@
-import { useMemo, useState, type ReactNode } from 'react';
+import { useEffect, useMemo, useRef, useState, type ReactNode } from 'react';
 import Markdown, { type Components } from 'react-markdown';
 import remarkGfm from 'remark-gfm';
 import { List, ChevronDown, ChevronRight, CalendarDays } from 'lucide-react';
@@ -20,8 +20,69 @@ const HEADING_RE = /^(#{2,3})\s+(.+?)\s*#*\s*$/;
 const FOLLOWUP_HEADING_RE = /^#{1,4}\s*(?:后续建议|相关追问|接下来可以问|延伸问题|Follow[- ]?up|Related questions)/i;
 const LONG_ANSWER_CHARS = 1200;
 
-function plainText(node: ReactNode): string {
-  if (typeof node === 'string' || typeof node === 'number') return String(node);
+/** Readable floor per table column; keeps wide tables scrolling, not squeezing. */
+const MIN_TABLE_COLUMN_WIDTH = 88;
+
+/**
+ * Wide tables must stay readable on a phone: the column floor lives in CSS
+ * (`.chat-answer-body th, td { min-width }`) and this wrapper is the only
+ * element that scrolls sideways. The edge shadow is the "there is more to the
+ * right" cue, so the thread itself never pans.
+ */
+function TableScroll({ children }: { children: ReactNode }) {
+  const ref = useRef<HTMLDivElement>(null);
+  const [edges, setEdges] = useState({ left: false, right: false });
+
+  useEffect(() => {
+    const element = ref.current;
+    if (!element) return undefined;
+    const table = element.querySelector('table');
+    // `min-width` on table cells is ignored by the automatic table layout
+    // algorithm, so the column floor has to live on the table itself: six
+    // columns must never squeeze CJK headers into one glyph per line.
+    if (table) {
+      const columnCount = Math.max(
+        0,
+        ...Array.from(table.querySelectorAll('tr')).map((row) => row.children.length),
+      );
+      table.style.minWidth = columnCount > 0
+        ? `${Math.max(columnCount * MIN_TABLE_COLUMN_WIDTH, 0)}px`
+        : '';
+    }
+    const update = () => {
+      const maxScroll = element.scrollWidth - element.clientWidth;
+      setEdges({
+        left: element.scrollLeft > 4,
+        right: maxScroll > 4 && element.scrollLeft < maxScroll - 4,
+      });
+    };
+    update();
+    element.addEventListener('scroll', update, { passive: true });
+    const observer = typeof ResizeObserver === 'undefined' ? null : new ResizeObserver(update);
+    observer?.observe(element);
+    if (element.firstElementChild) observer?.observe(element.firstElementChild);
+    return () => {
+      element.removeEventListener('scroll', update);
+      observer?.disconnect();
+    };
+  }, []);
+
+  return (
+    <div
+      ref={ref}
+      className={cn(
+        'chat-answer-table-scroll',
+        edges.left && 'is-scrollable-left',
+        edges.right && 'is-scrollable-right',
+      )}
+    >
+      <table>{children}</table>
+    </div>
+  );
+}
+
+
+function plainText(node: ReactNode): string {  if (typeof node === 'string' || typeof node === 'number') return String(node);
   if (Array.isArray(node)) return node.map(plainText).join('');
   if (node && typeof node === 'object' && 'props' in node) {
     return plainText((node as { props: { children?: ReactNode } }).props.children);
@@ -91,7 +152,7 @@ export default function ChatAnswer({
     h2: ({ children }) => <h2 id={headingIds.get(plainText(children))}>{children}</h2>,
     h3: ({ children }) => <h3 id={headingIds.get(plainText(children))}>{children}</h3>,
     table: ({ children }) => (
-      <div className="chat-answer-table-scroll"><table>{children}</table></div>
+      <TableScroll>{children}</TableScroll>
     ),
     a: ({ href, children }) => {
       const safe = href && /^https?:\/\//i.test(href) ? href : undefined;

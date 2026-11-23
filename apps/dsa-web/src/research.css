@@ -564,15 +564,6 @@
   }
 }
 
-.chat-sessions-drawer {
-  display: flex;
-  width: 17.5rem;
-  max-width: 86vw;
-  height: 100%;
-  background: var(--bg-card);
-  box-shadow: 0 24px 60px hsl(0 0% 0% / 0.22);
-}
-
 .chat-sessions-head {
   display: flex;
   flex: none;
@@ -638,16 +629,16 @@
   display: none;
 }
 
+.chat-new-chat-mobile {
+  display: none;
+}
+
 @media (min-width: 48rem) {
   .chat-history-toggle-desktop {
     display: inline-flex;
   }
 
   .chat-history-toggle-mobile {
-    display: none;
-  }
-
-  .chat-mobile-drawer {
     display: none;
   }
 }
@@ -663,6 +654,51 @@
 
 .chat-sessions-state {
   padding: 10px 8px;
+}
+
+/* --- History panel (phone drawer) --- */
+
+.chat-new-btn-panel {
+  margin: 4px 8px 8px;
+  justify-content: flex-start;
+}
+
+.chat-session-search {
+  display: flex;
+  min-height: 40px;
+  align-items: center;
+  gap: 8px;
+  margin: 0 8px;
+  padding: 0 10px;
+  border: 1px solid hsl(var(--border));
+  border-radius: 10px;
+  background: var(--bg-card);
+  color: var(--text-muted-text);
+}
+
+.chat-session-search input {
+  min-width: 0;
+  flex: 1;
+  border: 0;
+  outline: none;
+  background: transparent;
+  color: var(--text-primary);
+  font-size: 14px;
+}
+
+.chat-session-search:focus-within {
+  border-color: hsl(var(--primary) / 0.45);
+}
+
+.chat-session-search-hint {
+  margin: 6px 10px 2px;
+  color: var(--text-muted-text);
+  font-size: 12px;
+  line-height: 1.4;
+}
+
+.chat-sessions-mobile-list {
+  padding: 2px 4px 16px;
 }
 
 .chat-session-group-label {
@@ -689,15 +725,41 @@
   display: flex;
   width: 100%;
   min-width: 0;
-  height: 32px;
-  align-items: center;
-  padding: 0 28px 0 10px;
+  min-height: 44px;
+  flex-direction: column;
+  justify-content: center;
+  gap: 2px;
+  padding: 5px 30px 6px 10px;
   border-radius: 8px;
   color: var(--text-secondary-text);
   font-size: 13px;
   line-height: 1.3;
   text-align: start;
   transition: background-color 150ms ease, color 150ms ease;
+}
+
+.chat-session-line {
+  display: flex;
+  min-width: 0;
+  align-items: center;
+  gap: 6px;
+}
+
+/* Second line: last activity and message count. It keeps conversations with
+   similar or identical titles distinguishable on a phone. */
+.chat-session-meta {
+  display: block;
+  min-width: 0;
+  overflow: hidden;
+  color: var(--text-muted-text);
+  font-size: 11px;
+  line-height: 1.3;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+}
+
+.chat-session.is-active .chat-session-meta {
+  color: hsl(var(--primary) / 0.72);
 }
 
 .chat-session-pin {
@@ -1074,6 +1136,7 @@
 }
 
 .chat-thread-area {
+  position: relative;
   display: flex;
   min-height: 0;
   flex: 1;
@@ -1086,6 +1149,7 @@
 }
 
 .chat-thread-viewport {
+  overflow-x: hidden;
   scrollbar-gutter: stable;
 }
 
@@ -1180,7 +1244,6 @@
   min-width: 0;
   flex-direction: column;
 }
-
 .chat-msg-user {
   align-items: flex-end;
 }
@@ -1220,6 +1283,14 @@
   gap: 2px;
   min-height: 22px;
   margin-top: 4px;
+}
+
+/* The action row belongs to its own message and stays in normal flow directly
+   under the bubble/answer. Never restore absolute positioning here: a legacy
+   rule used to pin every row to the thread's top-right corner, which stacked
+   every message's actions on top of each other. */
+.chat-msg-user .chat-message-actions {
+  justify-content: flex-end;
 }
 
 .chat-action-btn {
@@ -1916,7 +1987,9 @@
 
 .chat-jump-wrap {
   position: absolute;
-  bottom: 152px;
+  /* Anchored to the thread area, so a taller composer or an extra notice never
+     leaves the button floating in the middle of the conversation. */
+  bottom: 12px;
   left: 50%;
   z-index: 9;
   transform: translateX(-50%);
@@ -2240,6 +2313,165 @@
   border-top: 1px solid hsl(var(--border) / 0.6);
 }
 
+/* --- Answer content that must not pan the thread --- */
+
+/* Long URLs and unbroken tokens wrap inside the prose. Only a table or a code
+   block owns a horizontal scroller of its own. */
+.chat-answer-body :where(p, li, td, th, blockquote, dd) {
+  overflow-wrap: anywhere;
+}
+
+.chat-answer-body a {
+  overflow-wrap: anywhere;
+  word-break: break-word;
+}
+
+/* Wide tables keep a readable column floor and scroll inside their wrapper
+   instead of squeezing CJK glyphs into one glyph per line. */
+.chat-answer-table-scroll {
+  -webkit-overflow-scrolling: touch;
+}
+
+.chat-answer-table-scroll.is-scrollable-right {
+  box-shadow: inset -14px 0 12px -14px hsl(var(--foreground) / 0.35);
+}
+
+.chat-answer-table-scroll.is-scrollable-left {
+  box-shadow: inset 14px 0 12px -14px hsl(var(--foreground) / 0.35);
+}
+
+/* --- Copy feedback --- */
+
+.chat-toast-wrap {
+  position: absolute;
+  right: 12px;
+  bottom: 12px;
+  z-index: 9;
+  max-width: min(80vw, 320px);
+}
+
+.chat-toast {
+  padding: 8px 12px;
+  border: 1px solid hsl(var(--border));
+  border-radius: 10px;
+  background: var(--bg-elevated);
+  box-shadow: 0 10px 24px hsl(0 0% 0% / 0.14);
+  color: var(--text-primary);
+  font-size: 12px;
+  line-height: 1.5;
+}
+
+.chat-toast.is-error {
+  border-color: hsl(var(--destructive) / 0.45);
+  color: hsl(var(--destructive));
+}
+
+/* --- Phone action sheet --- */
+
+.chat-sheet-title {
+  font-size: 15px;
+  font-weight: 600;
+}
+
+.chat-sheet-subtitle {
+  margin: 0 0 8px;
+  padding: 0 12px;
+  overflow-wrap: anywhere;
+  color: var(--text-muted-text);
+  font-size: 12.5px;
+  line-height: 1.5;
+}
+
+.chat-sheet-item {
+  display: flex;
+  width: 100%;
+  min-height: 48px;
+  align-items: center;
+  gap: 10px;
+  padding: 0 12px;
+  border-radius: 10px;
+  color: var(--text-primary);
+  font-size: 15px;
+  text-align: start;
+  transition: background-color 150ms ease;
+}
+
+.chat-sheet-item:hover {
+  background: var(--bg-hover);
+}
+
+.chat-sheet-item.is-danger {
+  color: hsl(var(--destructive));
+}
+
+.chat-sheet-actions {
+  margin-top: 8px;
+  padding-top: 8px;
+  border-top: 1px solid hsl(var(--border) / 0.6);
+}
+
+.chat-sheet-cancel {
+  display: flex;
+  width: 100%;
+  min-height: 48px;
+  align-items: center;
+  justify-content: center;
+  border: 1px solid hsl(var(--border));
+  border-radius: 12px;
+  background: var(--bg-card);
+  color: var(--text-secondary-text);
+  font-size: 15px;
+}
+
+.chat-sheet-form {
+  display: flex;
+  flex-direction: column;
+  gap: 8px;
+}
+
+.chat-sheet-form input {
+  min-height: 44px;
+  padding: 0 12px;
+  border: 1px solid hsl(var(--border));
+  border-radius: 10px;
+  outline: none;
+  background: var(--bg-card);
+  color: var(--text-primary);
+  font-size: 16px;
+}
+
+.chat-sheet-form input:focus {
+  border-color: hsl(var(--primary) / 0.55);
+}
+
+.chat-sheet-error {
+  margin: 0;
+  color: hsl(var(--destructive));
+  font-size: 12px;
+}
+
+.chat-sheet-form-actions {
+  display: flex;
+  gap: 8px;
+}
+
+.chat-sheet-form-actions > * {
+  flex: 1;
+}
+
+.chat-sheet-primary {
+  min-height: 48px;
+  border-radius: 12px;
+  background: hsl(var(--primary));
+  color: hsl(var(--primary-foreground));
+  font-size: 15px;
+  font-weight: 550;
+}
+
+.chat-sheet-primary:disabled {
+  opacity: 0.6;
+}
+
 /* --- Responsive density --- */
 
 @media (max-width: 47.999rem) {
@@ -2248,25 +2480,113 @@
   }
 
   .chat-topbar {
-    padding: 5px 10px;
+    min-height: 56px;
+    padding: 6px 10px;
+    gap: 6px;
+  }
+
+  /* Conversation controls live in the top bar on a phone; the page label, the
+     model badge and the outline toggle (whose panel is hidden below 1100px)
+     would only take width away from the session title. */
+  .chat-topbar-title,
+  .chat-topbar-divider,
+  .chat-topbar-badge,
+  .chat-outline-toggle {
+    display: none;
+  }
+
+  .chat-history-toggle-mobile {
+    display: inline-flex;
+    width: auto;
+    height: 44px;
+    gap: 5px;
+    padding: 0 12px;
+    border: 1px solid hsl(var(--border));
+    border-radius: 999px;
+    color: var(--text-secondary-text);
+  }
+
+  .chat-history-toggle-label {
+    font-size: 13px;
+    font-weight: 500;
+  }
+
+  .chat-topbar-actions .chat-icon-btn {
+    width: 40px;
+    height: 40px;
+  }
+
+  .chat-topbar-actions .chat-new-chat-mobile {
+    display: inline-flex;
+    width: 44px;
+    height: 44px;
   }
 
   .chat-current-title {
-    max-width: 30ch;
+    max-width: none;
+  }
+
+  .chat-current-more {
+    width: 44px;
+    height: 44px;
+    opacity: 0.8;
   }
 
   .chat-thread {
-    padding: 16px 14px 8px;
+    padding: 14px 12px 8px;
     gap: 14px;
   }
 
+  .chat-action-btn {
+    width: 36px;
+    height: 36px;
+    opacity: 0.72;
+  }
+
+  .chat-msg-time {
+    font-size: 12px;
+  }
+
+  .chat-session {
+    min-height: 52px;
+  }
+
+  .chat-session-meta {
+    font-size: 12px;
+  }
+
+  .chat-sessions-mobile-list {
+    padding-bottom: max(16px, env(safe-area-inset-bottom));
+  }
+
   .chat-composer-area {
-    padding: 4px 12px max(10px, env(safe-area-inset-bottom));
+    padding: 4px 10px max(10px, env(safe-area-inset-bottom));
   }
 
   .chat-composer {
     padding: 8px 10px 6px;
     border-radius: 16px;
+  }
+
+  .chat-send-btn {
+    width: 44px;
+    height: 44px;
+  }
+
+  .chat-stop-btn {
+    min-height: 38px;
+  }
+
+  .chat-chip {
+    height: 34px;
+    font-size: 13px;
+  }
+
+  /* One stop action on a phone: the composer one is always reachable, the
+     in-card duplicate is not. Specificity beats the base `.chat-live-stop`
+     rule that is declared later in this file. */
+  .chat-live-progress .chat-live-stop {
+    display: none;
   }
 
   .chat-composer-footer {
@@ -2278,12 +2598,16 @@
     display: none;
   }
 
-  .chat-jump-wrap {
-    bottom: 140px;
-  }
-
   .chat-quick-grid {
     grid-template-columns: minmax(0, 1fr);
+  }
+
+  .chat-quick-btn {
+    min-height: 44px;
+  }
+
+  .chat-quick-btn.is-extra {
+    display: none;
   }
 
   .chat-empty {
@@ -2292,6 +2616,32 @@
 
   .chat-user-bubble {
     max-width: 88%;
+  }
+
+  .chat-answer-body {
+    font-size: 0.9375rem;
+  }
+
+  .chat-answer-body th,
+  .chat-answer-body td {
+    font-size: 14px;
+  }
+}
+
+/* Touch-first input behaviour. The 16px floor stops iOS Safari from zooming the
+   page when a field takes focus; hover-only affordances stay visible instead. */
+@media (hover: none) and (pointer: coarse) {
+  .chat-composer-input,
+  .chat-title-editor input,
+  .chat-title-editor-inline input,
+  .chat-understanding-search input,
+  .chat-session-search input,
+  .chat-sheet-form input {
+    font-size: 16px;
+  }
+
+  .chat-action-btn {
+    opacity: 0.72;
   }
 }
 

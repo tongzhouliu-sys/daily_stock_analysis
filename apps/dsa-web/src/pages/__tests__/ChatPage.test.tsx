@@ -11,6 +11,7 @@ import type { Message, ProgressStep } from '../../stores/agentChatStore';
 import type { StockIndexItem } from '../../types/stockIndex';
 import { UI_LANGUAGE_STORAGE_KEY } from '../../utils/uiLanguage';
 import ChatPage from '../ChatPage';
+import { COMPACT_LAYOUT_QUERY } from '../../hooks/useMediaQuery';
 import { extractStockCodeFromMessage, extractStockCodesFromMessage } from '../../utils/chatStockCode';
 
 const { mockChatAnswerRenderSpy } = vi.hoisted(() => ({
@@ -2012,7 +2013,7 @@ describe('ChatPage', () => {
       </MemoryRouter>
     );
 
-    const jumpButton = await screen.findByRole('button', { name: '查看最新消息' });
+    const jumpButton = await screen.findByRole('button', { name: '有新消息' });
     expect(jumpButton).toBeInTheDocument();
 
     fireEvent.click(jumpButton);
@@ -2020,6 +2021,31 @@ describe('ChatPage', () => {
     // Auto-follow scrolls the message viewport itself (scrollTop), never
     // scrollIntoView(): that also moves the document and shifts the whole page.
     expect(viewport.scrollTop).toBe(1200);
+  });
+
+  it('shows a plain back-to-bottom action once the thread is a screen away', async () => {
+    mockStoreState.messages = [
+      { id: 'user-1', role: 'user', content: '请分析 600519' },
+      { id: 'assistant-1', role: 'assistant', content: '趋势偏强', skillName: '趋势分析' },
+    ];
+
+    render(
+      <MemoryRouter initialEntries={['/chat']}>
+        <ChatPage />
+      </MemoryRouter>
+    );
+
+    const viewport = await screen.findByTestId('chat-message-scroll');
+    Object.defineProperty(viewport, 'scrollTop', { configurable: true, writable: true, value: 0 });
+    Object.defineProperty(viewport, 'clientHeight', { configurable: true, value: 400 });
+    Object.defineProperty(viewport, 'scrollHeight', { configurable: true, value: 1600 });
+
+    // Scrolling alone (no new content) must still surface the action, and it
+    // reads "back to bottom" rather than claiming there are new messages.
+    fireEvent.scroll(viewport);
+
+    expect(await screen.findByRole('button', { name: '回到底部' })).toBeInTheDocument();
+    expect(screen.queryByRole('button', { name: '有新消息' })).not.toBeInTheDocument();
   });
 
   it('restores an existing conversation at the last question after a session switch', async () => {
@@ -2570,5 +2596,114 @@ describe('watchlist button with code variants', () => {
 
     fireEvent.click(items[0] as HTMLElement);
     expect(items[0]).toHaveAttribute('aria-current', 'step');
+  });
+
+  it('reports a copy failure instead of failing silently', async () => {
+    mockStoreState.messages = [
+      { id: 'assistant-1', role: 'assistant', content: '趋势偏强', skillName: '趋势分析' },
+    ];
+    const originalClipboard = navigator.clipboard;
+    Object.defineProperty(navigator, 'clipboard', { configurable: true, value: undefined });
+    const originalExecCommand = document.execCommand;
+    Object.defineProperty(document, 'execCommand', { configurable: true, value: undefined });
+
+    try {
+      render(
+        <MemoryRouter initialEntries={['/chat']}>
+          <ChatPage />
+        </MemoryRouter>,
+      );
+
+      fireEvent.click(await screen.findByRole('button', { name: '复制' }));
+
+      expect(await screen.findByText('当前环境无法访问剪贴板，请长按文字手动复制')).toBeInTheDocument();
+    } finally {
+      Object.defineProperty(navigator, 'clipboard', { configurable: true, value: originalClipboard });
+      Object.defineProperty(document, 'execCommand', { configurable: true, value: originalExecCommand });
+    }
+  });
+
+  it('opens the phone history drawer and closes it without touching the desktop sidebar preference', async () => {
+    const originalMatchMedia = window.matchMedia;
+    Object.defineProperty(window, 'matchMedia', {
+      configurable: true,
+      writable: true,
+      value: vi.fn((query: string) => ({
+        matches: query === COMPACT_LAYOUT_QUERY,
+        media: query,
+        onchange: null,
+        addListener: vi.fn(),
+        removeListener: vi.fn(),
+        addEventListener: vi.fn(),
+        removeEventListener: vi.fn(),
+        dispatchEvent: vi.fn(),
+      })),
+    });
+
+    try {
+      render(
+        <MemoryRouter initialEntries={['/chat']}>
+          <ChatPage />
+        </MemoryRouter>,
+      );
+
+      fireEvent.click(await screen.findByRole('button', { name: '历史对话' }));
+
+      const search = await screen.findByRole('searchbox', { name: '搜索标题' });
+      expect(search).toBeInTheDocument();
+
+      fireEvent.click(screen.getByRole('button', { name: '关闭抽屉' }));
+
+      await waitFor(() => expect(screen.queryByRole('searchbox', { name: '搜索标题' })).not.toBeInTheDocument());
+      expect(localStorage.getItem('dsa.chat.sidebarCollapsed')).toBeNull();
+      // The compact layout renders the drawer only; there is no desktop rail to
+      // collapse, so the drawer close must never write that preference.
+      expect(screen.getByRole('button', { name: '历史对话' })).toBeInTheDocument();
+    } finally {
+      Object.defineProperty(window, 'matchMedia', {
+        configurable: true,
+        writable: true,
+        value: originalMatchMedia,
+      });
+    }
+  });
+
+  it('renames a conversation from the phone action sheet', async () => {
+    const originalMatchMedia = window.matchMedia;
+    Object.defineProperty(window, 'matchMedia', {
+      configurable: true,
+      writable: true,
+      value: vi.fn((query: string) => ({
+        matches: query === COMPACT_LAYOUT_QUERY,
+        media: query,
+        onchange: null,
+        addListener: vi.fn(),
+        removeListener: vi.fn(),
+        addEventListener: vi.fn(),
+        removeEventListener: vi.fn(),
+        dispatchEvent: vi.fn(),
+      })),
+    });
+
+    try {
+      render(
+        <MemoryRouter initialEntries={['/chat']}>
+          <ChatPage />
+        </MemoryRouter>,
+      );
+
+      fireEvent.click(await screen.findByRole('button', { name: '置顶、编辑或删除当前对话 请简要分析 600519' }));
+      fireEvent.click(await screen.findByRole('button', { name: '重命名' }));
+      fireEvent.change(screen.getByRole('textbox', { name: '编辑标题' }), { target: { value: '  手机端改名  ' } });
+      fireEvent.click(screen.getByRole('button', { name: '保存标题' }));
+
+      await waitFor(() => expect(mockRenameChatSession).toHaveBeenCalledWith('session-1', '手机端改名'));
+    } finally {
+      Object.defineProperty(window, 'matchMedia', {
+        configurable: true,
+        writable: true,
+        value: originalMatchMedia,
+      });
+    }
   });
 });

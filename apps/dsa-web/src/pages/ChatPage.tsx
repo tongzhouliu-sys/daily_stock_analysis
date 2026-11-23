@@ -5,7 +5,9 @@ import {
   Check,
   ChevronDown,
   Download,
+  History,
   ListChecks,
+  MessageSquarePlus,
   MoreHorizontal,
   PanelLeftOpen,
   Pencil,
@@ -17,7 +19,16 @@ import {
 } from 'lucide-react';
 import { agentApi } from '../api/agent';
 import { systemConfigApi } from '../api/systemConfig';
-import { ApiErrorAlert, Badge, Button, ConfirmDialog, InlineAlert, ScrollArea } from '../components/common';
+import {
+  ApiErrorAlert,
+  Badge,
+  BottomSheet,
+  Button,
+  ConfirmDialog,
+  Drawer,
+  InlineAlert,
+  ScrollArea,
+} from '../components/common';
 import { createParsedApiError, getParsedApiError } from '../api/error';
 import type { AgentStatusResponse, SkillInfo } from '../api/agent';
 import {
@@ -46,7 +57,8 @@ import {
   sanitizeFollowUpStockCode,
   sanitizeFollowUpStockName,
 } from '../utils/chatFollowUp';
-import { isNearBottom, scrollToMessage, anchorMessageIdAtViewportTop } from '../utils/chatScroll';
+import { cn } from '../utils/cn';
+import { isNearBottom, scrollToMessage, anchorMessageIdAtViewportTop, isBeyondOneScreen } from '../utils/chatScroll';
 import { formatChatTimestamp } from '../utils/chatTime';
 import { getReportText } from '../utils/reportLanguage';
 import {
@@ -55,6 +67,7 @@ import {
   resolveRegisteredIndexCanonical,
 } from '../utils/stockCode';
 import { useStockIndex } from '../hooks/useStockIndex';
+import { useCompactLayout } from '../hooks/useMediaQuery';
 import { useUiLanguage } from '../contexts/UiLanguageContext';
 import { extractIntentHints } from '../utils/chatIntentHints';
 
@@ -162,6 +175,7 @@ const getMessageSkillLabel = (msg: Message): string => getMessageSkillNames(msg)
 const ChatPage: React.FC = () => {
   const { t, language } = useUiLanguage();
   const navigate = useNavigate();
+  const compactLayout = useCompactLayout();
   const [searchParams, setSearchParams] = useSearchParams();
   const [input, setInput] = useState('');
   const [skills, setSkills] = useState<SkillInfo[]>([]);
@@ -172,6 +186,12 @@ const ChatPage: React.FC = () => {
   const [deleteConfirmId, setDeleteConfirmId] = useState<string | null>(null);
   const [sidebarOpen, setSidebarOpen] = useState(false);
   const [sidebarCollapsed, setSidebarCollapsed] = useState(() => localStorage.getItem('dsa.chat.sidebarCollapsed') === 'true');
+  const [sessionSearch, setSessionSearch] = useState('');
+  const [actionSheetSessionId, setActionSheetSessionId] = useState<string | null>(null);
+  const [sheetEditingTitle, setSheetEditingTitle] = useState(false);
+  const [sheetTitleDraft, setSheetTitleDraft] = useState('');
+  const [sheetTitleSaving, setSheetTitleSaving] = useState(false);
+  const [sheetTitleError, setSheetTitleError] = useState('');
   const [sessionMenu, setSessionMenu] = useState<{
     sessionId: string;
     top: number;
@@ -199,7 +219,9 @@ const ChatPage: React.FC = () => {
   const [contextCompressionError, setContextCompressionError] = useState<string | null>(null);
   const [copiedMessages, setCopiedMessages] = useState<Set<string>>(new Set());
   const [resolvedClarifications, setResolvedClarifications] = useState<Set<string>>(() => new Set());
-  const [showJumpToBottom, setShowJumpToBottom] = useState(false);
+  // `hidden` → no button, `plain` → "back to bottom", `new` → "new messages".
+  const [jumpState, setJumpState] = useState<'hidden' | 'plain' | 'new'>('hidden');
+  const [copyToast, setCopyToast] = useState<{ type: 'success' | 'error'; message: string } | null>(null);
   const [exportMenuOpen, setExportMenuOpen] = useState(false);
   const [exporting, setExporting] = useState(false);
   const [outlineCollapsed, setOutlineCollapsed] = useState(
@@ -220,6 +242,7 @@ const ChatPage: React.FC = () => {
   const { index: stockIndex, loading: stockIndexLoading } = useStockIndex();
 
   const watchlistMessageTimerRef = useRef<number | null>(null);
+  const copyToastTimerRef = useRef<number | null>(null);
   const copyResetTimerRef = useRef<Partial<Record<string, number>>>({});
   const composerRef = useRef<HTMLTextAreaElement>(null);
   const messagesViewportRef = useRef<HTMLDivElement>(null);
@@ -248,6 +271,9 @@ const ChatPage: React.FC = () => {
       if (sendToastTimerRef.current !== null) {
         window.clearTimeout(sendToastTimerRef.current);
       }
+      if (copyToastTimerRef.current !== null) {
+        window.clearTimeout(copyToastTimerRef.current);
+      }
       Object.values(timers).forEach((timerId) => {
         if (timerId !== undefined) {
           window.clearTimeout(timerId);
@@ -267,6 +293,15 @@ const ChatPage: React.FC = () => {
       isMountedRef.current = false;
     };
   }, []);
+
+  // A viewport that grows back into the desktop layout must not keep the phone
+  // drawer or action sheet open over the desktop sidebar.
+  useEffect(() => {
+    if (compactLayout) return;
+    setSidebarOpen(false);
+    setActionSheetSessionId(null);
+    setSheetEditingTitle(false);
+  }, [compactLayout]);
 
   const loadWatchlist = useCallback(async () => {
     try {
@@ -413,21 +448,46 @@ const ChatPage: React.FC = () => {
     setTitleError('');
   }, []);
 
+  /**
+   * Rename a conversation once, for both the inline editor and the phone action
+   * sheet. Returns a discriminated result so each caller can place its own error.
+   */
+  const renameSession = useCallback(async (
+    targetSessionId: string,
+    rawTitle: string,
+  ): Promise<'ok' | 'empty' | 'failed'> => {
+    const title = rawTitle.trim();
+    if (!title) return 'empty';
+    try {
+      await agentApi.renameChatSession(targetSessionId, title);
+      await loadSessions();
+      return 'ok';
+    } catch {
+      return 'failed';
+    }
+  }, [loadSessions]);
+
   const saveSessionTitle = async () => {
-    const title = sessionTitle.trim();
     if (!editingSessionId || titleSaving) return;
-    if (!title) { setTitleError(t('chat.titleRequired')); return; }
     setTitleSaving(true);
     setTitleError('');
-    try {
-      await agentApi.renameChatSession(editingSessionId, title);
-      closeTitleEditor();
-      await loadSessions();
-    } catch {
-      setTitleError(t('chat.titleSaveFailed'));
-    } finally {
-      setTitleSaving(false);
-    }
+    const result = await renameSession(editingSessionId, sessionTitle);
+    setTitleSaving(false);
+    if (result === 'empty') { setTitleError(t('chat.titleRequired')); return; }
+    if (result === 'failed') { setTitleError(t('chat.titleSaveFailed')); return; }
+    closeTitleEditor();
+  };
+
+  const saveSheetTitle = async () => {
+    if (!actionSheetSessionId || sheetTitleSaving) return;
+    setSheetTitleSaving(true);
+    setSheetTitleError('');
+    const result = await renameSession(actionSheetSessionId, sheetTitleDraft);
+    setSheetTitleSaving(false);
+    if (result === 'empty') { setSheetTitleError(t('chat.titleRequired')); return; }
+    if (result === 'failed') { setSheetTitleError(t('chat.titleSaveFailed')); return; }
+    setSheetEditingTitle(false);
+    setActionSheetSessionId(null);
   };
 
   const activeStockCode = activeStockContext?.stock_code ?? null;
@@ -461,14 +521,24 @@ const ChatPage: React.FC = () => {
   outlineItemsRef.current = outlineItems;
   const outlineVisible = !outlineCollapsed && outlineItems.length >= 2;
 
+  const normalizedSearch = sessionSearch.trim();
   const sessionGroups = useMemo(
-    () => groupSessionsByDate(sessions, {
-      pinned: t('chat.groupPinned'),
-      today: t('chat.groupToday'),
-      yesterday: t('chat.groupYesterday'),
-      earlier: t('chat.groupEarlier'),
-    }),
-    [sessions, t],
+    () => {
+      if (!normalizedSearch) {
+        return groupSessionsByDate(sessions, {
+          pinned: t('chat.groupPinned'),
+          today: t('chat.groupToday'),
+          yesterday: t('chat.groupYesterday'),
+          earlier: t('chat.groupEarlier'),
+        });
+      }
+      const needle = normalizedSearch.toLowerCase();
+      const matches = sessions.filter((session) => session.title.toLowerCase().includes(needle));
+      return matches.length > 0
+        ? [{ key: 'search' as const, label: '', items: matches }]
+        : [];
+    },
+    [sessions, t, normalizedSearch],
   );
 
   useEffect(() => {
@@ -525,6 +595,14 @@ const ChatPage: React.FC = () => {
     targetSessionId: string,
     origin: SessionMenuOrigin = 'sidebar',
   ) => {
+    // Phones have no room for a coordinate-anchored popover and it closes on any
+    // scroll; the action sheet owns the same actions there.
+    if (compactLayout) {
+      setSheetEditingTitle(false);
+      setSheetTitleError('');
+      setActionSheetSessionId(targetSessionId);
+      return;
+    }
     const rect = event.currentTarget.getBoundingClientRect();
     setSessionMenu((current) => (current?.sessionId === targetSessionId && current.origin === origin
       ? null
@@ -534,7 +612,7 @@ const ChatPage: React.FC = () => {
           left: Math.max(8, rect.right - 150),
           origin,
         }));
-  }, []);
+  }, [compactLayout]);
 
   const startRenamingSession = useCallback((session: SessionListItem, origin: SessionMenuOrigin = 'sidebar') => {
     setSessionMenu(null);
@@ -547,13 +625,22 @@ const ChatPage: React.FC = () => {
   const syncScrollState = useCallback(() => {
     const viewport = messagesViewportRef.current;
     if (!viewport) return;
-    const nearBottom = isNearBottom({
+    const metrics = {
       scrollTop: viewport.scrollTop,
       clientHeight: viewport.clientHeight,
       scrollHeight: viewport.scrollHeight,
-    });
+    };
+    const nearBottom = isNearBottom(metrics);
     shouldStickToBottomRef.current = nearBottom;
-    setShowJumpToBottom((prev) => (nearBottom ? false : prev));
+    if (nearBottom) {
+      setJumpState((prev) => (prev === 'hidden' ? prev : 'hidden'));
+      return;
+    }
+    if (isBeyondOneScreen(metrics)) {
+      setJumpState((prev) => (prev === 'new' ? 'new' : 'plain'));
+      return;
+    }
+    setJumpState((prev) => (prev === 'new' ? 'new' : 'hidden'));
   }, []);
 
   const scrollToBottom = useCallback((behavior: ScrollBehavior = 'auto') => {
@@ -573,7 +660,7 @@ const ChatPage: React.FC = () => {
     shouldStickToBottomRef.current = true;
     pendingRestoreAnchorRef.current = null;
     pendingScrollBehaviorRef.current = behavior;
-    setShowJumpToBottom(false);
+    setJumpState('hidden');
   }, []);
 
   const jumpToMessage = useCallback((messageId: string) => {
@@ -614,7 +701,7 @@ const ChatPage: React.FC = () => {
     shouldStickToBottomRef.current = false;
     pendingRestoreAnchorRef.current = 'auto';
     pendingScrollBehaviorRef.current = 'auto';
-    setShowJumpToBottom(false);
+    setJumpState('hidden');
     setActiveOutlineId(null);
   }, [sessionId]);
 
@@ -641,7 +728,7 @@ const ChatPage: React.FC = () => {
     const shouldAutoScroll = shouldStickToBottomRef.current;
     if (!shouldAutoScroll) {
       if (messages.length > 0 || progressSteps.length > 0 || loading || Boolean(streamingContent)) {
-        setShowJumpToBottom(true);
+        setJumpState('new');
       }
       return;
     }
@@ -857,6 +944,8 @@ const ChatPage: React.FC = () => {
     requestScrollToBottom('auto');
     useAgentChatStore.getState().startNewChat();
     setSidebarOpen(false);
+    setSessionSearch('');
+    setActionSheetSessionId(null);
   }, [closeTitleEditor, requestScrollToBottom, resetReportDraft]);
 
   const handleSwitchSession = useCallback((targetSessionId: string) => {
@@ -870,6 +959,8 @@ const ChatPage: React.FC = () => {
     requestScrollToBottom('auto');
     switchSession(targetSessionId);
     setSidebarOpen(false);
+    setSessionSearch('');
+    setActionSheetSessionId(null);
   }, [closeTitleEditor, requestScrollToBottom, resetReportDraft, sessionId, switchSession]);
 
   const confirmDelete = useCallback(() => {
@@ -1287,9 +1378,25 @@ const ChatPage: React.FC = () => {
     });
   }, []);
 
+  const showCopyFeedback = useCallback((type: 'success' | 'error', message: string) => {
+    if (copyToastTimerRef.current !== null) {
+      window.clearTimeout(copyToastTimerRef.current);
+    }
+    setCopyToast({ type, message });
+    copyToastTimerRef.current = window.setTimeout(() => {
+      setCopyToast(null);
+      copyToastTimerRef.current = null;
+    }, type === 'error' ? 4000 : 1800);
+  }, []);
+
+  /**
+   * Copy through the async clipboard API when the page is a secure context,
+   * then fall back to the legacy selection copy that also works over plain
+   * HTTP on a LAN address. Silence is not an option: a phone user cannot open
+   * the console to find out why nothing happened.
+   */
   const copyMessageToClipboard = useCallback(async (msgId: string, content: string) => {
-    try {
-      await navigator.clipboard.writeText(content);
+    const markCopied = () => {
       setCopiedMessages((prev) => new Set(prev).add(msgId));
       const existingTimer = copyResetTimerRef.current[msgId];
       if (existingTimer !== undefined) {
@@ -1303,10 +1410,41 @@ const ChatPage: React.FC = () => {
         });
         delete copyResetTimerRef.current[msgId];
       }, 2000);
-    } catch (err) {
-      console.error('Copy failed:', err);
+      showCopyFeedback('success', t('chat.copiedToast'));
+    };
+
+    try {
+      if (navigator.clipboard?.writeText) {
+        await navigator.clipboard.writeText(content);
+        markCopied();
+        return;
+      }
+    } catch {
+      // Fall through to the selection fallback.
     }
-  }, []);
+
+    try {
+      const textarea = document.createElement('textarea');
+      textarea.value = content;
+      textarea.setAttribute('readonly', '');
+      textarea.style.position = 'fixed';
+      textarea.style.top = '0';
+      textarea.style.opacity = '0';
+      document.body.appendChild(textarea);
+      textarea.select();
+      textarea.setSelectionRange(0, content.length);
+      const copied = document.execCommand?.('copy') ?? false;
+      document.body.removeChild(textarea);
+      if (copied) {
+        markCopied();
+        return;
+      }
+    } catch {
+      // Report the same actionable message as the no-API case.
+    }
+
+    showCopyFeedback('error', t('chat.copyFailedManual'));
+  }, [showCopyFeedback, t]);
 
   const downloadMessageAsMarkdown = useCallback((msg: Message) => {
     const skillLabel = getMessageSkillLabel(msg);
@@ -1332,10 +1470,16 @@ const ChatPage: React.FC = () => {
   const sessionMenuTarget = sessionMenu
     ? sessions.find((session) => session.session_id === sessionMenu.sessionId) ?? null
     : null;
+  const actionSheetSession = actionSheetSessionId
+    ? sessions.find((session) => session.session_id === actionSheetSessionId) ?? null
+    : null;
+  const showJumpToBottom = jumpState !== 'hidden';
 
-  const sidebarContent = (
+  const desktopSidebar = (
     <ChatSessionSidebar
       t={t}
+      language={language}
+      variant="desktop"
       sessionGroups={sessionGroups}
       sessionsCount={sessions.length}
       sessionsLoading={sessionsLoading}
@@ -1356,6 +1500,36 @@ const ChatPage: React.FC = () => {
     />
   );
 
+  const mobileSidebar = (
+    <ChatSessionSidebar
+      t={t}
+      language={language}
+      variant="mobile"
+      sessionGroups={sessionGroups}
+      sessionsCount={sessions.length}
+      sessionsLoading={sessionsLoading}
+      sessionId={sessionId}
+      menuSessionId={actionSheetSessionId}
+      editingSessionId={editingSessionId}
+      titleEditorOrigin={titleEditorOrigin}
+      sessionTitle={sessionTitle}
+      titleSaving={titleSaving}
+      titleError={titleError}
+      searchValue={sessionSearch}
+      onSearchChange={setSessionSearch}
+      searchScopeHint={sessions.length > 0
+        ? t('chat.searchScopeHint', { count: sessions.length })
+        : undefined}
+      onStartNewChat={handleStartNewChat}
+      onToggleSidebar={toggleSidebar}
+      onSwitchSession={handleSwitchSession}
+      onChangeTitle={setSessionTitle}
+      onSaveTitle={() => { void saveSessionTitle(); }}
+      onCloseTitleEditor={closeTitleEditor}
+      onOpenMenu={openSessionMenu}
+    />
+  );
+
 
   const objectStatusText = activeStockContext
     ? t('chat.currentObject', {
@@ -1365,25 +1539,28 @@ const ChatPage: React.FC = () => {
 
   return (
     <div data-testid="chat-workspace" className="research-chat chat-workspace">
-      {/* Desktop conversation list */}
-      {!sidebarCollapsed && (
+      {/* Desktop conversation list (hidden entirely on a phone: the drawer owns
+          the same content there) */}
+      {!compactLayout && !sidebarCollapsed && (
         <aside className="chat-sessions-panel">
-          {sidebarContent}
+          {desktopSidebar}
         </aside>
       )}
 
-      {/* Mobile conversation list */}
-      {sidebarOpen && (
-        <div className="chat-mobile-drawer fixed inset-0 z-40" onClick={() => setSidebarOpen(false)}>
-          <div className="page-drawer-overlay absolute inset-0" />
-          <div
-            className="chat-sessions-panel chat-sessions-drawer absolute bottom-0 left-0 top-0 flex w-[17.5rem] flex-col overflow-hidden shadow-2xl"
-            onClick={(event) => event.stopPropagation()}
-          >
-            {sidebarContent}
-          </div>
-        </div>
-      )}
+      {/* Mobile conversation list: the shared drawer brings the animation,
+          Escape handling, focus restore and background scroll lock. */}
+      {compactLayout ? (
+        <Drawer
+          isOpen={sidebarOpen}
+          onClose={() => { setSidebarOpen(false); setSessionSearch(''); }}
+          title={t('chat.historyTitle')}
+          side="left"
+          width="max-w-[min(88vw,22.5rem)]"
+          bodyClassName="min-h-0 flex-1 overflow-y-auto"
+        >
+          {mobileSidebar}
+        </Drawer>
+      ) : null}
 
       <ConfirmDialog
         isOpen={Boolean(deleteConfirmId)}
@@ -1447,6 +1624,88 @@ const ChatPage: React.FC = () => {
         </>
       ) : null}
 
+      {compactLayout && actionSheetSession ? (
+        <BottomSheet
+          isOpen
+          onClose={() => { setActionSheetSessionId(null); setSheetEditingTitle(false); }}
+          title={sheetEditingTitle ? t('chat.rename') : t('chat.sessionActionsTitle')}
+          testId="chat-session-actions"
+        >
+          {sheetEditingTitle ? (
+            <form
+              className="chat-sheet-form"
+              onSubmit={(event) => { event.preventDefault(); void saveSheetTitle(); }}
+            >
+              <input
+                aria-label={t('chat.editTitle')}
+                value={sheetTitleDraft}
+                maxLength={60}
+                autoFocus
+                onChange={(event) => setSheetTitleDraft(event.target.value)}
+              />
+              {sheetTitleError ? <p role="alert" className="chat-sheet-error">{sheetTitleError}</p> : null}
+              <div className="chat-sheet-form-actions">
+                <button type="button" className="chat-sheet-cancel" onClick={() => setSheetEditingTitle(false)}>
+                  {t('common.cancel')}
+                </button>
+                <button type="submit" className="chat-sheet-primary" disabled={sheetTitleSaving}>
+                  {t('chat.saveTitle')}
+                </button>
+              </div>
+            </form>
+          ) : (
+            <>
+              <p className="chat-sheet-subtitle">{actionSheetSession.title}</p>
+              <button
+                type="button"
+                className="chat-sheet-item"
+                onClick={() => {
+                  void handleToggleSessionPin(actionSheetSession, !actionSheetSession.is_pinned);
+                  setActionSheetSessionId(null);
+                }}
+              >
+                {actionSheetSession.is_pinned
+                  ? <PinOff size={16} aria-hidden="true" />
+                  : <Pin size={16} aria-hidden="true" />}
+                {t(actionSheetSession.is_pinned ? 'chat.unpinSession' : 'chat.pinSession')}
+              </button>
+              <button
+                type="button"
+                className="chat-sheet-item"
+                onClick={() => {
+                  setSheetTitleDraft(actionSheetSession.title);
+                  setSheetTitleError('');
+                  setSheetEditingTitle(true);
+                }}
+              >
+                <Pencil size={16} aria-hidden="true" />
+                {t('chat.rename')}
+              </button>
+              <button
+                type="button"
+                className="chat-sheet-item is-danger"
+                onClick={() => {
+                  setDeleteConfirmId(actionSheetSession.session_id);
+                  setActionSheetSessionId(null);
+                }}
+              >
+                <Trash2 size={16} aria-hidden="true" />
+                {t('chat.deleteSession')}
+              </button>
+              <div className="chat-sheet-actions">
+                <button
+                  type="button"
+                  className="chat-sheet-cancel"
+                  onClick={() => setActionSheetSessionId(null)}
+                >
+                  {t('common.cancel')}
+                </button>
+              </div>
+            </>
+          )}
+        </BottomSheet>
+      ) : null}
+
       <section className="chat-main">
         <header className="chat-topbar">
           <div className="chat-topbar-main">
@@ -1454,9 +1713,10 @@ const ChatPage: React.FC = () => {
               type="button"
               onClick={() => setSidebarOpen(true)}
               className="chat-icon-btn chat-history-toggle-mobile"
-              aria-label="历史对话"
+              aria-label={t('chat.historyTitle')}
             >
-              <PanelLeftOpen size={17} aria-hidden="true" />
+              <History size={16} aria-hidden="true" />
+              <span className="chat-history-toggle-label">{t('chat.historyButton')}</span>
             </button>
             {sidebarCollapsed ? (
               <button
@@ -1510,7 +1770,7 @@ const ChatPage: React.FC = () => {
             {outlineItems.length >= 2 ? (
               <button
                 type="button"
-                className="chat-icon-btn"
+                className="chat-icon-btn chat-outline-toggle"
                 onClick={toggleOutline}
                 aria-label={outlineCollapsed ? t('chat.outlineShow') : t('chat.outlineHide')}
                 aria-expanded={outlineVisible}
@@ -1520,6 +1780,7 @@ const ChatPage: React.FC = () => {
             ) : null}
             {agentStatus ? (
               <Badge
+                className="chat-topbar-badge"
                 variant={agentStatus.errorCode === 'backend_removed' ? 'warning' : 'history'}
                 size="sm"
               >
@@ -1602,6 +1863,14 @@ const ChatPage: React.FC = () => {
                 </button>
               </>
             )}
+            <button
+              type="button"
+              className="chat-icon-btn chat-new-chat-mobile"
+              onClick={handleStartNewChat}
+              aria-label={t('chat.newChatShort')}
+            >
+              <MessageSquarePlus size={17} aria-hidden="true" />
+            </button>
           </div>
         </header>
 
@@ -1742,8 +2011,6 @@ const ChatPage: React.FC = () => {
               onHide={toggleOutline}
             />
           ) : null}
-          </div>
-
           {showJumpToBottom && (
             <div className="chat-jump-wrap">
               <button
@@ -1752,14 +2019,26 @@ const ChatPage: React.FC = () => {
                 onClick={() => {
                   requestScrollToBottom('smooth');
                   scrollToBottom('smooth');
+                  setJumpState('hidden');
                 }}
-                aria-label="查看最新消息"
+                aria-label={jumpState === 'new' ? t('chat.jumpNewMessages') : t('chat.jumpToBottom')}
               >
                 <ChevronDown size={14} aria-hidden="true" />
-                有新消息
+                {jumpState === 'new' ? t('chat.jumpNewMessages') : t('chat.jumpToBottom')}
               </button>
             </div>
           )}
+          {copyToast ? (
+            <div className="chat-toast-wrap">
+              <div
+                role="status"
+                className={cn('chat-toast', copyToast.type === 'error' && 'is-error')}
+              >
+                {copyToast.message}
+              </div>
+            </div>
+          ) : null}
+          </div>
 
         <ChatInputArea
           t={t}

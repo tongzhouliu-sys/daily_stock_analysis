@@ -1,5 +1,9 @@
 import { ArrowUpRight, Sparkles } from 'lucide-react';
 import type { TranslateFn } from '../../contexts/UiLanguageContext';
+import { cn } from '../../utils/cn';
+
+/** Phones show four starter questions; the rest would need a scroll. */
+const QUICK_QUESTIONS_MOBILE_LIMIT = 4;
 
 interface ChatGuideCardsProps {
   t: TranslateFn;
@@ -29,7 +33,7 @@ export default function ChatGuideCards({ t, questions, disabled, onSelect }: Cha
               onClick={() => onSelect(index)}
               disabled={disabled}
               aria-label={question.label}
-              className="chat-quick-btn"
+              className={cn('chat-quick-btn', index >= QUICK_QUESTIONS_MOBILE_LIMIT && 'is-extra')}
             >
               <span>{question.label}</span>
               <ArrowUpRight size={14} aria-hidden="true" />

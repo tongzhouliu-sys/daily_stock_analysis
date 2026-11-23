@@ -1,5 +1,5 @@
 import { describe, expect, it, vi } from 'vitest';
-import { anchorMessageIdAtViewportTop, isNearBottom, scrollToMessage } from '../chatScroll';
+import { anchorMessageIdAtViewportTop, isBeyondOneScreen, isNearBottom, scrollToMessage } from '../chatScroll';
 
 describe('isNearBottom', () => {
   it('returns true when the viewport is within the default threshold', () => {
@@ -80,3 +80,13 @@ describe('anchorMessageIdAtViewportTop', () => {
   });
 });
 
+
+describe('isBeyondOneScreen', () => {
+  it('stays false while the reader is within one viewport of the newest message', () => {
+    expect(isBeyondOneScreen({ scrollTop: 300, clientHeight: 400, scrollHeight: 1000 })).toBe(false);
+  });
+
+  it('turns true only after a full viewport of distance', () => {
+    expect(isBeyondOneScreen({ scrollTop: 100, clientHeight: 400, scrollHeight: 1000 })).toBe(true);
+  });
+});

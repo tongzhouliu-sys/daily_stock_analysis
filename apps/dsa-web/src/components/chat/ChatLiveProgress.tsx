@@ -55,17 +55,21 @@ function toRenderedStep(
     };
   }
   if (step.type === 'tool_done') {
+    // The step label is already rendered on the left; the trailing text only
+    // carries what the label cannot: duration, record count and cache origin.
     const duration = step.duration ? numberLabel(step.duration) : '';
-    const records = typeof step.detail?.record_count === 'number'
-      ? ` · ${t('chat.progress.records', { count: step.detail.record_count })}`
-      : '';
-    const cached = step.detail?.data_source === 'cache' ? ` · ${t('chat.progress.cached')}` : '';
+    const details: string[] = [];
+    if (duration) details.push(duration);
+    if (typeof step.detail?.record_count === 'number') {
+      details.push(t('chat.progress.records', { count: step.detail.record_count }));
+    }
+    if (step.detail?.data_source === 'cache') details.push(t('chat.progress.cached'));
     return {
       key: step.call_id || `tool:${step.tool || label}`,
       label,
       meta: failed
-        ? t(step.outcome === 'timeout' ? 'chat.progress.toolTimeout' : 'chat.progress.toolFailed', { label })
-        : `${t('chat.progress.toolDone', { label, duration })}${records}${cached}`,
+        ? t(step.outcome === 'timeout' ? 'chat.progress.toolTimeout' : 'chat.progress.toolFailed')
+        : details.join(' · '),
       tone: failed ? 'error' : 'done',
     };
   }

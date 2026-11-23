@@ -28,38 +28,41 @@
 
 ## 配置
 
-13. **配置有 5–7 处同步点**：`src/config.py`（字段/默认值/`_load_from_env`）、`config_registry.py`（元数据/范围）、`system_config_service.py`（键清单/校验/兜底）、`.env.example`、文档。改默认值务必全局搜一遍字面量，见 `docs/config/config-single-source.md`。
-14. **新增配置要「不配置也能跑」**：默认值必须让旧部署行为不变；同时更新 `.env.example` 与相关文档。
-15. **配置写入有版本冲突**：`PUT /api/v1/system-config/config` 带 `config_version`，并发保存返回 409，前端要提示重新加载而不是静默覆盖。
+16. **配置有 5–7 处同步点**：`src/config.py`（字段/默认值/`_load_from_env`）、`config_registry.py`（元数据/范围）、`system_config_service.py`（键清单/校验/兜底）、`.env.example`、文档。改默认值务必全局搜一遍字面量，见 `docs/config/config-single-source.md`。
+17. **新增配置要「不配置也能跑」**：默认值必须让旧部署行为不变；同时更新 `.env.example` 与相关文档。
+18. **配置写入有版本冲突**：`PUT /api/v1/system-config/config` 带 `config_version`，并发保存返回 409，前端要提示重新加载而不是静默覆盖。
 
 ## 发布与工作流
 
-16. **自动 tag 是 opt-in**：只有 commit title 含 `#patch`/`#minor`/`#major` 才触发版本号更新。
-17. **`static/` 是构建产物**：前端构建输出到仓库根 `static/`，已在 `.gitignore` 里，不要提交。
-18. **桌面端要先构建 Web 再打包**：`apps/dsa-web` → `apps/dsa-desktop`，顺序反了会打进去旧前端。
+19. **自动 tag 是 opt-in**：只有 commit title 含 `#patch`/`#minor`/`#major` 才触发版本号更新。
+20. **`static/` 是构建产物**：前端构建输出到仓库根 `static/`，已在 `.gitignore` 里，不要提交。
+21. **桌面端要先构建 Web 再打包**：`apps/dsa-web` → `apps/dsa-desktop`，顺序反了会打进去旧前端。
 
 ## 前端
 
-19. **`ChatPage` 的测试 mock 是「每次调用一个 useState」的假 store**：新增 store 字段读取时要跟着更新 `src/pages/__tests__/ChatPage.test.tsx` 的 `mockStoreState`，否则组件读到的是 undefined。
-20. **打字不能重渲染历史消息**：消息项是 `memo` 的，父组件传给它的回调必须是稳定引用（用 ref 包一层），否则记忆化失效。
-21. **Enter 发送要判断输入法**：`event.nativeEvent.isComposing || event.keyCode === 229` 时必须直接返回，否则中文候选词确认会误发送。
-22. **双语文案**：`apps/dsa-web/src/i18n/uiText.ts` 与 `src/report_language.py` 各有中英文案，改一处要评估另一处。
-23. **大页面拆分优先做「组件边界 + 稳定回调」**：直接拆文件但把不稳定回调传下去，性能反而更差。
+22. **`ChatPage` 的测试 mock 是「每次调用一个 useState」的假 store**：新增 store 字段读取时要跟着更新 `src/pages/__tests__/ChatPage.test.tsx` 的 `mockStoreState`，否则组件读到的是 undefined。
+23. **打字不能重渲染历史消息**：消息项是 `memo` 的，父组件传给它的回调必须是稳定引用（用 ref 包一层），否则记忆化失效。
+24. **Enter 发送要判断输入法**：`event.nativeEvent.isComposing || event.keyCode === 229` 时必须直接返回，否则中文候选词确认会误发送。
+25. **双语文案**：`apps/dsa-web/src/i18n/uiText.ts` 与 `src/report_language.py` 各有中英文案，改一处要评估另一处。
+26. **大页面拆分优先做「组件边界 + 稳定回调」**：直接拆文件但把不稳定回调传下去，性能反而更差。
+
+27. **问股同名类名在 `index.css` 与 `research.css` 各有一套**：CSS 没有作用域，旧版聊天界面残留的规则会作用到新结构上。消息操作条曾因旧规则「绝对定位到右上角」全部叠在对话区右上角（手机遮住正文、桌面不可见）。改问股样式前先 `grep` 两个文件；删旧规则要确认没有组件引用（`grep -rn '类名' src --include=*.tsx`）。
+28. **几何回归只能靠浏览器夹具**：jsdom 不算布局，`opacity/position/overflow` 这类问题单元测试永远是绿的。重叠、溢出、触控尺寸、16px 输入框等断言放在 `apps/dsa-web/e2e/fixtures/`，用 `hasTouch` 上下文才能匹配 `(hover: none) and (pointer: coarse)`。另外 `min-width` 对表格单元格在自动表格布局下无效，列宽下限要设在 `table` 元素上。
 
 ## AI 协作资产
 
-24. **`AGENTS.md` 是唯一真源**：`CLAUDE.md` 是软链接，`.github/copilot-instructions.md` 与 `.github/instructions/` 是镜像；改治理规则后跑 `python scripts/check_ai_assets.py`。
-25. **`docs/ai/CODEMAP.md` 是生成文件**：手改会在 CI 的 `--check` 里失败，改完源码跑 `python scripts/gen_ai_codemap.py`。
+29. **`AGENTS.md` 是唯一真源**：`CLAUDE.md` 是软链接，`.github/copilot-instructions.md` 与 `.github/instructions/` 是镜像；改治理规则后跑 `python scripts/check_ai_assets.py`。
+30. **`docs/ai/CODEMAP.md` 是生成文件**：手改会在 CI 的 `--check` 里失败，改完源码跑 `python scripts/gen_ai_codemap.py`。
 
 ## 测试与日志
 
-26. **离线测试守卫**：`tests/support/network_guard.py` 默认以 `enforce` 模式拦截未标记 `@pytest.mark.network` 的外网连接（含子进程，靠 `DSA_OFFLINE_GUARD` 传递）；需要真实网络时用 `DSA_ALLOW_NETWORK=1` 或 `DSA_OFFLINE_GUARD=off/warn`。全量 `-m "not network"` 已在该模式下通过，新增联网用例必须显式标记。
-27. **日志用 `%s` 惰性格式化**：`logger.info(f"...")` 关闭级别也会先拼字符串；外部文本（新闻标题、模型输出、URL）进日志前要清洗换行，避免日志注入。
-28. **时间字段有两套约定**：`src/storage.py` 同时存在本地 naive 与 UTC naive，新增表必须在 `tests/test_time_basis_contract.py` 登记，并同步 `docs/ai/DATA-FLOW.md`。
-29. **文档与实现一致性**：改配置键、接口上限、能力开关时，同时检查 `.env.example`、`config_registry`、接口 description、专题文档和 CHANGELOG；不要出现“文档已宣称、代码未实现”或“CHANGELOG 已删除、文件仍在”。
-30. **全量离线套件成本**：约 12 分钟、峰值内存约 2.2GB；本地改动优先跑目标文件测试，全量留给 M0 收尾或最终验收。
+31. **离线测试守卫**：`tests/support/network_guard.py` 默认以 `enforce` 模式拦截未标记 `@pytest.mark.network` 的外网连接（含子进程，靠 `DSA_OFFLINE_GUARD` 传递）；需要真实网络时用 `DSA_ALLOW_NETWORK=1` 或 `DSA_OFFLINE_GUARD=off/warn`。全量 `-m "not network"` 已在该模式下通过，新增联网用例必须显式标记。
+32. **日志用 `%s` 惰性格式化**：`logger.info(f"...")` 关闭级别也会先拼字符串；外部文本（新闻标题、模型输出、URL）进日志前要清洗换行，避免日志注入。
+33. **时间字段有两套约定**：`src/storage.py` 同时存在本地 naive 与 UTC naive，新增表必须在 `tests/test_time_basis_contract.py` 登记，并同步 `docs/ai/DATA-FLOW.md`。
+34. **文档与实现一致性**：改配置键、接口上限、能力开关时，同时检查 `.env.example`、`config_registry`、接口 description、专题文档和 CHANGELOG；不要出现“文档已宣称、代码未实现”或“CHANGELOG 已删除、文件仍在”。
+35. **全量离线套件成本**：约 12 分钟、峰值内存约 2.2GB；本地改动优先跑目标文件测试，全量留给 M0 收尾或最终验收。
 
 ## CI 与仓库
 
-31. **PR 显示「no checks reported」先查仓库 Actions 开关**：仓库级 `actions/permissions.enabled=false` 时任何 workflow 都不会启动，而 `main` 又要求必需检查，结果是所有 PR 永久 `BLOCKED`（`enforce_admins=true` 时连管理员也无法绕过）。现象 → `gh pr checks <n>` 返回「no checks reported」且 `gh run list` 没有新 run；做法 → `gh api -X PUT repos/{owner}/{repo}/actions/permissions -F enabled=true`，再推一个空提交重新触发 `pull_request` 事件。
-32. **`main` 受保护时只能走 PR**：`git push origin main` 会被 protected branch hook 拒绝（必需检查 `ai-governance`/`backend-gate`/`web-gate`/`docker-build`）。`git commit` 后开短分支推上去、建 PR、等必需检查通过再 `gh pr merge --squash`。
+36. **PR 显示「no checks reported」先查仓库 Actions 开关**：仓库级 `actions/permissions.enabled=false` 时任何 workflow 都不会启动，而 `main` 又要求必需检查，结果是所有 PR 永久 `BLOCKED`（`enforce_admins=true` 时连管理员也无法绕过）。现象 → `gh pr checks <n>` 返回「no checks reported」且 `gh run list` 没有新 run；做法 → `gh api -X PUT repos/{owner}/{repo}/actions/permissions -F enabled=true`，再推一个空提交重新触发 `pull_request` 事件。
+37. **`main` 受保护时只能走 PR**：`git push origin main` 会被 protected branch hook 拒绝（必需检查 `ai-governance`/`backend-gate`/`web-gate`/`docker-build`）。`git commit` 后开短分支推上去、建 PR、等必需检查通过再 `gh pr merge --squash`。

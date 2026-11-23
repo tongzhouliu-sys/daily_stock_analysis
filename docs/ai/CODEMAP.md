@@ -20,7 +20,7 @@
 | `data_provider/` | 多数据源适配、优先级与 fallback | 25 | 20413 |
 | `api/` | FastAPI 应用与 v1 路由 | 47 | 13965 |
 | `bot/` | IM / 机器人接入 | 22 | 5507 |
-| `apps/dsa-web/src/` | Web 前端（React + Vite） | 364 | 118840 |
+| `apps/dsa-web/src/` | Web 前端（React + Vite） | 367 | 120049 |
 | `apps/dsa-desktop/` | Electron 桌面端壳与打包配置 | 8 | 8519 |
 | `scripts/` | 本地与 CI 脚本 | 54 | 10995 |
 | `.github/scripts/` | GitHub Actions 专用脚本 | 2 | 652 |
@@ -68,13 +68,13 @@
 
 | 文件 | 行数 |
 | --- | --- |
-| `apps/dsa-web/src/i18n/uiText.ts` | 3395 |
+| `apps/dsa-web/src/i18n/uiText.ts` | 3423 |
 | `apps/dsa-web/src/components/settings/LLMChannelEditor.tsx` | 2845 |
 | `apps/dsa-web/src/locales/settingsHelp.ts` | 2574 |
 | `apps/dsa-web/src/pages/StockScreeningPage.tsx` | 2354 |
 | `apps/dsa-web/src/pages/PortfolioPage.tsx` | 2252 |
+| `apps/dsa-web/src/pages/ChatPage.tsx` | 2194 |
 | `apps/dsa-web/src/pages/HomePage.tsx` | 2072 |
-| `apps/dsa-web/src/pages/ChatPage.tsx` | 1915 |
 | `apps/dsa-web/src/pages/SettingsPage.tsx` | 1742 |
 | `apps/dsa-web/src/pages/DecisionSignalsPage.tsx` | 1633 |
 | `apps/dsa-web/src/stores/agentChatStore.ts` | 1299 |
@@ -85,7 +85,7 @@
 
 - Python 源码（不含测试）：521 个文件，239391 行
 - Python 测试：393 个文件，196024 行
-- 前端 TS/TSX：356 个文件，108628 行
+- 前端 TS/TSX：359 个文件，109510 行
 - ≥400 行的 Python 文件：162 个
 
 规模数字只用于判断改动影响面，不是质量指标。

@@ -10,6 +10,10 @@ import { cn } from '../../utils/cn';
 import type { TranslateFn } from '../../contexts/UiLanguageContext';
 import { InlineAlert } from '../common';
 import type { SkillInfo } from '../../api/agent';
+import { useTouchLayout } from '../../hooks/useMediaQuery';
+
+const DEFAULT_COMPOSER_MAX_HEIGHT = 200;
+const TOUCH_COMPOSER_MAX_HEIGHT = 128;
 
 interface ChatInputAreaProps {
   t: TranslateFn;
@@ -87,15 +91,20 @@ export default function ChatInputArea({
   objectStatusText,
 }: ChatInputAreaProps) {
   const selectedSkillIdSet = new Set(selectedSkillIds);
+  const touchLayout = useTouchLayout();
+  const composerMaxHeight = touchLayout ? TOUCH_COMPOSER_MAX_HEIGHT : DEFAULT_COMPOSER_MAX_HEIGHT;
 
   const handleKeyDown = (event: React.KeyboardEvent<HTMLTextAreaElement>) => {
     // IME composition guard (T40): Enter while composing confirms the candidate
     // instead of sending the message.
     if (event.nativeEvent.isComposing || event.keyCode === 229) return;
-    if (event.key === 'Enter' && !event.shiftKey) {
-      event.preventDefault();
-      onSend();
-    }
+    if (event.key !== 'Enter') return;
+    // A phone keyboard has no Shift key, so Enter must insert a newline and the
+    // send button becomes the only send path. Desktop keeps Enter-to-send.
+    if (touchLayout) return;
+    if (event.shiftKey) return;
+    event.preventDefault();
+    onSend();
   };
 
   return (
@@ -199,12 +208,13 @@ export default function ChatInputArea({
             placeholder={placeholder}
             disabled={disabled}
             rows={1}
+            enterKeyHint={touchLayout ? 'enter' : 'send'}
             className="chat-composer-input"
             style={{ height: 'auto' }}
             onInput={(event) => {
               const target = event.target as HTMLTextAreaElement;
               target.style.height = 'auto';
-              target.style.height = `${Math.min(target.scrollHeight, 200)}px`;
+              target.style.height = `${Math.min(target.scrollHeight, composerMaxHeight)}px`;
             }}
           />
           <div className="chat-composer-bar">
