@@ -396,14 +396,20 @@ class FeishuSender:
         )
 
         if card_body is not None:
-            card_payload = json.dumps(card_body, ensure_ascii=False)
+            # 与 _card_size() / Webhook 预算使用同一序列化口径，避免实际
+            # App Bot payload 因默认分隔符空格比预算多出约 1KB。
+            card_payload = json.dumps(
+                card_body, ensure_ascii=False, separators=(",", ":")
+            )
             if self._app_send_raw(client, "interactive", card_payload):
                 return True
 
         # Fallback to plain text. Never send a JSON ``null`` card when the
         # compact card could not fit the budget.
         text_content = ensure_report_disclaimer(content) if include_disclaimer else content
-        text_payload = json.dumps({"text": text_content}, ensure_ascii=False)
+        text_payload = json.dumps(
+            {"text": text_content}, ensure_ascii=False, separators=(",", ":")
+        )
         return self._app_send_raw(client, "text", text_payload)
 
     def _app_send_raw(self, client: Any, msg_type: str, content_json: str) -> bool:
