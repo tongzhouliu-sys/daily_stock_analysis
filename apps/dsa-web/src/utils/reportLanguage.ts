@@ -87,6 +87,7 @@ const REPORT_TEXT = {
     daysUnit: '天',
     noScheduledDisclosure: '暂无已发布的预约披露日期',
     earningsCalendarSource: '来源',
+    earningsCycleProgress: '本周期已过',
   },
   en: {
     keyInsights: 'KEY INSIGHTS',
@@ -171,6 +172,7 @@ const REPORT_TEXT = {
     daysUnit: 'days',
     noScheduledDisclosure: 'No scheduled disclosure date published',
     earningsCalendarSource: 'Source',
+    earningsCycleProgress: 'Cycle elapsed',
   },
   ko: {
     keyInsights: '핵심 인사이트',
@@ -255,6 +257,7 @@ const REPORT_TEXT = {
     daysUnit: '일',
     noScheduledDisclosure: '공개된 예약 공시일 없음',
     earningsCalendarSource: '출처',
+    earningsCycleProgress: '주기 경과',
   },
 } as const;
 

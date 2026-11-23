@@ -445,7 +445,7 @@ export const ReportOverview: React.FC<ReportOverviewProps> = ({
             <ScoreGauge score={summary.sentimentScore} size="lg" language={reportLanguage} />
           </Card>
 
-          <ReportEarningsCalendar calendar={details?.earningsCalendar} language={reportLanguage} compact />
+          <ReportEarningsCalendar calendar={details?.earningsCalendar} language={reportLanguage} />
         </div>
 
         {hasBoards && (

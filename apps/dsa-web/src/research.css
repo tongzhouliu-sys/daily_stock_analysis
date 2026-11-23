@@ -2807,12 +2807,12 @@
   gap: 10px;
 }
 
-/* Compact earnings card for the cover rail. */
-.report-earnings-compact {
+/* Earnings calendar card in the overview aux row. */
+.report-earnings {
   display: flex;
   flex-direction: column;
   justify-content: center;
-  gap: 6px;
+  gap: 7px;
 }
 
 .report-earnings-head {
@@ -2842,6 +2842,12 @@
   letter-spacing: -0.01em;
 }
 
+.report-earnings-note {
+  color: var(--text-muted-text);
+  font-size: 11px;
+  line-height: 1.5;
+}
+
 .report-earnings-source {
   overflow: hidden;
   color: var(--text-muted-text);
@@ -2849,6 +2855,58 @@
   line-height: 1.5;
   text-overflow: ellipsis;
   white-space: nowrap;
+}
+
+/* Cycle timeline: last disclosed -> next scheduled, with the "today" pin. */
+.report-earnings-progress {
+  display: flex;
+  flex-direction: column;
+  gap: 5px;
+  margin-top: 2px;
+}
+
+.report-earnings-progress-labels {
+  display: flex;
+  align-items: baseline;
+  justify-content: space-between;
+  gap: 8px;
+  color: var(--text-muted-text);
+  font-size: 10px;
+  line-height: 1.4;
+}
+
+.report-earnings-progress-labels span:last-child {
+  color: hsl(var(--primary));
+  font-family: var(--font-mono);
+  font-size: 10px;
+  white-space: nowrap;
+}
+
+.report-earnings-track {
+  position: relative;
+  height: 5px;
+  overflow: hidden;
+  border-radius: 999px;
+  background: var(--bg-hover);
+}
+
+.report-earnings-track-fill {
+  position: absolute;
+  inset-block: 0;
+  inset-inline-start: 0;
+  border-radius: 999px;
+  background: linear-gradient(90deg, hsl(var(--primary) / 0.45), hsl(var(--primary)));
+}
+
+.report-earnings-track-pin {
+  position: absolute;
+  top: 50%;
+  width: 2px;
+  height: 9px;
+  transform: translate(-1px, -50%);
+  border-radius: 1px;
+  background: var(--text-primary);
+  box-shadow: 0 0 0 2px var(--bg-card);
 }
 
 /* Sentiment meter */
