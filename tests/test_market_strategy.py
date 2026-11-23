@@ -42,6 +42,7 @@ class TestMarketAnalyzerStrategyPrompt(unittest.TestCase):
         self.assertIn("多方/空方/存疑", prompt)
         self.assertIn("可观察的验证点", prompt)
         self.assertNotIn("时间口径（美股）", prompt)
+        self.assertIn("数据一致性", prompt)
 
     def test_us_prompt_contains_strategy_plan_section(self):
         with patch("src.market_analyzer.get_config", return_value=SimpleNamespace(report_language="en")):
@@ -54,6 +55,7 @@ class TestMarketAnalyzerStrategyPrompt(unittest.TestCase):
         self.assertIn("Grade news source reliability", prompt)
         self.assertIn("observable next-session validation points", prompt)
         self.assertIn("Time Clocks (US market)", prompt)
+        self.assertIn("Data consistency", prompt)
 
     def test_jp_kr_prompt_uses_region_aware_english_shell(self):
         cases = [

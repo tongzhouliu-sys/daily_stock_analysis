@@ -1922,6 +1922,7 @@ Do not present futures or Asia-session data as the US cash close; label each num
 - The entire fixed shell, headings, guidance, and conclusion must be in {shell_language_label}
 {data_boundary_requirement}
 {news_grading_requirement}
+- Data consistency: treat conflicting or impossible data (e.g., trading prices on a market holiday) as anomalies and exclude them; state the exclusion instead of smoothing it over.
 
 ---
 
@@ -1980,6 +1981,7 @@ Output the report content directly, no extra commentary.
 - 不要重复列出已由系统注入的表格数据；正文负责解释表格背后的含义
 {data_boundary_requirement}
 {news_grading_requirement}
+- 数据一致性：休市日出现交易行情、或同一时点数据互相矛盾时视为异常不采用，并在报告中说明，不要自行圆场。
 
 ---
 

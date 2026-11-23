@@ -5263,6 +5263,7 @@ Below are the news search results for **{stock_name}({code})**. The fast news wi
 6. ⚖️ **Long-short divergence (mandatory when conflicting)**:
    - If the news contains opposing catalysts (e.g., "demand strong" vs "demand peaking"), explicitly list the bull / bear / uncertain views with each source's stance (supplier / buyer / broker / practitioner), and state whether the market currently distinguishes them
    - Never merge contradictory views into a one-sided conclusion; do not fabricate divergence when there is none
+7. 🧭 **Reject contradictory data**: if the same timestamp yields conflicting or impossible data (e.g., trading prices on a market holiday, conflicting values for one metric), treat it as an anomaly, exclude it, and state the exclusion — do not smooth it over or splice values.
 
 ```
 {news_context}
@@ -5284,6 +5285,7 @@ Below are the news search results for **{stock_name}({code})**. The fast news wi
 6. ⚖️ **多空分歧（有矛盾时强制）**：
    - 若新闻中同时出现方向相反的催化（如“需求强”与“需求见顶”），必须显式列出多方/空方/存疑各说法及其来源立场（供给方/买方/券商/从业者），并判断市场当前是否在区分这些说法
    - 不要把互相矛盾的说法合并成单边结论；没有矛盾时不强行编造分歧
+7. 🧭 **矛盾数据不采用**：若同一时点出现互相矛盾的行情或事件数据（如休市日却出现交易行情、同一指标多个冲突数值），视为异常不采用，并在输出中说明，不要自行圆场或拼接。
 
 ```
 {news_context}

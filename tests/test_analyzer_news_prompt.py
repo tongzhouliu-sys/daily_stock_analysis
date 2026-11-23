@@ -198,6 +198,8 @@ class AnalyzerNewsPromptTestCase(unittest.TestCase):
         self.assertIn("二手转述", prompt)
         # 多空分歧：矛盾催化必须列多方/空方/存疑
         self.assertIn("多空分歧（有矛盾时强制）", prompt)
+        # 矛盾数据：异常/冲突数据不采用
+        self.assertIn("矛盾数据不采用", prompt)
         # T29: 长周期基本面/机构情报按 180 日窗口单独检索，提示词不能再要求一律丢弃
         self.assertIn("近180日", prompt)
         self.assertIn("财报与分红（价值投资口径）", prompt)
