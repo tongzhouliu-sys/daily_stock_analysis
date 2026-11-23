@@ -453,7 +453,6 @@
   font-weight: 600;
 }
 
-.research-report-grid,
 .research-report-insights {
   display: grid;
   grid-template-columns: minmax(0, 1fr);
@@ -467,9 +466,16 @@
   }
 }
 
-@container (min-width: 44rem) {
-  .research-report-grid {
-    grid-template-columns: minmax(0, 1fr) minmax(196px, 26%);
+/* Sentiment + earnings sit side by side once the pane has room. */
+.report-aux-grid {
+  display: grid;
+  grid-template-columns: minmax(0, 1fr);
+  gap: 14px;
+}
+
+@container (min-width: 40rem) {
+  .report-aux-grid {
+    grid-template-columns: repeat(2, minmax(0, 1fr));
   }
 }
 
@@ -2315,13 +2321,6 @@
   gap: 14px;
 }
 
-.report-rail {
-  display: flex;
-  min-width: 0;
-  flex-direction: column;
-  gap: 14px;
-}
-
 .report-model-note {
   padding-inline: 2px;
   color: var(--text-muted-text);
@@ -2364,9 +2363,63 @@
 /* Hero */
 .report-hero-head {
   display: flex;
-  align-items: flex-start;
+  flex-wrap: wrap;
+  align-items: center;
   justify-content: space-between;
-  gap: 12px;
+  gap: 8px 12px;
+}
+
+.report-hero-actions {
+  display: flex;
+  margin-inline-start: auto;
+  flex: none;
+  align-items: center;
+  gap: 8px;
+}
+
+/* Watchlist toggle: same surface as the share trigger, compressed to a chip. */
+.report-hero-watch {
+  display: inline-flex;
+  height: 40px;
+  flex: none;
+  align-items: center;
+  gap: 7px;
+  padding-inline: 12px;
+  color: var(--text-secondary-text);
+  font-size: 14px;
+  font-weight: 500;
+  white-space: nowrap;
+  transition: color 150ms ease;
+}
+
+.report-hero-watch:hover:not(:disabled) {
+  color: var(--text-primary);
+}
+
+.report-hero-watch[aria-pressed="true"] {
+  color: hsl(var(--primary));
+}
+
+.report-hero-watch:disabled {
+  cursor: not-allowed;
+  opacity: 0.55;
+}
+
+.report-hero-note {
+  margin-top: 6px;
+  color: var(--text-secondary-text);
+  font-size: 11px;
+  text-align: right;
+  animation: fadeIn 150ms ease;
+}
+
+@container (max-width: 30rem) {
+  /* On phones let the code/phase/date line use the full width and drop the
+     action buttons to their own right-aligned row instead of squeezing the
+     date onto an orphan line. */
+  .report-hero-meta {
+    flex-basis: 100%;
+  }
 }
 
 .report-hero-meta {
@@ -2748,20 +2801,6 @@
 }
 
 /* Rail */
-.report-rail-code {
-  margin-top: 3px;
-  color: var(--text-muted-text);
-  font-size: 12px;
-  letter-spacing: 0.04em;
-}
-
-.report-rail-watch-row {
-  display: flex;
-  align-items: center;
-  justify-content: space-between;
-  gap: 10px;
-}
-
 .report-sentiment-card {
   display: flex;
   flex-direction: column;
@@ -2772,6 +2811,7 @@
 .report-earnings-compact {
   display: flex;
   flex-direction: column;
+  justify-content: center;
   gap: 6px;
 }
 

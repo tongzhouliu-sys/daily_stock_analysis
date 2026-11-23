@@ -1,4 +1,5 @@
 import type React from 'react';
+import { Star } from 'lucide-react';
 import {
   getSentimentLabel,
   getSentimentTone,
@@ -7,7 +8,7 @@ import {
   type ReportStrategy as ReportStrategyType,
   type ReportSummary as ReportSummaryType,
 } from '../../types/analysis';
-import { Badge, Button, Card, ScoreGauge } from '../common';
+import { Badge, Card, ScoreGauge, Tooltip } from '../common';
 import { formatDateTime } from '../../utils/format';
 import { getMarketPhaseSummaryLabel, getPartialBarLabel } from '../../utils/marketPhase';
 import { getReportText, normalizeReportLanguage } from '../../utils/reportLanguage';
@@ -212,6 +213,13 @@ export const ReportOverview: React.FC<ReportOverviewProps> = ({
   };
 
   const actionLabel = (summary.actionLabel || '').trim();
+  const showWatchlist = Boolean(watchlist)
+    && meta.reportType !== 'market_review'
+    && meta.assetType !== 'index';
+  const inWatchlist = showWatchlist && watchlist ? watchlist.isInWatchlist(meta.stockCode) : false;
+  const watchlistActionLabel = inWatchlist
+    ? t('report.removeFromWatchlist')
+    : t('report.addToWatchlist');
   const sentimentScore = typeof summary.sentimentScore === 'number' ? summary.sentimentScore : null;
   const sentimentTone = sentimentScore !== null ? getSentimentTone(sentimentScore) : 'default';
   const sentimentLabel = sentimentScore !== null ? getSentimentLabel(sentimentScore, reportLanguage) : null;
@@ -269,12 +277,38 @@ export const ReportOverview: React.FC<ReportOverviewProps> = ({
               {formatDateTime(meta.createdAt)}
             </span>
           </div>
-          <ShareReportButton
-            recordId={meta.id}
-            reportTitle={`${meta.stockName || meta.stockCode}-${meta.stockCode}`}
-            reportLanguage={reportLanguage}
-          />
+          <div className="report-hero-actions">
+            {showWatchlist && watchlist ? (
+              <Tooltip content={watchlistActionLabel}>
+                <button
+                  type="button"
+                  className="home-surface-button report-hero-watch"
+                  aria-label={watchlistActionLabel}
+                  aria-pressed={inWatchlist}
+                  disabled={watchlist.isActioning}
+                  onClick={() => watchlist.onToggle(meta.stockCode)}
+                >
+                  <Star
+                    className={inWatchlist ? 'h-5 w-5 fill-current text-primary' : 'h-5 w-5'}
+                    aria-hidden="true"
+                  />
+                  <span>{t('report.watchlist')}</span>
+                </button>
+              </Tooltip>
+            ) : null}
+            <ShareReportButton
+              recordId={meta.id}
+              reportTitle={`${meta.stockName || meta.stockCode}-${meta.stockCode}`}
+              reportLanguage={reportLanguage}
+            />
+          </div>
         </div>
+
+        {showWatchlist && watchlist?.actionMessage ? (
+          <p role="status" className="report-hero-note">
+            {watchlist.actionMessage}
+          </p>
+        ) : null}
 
         <div className="report-hero-title-row">
           <h3 className="report-hero-name">
@@ -355,97 +389,52 @@ export const ReportOverview: React.FC<ReportOverviewProps> = ({
         </section>
       </Card>
 
-      <div className="research-report-grid">
-        {/* 左侧：结论与点位 */}
-        <div className="report-main-column">
-          <div className="research-report-insights">
-            <Card
-              variant="bordered"
-              padding="sm"
-              hoverable
-              className="home-panel-card home-insight-card report-verdict-card"
-              style={{ ['--home-insight-tone' as string]: 'var(--home-strategy-buy)' }}
-            >
-              <div className="report-verdict-top">
-                <div className="report-verdict-icon bg-success/10 text-success">
-                  <svg className="h-4 w-4" fill="none" stroke="currentColor" viewBox="0 0 24 24" aria-hidden="true">
-                    <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={1.5} d="M9 5H7a2 2 0 00-2 2v12a2 2 0 002 2h10a2 2 0 002-2V7a2 2 0 00-2-2h-2M9 5a2 2 0 002 2h2a2 2 0 002-2M9 5a2 2 0 012-2h2a2 2 0 012 2m-6 9l2 2 4-4" />
-                  </svg>
-                </div>
-                <h4 className="report-verdict-label">{text.actionAdvice}</h4>
+      <div className="report-main-column">
+        <div className="research-report-insights">
+          <Card
+            variant="bordered"
+            padding="sm"
+            hoverable
+            className="home-panel-card home-insight-card report-verdict-card"
+            style={{ ['--home-insight-tone' as string]: 'var(--home-strategy-buy)' }}
+          >
+            <div className="report-verdict-top">
+              <div className="report-verdict-icon bg-success/10 text-success">
+                <svg className="h-4 w-4" fill="none" stroke="currentColor" viewBox="0 0 24 24" aria-hidden="true">
+                  <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={1.5} d="M9 5H7a2 2 0 00-2 2v12a2 2 0 002 2h10a2 2 0 002-2V7a2 2 0 00-2-2h-2M9 5a2 2 0 002 2h2a2 2 0 002-2M9 5a2 2 0 012-2h2a2 2 0 012 2m-6 9l2 2 4-4" />
+                </svg>
               </div>
-              <p className="report-verdict-body">
-                {summary.operationAdvice || text.noAdvice}
-              </p>
-            </Card>
+              <h4 className="report-verdict-label">{text.actionAdvice}</h4>
+            </div>
+            <p className="report-verdict-body">
+              {summary.operationAdvice || text.noAdvice}
+            </p>
+          </Card>
 
-            <Card
-              variant="bordered"
-              padding="sm"
-              hoverable
-              className="home-panel-card home-insight-card report-verdict-card"
-              style={{ ['--home-insight-tone' as string]: 'var(--home-strategy-take)' }}
-            >
-              <div className="report-verdict-top">
-                <div className="report-verdict-icon bg-warning/10 text-warning">
-                  <svg className="h-4 w-4" fill="none" stroke="currentColor" viewBox="0 0 24 24" aria-hidden="true">
-                    <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={1.5} d="M13 7h8m0 0v8m0-8l-8 8-4-4-6 6" />
-                  </svg>
-                </div>
-                <h4 className="report-verdict-label">{text.trendPrediction}</h4>
+          <Card
+            variant="bordered"
+            padding="sm"
+            hoverable
+            className="home-panel-card home-insight-card report-verdict-card"
+            style={{ ['--home-insight-tone' as string]: 'var(--home-strategy-take)' }}
+          >
+            <div className="report-verdict-top">
+              <div className="report-verdict-icon bg-warning/10 text-warning">
+                <svg className="h-4 w-4" fill="none" stroke="currentColor" viewBox="0 0 24 24" aria-hidden="true">
+                  <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={1.5} d="M13 7h8m0 0v8m0-8l-8 8-4-4-6 6" />
+                </svg>
               </div>
-              <p className="report-verdict-body">
-                {summary.trendPrediction || text.noPrediction}
-              </p>
-            </Card>
-          </div>
-
-          <ReportStrategy strategy={strategy} language={reportLanguage} />
-
-          {hasBoards && (
-            <Card variant="bordered" padding="sm" className="home-panel-card report-boards min-w-0 max-w-full text-left">
-              <section aria-label={text.relatedBoards} className="min-w-0 max-w-full">
-                <div className="report-section-head">
-                  <div className="report-section-heading">
-                    <span className="label-uppercase">{text.boardLinkage}</span>
-                    <h3>{text.relatedBoards}</h3>
-                  </div>
-                  <span className="report-section-count font-mono">{preparedRelatedBoards.length}</span>
-                </div>
-
-                <div className="home-related-board-list report-board-row flex min-h-6 w-full min-w-0 max-w-full flex-nowrap items-center gap-2 overflow-x-auto overscroll-x-contain touch-pan-x pb-1">
-                  {preparedRelatedBoards.map(renderBoardChip)}
-                </div>
-              </section>
-            </Card>
-          )}
+              <h4 className="report-verdict-label">{text.trendPrediction}</h4>
+            </div>
+            <p className="report-verdict-body">
+              {summary.trendPrediction || text.noPrediction}
+            </p>
+          </Card>
         </div>
 
-        {/* 右侧：自选 / 情绪 / 财报 */}
-        <div className="report-rail">
-          {watchlist && meta.reportType !== 'market_review' && meta.assetType !== 'index' && (
-            <Card variant="bordered" padding="sm" className="home-panel-card report-rail-watchlist">
-              <div className="report-rail-watch-row">
-                <div className="min-w-0">
-                  <span className="label-uppercase">{t('report.watchlist')}</span>
-                  <div className="report-rail-code font-mono">{meta.stockCode}</div>
-                </div>
-                <Button
-                  variant={watchlist.isInWatchlist(meta.stockCode) ? 'danger-subtle' : 'secondary'}
-                  size="sm"
-                  isLoading={watchlist.isActioning}
-                  onClick={() => watchlist.onToggle(meta.stockCode)}
-                  className="shrink-0 text-xs"
-                >
-                  {watchlist.isInWatchlist(meta.stockCode) ? t('report.removeFromWatchlist') : t('report.addToWatchlist')}
-                </Button>
-              </div>
-              {watchlist.actionMessage && (
-                <p className="mt-2 text-[11px] text-secondary-text animate-in fade-in">{watchlist.actionMessage}</p>
-              )}
-            </Card>
-          )}
+        <ReportStrategy strategy={strategy} language={reportLanguage} />
 
+        <div className="report-aux-grid">
           <Card variant="bordered" padding="md" className="home-panel-card home-rail-card report-sentiment-card !overflow-visible">
             <div className="report-section-head">
               <div className="report-section-heading">
@@ -458,6 +447,24 @@ export const ReportOverview: React.FC<ReportOverviewProps> = ({
 
           <ReportEarningsCalendar calendar={details?.earningsCalendar} language={reportLanguage} compact />
         </div>
+
+        {hasBoards && (
+          <Card variant="bordered" padding="sm" className="home-panel-card report-boards min-w-0 max-w-full text-left">
+            <section aria-label={text.relatedBoards} className="min-w-0 max-w-full">
+              <div className="report-section-head">
+                <div className="report-section-heading">
+                  <span className="label-uppercase">{text.boardLinkage}</span>
+                  <h3>{text.relatedBoards}</h3>
+                </div>
+                <span className="report-section-count font-mono">{preparedRelatedBoards.length}</span>
+              </div>
+
+              <div className="home-related-board-list report-board-row flex min-h-6 w-full min-w-0 max-w-full flex-nowrap items-center gap-2 overflow-x-auto overscroll-x-contain touch-pan-x pb-1">
+                {preparedRelatedBoards.map(renderBoardChip)}
+              </div>
+            </section>
+          </Card>
+        )}
       </div>
     </div>
   );

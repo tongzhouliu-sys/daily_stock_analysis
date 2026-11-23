@@ -8,7 +8,7 @@ and this project adheres to [Semantic Versioning](https://semver.org/).
 > For user-friendly release highlights, see the [GitHub Releases](https://github.com/ZhuLinsen/daily_stock_analysis/releases) page.
 
 ## [Unreleased]
-- [改进] 首页分析报告版式重构：封面合并为「代码/价格 + 关键指标带 + 核心洞察」单卡，结论、狙击点位、关联板块归入左列，自选 / 情绪 / 财报归入右列；资讯与结构化证据统一单列，输入数据块 / 运行诊断的折叠头改为标题独占一行、状态徽章下移，去掉展开区内重复标题，展开后的块状态与链路诊断不再被窄列挤压。
+- [改进] 首页分析报告版式重构：封面合并为「代码/价格 + 关键指标带 + 核心洞察」单卡，自选改为分享按钮左侧的星标切换；结论、狙击点位、情绪 / 财报（宽栏并排）、关联板块统一单列，资讯与结构化证据不再拆双列，输入数据块 / 运行诊断折叠头改为标题独占一行、状态徽章下移，展开后的块状态与链路诊断不再被窄列挤压。
 - [改进] 回测 AI 预测悬浮卡：鼠标移入 AI 预测单元格改为瀑布式详情卡（趋势判断 / 操作建议 / 实际复盘，左侧流动光轨 + 错峰上浮动画），长文可在卡内滚动并支持键盘聚焦，深浅色分别调色；通用 Tooltip 新增 `panel` / `interactive` 模式。详见 [开发任务书](tasks/backtest-result-layout.md#9-追加优化ai-预测瀑布屏悬浮卡2026-11-23)。
 - [修复] 回测结果区文字遮挡：结果表改为不透明吸顶表头 + 固定列宽 + 首列吸附，滚动时行文字不再透出表头、相邻列不再互相挤压；`<900px` 改为卡片列表，消除横向滚动与列被裁切；筛选区改为自适应网格、指标卡在平板宽度分栏展示，长文本统一省略并保留完整 Tooltip。详见 [开发任务书](tasks/backtest-result-layout.md)。
 - [chore] 协作规则改为「验证后直接推 main」：关闭 `main` 的管理员强制状态检查（`enforce_admins=false`），管理员改完并通过第 6 节验证后直接 `git commit` + `git push origin main`，不再建短分支/PR；非管理员协作仍走分支 + PR。同步更新 `AGENTS.md`、GitHub Copilot 指令与 `fix-issue` skill。
