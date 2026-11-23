@@ -196,6 +196,21 @@ def _terminate_analysis_process_tree(process: Any) -> None:
             process.terminate()
     process.join(10)
 
+    # After SIGKILL, wait for descendant process groups to actually exit.
+    # process.join() only waits for the root process; descendants in their
+    # own sessions may still be terminating when the root is already gone.
+    if os.name == "posix" and remaining_process_groups:
+        deadline = time.monotonic() + 5
+        for process_group in remaining_process_groups:
+            while time.monotonic() < deadline:
+                try:
+                    os.killpg(process_group, 0)
+                except ProcessLookupError:
+                    break
+                except PermissionError:
+                    break
+                time.sleep(0.05)
+
 
 def _agent_event_monitor_interval_seconds(config: Config) -> int:
     """Return the validated Event Monitor polling interval in seconds."""
