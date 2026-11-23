@@ -193,6 +193,9 @@ class AnalyzerNewsPromptTestCase(unittest.TestCase):
         self.assertIn("快讯窗口为近7日", prompt)
         self.assertIn("每一条都必须带具体日期（YYYY-MM-DD）", prompt)
         self.assertIn("只取近7日内的内容", prompt)
+        # 证据分级：新闻进入 risk/catalyst/news 字段前必须标注来源可信度
+        self.assertIn("来源可信度（强制）", prompt)
+        self.assertIn("二手转述", prompt)
         # T29: 长周期基本面/机构情报按 180 日窗口单独检索，提示词不能再要求一律丢弃
         self.assertIn("近180日", prompt)
         self.assertIn("财报与分红（价值投资口径）", prompt)

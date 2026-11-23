@@ -5257,6 +5257,9 @@ Below are the news search results for **{stock_name}({code})**. The fast news wi
    - Every item written to `risk_alerts` / `positive_catalysts` / `latest_news` must include a specific date (YYYY-MM-DD)
    - `risk_alerts` / `positive_catalysts` / `latest_news` must stay inside the last {news_window_days} days; older items belong in the fundamental/earnings commentary, not in the news fields
    - Fundamental, institutional and earnings background may use items up to {analytical_intel_days} days old, but you must state the date; if the date is unknown, say the date is unmarked and do not present it as a fresh catalyst
+5. 🔍 **Source reliability (mandatory)**:
+   - For every item written to `risk_alerts` / `positive_catalysts` / `latest_news`, tag its reliability: confirmed (company filing / exchange / official disclosure) / observed but unconfirmed (price inference, positioning guess, market rumor) / second-hand (broker, media, or self-media view without the original report) / personal opinion or unverified quote (social posts, unreconciled quotes)
+   - Second-hand or lower must be labeled explicitly and never presented as confirmed fact; when unsure, treat it as second-hand
 
 ```
 {news_context}
@@ -5272,6 +5275,9 @@ Below are the news search results for **{stock_name}({code})**. The fast news wi
    - 输出到 `risk_alerts` / `positive_catalysts` / `latest_news` 的每一条都必须带具体日期（YYYY-MM-DD）
    - `risk_alerts` / `positive_catalysts` / `latest_news` 只取近{news_window_days}日内的内容，更早的只能写进基本面/业绩点评
    - 基本面、机构与业绩背景可以引用近{analytical_intel_days}日内的信息，但必须写出日期；日期未标注的要明确说明“时间未标注”，不得当作今日新增催化
+5. 🔍 **来源可信度（强制）**：
+   - 对进入 `risk_alerts` / `positive_catalysts` / `latest_news` 的每条信息，标注可信度层级：已确认（公司公告/交易所/官方披露）/ 观察中未确认（行情推断、持仓推测、市场传闻）/ 二手转述（券商、媒体、自媒体观点，未见原始报告）/ 个人观点或待核引语（社交平台、未经核对的引语）
+   - 二手转述及以上必须显式标注，不得写成已确认事实；无法判断时按「二手转述」处理
 
 ```
 {news_context}
