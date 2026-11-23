@@ -11,20 +11,20 @@
 
 | 目录 | 职责 | 文件数 | 行数 |
 | --- | --- | --- | --- |
-| `src/core/` | 主流程编排：pipeline、配置装配、调度入口 | 14 | 14492 |
-| `src/services/` | 业务服务层：分析、筛选、通知、系统配置、任务与诊断 | 219 | 87228 |
+| `src/core/` | 主流程编排：pipeline、配置装配、调度入口 | 14 | 14507 |
+| `src/services/` | 业务服务层：分析、筛选、通知、系统配置、任务与诊断 | 219 | 87340 |
 | `src/repositories/` | 数据访问层：数据库读写封装 | 14 | 4268 |
 | `src/schemas/` | API / 报告数据结构定义 | 10 | 2114 |
-| `src/agent/` | 问股 Agent：意图解析、编排、工具与流式事件 | 66 | 27143 |
+| `src/agent/` | 问股 Agent：意图解析、编排、工具与流式事件 | 66 | 27287 |
 | `src/llm/` | LLM 调用封装与本地 CLI 生成后端 | 12 | 6466 |
 | `data_provider/` | 多数据源适配、优先级与 fallback | 25 | 20413 |
 | `api/` | FastAPI 应用与 v1 路由 | 47 | 13965 |
 | `bot/` | IM / 机器人接入 | 22 | 5507 |
-| `apps/dsa-web/src/` | Web 前端（React + Vite） | 364 | 118785 |
+| `apps/dsa-web/src/` | Web 前端（React + Vite） | 364 | 118840 |
 | `apps/dsa-desktop/` | Electron 桌面端壳与打包配置 | 8 | 8519 |
 | `scripts/` | 本地与 CI 脚本 | 54 | 10995 |
 | `.github/scripts/` | GitHub Actions 专用脚本 | 2 | 652 |
-| `tests/` | pytest 测试 | 401 | 196132 |
+| `tests/` | pytest 测试 | 402 | 196414 |
 
 ## 大文件（Python，≥400 行）
 
@@ -32,20 +32,20 @@
 
 | 文件 | 行数 | 关键顶层声明（行号） | 引用 |
 | --- | --- | --- | --- |
-| `src/analyzer.py` | 6115 | `_describe_llm_result_model`:115, `_localized_text`:129, `_normalize_risk_warning_values`:139, `_today_has_realtime_overlay`:164, `_today_looks_complete_daily_bar`:177, `_phase_aware_quote_labels`:210 | 247 |
+| `src/analyzer.py` | 6129 | `_describe_llm_result_model`:115, `_localized_text`:129, `_normalize_risk_warning_values`:139, `_today_has_realtime_overlay`:164, `_today_looks_complete_daily_bar`:177, `_phase_aware_quote_labels`:210 | 247 |
 | `src/services/system_config_service.py` | 6088 | `ConfigValidationError`:123, `ConfigConflictError`:131, `ConfigImportError`:139, `_LLMDiagnostic`:148, `SystemConfigService`:158 | 31 |
 | `src/storage.py` | 5790 | `utc_naive_now`:81, `to_utc_naive_datetime`:86, `to_utc_isoformat`:93, `DatabaseSchemaMigration`:111, `StockDaily`:121, `NewsIntel`:201 | 404 |
 | `src/core/config_registry.py` | 5463 | `get_category_definitions`:5287, `get_registered_field_keys`:5292, `_extract_option_values`:5297, `get_field_definition`:5311, `build_schema_response`:5346, `_is_sensitive_key`:5369 | 24 |
 | `src/search_service.py` | 5269 | `_terminate_search_process`:61, `_search_topic_news_process_worker`:72, `_call_topic_news_in_subprocess`:100, `_post_with_retry`:191, `_get_with_retry`:203, `_is_public_http_url`:210 | 73 |
 | `data_provider/base.py` | 5221 | `_resolve_fundamental_timeout_worker_limit`:58, `interactive_mode`:82, `unwrap_exception`:99, `summarize_exception`:116, `normalize_stock_code`:126, `_is_us_market`:211 | 245 |
-| `src/core/pipeline.py` | 4457 | `_share_image_payload`:138, `_coerce_context_date`:152, `_supports_explicit_keyword`:166, `_symbol_scope_lookup_values`:181, `_measure_fetch_step`:252, `_format_fetch_timings`:267 | 73 |
+| `src/core/pipeline.py` | 4472 | `_share_image_payload`:138, `_coerce_context_date`:152, `_supports_explicit_keyword`:166, `_symbol_scope_lookup_values`:181, `_measure_fetch_step`:252, `_format_fetch_timings`:267 | 73 |
 | `src/services/screening_service.py` | 4384 | `_safe_float`:97, `_utc_now_iso`:109, `_resolve_screening_data_dir`:113, `_screening_hotspot_cache_path`:120, `_screening_hotspot_history_path`:126, `_screening_hotspot_detail_cache_dir`:132 | 23 |
 | `src/config.py` | 4091 | `ConfigIssue`:81, `_has_ntfy_topic_endpoint`:146, `_has_gotify_base_url`:157, `normalize_tickflow_kline_adjust`:171, `parse_prompt_cache_diagnostics_level`:183, `AgentContextCompressionPreset`:211 | 362 |
 | `src/notification.py` | 3375 | `_share_image_payload`:95, `_structured_payload_for`:109, `_safe_float`:117, `_format_strategy_skill_items`:137, `_append_strategy_synthesis_block`:157, `NotificationChannel`:208 | 87 |
 | `src/llm/local_cli_backend.py` | 2966 | `_diagnostic_field_name_pattern`:256, `_diagnostic_field_assignment_pattern`:286, `_diagnostic_json_assignment_pattern`:301, `_diagnostic_line_field_pattern`:315, `_diagnostic_double_quoted_yaml_line_pattern`:337, `_diagnostic_yaml_explicit_key_pattern`:357 | 25 |
 | `data_provider/akshare_fetcher.py` | 2640 | `_lots_to_shares`:64, `_is_etf_code`:120, `_is_hk_code`:139, `_normalize_tencent_volume`:171, `_normalize_cn_daily_volume`:203, `_parse_tencent_amount`:240 | 52 |
 | `src/agent/orchestrator.py` | 2628 | `_stage_trajectory_snapshot`:93, `_skipped_stage_trajectory`:124, `OrchestratorResult`:139, `PreparedOrchestratorChatTurn`:159, `AgentOrchestrator`:169, `_is_denied_ticker_candidate`:2420 | 78 |
-| `src/market_analyzer.py` | 2261 | `MarketIndex`:61, `MarketOverview`:93, `MarketLightReviewResult`:113, `MarketAnalyzer`:122 | 165 |
+| `src/market_analyzer.py` | 2317 | `MarketIndex`:61, `MarketOverview`:93, `MarketLightReviewResult`:113, `MarketAnalyzer`:122 | 167 |
 | `main.py` | 2186 | `_get_active_env_path`:137, `_log_startup_auth_state`:144, `_resolve_web_service_bind`:151, `_read_active_env_values`:158, `_bootstrap_environment`:186, `_setup_bootstrap_logging`:210 | 14 |
 | `src/agent/web_intent_resolver.py` | 2176 | `_dedup_stocks`:218, `_stock_payload`:225, `_stock_from_payload`:229, `_payload_stocks`:239, `_group_payload`:243, `_group_codes`:255 | 30 |
 | `src/share_image.py` | 2067 | `Table`:146, `StockPoster`:153, `MarketPoster`:178, `MarketSegment`:202, `_plain`:207, `_clean_value`:217 | 10 |
@@ -55,8 +55,8 @@
 | `src/services/run_diagnostics.py` | 1536 | `build_trace_id`:81, `sanitize_diagnostic_text`:86, `safe_diagnostic_key`:106, `sanitize_diagnostic_metadata`:112, `ProviderRun`:143, `LLMRun`:182 | 95 |
 | `api/v1/endpoints/analysis.py` | 1506 | `_get_task_trace_id`:96, `_task_asset_type`:106, `_task_stage`:132, `_task_progress_updated_at`:142, `_market_review_lock_path`:153, `_build_market_review_runtime`:155 | 17 |
 | `src/services/run_flow.py` | 1504 | `build_task_run_flow_snapshot`:77, `build_history_run_flow_snapshot`:183, `_append_provider_runs`:371, `_append_context_blocks`:474, `_append_llm_runs`:536, `_append_history_runs`:611 | 7 |
+| `src/notification_sender/feishu_card.py` | 1479 | `_Section`:154, `_config`:164, `_clamp`:168, `_clean_inline`:173, `_template_for`:181, `_split_count_tags`:197 | 22 |
 | `api/v1/endpoints/agent.py` | 1476 | `ChatRequest`:74, `_intake_status_code`:121, `_public_answer_meta`:125, `_needs_object_intake`:136, `_reuse_session_brief`:143, `_build_agent_chat_context`:160 | 29 |
-| `src/notification_sender/feishu_card.py` | 1468 | `_Section`:152, `_config`:162, `_clamp`:166, `_clean_inline`:171, `_template_for`:179, `_split_count_tags`:195 | 22 |
 | `data_provider/efinance_fetcher.py` | 1443 | `EfinanceRealtimeQuote`:95, `_lots_to_shares`:139, `_is_etf_code`:180, `_build_eastmoney_etf_secid`:197, `_is_us_code`:209, `_get_ef_executor`:221 | 16 |
 | `data_provider/tushare_fetcher.py` | 1427 | `_is_etf_code`:51, `_is_us_code`:63, `_resolve_tushare_http_url`:75, `_TushareHttpClient`:97, `TushareFetcher`:135 | 14 |
 | `src/report_language.py` | 1424 | `_normalized_disclaimer_candidate`:379, `is_report_disclaimer_line`:386, `strip_report_disclaimers`:399, `ensure_report_disclaimer`:415, `_strip_decision_negation_connectors`:884, `normalize_report_language`:898 | 184 |
@@ -83,9 +83,9 @@
 
 ## 规模快照
 
-- Python 源码（不含测试）：521 个文件，239039 行
-- Python 测试：392 个文件，195742 行
-- 前端 TS/TSX：356 个文件，108573 行
+- Python 源码（不含测试）：521 个文件，239391 行
+- Python 测试：393 个文件，196024 行
+- 前端 TS/TSX：356 个文件，108628 行
 - ≥400 行的 Python 文件：162 个
 
 规模数字只用于判断改动影响面，不是质量指标。

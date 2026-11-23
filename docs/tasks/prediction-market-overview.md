@@ -122,3 +122,4 @@
 
 - Web 报告新增 `PredictionMarketOverviewPanel` 摘要卡，读取 `GET /api/v1/prediction-markets/overview`；接口使用 `refresh=false`，查看历史报告时不会触发外部刷新。
 - 卡片展示：活跃合约数 + 类别分布、关注集中度、Top 3 事件、risk-on/risk-off 倾向与免责声明；未启用或池为空时整卡不渲染。
+- 问股：当本轮分析过程使用过 `search_prediction_markets` / `get_prediction_market_overview` 时，在回答下方复用同一摘要卡；未使用工具时不渲染。

@@ -8,6 +8,7 @@ and this project adheres to [Semantic Versioning](https://semver.org/).
 > For user-friendly release highlights, see the [GitHub Releases](https://github.com/ZhuLinsen/daily_stock_analysis/releases) page.
 
 ## [Unreleased]
+- [新功能] 问股回答下方新增「预测市场全景」摘要卡：当本轮分析过程使用了预测市场工具（`search_prediction_markets` / `get_prediction_market_overview`）时展示活跃合约数、类别分布、关注集中度、Top 事件与风险定价倾向；未使用工具或未启用时不渲染。
 - [修复] 飞书大盘复盘章节标题不再被截断：`_metric_category()` 去掉「一、二、」编号前缀后，未命中的章节名直接沿用完整标题（不再截成「二、指…」这类 4 字省略号）；行内含「指数 / 名称 / 代码 / 标的」等标识列时整行保留在正文，指数名与它的数值不再被拆到两个地方。
 - [修复] Agent 报告定稿前的新闻状态残留：每次 LLM 调用前注入本次运行的真实新闻检索结果（已检索 N 条 / 检索 0 条），并在报告定稿后清理风险项、置信度理由、技能推理与顶层文字字段中的「新闻数据块缺失 / 新闻块缺失 / 新闻上下文缺失 / 新闻数据缺失」误报；`news_result_count == 0` 时保留缺失提示，经典路径不变。
 - [新功能] 问股历史对话恢复体验：打开/切换历史会话自动定位到「上一次提问」而非消息流底部；消息悬停显示「修改（回填重发）/ 复制」与消息时间（相对时间 + 完整时间 tooltip，zh/en 本地化）；会话内多次提问时右侧新增「提问导航」目录，点击跳转并高亮、随滚动自动切换当前提问，折叠状态本地持久化。纯前端改动：`Message` 补充 `createdAt`（后端 `created_at` 早已返回），新增 `utils/chatTime.ts`、`utils/chatScroll.ts` 的 `scrollToMessage`/`anchorMessageIdAtViewportTop` 与 `ChatOutline` 组件。详见 [开发任务书](tasks/chat-history-ux.md)。

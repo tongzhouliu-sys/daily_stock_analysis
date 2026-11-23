@@ -1,7 +1,8 @@
 import { useState } from 'react';
-import { fireEvent, render, screen } from '@testing-library/react';
+import { fireEvent, render, screen, waitFor } from '@testing-library/react';
 import { beforeEach, describe, expect, it, vi } from 'vitest';
 import ChatMessageItem from '../ChatMessageItem';
+import { predictionMarketApi } from '../../../api/predictionMarket';
 import type { Message } from '../../../stores/agentChatStore';
 
 const renderSpy = vi.fn();
@@ -10,6 +11,12 @@ vi.mock('../ChatAnswer', () => ({
   default: ({ content }: { content: string }) => {
     renderSpy(content);
     return <div data-testid="chat-answer">{content}</div>;
+  },
+}));
+
+vi.mock('../../../api/predictionMarket', () => ({
+  predictionMarketApi: {
+    getOverview: vi.fn(),
   },
 }));
 
@@ -165,5 +172,42 @@ describe('ChatMessageItem user message actions', () => {
     render(<ChatMessageItem {...props} />);
 
     expect(screen.queryByRole('button', { name: '修改' })).not.toBeInTheDocument();
+  });
+
+  it('shows the prediction market overview card when the agent used the tool', async () => {
+    vi.mocked(predictionMarketApi.getOverview).mockResolvedValue({
+      enabled: true,
+      totalContracts: 12,
+      byCategory: { macro: 7, crypto: 5 },
+      bySource: { kalshi: 12 },
+      topEvents: [],
+      attentionConcentration: 0.5,
+      attitude: {
+        label: '中性/分歧',
+        tilt: 0.01,
+        riskOn: { count: 4, avgProbability: 0.5 },
+        riskOff: { count: 4, avgProbability: 0.49 },
+      },
+      generatedAt: '2026-11-23T00:00:00',
+    });
+    const props = buildProps();
+    props.message = {
+      id: 'pm-tool',
+      role: 'assistant',
+      content: '预测市场总结',
+      thinkingSteps: [{ type: 'tool_done', tool: 'search_prediction_markets' }],
+    } as Message;
+
+    render(<ChatMessageItem {...props} />);
+
+    await waitFor(() => expect(screen.getByText(/活跃合约/)).toBeInTheDocument());
+  });
+
+  it('hides the prediction market overview card without the tool', () => {
+    const props = buildProps();
+
+    render(<ChatMessageItem {...props} />);
+
+    expect(screen.queryByText(/活跃合约/)).not.toBeInTheDocument();
   });
 });

@@ -5,6 +5,7 @@ import { Badge } from '../common';
 import { formatChatTimestamp } from '../../utils/chatTime';
 import ChatAnswer from './ChatAnswer';
 import ChatThinkingBlock from './ChatThinkingBlock';
+import { PredictionMarketOverviewPanel } from '../report/PredictionMarketOverviewPanel';
 import StockClarificationCard from './StockClarificationCard';
 import type { Message, StockClarification, StockClarificationIdentity } from '../../stores/agentChatStore';
 
@@ -70,6 +71,11 @@ function ChatMessageItem({
   onMessageContextMenu,
 }: ChatMessageItemProps) {
   const isAssistant = message.role === 'assistant';
+  const usedPredictionMarketTools = (message.thinkingSteps ?? []).some(
+    (step) =>
+      (step.type === 'tool_done' || step.type === 'tool_start') &&
+      (step.tool === 'search_prediction_markets' || step.tool === 'get_prediction_market_overview'),
+  );
   const timestamp = formatChatTimestamp(message.createdAt, language);
 
   return (
@@ -114,6 +120,11 @@ function ChatMessageItem({
               onFollowUp={onFollowUp}
             />
           </div>
+          {usedPredictionMarketTools ? (
+            <div className="mt-3">
+              <PredictionMarketOverviewPanel language={language} />
+            </div>
+          ) : null}
           {clarification && (
             <StockClarificationCard
               messageId={message.id}
