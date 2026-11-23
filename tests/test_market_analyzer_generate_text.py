@@ -4381,7 +4381,7 @@ Sector text.
         assert "- **Market Signal**: 66/100 (constructive, risk-on)" in result
         assert "- **Breadth**: Advancers 3200 / Decliners 1800 / Flat 100;" in result
         assert "Turnover 14567 (CNY 100m)" in result
-        assert "| Index | Last | Change % | Open | High | Low | Amplitude | Turnover (CNY 100m) |" in result
+        assert "| Index | Last | Change % | Open | High | Low | Amplitude | Range Pos | Turnover (CNY 100m) |" in result
         assert "#### Leading Industry Sectors" in result
         assert "| 1 | AI算力 | +3.25% |" in result
         assert "#### Lagging Industry Sectors" in result
@@ -4450,8 +4450,8 @@ Sector text.
         assert "操作建议" in result
         assert "盘面温度" not in result
         assert "| 上涨/下跌/平盘 | 3200 / 1800 / 100 |" in result
-        assert "| 指数 | 最新 | 涨跌幅 | 开盘 | 最高 | 最低 | 振幅 | 成交额(亿) |" in result
-        assert "| 上证指数 | 3300.00 | 🟢 +0.36% | 3288.00 | 3312.00 | 3276.00 | 1.10% | 1450 |" in result
+        assert "| 指数 | 最新 | 涨跌幅 | 开盘 | 最高 | 最低 | 振幅 | 区间位置 | 成交额(亿) |" in result
+        assert "| 上证指数 | 3300.00 | 🟢 +0.36% | 3288.00 | 3312.00 | 3276.00 | 1.10% | 67%（中位） | 1450 |" in result
         assert "#### 行业板块领涨 Top 5" in result
         assert "| 1 | AI算力 | +3.25% |" in result
         assert "#### 近三日市场线索" not in result
@@ -5209,6 +5209,21 @@ Index text.
 
         assert "| 上证指数 | 3200.00 | 🟢 +0.68% |" in result
         assert "| 深证成指 | 9800.00 | 🔴 -0.42% |" in result
+
+    def test_close_position_in_range_and_formatting(self):
+        from src.market_analyzer import MarketIndex
+
+        ma = self._make_market_analyzer_with_mock_generate_text(return_value=None)
+
+        mid = MarketIndex(code="000001", name="上证指数", current=100.0, high=110.0, low=90.0)
+        low = MarketIndex(code="399001", name="深证成指", current=92.0, high=110.0, low=90.0)
+        flat = MarketIndex(code="399006", name="创业板指", current=100.0, high=100.0, low=100.0)
+
+        assert ma._close_position_in_range(mid) == 0.5
+        assert ma._format_range_position(mid) == "50%（中位）"
+        assert ma._format_range_position(low) == "10%（低位）"
+        assert ma._close_position_in_range(flat) is None
+        assert ma._format_range_position(flat) == "—"
 
     def test_no_private_attribute_access_in_market_analyzer_source(self):
         """Static guard: market_analyzer.py must not access private analyzer attrs."""

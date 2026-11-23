@@ -1414,19 +1414,43 @@ Focus on index trend, liquidity, and sector rotation to shape the next-session t
             reasons.append("limited structured breadth data; using available market inputs")
         return reasons[:4]
 
+    @staticmethod
+    def _close_position_in_range(index: MarketIndex) -> Optional[float]:
+        """Return where the latest price sits within the day's high-low range (0..1).
+
+        Returns None when the bar has no meaningful range (e.g. high == low) or
+        the current price is missing.
+        """
+        high = float(index.high or 0.0)
+        low = float(index.low or 0.0)
+        current = float(index.current or 0.0)
+        if high <= low or current <= 0:
+            return None
+        return max(0.0, min(1.0, (current - low) / (high - low)))
+
+    def _format_range_position(self, index: MarketIndex) -> str:
+        position = self._close_position_in_range(index)
+        if position is None:
+            return "—"
+        if self._get_review_language() == "en":
+            zone = "high" if position >= 0.7 else "low" if position <= 0.3 else "mid"
+            return f"{position * 100:.0f}% ({zone})"
+        zone = "高位" if position >= 0.7 else "低位" if position <= 0.3 else "中位"
+        return f"{position * 100:.0f}%（{zone}）"
+
     def _build_indices_block(self, overview: MarketOverview) -> str:
         """构建指数行情表格"""
         if not overview.indices:
             return ""
         if self._get_review_language() == "en":
             lines = [
-                f"| Index | Last | Change % | Open | High | Low | Amplitude | Turnover ({self._get_turnover_unit_label()}) |",
-                "|-------|------|----------|------|------|-----|-----------|-----------------|",
+                f"| Index | Last | Change % | Open | High | Low | Amplitude | Range Pos | Turnover ({self._get_turnover_unit_label()}) |",
+                "|-------|------|----------|------|------|-----|-----------|-----------|-----------------|",
             ]
         else:
             lines = [
-                f"| 指数 | 最新 | 涨跌幅 | 开盘 | 最高 | 最低 | 振幅 | 成交额({self._get_turnover_unit_label() if self.region == 'tw' else '亿'}) |",
-                "|------|------|--------|------|------|------|------|-----------|",
+                f"| 指数 | 最新 | 涨跌幅 | 开盘 | 最高 | 最低 | 振幅 | 区间位置 | 成交额({self._get_turnover_unit_label() if self.region == 'tw' else '亿'}) |",
+                "|------|------|--------|------|------|------|------|----------|-----------|",
             ]
         for idx in overview.indices:
             arrow = self._get_index_change_arrow(idx.change_pct)
@@ -1435,7 +1459,8 @@ Focus on index trend, liquidity, and sector rotation to shape the next-session t
             lines.append(
                 f"| {idx.name} | {idx.current:.2f} | {arrow} {idx.change_pct:+.2f}% | "
                 f"{self._format_optional_number(idx.open)} | {self._format_optional_number(idx.high)} | "
-                f"{self._format_optional_number(idx.low)} | {self._format_optional_pct(idx.amplitude)} | {amount_str} |"
+                f"{self._format_optional_number(idx.low)} | {self._format_optional_pct(idx.amplitude)} | "
+                f"{self._format_range_position(idx)} | {amount_str} |"
             )
         return "\n".join(lines)
 
