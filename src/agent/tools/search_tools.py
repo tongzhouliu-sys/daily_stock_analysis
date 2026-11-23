@@ -108,6 +108,21 @@ def _persist_news_response(
         )
 
 
+def _news_evidence_items(results, dimension: str) -> list[dict]:
+    """把搜索工具返回的结果转成证据累加器可持久化的条目。"""
+    return [
+        {
+            "title": getattr(result, "title", ""),
+            "snippet": getattr(result, "snippet", ""),
+            "url": getattr(result, "url", ""),
+            "source": getattr(result, "source", ""),
+            "published_date": getattr(result, "published_date", ""),
+            "dimension": dimension,
+        }
+        for result in (results or [])
+    ]
+
+
 def _handle_search_stock_news(stock_code: str, stock_name: str) -> dict:
     """Search latest news for a stock."""
     service = _get_search_service()
@@ -128,7 +143,10 @@ def _handle_search_stock_news(stock_code: str, stock_name: str) -> dict:
             "error": response.error_message,
         }
 
-    record_news_evidence(len(response.results))
+    record_news_evidence(
+        len(response.results),
+        _news_evidence_items(response.results, "latest_news"),
+    )
 
     _persist_news_response(
         stock_code=stock_code,
@@ -206,12 +224,14 @@ def _handle_search_comprehensive_intel(stock_code: str, stock_name: str) -> dict
 
     # 本次真正交给 Agent 的证据条数，按维度累计后一次性记录。
     evidence_count = 0
+    evidence_items: list[dict] = []
 
     # Also return structured data
     dimensions = {}
     for dim_name, response in intel_results.items():
         if response and response.success:
             evidence_count += len(response.results)
+            evidence_items.extend(_news_evidence_items(response.results, dim_name))
             _persist_news_response(
                 stock_code=stock_code,
                 stock_name=query_name,
@@ -231,7 +251,7 @@ def _handle_search_comprehensive_intel(stock_code: str, stock_name: str) -> dict
                 ],
             }
 
-    record_news_evidence(evidence_count)
+    record_news_evidence(evidence_count, evidence_items)
 
     return {
         "report": report,

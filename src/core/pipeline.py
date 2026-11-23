@@ -66,6 +66,7 @@ from src.agent.news_evidence import (
     reset_news_evidence_scope,
 )
 from src.services.empty_news import news_evidence_present
+from src.services.news_confidence import reconcile_news_confidence_reason
 from src.services.analysis_progress import (
     PROGRESS_FUNDAMENTALS,
     PROGRESS_GENERATING,
@@ -1860,6 +1861,50 @@ class StockAnalysisPipeline:
                     social_evidence_context,
                     persisted_intelligence_context,
                 )
+
+                # 分析开始前构建的 context pack 没有预填 Agent 自己检索到的新闻，
+                # 会让质量分和置信度理由误报「新闻数据块缺失」。跑完后用本次工具
+                # 返回的真实新闻回填新闻块、重算质量分并更新 news_result_count。
+                agent_news_context = news_evidence.summary()
+                if not agent_news_context and result.news_result_count:
+                    agent_news_context = self._agent_news_count_fallback(
+                        result.news_result_count,
+                        report_language,
+                    )
+                initial_context["news_context"] = self._merge_news_context(
+                    initial_context.get("news_context"),
+                    agent_news_context,
+                )
+                rebuilt_summary, rebuilt_overview = self._build_analysis_context_pack_outputs(
+                    self._build_agent_analysis_artifacts(
+                        code=code,
+                        stock_name=stock_name,
+                        market=market,
+                        phase=market_phase_context,
+                        initial_context=initial_context,
+                        fundamental_context=fundamental_context,
+                        query_id=query_id,
+                        base_context=analysis_context,
+                        portfolio_context=portfolio_context,
+                        news_result_count=result.news_result_count,
+                    ),
+                    report_language=report_language,
+                    code=code,
+                    query_id=query_id,
+                )
+                if rebuilt_overview is not None:
+                    analysis_context_pack_summary = rebuilt_summary
+                    analysis_context_pack_overview = rebuilt_overview
+
+                if reconcile_news_confidence_reason(
+                    result,
+                    evidence_present=bool(result.news_evidence_present),
+                    news_result_count=result.news_result_count,
+                    language=report_language,
+                ):
+                    logger.info(
+                        '[%s] Agent 模式: 已按真实新闻证据修正置信度理由', code
+                    )
             record_llm_run(
                 success=bool(result and getattr(result, "success", True)),
                 model=getattr(result, "model_used", None) if result else getattr(agent_result, "model", None),
@@ -2081,6 +2126,7 @@ class StockAnalysisPipeline:
                             "stock_name": resolved_stock_name,
                         },
                         news_content=initial_context.get("news_context"),
+                        news_result_count=getattr(result, "news_result_count", None),
                         realtime_quote=realtime_quote,
                         chip_data=chip_data,
                         analysis_context_pack_overview=analysis_context_pack_overview,
@@ -2092,7 +2138,7 @@ class StockAnalysisPipeline:
                         result=result,
                         query_id=query_id,
                         report_type=report_type.value,
-                        news_content=None,
+                        news_content=initial_context.get("news_context"),
                         context_snapshot=agent_context_snapshot,
                         save_snapshot=self.save_context_snapshot,
                     )
@@ -3480,6 +3526,37 @@ class StockAnalysisPipeline:
             prediction_market_context=prediction_market_context,
         )
 
+    @staticmethod
+    def _merge_news_context(*parts: Any) -> Optional[str]:
+        """合并多路新闻文本，保留来源顺序并去除重复与空段。"""
+        merged: List[str] = []
+        for part in parts:
+            text = str(part or "").strip()
+            if text and text not in merged:
+                merged.append(text)
+        return "\n\n".join(merged) or None
+
+    @staticmethod
+    def _agent_news_count_fallback(count: int, report_language: str) -> str:
+        """搜索工具只登记了计数、没保留条目时的低敏新闻块占位。"""
+        language = normalize_report_language(report_language)
+        if language == "en":
+            return (
+                "【Agent news evidence】\n"
+                f"The agent retrieved {count} news results for this analysis; "
+                "titles and snippets were not retained."
+            )
+        if language == "ko":
+            return (
+                "【이번 분석에서 검색된 뉴스 정보】\n"
+                f"에이전트가 이번 분석에서 뉴스 결과 {count}건을 검색했으며, "
+                "제목과 요약은 보관되지 않았습니다."
+            )
+        return (
+            "【本次分析检索到的新闻情报】\n"
+            f"Agent 在本次分析中检索到 {count} 条新闻结果，未保留标题与摘要。"
+        )
+
     def _build_agent_analysis_artifacts(
         self,
         *,
@@ -3492,6 +3569,7 @@ class StockAnalysisPipeline:
         query_id: str,
         base_context: Optional[Dict[str, Any]] = None,
         portfolio_context: Optional[Dict[str, Any]] = None,
+        news_result_count: Optional[int] = None,
     ) -> PipelineAnalysisArtifacts:
         context_candidate = base_context
         if not isinstance(context_candidate, dict):
@@ -3522,7 +3600,7 @@ class StockAnalysisPipeline:
             chip_data=initial_context.get("chip_distribution"),
             fundamental_context=fundamental_context,
             news_context=initial_context.get("news_context"),
-            news_result_count=None,
+            news_result_count=news_result_count,
             metadata={
                 "query_id": query_id,
                 "trigger_source": self.query_source,

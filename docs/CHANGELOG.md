@@ -8,6 +8,8 @@ and this project adheres to [Semantic Versioning](https://semver.org/).
 > For user-friendly release highlights, see the [GitHub Releases](https://github.com/ZhuLinsen/daily_stock_analysis/releases) page.
 
 ## [Unreleased]
+- [修复] Agent 模式分析结束后用本次搜索工具返回的真实新闻回填 context pack 新闻块，重算质量分 `news` 维度与 `metadata.news_result_count`，并按真实结果修正「新闻数据块缺失」的置信度误报；本次消费的新闻摘要写入 `analysis_history.news_content`，真零命中时才提示新闻缺失或不足。经典路径不变。
+- [修复] FXMacroData MCP 工具名去掉多余的传输层 `mcp_` 前缀（如 `mcp_macro_news` → `fxmacrodata_macro_news`，与 REST 操作重名时保留原前缀），避免模型调用 `fxmacrodata_macro_news` 时注册表找不到工具并反复告警。
 - [改进] 飞书推送卡片改用原生 `table`：多标的摘要渲染「标的 / 动作 / 评分 / 趋势」，个股行情、技术指标、点位、盘中窗口合并为「分类 / 指标 / 数值」并按点位优先排序，单卡最多 5 张表、超出回退 `fields`；长策略与观察条件仍走正文，3 只股票的富卡片从 64 个组件降到 40 余个，不再因元素超限退化成大段纯文本。
 - [修复] 飞书 Webhook 请求体改为 UTF-8 JSON（`ensure_ascii=False`）发送，按真实字节数计量 20 KB 预算并预留 512 字节外层开销；修复卡片因 `\uXXXX` 转义导致体积放大约 1.4 倍被飞书拒绝、最终回退纯文本的问题，同时避免 App Bot 在卡片超限时发送 JSON `null`。
 - [改进] 首页分析报告版式重构：封面合并为「代码/价格 + 关键指标带 + 核心洞察」单卡，自选改为分享按钮左侧的星标切换；结论、狙击点位、情绪 / 财报（宽栏并排）、关联板块统一单列，资讯与结构化证据不再拆双列，输入数据块 / 运行诊断折叠头改为标题独占一行、状态徽章下移，展开后的块状态与链路诊断不再被窄列挤压。

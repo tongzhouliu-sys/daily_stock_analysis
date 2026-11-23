@@ -6,7 +6,11 @@ import pytest
 
 from fxmacrodata_public import Result, list_operations
 from src.agent.tools import fxmacrodata_tools
-from src.agent.tools.fxmacrodata_tools import build_fxmacrodata_tools, fxmacrodata_tool_names
+from src.agent.tools.fxmacrodata_tools import (
+    build_fxmacrodata_tools,
+    fxmacrodata_tool_name,
+    fxmacrodata_tool_names,
+)
 from src.agent.tools.registry import ToolRegistry
 
 
@@ -22,7 +26,7 @@ def test_every_operation_is_a_native_tool(operation):
     registry = ToolRegistry()
     for definition in build_fxmacrodata_tools(FixtureClient()):
         registry.register(definition)
-    tool = registry.get(f"fxmacrodata_{operation.name}")
+    tool = registry.get(fxmacrodata_tool_name(operation.name))
     assert tool.to_openai_tool()["function"]["parameters"] == operation.input_schema
     assert tool.to_mcp_descriptor()["inputSchema"] == operation.input_schema
     assert registry.validate_tool_policies(strict=True) == []
@@ -113,7 +117,25 @@ def test_factory_registers_tools_for_report_and_chat():
     with patch.dict(sys.modules, modules):
         exec(compile(ast.Module(body=[node], type_ignores=[]), str(source), "exec"), namespace)
         registry = namespace["_build_tool_registry"]({"market": 35})
-    assert set(registry.list_names()) == {f"fxmacrodata_{op.name}" for op in list_operations()}
+    assert set(registry.list_names()) == {
+        fxmacrodata_tool_name(op.name) for op in list_operations()
+    }
+
+
+def test_macro_news_tool_drops_redundant_transport_prefix():
+    """Models normalise the doubled prefix to fxmacrodata_macro_news.
+
+    The registered name must be the one the model naturally calls, otherwise
+    every risk-analysis run ends with an unknown-tool warning.
+    """
+    registry = ToolRegistry()
+    for definition in build_fxmacrodata_tools(FixtureClient()):
+        registry.register(definition)
+
+    assert fxmacrodata_tool_name("mcp_macro_news") == "fxmacrodata_macro_news"
+    assert "fxmacrodata_macro_news" in registry
+    assert "fxmacrodata_mcp_macro_news" not in registry
+    assert "fxmacrodata_macro_news" in fxmacrodata_tool_names("mcp_macro_news")
 
 
 @pytest.mark.parametrize("specialist", ["intel", "risk", "portfolio"])

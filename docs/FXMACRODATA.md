@@ -6,6 +6,8 @@
 
 多 Agent 模式下，情报 Agent 的原生工具允许列表提供固定客户端 v0.1.0 快照中的全部 72 个操作；风险和组合 Agent 提供与发布、宏观及跨市场风险相关的操作。各专业 Agent 仍遵守原有的工具访问限制。Codex App Server 聊天后端已移除；FXMacroData 继续通过默认聊天后端和报告 Agent 使用。
 
+工具名统一为 `fxmacrodata_` 前缀。托管 MCP 操作在客户端内部的 `mcp_` 传输前缀不再重复出现在工具名中（例如 `mcp_macro_news` 注册为 `fxmacrodata_macro_news`）；若去掉前缀会与 REST 操作重名，则保留原前缀。
+
 集成保留公开 API 原始数据、发布时间、来源及推定时间标记。`records` 是用于展示的附加视图。市场共识、官方预测和 FXMacroData 生成的预测保持区分。数据不可用时返回明确状态，不填入模拟数据。
 
 固定客户端 v0.1.0 内置快照中的 23 个 REST 操作及 49 个 MCP 工具的操作表、参数、安装及测试说明见 [English guide](FXMACRODATA_EN.md)。这两份文档同步介绍相同功能；完整操作名称保持英文。

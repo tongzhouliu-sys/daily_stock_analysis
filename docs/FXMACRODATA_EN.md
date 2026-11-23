@@ -20,7 +20,7 @@ The optional FXMACRODATA_API_KEY environment variable uses the host process conf
 
 In multi-agent mode, the Intelligence specialist can discover and execute all 72 operations in the pinned client v0.1.0 snapshot through its native tool allowlist. Risk and Portfolio specialists also receive the operations relevant to release, macro and cross-market risk. Existing specialist tool restrictions remain in force.
 
-Start with `data_catalogue` and parameters `{"currency":"USD"}`, then `indicator_history` with `{"currency":"USD","indicator":"policy_rate","limit":5}` or `release_calendar` with `{"currency":"USD"}`. Agent tool names have an `fxmacrodata_` prefix. The operation catalogue includes exact required parameters and supported options.
+Start with `data_catalogue` and parameters `{"currency":"USD"}`, then `indicator_history` with `{"currency":"USD","indicator":"policy_rate","limit":5}` or `release_calendar` with `{"currency":"USD"}`. Agent tool names have an `fxmacrodata_` prefix. The client-internal `mcp_` transport prefix is not repeated in the public tool name (for example `mcp_macro_news` is registered as `fxmacrodata_macro_news`); if removing it would collide with a REST operation, the original prefix is kept. The operation catalogue includes exact required parameters and supported options.
 
 The `data` field preserves the original public response; `records` is an additive table view. Keep source fields, assumed-time flags and timezone offsets when using the data. The API contract distinguishes official forecasts, market consensus and FXMacroData-generated outputs. Historical observation filters do not by themselves establish point-in-time vintage safety. Streaming is bounded by the client; it is not a persistent subscription.
 
