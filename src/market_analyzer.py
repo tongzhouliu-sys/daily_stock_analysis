@@ -1681,7 +1681,7 @@ Focus on index trend, liquidity, and sector rotation to shape the next-session t
 (List the main risks to monitor.)
 
 ### 7. Strategy Plan
-(Provide an offensive/balanced/defensive stance, a position-sizing guideline, one invalidation trigger, and end with "For reference only, not investment advice.")"""
+(Provide an offensive/balanced/defensive stance, a position-sizing guideline, one invalidation trigger, and for each of the "continuation" vs "pullback/reversal" scenarios list 1-3 observable next-session validation points; end with "For reference only, not investment advice.")"""
 
             section_number = 3
             sections: List[str] = []
@@ -1701,7 +1701,7 @@ Focus on index trend, liquidity, and sector rotation to shape the next-session t
                 f"""### {section_number + 2}. Risk Alerts
 (List the main risks to monitor.)""",
                 f"""### {section_number + 3}. Strategy Plan
-(Provide an offensive/balanced/defensive stance, a position-sizing guideline, one invalidation trigger, and end with "For reference only, not investment advice.")""",
+(Provide an offensive/balanced/defensive stance, a position-sizing guideline, one invalidation trigger, and for each of the "continuation" vs "pullback/reversal" scenarios list 1-3 observable next-session validation points; end with "For reference only, not investment advice.")""",
             ])
             return "\n\n".join(sections)
 
@@ -1716,7 +1716,7 @@ Focus on index trend, liquidity, and sector rotation to shape the next-session t
 （结合近三日新闻，提炼真正影响明日交易的催化或扰动；若信息矛盾，列出多方/空方/存疑各说法及来源立场，并判断市场是否在区分）
 
 ### 六、明日交易计划
-（给出进攻/均衡/防守结论、仓位区间、关注方向、回避方向和一个触发失效条件）
+（给出进攻/均衡/防守结论、仓位区间、关注方向、回避方向；分别给出「延续」与「回吐/反转」两种情形下各 1-3 个下一交易日可观察的验证点，并保留一个触发失效条件）
 
 ### 七、风险提示
 （列出需要关注的风险点；最后补充“建议仅供参考，不构成投资建议”。）"""
@@ -1738,7 +1738,7 @@ Focus on index trend, liquidity, and sector rotation to shape the next-session t
             "消息催化",
             "（结合近三日新闻和指数表现，提炼真正影响明日交易的催化或扰动；不要推断未提供的资金流、市场宽度或板块榜；若信息矛盾，列出多方/空方/存疑各说法及来源立场）",
         )
-        add_section("明日交易计划", "（给出进攻/均衡/防守结论、仓位区间、关注方向、回避方向和一个触发失效条件）")
+        add_section("明日交易计划", "（给出进攻/均衡/防守结论、仓位区间、关注方向、回避方向；分别给出「延续」与「回吐/反转」两种情形下各 1-3 个下一交易日可观察的验证点，并保留一个触发失效条件）")
         add_section("风险提示", "（列出需要关注的风险点；最后补充“建议仅供参考，不构成投资建议”。）")
         return "\n\n".join(sections)
 
