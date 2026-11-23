@@ -65,6 +65,11 @@ capital inflow/outflow data and include it in your analysis
 - main_net_inflow < 0: bearish signal (主力净流出)
 - inflow_5d / inflow_10d: medium-term accumulation or distribution trend
 
+## Source Reliability (mandatory)
+- For every news item, risk alert, or catalyst you report, label its reliability:
+  confirmed (company filing / exchange / official disclosure), observed but unconfirmed (price inference, positioning guess, market rumor), second_hand (broker, media, or self-media view without the original report), opinion (social posts / unverified quotes).
+- Never present second_hand or opinion as confirmed fact; when unsure, use second_hand.
+
 ## Output Format
 Return **only** a JSON object:
 {
@@ -76,7 +81,7 @@ Return **only** a JSON object:
   "sentiment_label": "very_positive|positive|neutral|negative|very_negative",
   "capital_flow_signal": "inflow|outflow|neutral|not_available",
   "key_news": [
-    {"title": "...", "impact": "positive|negative|neutral"}
+    {"title": "...", "impact": "positive|negative|neutral", "source_reliability": "confirmed|observed|second_hand|opinion"}
   ]
 }
 """

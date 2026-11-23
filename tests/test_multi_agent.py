@@ -1052,6 +1052,19 @@ class TestIntelAgentPostProcess(unittest.TestCase):
         self.assertEqual(ctx.get_data("intel_opinion")["positive_catalysts"], ["行业复苏"])
         self.assertEqual(ctx.risk_flags[0]["description"], "股东减持")
 
+    def test_system_prompt_requires_source_reliability_grading(self):
+        from src.agent.agents.intel_agent import IntelAgent
+        from src.agent.agents.risk_agent import RiskAgent
+
+        intel = IntelAgent(tool_registry=MagicMock(), llm_adapter=MagicMock())
+        risk = RiskAgent(tool_registry=MagicMock(), llm_adapter=MagicMock())
+        ctx = AgentContext(query="test", stock_code="600519")
+
+        self.assertIn("Source Reliability", intel.system_prompt(ctx))
+        self.assertIn("source_reliability", intel.system_prompt(ctx))
+        self.assertIn("Source Reliability", risk.system_prompt(ctx))
+        self.assertIn("reliability", risk.system_prompt(ctx))
+
 
 # ============================================================
 # AgentOrchestrator (with mocked sub-agents)

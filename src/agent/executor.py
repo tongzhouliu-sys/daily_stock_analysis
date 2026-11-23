@@ -978,6 +978,9 @@ class AgentExecutor:
                 parts.append(f"\n[系统已获取的筹码分布]\n{json.dumps(context['chip_distribution'], ensure_ascii=False)}")
             if context.get("news_context"):
                 parts.append(f"\n[系统已获取的新闻与舆情情报]\n{context['news_context']}")
+                parts.append(
+                    "（引用上述新闻时，对二手转述/个人观点须注明来源可信度，不得写成已确认事实。）"
+                )
             if context.get("prediction_market_context"):
                 parts.append(
                     f"\n[系统已获取的预测市场事件概率]\n{context['prediction_market_context']}"

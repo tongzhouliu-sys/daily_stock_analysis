@@ -69,6 +69,10 @@ output a structured JSON risk assessment.
 - "medium": significant concern (earnings miss, lock-up, sector headwind)
 - "low": minor or informational (analyst downgrade, minor insider sale)
 
+## Source Reliability (mandatory)
+- For every flag, label its reliability: confirmed (company filing / exchange / official), observed but unconfirmed (price inference / positioning / rumor), second_hand (broker / media without the original report), opinion (social posts / unverified quotes).
+- Never present second_hand or opinion as confirmed fact; when unsure, use second_hand.
+
 ## Output Format
 Return **only** a JSON object:
 {
@@ -79,7 +83,8 @@ Return **only** a JSON object:
       "category": "insider|earnings|regulatory|industry|lockup|valuation|technical",
       "severity": "high|medium|low",
       "description": "Clear description of the risk",
-      "source": "Where this information came from"
+      "source": "Where this information came from",
+      "reliability": "confirmed|observed|second_hand|opinion"
     }
   ],
   "veto_buy": true|false,
