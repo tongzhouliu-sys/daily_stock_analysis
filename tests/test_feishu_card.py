@@ -652,6 +652,37 @@ def test_plain_text_columns_keep_no_lark_markup():
                     assert "<text_tag" not in str(value)
 
 
+def test_market_review_section_titles_are_not_truncated():
+    report = """# A股大盘复盘
+
+> 今日A股震荡。
+
+### 一、盘面总览
+
+两市成交额放大，情绪修复。
+
+### 二、指数结构
+
+| 指数 | 最新 | 涨跌幅 |
+|------|------|--------|
+| 上证指数 | 3200.00 | ↑ +0.50% |
+| 深证成指 | 10450.00 | ↑ +0.80% |
+"""
+    card = build_feishu_card(format_feishu_markdown(report), max_bytes=30000)
+    text = _card_text(card)
+
+    assert "一、盘面总览" in text
+    assert "二、指数结构" in text
+    # 不再把章节标题截断成「二、指…」这类省略号
+    assert "二、指…" not in text
+    assert "…" not in "".join(
+        line for line in text.splitlines() if "、盘面" in line or "、指数" in line
+    )
+    # 指数名和它的数值留在同一小节，不再拆开
+    assert "上证指数" in text
+    assert "3200.00" in text
+
+
 def test_many_stocks_use_metric_blocks_not_extra_tables():
     stocks = []
     for index in range(6):

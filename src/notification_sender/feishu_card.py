@@ -102,7 +102,7 @@ _METRIC_SKIP_KEYS = frozenset(
         "模型",
     }
 )
-# 章节标题 -> 表格里的短分类；未命中时截取标题前 4 个字符。
+# 章节标题 -> 板块短标签；未命中时用去掉编号前缀后的完整标题，不再截断。
 _METRIC_CATEGORY_MAP = {
     "当日行情": "行情",
     "行情快照": "行情",
@@ -132,6 +132,8 @@ _METRIC_CATEGORY_PRIORITY = {
 _METRIC_EMOJI_RE = re.compile(
     r"^[\U0001F000-\U0001FAFF\u2600-\u27BF\uFE0E\uFE0F\u200D\s·▎]+"
 )
+# 「一、」「二、」「1.」这类章节编号前缀，用于大盘复盘章节名归一。
+_ENUM_PREFIX_RE = re.compile(r"^[一二三四五六七八九十\d]+[、．.）\)]\s*")
 
 # 章节标题颜色规则（按优先级排序）
 _SECTION_COLOR_RULES: Tuple[Tuple[Tuple[str, ...], str], ...] = (
@@ -606,9 +608,12 @@ def _metric_label(text: str) -> str:
 
 def _metric_category(title: str) -> str:
     text = _metric_label(title)
+    text = _ENUM_PREFIX_RE.sub("", text).strip()
     if text in _METRIC_CATEGORY_MAP:
         return _METRIC_CATEGORY_MAP[text]
-    return _clamp(text, 4)
+    # 未命中（如「盘面总览」「指数结构」）时用清洗后的完整标题，
+    # 不再截断成「二、指…」这类省略号。
+    return text
 
 
 def _summary_table(summary_rows: List[Tuple[str, str]]) -> Dict[str, Any]:
@@ -716,6 +721,12 @@ def _collect_metric_rows(
                 continue
             cells = _parse_field_cells(stripped)
             if not cells:
+                remaining.append(line)
+                continue
+
+            # 行里含「指数 / 名称 / 代码 / 标的」等标识列时，整行保留在正文，
+            # 不要把标识名和它的数值拆到两个地方（否则读者看不出数字属于谁）。
+            if any(_clean_inline(key).strip() in _METRIC_SKIP_KEYS for key, _ in cells):
                 remaining.append(line)
                 continue
 
