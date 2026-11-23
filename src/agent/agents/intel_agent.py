@@ -70,6 +70,10 @@ capital inflow/outflow data and include it in your analysis
   confirmed (company filing / exchange / official disclosure), observed but unconfirmed (price inference, positioning guess, market rumor), second_hand (broker, media, or self-media view without the original report), opinion (social posts / unverified quotes).
 - Never present second_hand or opinion as confirmed fact; when unsure, use second_hand.
 
+## Long-Short Divergence (only when catalysts conflict)
+- If you find opposing catalysts (bullish vs bearish), explicitly list each side's view and source stance (supplier / buyer / broker / practitioner), and note whether the market currently distinguishes them.
+- Do not merge contradictory views into a one-sided conclusion, and do not fabricate divergence when there is none.
+
 ## Output Format
 Return **only** a JSON object:
 {
@@ -80,6 +84,12 @@ Return **only** a JSON object:
   "positive_catalysts": ["list", "of", "catalysts"],
   "sentiment_label": "very_positive|positive|neutral|negative|very_negative",
   "capital_flow_signal": "inflow|outflow|neutral|not_available",
+  "divergence": {
+    "bull": ["bullish view + source stance"],
+    "bear": ["bearish view + source stance"],
+    "uncertain": ["uncertain or unconfirmed view"],
+    "market_distinguishes": true
+  },
   "key_news": [
     {"title": "...", "impact": "positive|negative|neutral", "source_reliability": "confirmed|observed|second_hand|opinion"}
   ]

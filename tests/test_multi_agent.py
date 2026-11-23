@@ -1062,6 +1062,8 @@ class TestIntelAgentPostProcess(unittest.TestCase):
 
         self.assertIn("Source Reliability", intel.system_prompt(ctx))
         self.assertIn("source_reliability", intel.system_prompt(ctx))
+        self.assertIn("Long-Short Divergence", intel.system_prompt(ctx))
+        self.assertIn("divergence", intel.system_prompt(ctx))
         self.assertIn("Source Reliability", risk.system_prompt(ctx))
         self.assertIn("reliability", risk.system_prompt(ctx))
 

@@ -196,6 +196,8 @@ class AnalyzerNewsPromptTestCase(unittest.TestCase):
         # 证据分级：新闻进入 risk/catalyst/news 字段前必须标注来源可信度
         self.assertIn("来源可信度（强制）", prompt)
         self.assertIn("二手转述", prompt)
+        # 多空分歧：矛盾催化必须列多方/空方/存疑
+        self.assertIn("多空分歧（有矛盾时强制）", prompt)
         # T29: 长周期基本面/机构情报按 180 日窗口单独检索，提示词不能再要求一律丢弃
         self.assertIn("近180日", prompt)
         self.assertIn("财报与分红（价值投资口径）", prompt)

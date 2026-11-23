@@ -1670,7 +1670,7 @@ Focus on index trend, liquidity, and sector rotation to shape the next-session t
                 section_number += 1
             sections.extend([
                 f"""### {section_number}. News Catalysts
-(Connect recent news to index price action and macro/external-market clues. Do not infer unsupported breadth, fund-flow, or sector-ranking data.)""",
+(Connect recent news to index price action and macro/external-market clues. If catalysts conflict, list bull/bear/uncertain views with source stance and whether the market distinguishes them. Do not infer unsupported breadth, fund-flow, or sector-ranking data.)""",
                 f"""### {section_number + 1}. Outlook
 (Provide the near-term outlook based on index price action and the available news.)""",
                 f"""### {section_number + 2}. Risk Alerts
@@ -1688,7 +1688,7 @@ Focus on index trend, liquidity, and sector rotation to shape the next-session t
 （解读成交额、涨跌停结构、市场宽度和风险偏好）
 
 ### 五、消息催化
-（结合近三日新闻，提炼真正影响明日交易的催化或扰动）
+（结合近三日新闻，提炼真正影响明日交易的催化或扰动；若信息矛盾，列出多方/空方/存疑各说法及来源立场，并判断市场是否在区分）
 
 ### 六、明日交易计划
 （给出进攻/均衡/防守结论、仓位区间、关注方向、回避方向和一个触发失效条件）
@@ -1711,7 +1711,7 @@ Focus on index trend, liquidity, and sector rotation to shape the next-session t
             add_section("资金与情绪", "（仅解读已提供的成交额、涨跌停结构、市场宽度和风险偏好数据）")
         add_section(
             "消息催化",
-            "（结合近三日新闻和指数表现，提炼真正影响明日交易的催化或扰动；不要推断未提供的资金流、市场宽度或板块榜）",
+            "（结合近三日新闻和指数表现，提炼真正影响明日交易的催化或扰动；不要推断未提供的资金流、市场宽度或板块榜；若信息矛盾，列出多方/空方/存疑各说法及来源立场）",
         )
         add_section("明日交易计划", "（给出进攻/均衡/防守结论、仓位区间、关注方向、回避方向和一个触发失效条件）")
         add_section("风险提示", "（列出需要关注的风险点；最后补充“建议仅供参考，不构成投资建议”。）")

@@ -5260,6 +5260,9 @@ Below are the news search results for **{stock_name}({code})**. The fast news wi
 5. 🔍 **Source reliability (mandatory)**:
    - For every item written to `risk_alerts` / `positive_catalysts` / `latest_news`, tag its reliability: confirmed (company filing / exchange / official disclosure) / observed but unconfirmed (price inference, positioning guess, market rumor) / second-hand (broker, media, or self-media view without the original report) / personal opinion or unverified quote (social posts, unreconciled quotes)
    - Second-hand or lower must be labeled explicitly and never presented as confirmed fact; when unsure, treat it as second-hand
+6. ⚖️ **Long-short divergence (mandatory when conflicting)**:
+   - If the news contains opposing catalysts (e.g., "demand strong" vs "demand peaking"), explicitly list the bull / bear / uncertain views with each source's stance (supplier / buyer / broker / practitioner), and state whether the market currently distinguishes them
+   - Never merge contradictory views into a one-sided conclusion; do not fabricate divergence when there is none
 
 ```
 {news_context}
@@ -5278,6 +5281,9 @@ Below are the news search results for **{stock_name}({code})**. The fast news wi
 5. 🔍 **来源可信度（强制）**：
    - 对进入 `risk_alerts` / `positive_catalysts` / `latest_news` 的每条信息，标注可信度层级：已确认（公司公告/交易所/官方披露）/ 观察中未确认（行情推断、持仓推测、市场传闻）/ 二手转述（券商、媒体、自媒体观点，未见原始报告）/ 个人观点或待核引语（社交平台、未经核对的引语）
    - 二手转述及以上必须显式标注，不得写成已确认事实；无法判断时按「二手转述」处理
+6. ⚖️ **多空分歧（有矛盾时强制）**：
+   - 若新闻中同时出现方向相反的催化（如“需求强”与“需求见顶”），必须显式列出多方/空方/存疑各说法及其来源立场（供给方/买方/券商/从业者），并判断市场当前是否在区分这些说法
+   - 不要把互相矛盾的说法合并成单边结论；没有矛盾时不强行编造分歧
 
 ```
 {news_context}
