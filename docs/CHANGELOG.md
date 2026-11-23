@@ -8,6 +8,7 @@ and this project adheres to [Semantic Versioning](https://semver.org/).
 > For user-friendly release highlights, see the [GitHub Releases](https://github.com/ZhuLinsen/daily_stock_analysis/releases) page.
 
 ## [Unreleased]
+- [修复] HTML 报告中文化语言检测误判：中文正文包含 URL、英文公司专名（Apple/NVIDIA）或指标缩写（RSI MACD）时不再被误判为英文，避免正常中文报告被要求生成中文变体；同时保留英文短句、英文标题/表格与混排句子的检测。
 - [新功能] 预测市场全景：新增 `build_overview()` 聚合活跃合约数、类别/来源分布、Top 事件、关注集中度与启发式 risk-on/risk-off 倾向；新增只读工具 `get_prediction_market_overview`、`GET /api/v1/prediction-markets/overview`，并把概览注入个股分析与大盘复盘 Prompt；详见 [任务书](tasks/prediction-market-overview.md)。
 - [新功能] 报告详情新增「预测市场全景」摘要卡：展示活跃合约数、类别分布、关注集中度、Top 事件与风险定价倾向；卡片读取 `/prediction-markets/overview?refresh=false`，未启用或池为空时不渲染。
 - [修复] Agent 模式分析结束后用本次搜索工具返回的真实新闻回填 context pack 新闻块，重算质量分 `news` 维度与 `metadata.news_result_count`，并按真实结果修正「新闻数据块缺失」的置信度误报；本次消费的新闻摘要写入 `analysis_history.news_content`，真零命中时才提示新闻缺失或不足。经典路径不变。

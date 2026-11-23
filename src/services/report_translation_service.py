@@ -123,8 +123,7 @@ _SINGLE_WORD_GLOSSARY = {
 _CJK_RE = re.compile(r"[\u3400-\u4dbf\u4e00-\u9fff]")
 _HANGUL_RE = re.compile(r"[\uac00-\ud7af]")
 _ASCII_WORD_RE = re.compile(r"[A-Za-z]{2,}")
-_URL_RE = re.compile(r"^https?://\S+$")
-_CODE_LIKE_RE = re.compile(r"^[A-Za-z0-9_./:%+\- ]+$")
+_URL_RE = re.compile(r"https?://[^\s<>\"'\)\]]+")
 
 
 class ReportTranslationError(RuntimeError):
@@ -152,6 +151,10 @@ def _has_cjk(text: str) -> bool:
     return bool(_CJK_RE.search(text or ""))
 
 
+def _is_abbreviation(word: str) -> bool:
+    return bool(re.fullmatch(r"[A-Z0-9]{2,8}", word or ""))
+
+
 def _needs_translation(text: Any) -> bool:
     """Heuristic: does this value contain English/Korean prose to translate?"""
     if not isinstance(text, str):
@@ -159,29 +162,23 @@ def _needs_translation(text: Any) -> bool:
     value = text.strip()
     if len(value) < 2:
         return False
-    if _has_cjk(value):
-        # Mixed Chinese/English labels are handled by the renderer; do not
-        # translate a value that is already predominantly Chinese.
-        cjk_count = len(_CJK_RE.findall(value))
-        if cjk_count >= max(2, len(value) // 8):
-            return False
-    if _URL_RE.match(value):
+    cleaned = _URL_RE.sub(" ", value).strip()
+    if not cleaned:
         return False
-    if _HANGUL_RE.search(value):
+    if _HANGUL_RE.search(cleaned):
         return True
-    words = _ASCII_WORD_RE.findall(value)
+    words = _ASCII_WORD_RE.findall(cleaned)
     if not words:
         return False
     if value.lower() in _SINGLE_WORD_GLOSSARY:
         return True
-    if len(words) == 1 and _CODE_LIKE_RE.match(value) and not value.endswith((".", "!", "?")):
-        # Uppercase abbreviations / tickers (RSI, MACD, AAPL, MA5) stay as-is;
-        # ordinary single words such as "Excellent" still need Chinese.
-        if re.fullmatch(r"[A-Z0-9]{2,8}", value):
-            return False
-        return True
-    if len(words) >= 2 and value.endswith((".", "!", "?")):
-        return True
+    if all(_is_abbreviation(word) for word in words):
+        # Indicator / ticker clusters such as "RSI MACD" or "AI ML".
+        return False
+    if len(words) == 1:
+        # English proper nouns/tickers ("Apple", "NVIDIA") stay; complete
+        # one-word sentences ("Excellent.") are translated.
+        return value.endswith((".", "!", "?"))
     return True
 
 

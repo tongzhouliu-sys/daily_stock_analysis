@@ -136,11 +136,20 @@ def test_collect_detects_korean_text():
     assert texts["analysis_summary"] == "모멘텀이 여전히 긍정적입니다."
 
 
-def test_collect_detects_ordinary_single_word_but_skips_tickers():
+def test_collect_detects_single_word_sentence_but_skips_tickers_and_proper_nouns():
     texts = collect_translatable_texts({
-        "dashboard.battle_plan.action_checklist": ["Excellent", "AAPL", "RSI"],
+        "dashboard.battle_plan.action_checklist": ["Excellent.", "Excellent", "Apple", "AAPL", "RSI", "RSI MACD"],
     })
-    assert texts == {"dashboard.battle_plan.action_checklist[0]": "Excellent"}
+    assert texts == {"dashboard.battle_plan.action_checklist[0]": "Excellent."}
+
+
+def test_collect_ignores_urls_and_english_proper_nouns_in_chinese_text():
+    texts = collect_translatable_texts({
+        "analysis_summary": "详见 https://example.com/report。",
+        "dashboard.core_conclusion.one_sentence": "Apple",
+        "dashboard.battle_plan.action_checklist": ["NVIDIA", "RSI MACD", "营收增长强劲，guidance raised"],
+    })
+    assert texts == {"dashboard.battle_plan.action_checklist[2]": "营收增长强劲，guidance raised"}
 
 
 def test_markdown_detection_catches_headings_tables_and_short_sentences():
