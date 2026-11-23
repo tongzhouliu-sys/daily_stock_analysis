@@ -38,6 +38,7 @@ class TestMarketAnalyzerStrategyPrompt(unittest.TestCase):
 
         self.assertIn("明日交易计划", prompt)
         self.assertIn("A股市场三段式复盘策略", prompt)
+        self.assertIn("消息来源分级", prompt)
 
     def test_us_prompt_contains_strategy_plan_section(self):
         with patch("src.market_analyzer.get_config", return_value=SimpleNamespace(report_language="en")):
@@ -47,6 +48,7 @@ class TestMarketAnalyzerStrategyPrompt(unittest.TestCase):
 
         self.assertIn("Strategy Plan", prompt)
         self.assertIn("US Market Regime Strategy", prompt)
+        self.assertIn("Grade news source reliability", prompt)
 
     def test_jp_kr_prompt_uses_region_aware_english_shell(self):
         cases = [

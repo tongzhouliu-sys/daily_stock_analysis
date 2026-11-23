@@ -1817,6 +1817,9 @@ Concept lagging: {bottom_concepts_text if bottom_concepts_text else "N/A"}"""
                 if data_limits_block
                 else ""
             )
+            news_grading_requirement = (
+                "- Grade news source reliability: when citing key catalysts or disturbances, tag each as confirmed / observed-but-unconfirmed / second-hand / personal opinion; never present second-hand or opinion as confirmed fact.\n"
+            )
             market_summary_hint = (
                 "2-3 sentences summarizing overall market tone, index moves, and liquidity."
                 if self.profile.has_market_stats
@@ -1829,6 +1832,9 @@ Concept lagging: {bottom_concepts_text if bottom_concepts_text else "N/A"}"""
                 "- 严格遵守数据边界：未提供涨跌家数、资金流、成交额汇总或板块榜时，不要编造或过度解读。\n"
                 if data_limits_block
                 else ""
+            )
+            news_grading_requirement = (
+                "- 消息来源分级：引用关键催化或扰动时，标注其可信度（已确认/观察中未确认/二手转述/个人观点），二手转述及以上不得写成已确认事实。\n"
             )
             market_summary_hint = (
                 "2-3句话概括指数、涨跌家数、成交额和情绪温度，明确“强势/偏暖/震荡/偏弱”判断"
@@ -1873,6 +1879,7 @@ Concept lagging: {bottom_concepts_text if bottom_concepts_text else "N/A"}"""
 - Use emoji sparingly in headings (at most one per heading)
 - The entire fixed shell, headings, guidance, and conclusion must be in {shell_language_label}
 {data_boundary_requirement}
+{news_grading_requirement}
 
 ---
 
@@ -1928,6 +1935,7 @@ Output the report content directly, no extra commentary.
 - {workflow_hint}
 - 不要重复列出已由系统注入的表格数据；正文负责解释表格背后的含义
 {data_boundary_requirement}
+{news_grading_requirement}
 
 ---
 
