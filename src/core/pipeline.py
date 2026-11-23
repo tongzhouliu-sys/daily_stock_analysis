@@ -1887,6 +1887,7 @@ class StockAnalysisPipeline:
                         base_context=analysis_context,
                         portfolio_context=portfolio_context,
                         news_result_count=result.news_result_count,
+                        news_source=news_evidence.source_label(),
                     ),
                     report_language=report_language,
                     code=code,
@@ -3573,6 +3574,7 @@ class StockAnalysisPipeline:
         base_context: Optional[Dict[str, Any]] = None,
         portfolio_context: Optional[Dict[str, Any]] = None,
         news_result_count: Optional[int] = None,
+        news_source: Optional[str] = None,
     ) -> PipelineAnalysisArtifacts:
         context_candidate = base_context
         if not isinstance(context_candidate, dict):
@@ -3610,6 +3612,7 @@ class StockAnalysisPipeline:
             },
             portfolio_context=dict(portfolio_context) if isinstance(portfolio_context, dict) else None,
             prediction_market_context=initial_context.get("prediction_market_context"),
+            news_source=news_source,
         )
 
     def _build_analysis_context_pack_outputs(

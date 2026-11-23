@@ -18,7 +18,7 @@ and this project adheres to [Semantic Versioning](https://semver.org/).
 - [改进] 飞书卡片「决策仪表盘开头」视觉打磨：买卖计数提升为标题栏三枚彩色后缀标签（副标题只留「共分析 N 只股票」）；结构化信号区改为灰色小字标签 + 强调值同行展示（数字不换行），动作色板补齐「观望 / 持有」→ 橙色。详见 [任务书](tasks/feishu-summary-dashboard-polish.md)。
 - [新功能] 预测市场全景：新增 `build_overview()` 聚合活跃合约数、类别/来源分布、Top 事件、关注集中度与启发式 risk-on/risk-off 倾向；新增只读工具 `get_prediction_market_overview`、`GET /api/v1/prediction-markets/overview`，并把概览注入个股分析与大盘复盘 Prompt；详见 [任务书](tasks/prediction-market-overview.md)。
 - [新功能] 报告详情新增「预测市场全景」摘要卡：展示活跃合约数、类别分布、关注集中度、Top 事件与风险定价倾向；卡片读取 `/prediction-markets/overview?refresh=false`，未启用或池为空时不渲染。
-- [修复] Agent 模式分析结束后用本次搜索工具返回的真实新闻回填 context pack 新闻块，重算质量分 `news` 维度与 `metadata.news_result_count`，并按真实结果修正「新闻数据块缺失」的置信度误报；本次消费的新闻摘要写入 `analysis_history.news_content`，真零命中时才提示新闻缺失或不足。经典路径不变。
+- [修复] Agent 模式分析结束后用本次搜索工具返回的真实新闻回填 context pack 新闻块，重算质量分 `news` 维度与 `metadata.news_result_count`，并按真实结果修正「新闻数据块缺失」的置信度误报；本次消费的新闻摘要写入 `analysis_history.news_content`（含来源站点与单条来源链接），新闻块登记 `agent:search_tools` 来源，真零命中时才提示新闻缺失或不足。经典路径不变。
 - [修复] FXMacroData MCP 工具名去掉多余的传输层 `mcp_` 前缀（如 `mcp_macro_news` → `fxmacrodata_macro_news`，与 REST 操作重名时保留原前缀），避免模型调用 `fxmacrodata_macro_news` 时注册表找不到工具并反复告警。
 - [改进] 飞书推送卡片改用原生 `table`：多标的摘要渲染「标的 / 动作 / 评分 / 趋势」，个股行情、技术指标、点位、盘中窗口合并为「分类 / 指标 / 数值」并按点位优先排序，单卡最多 5 张表、超出回退 `fields`；长策略与观察条件仍走正文，3 只股票的富卡片从 64 个组件降到 40 余个，不再因元素超限退化成大段纯文本。
 - [修复] 飞书 Webhook 请求体改为 UTF-8 JSON（`ensure_ascii=False`）发送，按真实字节数计量 20 KB 预算并预留 512 字节外层开销；修复卡片因 `\uXXXX` 转义导致体积放大约 1.4 倍被飞书拒绝、最终回退纯文本的问题，同时避免 App Bot 在卡片超限时发送 JSON `null`。

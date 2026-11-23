@@ -109,6 +109,7 @@ def test_agent_news_evidence_backfills_pack_quality_and_history():
         {
             "title": "公司发布季度财报",
             "snippet": "营收同比增长 18%",
+            "url": "https://news.example.com/a1",
             "source": "测试资讯",
             "published_date": "2026-11-23",
             "dimension": "latest_news",
@@ -116,6 +117,7 @@ def test_agent_news_evidence_backfills_pack_quality_and_history():
         {
             "title": "机构上调目标价",
             "snippet": "多家机构维持买入评级",
+            "url": "https://news.example.com/a2",
             "source": "测试资讯",
             "published_date": "2026-11-22",
             "dimension": "market_analysis",
@@ -123,6 +125,7 @@ def test_agent_news_evidence_backfills_pack_quality_and_history():
         {
             "title": "行业政策边际改善",
             "snippet": "监管口径趋于稳定",
+            "url": "https://news.example.com/a3",
             "source": "测试资讯",
             "published_date": "2026-11-22",
             "dimension": "industry",
@@ -138,7 +141,9 @@ def test_agent_news_evidence_backfills_pack_quality_and_history():
     assert result is not None
     overview = result.analysis_context_pack_overview
     assert overview["metadata"]["news_result_count"] == 3
-    assert _news_block(overview)["status"] == "available"
+    news_block = _news_block(overview)
+    assert news_block["status"] == "available"
+    assert "测试资讯" in (news_block["source"] or "")
     assert overview["data_quality"]["block_scores"]["news"] == 100
 
     confidence_reason = result.dashboard["phase_decision"]["confidence_reason"]
@@ -147,6 +152,8 @@ def test_agent_news_evidence_backfills_pack_quality_and_history():
     saved = pipeline.db.save_analysis_history.call_args.kwargs
     assert saved["news_content"]
     assert "公司发布季度财报" in saved["news_content"]
+    assert "测试资讯" in saved["news_content"]
+    assert "来源：https://news.example.com/a1" in saved["news_content"]
     assert saved["context_snapshot"]["news_result_count"] == 3
 
 
@@ -182,7 +189,9 @@ def test_agent_count_only_evidence_still_backfills_news_block():
     assert result is not None
     overview = result.analysis_context_pack_overview
     assert overview["metadata"]["news_result_count"] == 2
-    assert _news_block(overview)["status"] == "available"
+    news_block = _news_block(overview)
+    assert news_block["status"] == "available"
+    assert news_block["source"] == "agent:search_tools"
     assert "新闻数据块缺失" not in result.dashboard["phase_decision"]["confidence_reason"]
     assert pipeline.db.save_analysis_history.call_args.kwargs["news_content"]
 

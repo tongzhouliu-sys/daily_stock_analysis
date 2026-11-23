@@ -103,6 +103,8 @@ def format_news_evidence_summary(
         snippet = item["snippet"]
         if snippet:
             lines.append(f"   {snippet[:_SNIPPET_LIMIT]}")
+        if item["url"]:
+            lines.append(f"   来源：{item['url']}")
     return "\n".join(lines)
 
 
@@ -136,6 +138,24 @@ class NewsEvidenceAccumulator:
     def items(self) -> List[Dict[str, str]]:
         with self._lock:
             return [dict(item) for item in self._items]
+
+    def sources(self, *, limit: int = 3) -> List[str]:
+        """返回本次新闻条目里去重后的来源站点，供输入数据块登记来源。"""
+        seen: List[str] = []
+        for item in self.items:
+            source = item.get("source", "")
+            if source and source not in seen:
+                seen.append(source)
+                if len(seen) >= max(1, int(limit)):
+                    break
+        return seen
+
+    def source_label(self) -> str:
+        """返回可直接写入 context pack 的新闻来源标签。"""
+        sources = self.sources()
+        if sources:
+            return "agent:search_tools (" + ", ".join(sources) + ")"
+        return "agent:search_tools"
 
     def summary(self, *, max_items: int = 20) -> str:
         """返回本次 Agent 消费的新闻摘要；没有条目时返回空串。"""

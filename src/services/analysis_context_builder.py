@@ -73,6 +73,7 @@ class PipelineAnalysisArtifacts:
     metadata: Dict[str, Any]
     portfolio_context: Optional[Dict[str, Any]] = None
     prediction_market_context: Optional[str] = None
+    news_source: Optional[str] = None
 
 
 class AnalysisContextBuilder:
@@ -463,14 +464,17 @@ def _build_news_block(artifacts: PipelineAnalysisArtifacts) -> AnalysisContextBl
             metadata=metadata,
         )
 
+    source = (artifacts.news_source or "").strip() or None
     return AnalysisContextBlock(
         status=ContextFieldStatus.AVAILABLE,
         items={
             "content": AnalysisContextItem(
                 status=ContextFieldStatus.AVAILABLE,
                 value=content,
+                source=source,
             )
         },
+        source=source,
         metadata=metadata,
     )
 
