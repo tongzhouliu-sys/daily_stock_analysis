@@ -57,7 +57,7 @@
 
 | 项 | 状态 | 处理建议 |
 | --- | --- | --- |
-| 配置三处声明 | `config.py` / `config_registry.py` / `system_config_service.py` 仍需手工同步（101 个键同时出现在三处） | 方案见 `docs/config-single-source.md`；本地不再扩大同步面，新增键必须同时补齐 T17 测试与 `.env.example` |
+| 配置三处声明 | `config.py` / `config_registry.py` / `system_config_service.py` 仍需手工同步（101 个键同时出现在三处） | 方案见 `docs/config/config-single-source.md`；本地不再扩大同步面，新增键必须同时补齐 T17 测试与 `.env.example` |
 | 本地 CLI 生成后端 | `codex_cli` / `claude_code_cli` / `opencode_cli` 标注 experimental | 按 Q3：不删、不再新增维护投入；故障按上游同步处理 |
 | 微信仪表盘图片渲染 | 依赖 Pillow 与中文字体，缺字体时降级文本 | 排障见 `docs/alerts.md`、`docs/FAQ.md` |
 | 前端双语文案 | 选股页与渠道编辑器已迁入 `uiText.ts`；扫描器整页、告警页、持仓页仍中英混排，`uiText.ts` 与 `report_language.py` 各维护一套 | 改文案时两边评估；新增页面文案只进 `uiText.ts`，旧页面按 T44 后续批次迁移 |

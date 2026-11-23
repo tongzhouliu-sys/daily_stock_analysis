@@ -5,7 +5,7 @@
 ## 1. 实现边界
 
 - 在现有项目增加离线研究入口。完整交付包括可运行代码、依赖与运行说明、输入校验、默认参数结果、逐笔账本和 81 组参数扫描。输入数据和运行产物由外部目录提供。
-- 复用扫描器的 [交易日历](../src/services/signal_scanner/domain/calendar.py)、[冻结输入及时点读取逻辑](../src/services/signal_scanner/research/inputs.py)和[产物写入工具](../src/services/signal_scanner/research/reporting.py)。新增本策略的特征计算、组合账本、出入场状态机、绩效和扫描。现有[历史建议评估引擎](../src/core/backtest_engine.py)按单条建议评估并可用盘中高低价判断触价，其出场逻辑与本策略的收盘确认契约不同。
+- 复用扫描器的 [交易日历](../../src/services/signal_scanner/domain/calendar.py)、[冻结输入及时点读取逻辑](../../src/services/signal_scanner/research/inputs.py)和[产物写入工具](../../src/services/signal_scanner/research/reporting.py)。新增本策略的特征计算、组合账本、出入场状态机、绩效和扫描。现有[历史建议评估引擎](../../src/core/backtest_engine.py)按单条建议评估并可用盘中高低价判断触价，其出场逻辑与本策略的收盘确认契约不同。
 - 回放引擎只接收按时点读取的开盘视图和收盘视图。特征计算产生信号和诊断，组合账本消费信号和公司行动，报告从已完成的账本派生。单组和扫描入口调用同一回放引擎。
 - 回放只读取冻结输入，结果写入独立研究目录。回测入口独立于 Web、生产扫描任务、纸面账本和券商接口。
 

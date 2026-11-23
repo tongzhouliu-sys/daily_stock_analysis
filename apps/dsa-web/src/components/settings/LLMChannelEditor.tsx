@@ -191,7 +191,7 @@ const getLlmChannelHelpDocs = (t: TranslateFn) => [
   },
   {
     label: t('llmChannel.help.providerQuickRef'),
-    href: 'https://github.com/ZhuLinsen/daily_stock_analysis/blob/main/docs/llm-providers.md',
+    href: 'https://github.com/ZhuLinsen/daily_stock_analysis/blob/main/docs/config/llm-providers.md',
   },
 ];
 

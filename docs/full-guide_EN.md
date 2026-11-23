@@ -161,7 +161,7 @@ Go to your forked repo → `Settings` → `Secrets and variables` → `Actions` 
 | `SEARXNG_TIMEOUT_SECONDS` | Per-search timeout in seconds for self-hosted SearXNG instances (default `10`, minimum `1`). Increase for slow instances (e.g. NAS deployments aggregating many engines); public-instance timeout is unaffected. GitHub Actions requires explicit variable mapping | Optional |
 | `TUSHARE_TOKEN` | [Tushare Pro](https://tushare.pro/weborder/#/login?reg=834638) Token | Optional |
 | `TUSHARE_HTTP_URL` | Tushare Pro HTTP endpoint; when unset/empty defaults to the official `http://api.tushare.pro`. Set to a `http://` or `https://` URL only when routing through a corporate proxy, cross-border network, or a self-hosted mirror | Optional |
-| `TICKPLUS_API_KEY` | [TickPlus (Recommended)](http://www.tickplus.org/register?reg=5433cf922395) A-share/ETF daily bars, realtime quotes and names; automatic fallback. See [details](tickplus.md) | Recommended |
+| `TICKPLUS_API_KEY` | [TickPlus (Recommended)](http://www.tickplus.org/register?reg=5433cf922395) A-share/ETF daily bars, realtime quotes and names; automatic fallback. See [details](data/tickplus.md) | Recommended |
 | `TICKPLUS_PRIORITY` | Daily bar priority; registered index routes unchanged; default `0` | Optional |
 | `TICKFLOW_API_KEY` | [TickFlow](https://tickflow.org) API key for optional A-share daily K-lines, realtime quotes, stock list/name lookup, and CN market review enhancement; permission or entitlement failures fall back to existing providers | Optional |
 | `MX_APIKEY` / `MX_PRIORITY` | MiaoXiang (Eastmoney MX_API) supplementary provider: fills chip distribution and per-stock capital flow when public eastmoney endpoints fail or are rate-limited. **Strictly opt-in third-party capability**: requires a user-provided key (MiaoXiang Skills page); the current free-tier/quota policy may change and long-term free availability is not guaranteed. Not configured = no behavior change. `MX_PRIORITY` defaults to `6`. GitHub Actions requires `MX_APIKEY` in Secrets | Optional |
@@ -373,7 +373,7 @@ For the notification baseline, diagnostics, and deployment notes, see [Notificat
 |--------|------|--------|:----:|
 | `TUSHARE_TOKEN` | Tushare Pro Token | - | Optional |
 | `TUSHARE_HTTP_URL` | Tushare Pro HTTP endpoint; defaults to `http://api.tushare.pro` when unset/empty. Set only when routing through a corporate proxy, cross-border network, or a self-hosted mirror (must start with `http://` or `https://`). | `http://api.tushare.pro` | Optional |
-| `TICKPLUS_API_KEY` | [TickPlus (Recommended)](http://www.tickplus.org/register?reg=5433cf922395) A-share/ETF daily bars, realtime quotes and names; automatic fallback. See [details](tickplus.md) | - | Optional |
+| `TICKPLUS_API_KEY` | [TickPlus (Recommended)](http://www.tickplus.org/register?reg=5433cf922395) A-share/ETF daily bars, realtime quotes and names; automatic fallback. See [details](data/tickplus.md) | - | Optional |
 | `TICKPLUS_PRIORITY` | Daily bar priority; registered index routes unchanged | `0` | Optional |
 | `TICKFLOW_API_KEY` | TickFlow API key; enables optional A-share daily K-lines, realtime quotes, stock list/name lookup, and CN market review enhancement. Permission failures fall back to existing providers. | - | Optional |
 | `TICKFLOW_PRIORITY` | TickFlow priority for the generic A-share daily K-line route; lower values are tried earlier. No effect unless `TICKFLOW_API_KEY` is configured. Registered indices use a separate fixed chain and ignore this variable. Realtime quotes are ordered by `REALTIME_SOURCE_PRIORITY`. | `2` | Optional |
@@ -397,11 +397,11 @@ For the notification baseline, diagnostics, and deployment notes, see [Notificat
 | `FUNDAMENTAL_CACHE_MAX_ENTRIES` | Maximum entries for fundamental cache (evicted by time within TTL) | `256` | Optional |
 
 > **Behavior Notes:**
-> - Prefer [TickPlus](http://www.tickplus.org/register?reg=5433cf922395) for A-shares / ETFs. Configure `TICKPLUS_API_KEY`; explicit realtime priority is respected. Indicators use `fullfactor` with basic-quote fallback. Batch prefetch groups stocks and ETFs (100 symbols per request, 30-second cache). ETF rotation uses an isolated forward-adjusted instance. Ordinary analysis remains unadjusted; existing index, market-review, fundamental and overseas routes remain available. See [details](tickplus.md).
+> - Prefer [TickPlus](http://www.tickplus.org/register?reg=5433cf922395) for A-shares / ETFs. Configure `TICKPLUS_API_KEY`; explicit realtime priority is respected. Indicators use `fullfactor` with basic-quote fallback. Batch prefetch groups stocks and ETFs (100 symbols per request, 30-second cache). ETF rotation uses an isolated forward-adjusted instance. Ordinary analysis remains unadjusted; existing index, market-review, fundamental and overseas routes remain available. See [details](data/tickplus.md).
 > - **A-shares**: Returns aggregated capabilities by `valuation/growth/earnings/institution/capital_flow/dragon_tiger/boards`.
 > - **ETFs**: Returns available items, marks missing capabilities as `not_supported`, and does not affect the original flow overall.
 > - **US/HK stocks**: Returns `valuation/growth/earnings/belong_boards` (sourced from `info.sector`/`info.industry`) via the yfinance adapter; `institution/capital_flow/dragon_tiger/boards` stay `not_supported` because no offshore data feed exists today. Falls back to a full `not_supported` block if yfinance is unavailable or returns empty payloads. Still fail-open.
-> - **Japanese/Korean stocks**: Current MVP uses Yfinance daily/basic quote coverage only; `institution`, `capital_flow`, `dragon_tiger`, and `boards` are not fully supported and degrade to `not_supported` (see [market boundaries](market-support.md)).
+> - **Japanese/Korean stocks**: Current MVP uses Yfinance daily/basic quote coverage only; `institution`, `capital_flow`, `dragon_tiger`, and `boards` are not fully supported and degrade to `not_supported` (see [market boundaries](data/market-support.md)).
 > - **Taiwan stocks**: On top of the US/HK offshore base path, the `institution` block additionally surfaces raw 三大法人 (institutional) net buy/sell figures (TWSE T86 / TPEx, default-on, fail-open — stays `not_supported` when data is unavailable); `capital_flow`, `dragon_tiger`, and `boards` remain `not_supported`.
 > - Any exception uses fail-open logic, only logs errors without affecting the main technical/news/chip pipeline.
 > - **Field contracts**:
@@ -435,8 +435,8 @@ For the notification baseline, diagnostics, and deployment notes, see [Notificat
 | `GUARD_TRUSTED_PROXIES` | Only used when `TRUST_X_FORWARDED_FOR=true`: proxies allowed to set `X-Forwarded-For` (default loopback only). Only their rightmost entry is used, and the header from any other peer is ignored (the login limiter's `get_client_ip()` also takes the rightmost entry but does not check the peer). When `TRUST_X_FORWARDED_FOR` is `false` the TCP peer address is always used. With the guard on, the built-in entry points (`main.py`, `server.py`, `webui.py`) make Uvicorn trust the same proxies, or none when `TRUST_X_FORWARDED_FOR=false`, so behind a reverse proxy set `TRUST_X_FORWARDED_FOR=true`. With the guard on and `TRUST_X_FORWARDED_FOR=false`, Uvicorn's proxy-header handling is off, so behind an HTTPS reverse proxy the login cookie is set without `Secure` (`_cookie_params()` reads `request.url.scheme`); set `TRUST_X_FORWARDED_FOR=true` behind an HTTPS proxy. If you start `uvicorn` yourself, match `FORWARDED_ALLOW_IPS` to this list or pass `--no-proxy-headers`. If the proxy is not on loopback (for example a Docker bridge address) list it here, otherwise all users share one rate-limit key | `127.0.0.1,::1` |
 | `GUARD_SCAN_BODY` | Also scan request bodies (default: path, query and headers only) | `false` |
 | `GUARD_PASSIVE_MODE` | Log only, never block; useful for a trial run | `false` |
-| `LOGIN_LOG_RETENTION_DAYS` | Login log retention in days (range 1–3650), default 90 days; see [Login Log](login-log.md) | `90` |
-| `LOGIN_LOG_GEOIP_DB_PATH` | Offline IP geolocation database `.mmdb` file path (DB-IP City Lite or MaxMind GeoLite2-City) for showing login location; leave empty to skip; see [Login Log](login-log.md) | empty |
+| `LOGIN_LOG_RETENTION_DAYS` | Login log retention in days (range 1–3650), default 90 days; see [Login Log](features/login-log.md) | `90` |
+| `LOGIN_LOG_GEOIP_DB_PATH` | Offline IP geolocation database `.mmdb` file path (DB-IP City Lite or MaxMind GeoLite2-City) for showing login location; leave empty to skip; see [Login Log](features/login-log.md) | empty |
 | `MARKET_REVIEW_ENABLED` | Enable market review | `true` |
 | `DAILY_MARKET_CONTEXT_ENABLED` | Inject the daily market context into stock-analysis prompts and soften aggressive buy advice in high-risk/risk-off markets; enabled by default, and market review can still run when this is set to `false` | `true` |
 | `MARKET_REVIEW_REGION` | Market review region: cn (A-shares), hk (HK stocks), us (US stocks), jp (JP stocks), kr (KR stocks), tw (Taiwan), both (all six markets) | `cn` |
@@ -680,7 +680,7 @@ python scripts/check_env.py --config
 ```bash
 python main.py                        # Full analysis (stocks + market review)
 python main.py --market-review        # Market review only
-python main.py --etf-rotation         # ETF rotation signal + rule backtest (no LLM; see docs/etf-rotation.md, Chinese-only)
+python main.py --etf-rotation         # ETF rotation signal + rule backtest (no LLM; see docs/features/etf-rotation.md, Chinese-only)
 python main.py --no-market-review     # Stock analysis only
 python main.py --stocks 600519,300750 # Specify stocks
 python main.py --portfolio futu       # Use real Futu LONG stock holdings (overrides --stocks/STOCK_LIST)

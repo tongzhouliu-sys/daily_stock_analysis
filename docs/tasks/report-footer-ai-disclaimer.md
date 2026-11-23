@@ -282,7 +282,7 @@ def ensure_report_disclaimer(text: str) -> str:
 
 | 文件 | 改动 |
 | --- | --- |
-| `docs/share-images.md` | 重写首段与“视觉与内容边界”；删除小红书配置章节、代码示例中的 `ShareImageBranding`；补充新页脚、数据源独立行、PDF 继承说明 |
+| `docs/features/share-images.md` | 重写首段与“视觉与内容边界”；删除小红书配置章节、代码示例中的 `ShareImageBranding`；补充新页脚、数据源独立行、PDF 继承说明 |
 | `docs/notifications.md` | 更新飞书卡片页脚说明（约 63 行）和图片分享模板说明（约 133-135 行）；删除小红书配置；写明紧凑卡片也带声明 |
 | `docs/full-guide.md` | 删除 `SHARE_IMAGE_XIAOHONGSHU_*` 三行配置说明（约 143-145 行） |
 | `docs/full-guide_EN.md` | 删除对应三行英文配置说明（约 131-133 行） |
@@ -393,7 +393,7 @@ python -m pytest -m "not network" \
 4. **Markdown 报告**：改三个模板、`report_renderer.py`、`notification.py` 六个生成函数、`history_service.py`。
 5. **大盘复盘**：改 `market_analyzer.py` 模板与 `market_review.py` 两个渲染函数。
 6. **飞书**：改 `feishu_card.py` 的 `_note`/`_extract_footer`/紧凑卡片，再改 `feishu_sender.py` 纯文本兜底与文件发送。
-7. **文档与治理**：更新 `docs/share-images.md`、`docs/notifications.md`、中英文 full-guide、CHANGELOG；重新生成 CODEMAP。
+7. **文档与治理**：更新 `docs/features/share-images.md`、`docs/notifications.md`、中英文 full-guide、CHANGELOG；重新生成 CODEMAP。
 8. **全量验证**：跑专项测试、`ci_gate.sh`、Web lint/build；补 before/after 截图。
 9. **提交与 PR**：按 `AGENTS.md` 交付结构写 PR body；未经确认不执行 `git commit` / `git push` / `gh pr create`。
 

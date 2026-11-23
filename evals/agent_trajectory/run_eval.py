@@ -54,7 +54,7 @@ from evals.agent_trajectory.metrics import (
 
 
 def _build_report(sample: GoldenSample, metrics: TrajectoryMetrics) -> Dict[str, Any]:
-    """Structured JSON report for one sample (schema in docs/agent-trajectory-eval.md)."""
+    """Structured JSON report for one sample (schema in docs/agent/agent-trajectory-eval.md)."""
     return {
         "sample_id": sample.id,
         "task_description": sample.task_description,

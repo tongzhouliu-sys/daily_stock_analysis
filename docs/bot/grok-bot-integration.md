@@ -8,7 +8,7 @@
 
 | 路径 | 是什么 | 怎么配 | 不是什么 |
 | --- | --- | --- | --- |
-| **Grok 当分析模型** | LiteLLM 直连 `xai/*`，DSA 用 Grok 写报告 | `XAI_API_KEY` + `LITELLM_MODEL=xai/<官方模型ID>`，见 [LLM 配置指南](LLM_CONFIG_GUIDE.md) | 不是 Grok Bot 产品 |
+| **Grok 当分析模型** | LiteLLM 直连 `xai/*`，DSA 用 Grok 写报告 | `XAI_API_KEY` + `LITELLM_MODEL=xai/<官方模型ID>`，见 [LLM 配置指南](../LLM_CONFIG_GUIDE.md) | 不是 Grok Bot 产品 |
 | **Grok Bot 当队友** | 带持久云电脑、Skills、Routines、MCP/Connectors、computer use 的 teammate | Bot 调 DSA 已部署的 HTTP API，或在其电脑上跑 `python main.py` | 不要把 Bot 配成 `LITELLM_MODEL` |
 
 两条路径可以同时用：DSA 用 `xai/grok-*` 做分析，Grok Bot 再来读报告 / `DecisionSignal`。
@@ -16,7 +16,7 @@
 ## 推荐对接顺序
 
 1. 先让 DSA API 长期可访问：`python main.py --serve-only` 或 Docker。GitHub Actions 只做定时任务，不长期暴露 API。
-2. 在 Grok Bot 里放一条 Skill（可直接改 [openclaw Skill](openclaw-skill-integration.md) 的 `SKILL.md` 示例，或用 [`docs/examples/grok_bot/SKILL.md`](examples/grok_bot/SKILL.md)）。
+2. 在 Grok Bot 里放一条 Skill（可直接改 [openclaw Skill](../agent/openclaw-skill-integration.md) 的 `SKILL.md` 示例，或用 [`docs/examples/grok_bot/SKILL.md`](../examples/grok_bot/SKILL.md)）。
 3. 需要盘中盯盘 / 早报时，用 Bot Routine 调 `DecisionSignal` 查询，而不是反复跑完整分析。
 4. 只有 Bot 已经能稳定调通 HTTP 之后，才考虑把同一组接口挂到 MCP Connector。本仓库 **P0 不提供 MCP server**。
 
@@ -48,7 +48,7 @@ Content-Type: application/json
 - 结构化动作：可选 `action` / `action_label`（八态 `buy|add|hold|reduce|sell|watch|avoid|alert`）
 - 旧历史缺字段时回退 `operation_advice`；旧三态统计仍以 `decision_type` 为准
 
-Grok Bot Skill 正文见 [`docs/examples/grok_bot/SKILL.md`](examples/grok_bot/SKILL.md)，也可复用 [openclaw Skill](openclaw-skill-integration.md) 示例。环境变量统一为 `DSA_BASE_URL`。
+Grok Bot Skill 正文见 [`docs/examples/grok_bot/SKILL.md`](../examples/grok_bot/SKILL.md)，也可复用 [openclaw Skill](../agent/openclaw-skill-integration.md) 示例。环境变量统一为 `DSA_BASE_URL`。
 
 ## Skill：大盘复盘
 
@@ -67,9 +67,9 @@ Grok Bot Skill 正文见 [`docs/examples/grok_bot/SKILL.md`](examples/grok_bot/S
 | 后验统计 | `GET /api/v1/decision-signals/outcomes/stats` |
 | 有用 / 无用反馈 | `GET/PUT /api/v1/decision-signals/{signal_id}/feedback` |
 
-字段与生命周期见 [DecisionSignal 专题](decision-signals.md)。`DecisionSignal` 只记录建议，不执行下单或调仓。
+字段与生命周期见 [DecisionSignal 专题](../decision-signals.md)。`DecisionSignal` 只记录建议，不执行下单或调仓。
 
-需要给 Bot 低敏上下文时，用 [AnalysisContextPack](analysis-context-pack.md) 的公开 overview，不要把完整 `context_snapshot` 塞进 Skill 提示词。
+需要给 Bot 低敏上下文时，用 [AnalysisContextPack](../analysis-context-pack.md) 的公开 overview，不要把完整 `context_snapshot` 塞进 Skill 提示词。
 
 ## MCP / Connector / computer use
 

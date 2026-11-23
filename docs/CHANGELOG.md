@@ -9,6 +9,8 @@ and this project adheres to [Semantic Versioning](https://semver.org/).
 
 ## [Unreleased]
 - [新功能] 问股历史对话恢复体验：打开/切换历史会话自动定位到「上一次提问」而非消息流底部；消息悬停显示「修改（回填重发）/ 复制」与消息时间（相对时间 + 完整时间 tooltip，zh/en 本地化）；会话内多次提问时右侧新增「提问导航」目录，点击跳转并高亮、随滚动自动切换当前提问，折叠状态本地持久化。纯前端改动：`Message` 补充 `createdAt`（后端 `created_at` 早已返回），新增 `utils/chatTime.ts`、`utils/chatScroll.ts` 的 `scrollToMessage`/`anchorMessageIdAtViewportTop` 与 `ChatOutline` 组件。详见 [开发任务书](tasks/chat-history-ux.md)。
+- [文档] `docs/` 目录按主题重组：配置、数据源、功能专题、Bot/Agent、部署、诊断、回测、信号扫描器分别归入子目录，根目录只保留入口文档与 CI/测试直接读取的契约文档；同步更新 [文档中心](INDEX.md)、[/docs/INDEX_EN.md](INDEX_EN.md)、README、AGENTS、代码注释与测试中的文档路径引用，并新增目录约定说明。
+- [chore] 个人与本地草稿文档（`docs/tyrone/`、`docs/notes/`）加入 `.gitignore`，仅本地保留，不再提交到 GitHub。
 - [改进] 「完整分析报告」底部生成时间与免责声明改为一行 11px 小字，去掉多余分隔线与大段行距，减少底部占用空间。
 - [修复] HTML 报告中文化语言检测误判：中文正文包含 URL、英文公司专名（Apple/NVIDIA）或指标缩写（RSI MACD）时不再被误判为英文，避免正常中文报告被要求生成中文变体；同时保留英文短句、英文标题/表格与混排句子的检测。
 - [改进] 飞书卡片「分析结果摘要」视觉打磨：动作列改用彩色 `options` 标签（买绿 / 卖红 / 观望持有橙）、评分列用 `lark_md` 分级色 + `/100` 居中、标的去掉行首信号 emoji；单只股票的摘要也渲染成单行表格，与多股形态一致。
@@ -63,7 +65,7 @@ and this project adheres to [Semantic Versioning](https://semver.org/).
 - [改进] 美股数据源 Finnhub / AlphaVantage 支持多 Key：`FINNHUB_API_KEY` / `ALPHAVANTAGE_API_KEY` 可用英文逗号分隔多个账号 Key，鉴权失败、配额用尽或限流时在同一次请求内自动切换到下一个 Key，连续失败的 Key 冷却 5 分钟后恢复；请求错误日志改为不含 Key 的 URL 摘要。
 - [改进] 搜索 Key 支持失效自动切换：同一渠道配置多个 Key 时，当前 Key 返回鉴权失败、配额用尽或限流（401/403/429、`invalid api key`、`quota`、`rate limit`、`run out of searches` 等）会在本次搜索内立即切到下一个 Key 重试；连续失败 3 次的 Key 后续优先跳过。SerpAPI 的 `error` 响应不再被当成空结果的成功响应。
 - [改进] SerpAPI 新增单 Key 月度用量软上限：`SERPAPI_KEY_USAGE_LIMIT`（默认 `200`，免费版每月 250 次留出缓冲，`0` 关闭）达标后主动切换到下一个 Key；用量按自然月累计并持久化到 `data/cache/serpapi_key_usage.json`（仅存 Key 哈希），跨进程/跨天继续叠加、跨月自动归零，全部 Key 触顶时退回消耗最少的 Key 继续搜索。
-- [修复] HTML 报告固定中文：`GET /api/v1/history/{id}/report-html` 不再跟随记录或界面语言，按 `zh` 重新构建章节 / 字段 / 操作建议等结构化文案，`<html lang="zh">` 写死；Web 端「查看 HTML 报告 / 下载 HTML」与抽屉文案也固定中文。模型当年写入的英文自由文本保留原文，详见 [飞书同源 HTML 报告](report-html.md)。
+- [修复] HTML 报告固定中文：`GET /api/v1/history/{id}/report-html` 不再跟随记录或界面语言，按 `zh` 重新构建章节 / 字段 / 操作建议等结构化文案，`<html lang="zh">` 写死；Web 端「查看 HTML 报告 / 下载 HTML」与抽屉文案也固定中文。模型当年写入的英文自由文本保留原文，详见 [飞书同源 HTML 报告](features/report-html.md)。
 - [测试] 锁定 HTML 报告中文化契约：英文记录仍输出中文框架与中文免责声明，历史 Markdown 接口默认语言行为不变。
 - [修复] 恢复主干离线测试绿灯：`SCANNER_BACKUP_KEEP_DAILY/WEEKLY` 归入扫描器隐藏配置，飞书 sender 断言同步关键词页脚与 `render_context/include_disclaimer` 契约，单股通知测试替身补齐 `results/report_type` 形参；`pytest -m "not network"` 恢复 0 失败。
 - [修复] 修复前端 lint：`LoginLogCard` 用显式 i18n key 映射替代 `t(key as any)`，`npm run lint` 恢复 0 error。
@@ -85,20 +87,20 @@ and this project adheres to [Semantic Versioning](https://semver.org/).
 - [chore] 新增 `requirements.lock`（`uv pip compile --universal`），Docker 构建改用锁定依赖；新增 Dependabot 与观测型 `dependency-audit` 作业。
 - [ci] `web-gate` 增加 `npm test`（vitest）；第三方 Actions 固定到 commit SHA；新增 `push: [main]` 触发与离线网络守卫作业。
 - [chore] 删除从未注册的 `ErrorHandlerMiddleware` 死代码；PR 模板新增“文档与实现一致性”检查项。
-- [新功能] 历史报告新增「飞书同源 HTML 报告」：分享菜单可在抽屉内查看或下载一份与飞书推送同源的自包含 HTML，视觉支持系统深浅色与打印；新增 `GET /api/v1/history/{id}/report-html`，零脚本、全量转义、沙箱 iframe 展示，详见 [飞书同源 HTML 报告](report-html.md)。
+- [新功能] 历史报告新增「飞书同源 HTML 报告」：分享菜单可在抽屉内查看或下载一份与飞书推送同源的自包含 HTML，视觉支持系统深浅色与打印；新增 `GET /api/v1/history/{id}/report-html`，零脚本、全量转义、沙箱 iframe 展示，详见 [飞书同源 HTML 报告](features/report-html.md)。
 - [改进] `feishu_card` 新增 `parse_report_document()` 等公开只读解析入口，脚注去重抽为 `_dedupe_notes()`、字段网格布局抽为 `plan_field_grid()`，飞书卡片输出逐字节不变，HTML 报告与之共用同一份解析。
 - [改进] 报告导出与飞书消息底部统一展示 RHCLOUD PTE. LTD. AI 生成声明：分享图/PDF 移除小红书二维码与 GitHub 仓库地址，改为 RHCLOUD 品牌区与统一声明；所有 Markdown 报告末尾追加该声明；飞书仅分析报告推送的富/轻/紧凑卡片与纯文本兜底追加声明；删除 `SHARE_IMAGE_XIAOHONGSHU_*` 配置、二维码资产和相关打包参数。
 - [文档] 新增报告导出与飞书消息底部统一 AI 声明开发任务书（`docs/tasks/report-footer-ai-disclaimer.md`）：移除分享图/PDF 的小红书二维码与 GitHub 仓库地址，改为 RHCLOUD PTE. LTD. AI 生成声明；覆盖 Markdown 报告、飞书卡片与纯文本兜底、历史报告幂等处理、配置/资产清理和验收矩阵。功能待实施。
-- [新功能] 记录管理员登录日志：在「系统设置 > 系统」新增登录日志卡片，记录登录、首次设置密码、开启/关闭认证、修改密码的成功与失败事件，包含 IP 地址、归属地（国家/省/城市）、客户端信息（浏览器/桌面端/脚本、操作系统、设备类型）、时间戳；支持离线 IP 地理库（DB-IP City Lite / MaxMind GeoLite2-City）和可选的在线查询（ip-api.com）；默认保留 90 天，上限 5000 行；详见 [登录日志](login-log.md)
+- [新功能] 记录管理员登录日志：在「系统设置 > 系统」新增登录日志卡片，记录登录、首次设置密码、开启/关闭认证、修改密码的成功与失败事件，包含 IP 地址、归属地（国家/省/城市）、客户端信息（浏览器/桌面端/脚本、操作系统、设备类型）、时间戳；支持离线 IP 地理库（DB-IP City Lite / MaxMind GeoLite2-City）和可选的在线查询（ip-api.com）；默认保留 90 天，上限 5000 行；详见 [登录日志](features/login-log.md)
 - [测试] 修复 `test_service_defaults_lifecycle_and_preserves_explicit_values` 随星期几波动：盘后信号 3d 有效期按交易日计（E16），周三发出时到期日是下周一（5 个自然日），旧断言写死“≤ 3 个自然日”，只在周日前后能过。改为从 `DecisionSignalService._horizon_days` / `_add_trading_days` 取窗口，不在测试里重复常量；生产代码无改动。
 - [chore] 删除 `src/agent/intake_questions.py` 中无任何调用方的 v2 规划函数 `plan_intake_v2` 与 `_build_brief_preview_v2`（约 210 行，引用的 `chat_intake_intent_resolver` 模块并不存在）。依据 AGENTS.md 1.2；v1 引导链路与对外行为不变。
-- [文档] 日线成交量“手→股”换算（乘 100）补测科创板、北交所、ETF：联网核对 688981、430047、510300 的“成交量 × 100 ÷（成交额 ÷ 收盘价）”均为 0.98–1.01，确认东财系日线对这些市场同样以“手”计，代码无需修改；同步 `docs/data-source-stability.md` 与 `docs/ai/STATUS.md`，关闭 R26 遗留项。
+- [文档] 日线成交量“手→股”换算（乘 100）补测科创板、北交所、ETF：联网核对 688981、430047、510300 的“成交量 × 100 ÷（成交额 ÷ 收盘价）”均为 0.98–1.01，确认东财系日线对这些市场同样以“手”计，代码无需修改；同步 `docs/data/data-source-stability.md` 与 `docs/ai/STATUS.md`，关闭 R26 遗留项。
 - [测试] 固定问股「已有标的时的绑定口径」：「宁德时代怎么样」「宁德时代现在能买吗」这类「名称 + 提问谓语」仍进入切换确认（用户问的就是它）；只是顺带提到的名称（如「和宁德时代的区别在哪」）按对比对象处理，不替换当前标的。行为无变化，仅补回归用例并在 `docs/ai/STATUS.md` 记录口径。
 - [测试] 恢复 `apps/dsa-web` 的 Playwright UI 用例：登录表单在管理员账号改造后要求同时填写账号，`settings-guard` / `smoke` / `report-markdown` 改为先填 `#username`（默认 `admin`，可用 `DSA_WEB_SMOKE_USERNAME` 覆盖）；`data-center` 的 1280×720 短视口用例不再假设侧边导航必然溢出、也不再假设账号与主题控件位于侧栏，改为断言设置入口可达且顶栏控件可用。`npx playwright test --config playwright.fixture.config.ts` 35/35 通过。
 - [改进] 历史趋势「分析结果」列悬停展开瀑布流详情面板：表格里被截断的建议、趋势预测、分析摘要、关键数据与完整模型名在浮层中一次性展示，面板按容器宽度切换 1/2 列瀑布布局，贴近视口边缘时自动回弹到可见区域并支持内部滚动；触发器可键盘聚焦，Esc 关闭。截图用例覆盖 1280/390 宽度下的面板可见范围与列数。
 - [修复] 首页历史趋势表格在窄报告栏下不再文字叠压：去掉固定百分比列宽，改为内容自适应列宽并允许横向滚动，时间/股价/涨跌幅/操作列不再互相遮挡或被裁切；指标卡改用容器查询按阅读栏宽度切换 1/2/4 列，窄栏下提示可左右滑动查看完整指标。新增 `e2e/fixtures/history-trend-layout.spec.ts` 覆盖 1440/1280/1024/900/768/390 宽度下的单元格溢出与重叠。
 - [chore] 删除 `src/services/chat_intake_object_resolver.py` 及其测试：该模块是问股引导 v2 的标的解析，没有任何生产调用方（v2 入口已按 T8 移除），且假设的查找表结构与生产 `get_chat_stock_lookup()` 不一致（真实条目是 `(代码, 名称, 类型)` 元组、无别名表），测试只靠自造字典通过。依据 AGENTS.md 1.2「只有测试引用的代码不合入」。对用户无可见变化；`src/schemas/agent_intake.py` 中的结构仍被 `AnalysisBrief` 使用，保留。
-- [修复] 日线成交量统一为“股”：`EfinanceFetcher` 的日线与实时 `volume` 不再原样入库，统一按手→股乘 100；AkShare 的东财日线 / ETF 日线 / 东财实时快照同样乘 100，新浪日线保持原值，AkShare 腾讯日线用 `成交额/收盘价` 判断该板块当前返回的是股还是手（沪市已是股、深市主板仍为手）。实测同一交易日 efinance 对腾讯/新浪的比值：600519、000001、300750、688981、510300 均为 100（688981 为 100.002），TickPlus 适配器原本已乘 100，保持不变。新增 `2026-11-15-daily-volume-shares` 迁移，只处理 `EfinanceFetcher` / `AkshareFetcher` 的 6 位 A 股与 ETF，逐行用成交额比值决定是否乘 100，避免把新浪来源的股数再放大；迁移前自动备份 SQLite 文件，`scripts/normalize_daily_volume.py` 默认 dry-run，`--apply` 才写入，重复执行不再变更。`tests/test_daily_volume_units.py` 覆盖两个 fetcher 的固定样本与迁移幂等；`docs/data-source-stability.md` 补充口径说明。
+- [修复] 日线成交量统一为“股”：`EfinanceFetcher` 的日线与实时 `volume` 不再原样入库，统一按手→股乘 100；AkShare 的东财日线 / ETF 日线 / 东财实时快照同样乘 100，新浪日线保持原值，AkShare 腾讯日线用 `成交额/收盘价` 判断该板块当前返回的是股还是手（沪市已是股、深市主板仍为手）。实测同一交易日 efinance 对腾讯/新浪的比值：600519、000001、300750、688981、510300 均为 100（688981 为 100.002），TickPlus 适配器原本已乘 100，保持不变。新增 `2026-11-15-daily-volume-shares` 迁移，只处理 `EfinanceFetcher` / `AkshareFetcher` 的 6 位 A 股与 ETF，逐行用成交额比值决定是否乘 100，避免把新浪来源的股数再放大；迁移前自动备份 SQLite 文件，`scripts/normalize_daily_volume.py` 默认 dry-run，`--apply` 才写入，重复执行不再变更。`tests/test_daily_volume_units.py` 覆盖两个 fetcher 的固定样本与迁移幂等；`docs/data/data-source-stability.md` 补充口径说明。
 - [修复] 问股消息记忆化：`ChatPage` 传给每条消息的 `onCopy` 改为 `useCallback` 稳定引用并直接传递，复制回调不再在内联箭头函数里每次重建；真实页面挂 20 条历史消息时，在输入框连续输入 5 个字不再触发任何消息组件重渲染。`ChatPage.test.tsx` 用真实的 `ChatPage` + 真实 `ChatMessageItem` + 计数版 `ChatAnswer` 覆盖该路径。
 - [修复] 后端回归收口：聚合报告推送恢复按"报告类型 + 股票集合"生成 `dedup_key` / `cooldown_key`（`report:aggregate:<type>:<codes>`），不同自选股组合不再共享同一个冷却窗口；报告构建的动作推导补回 `action_label` 回退，并改用 `extract_decision_guardrail_reason` 读取 `dashboard.decision_score_calibration` / `decision_stability` 里的护栏原因，只有 dashboard 护栏的"持有"不再被 80 分改写成"买入"；内容完整性补全重试的第二次模型调用抛错时回落到首次解析结果并占位补全，重试耗尽改为选缺字段更少的那份；`interaction_version` 收紧为 `0..1`，传 2 返回 422 而不是静默按 v1 处理；关闭定时调度不再终止正在运行的分析，仅更新调度状态并记录日志，显式停止才终止进程。
 - [修复] 回测报告改为从产物生成：`us_equity_rebound` 新增 `render_backtest_report()` 与 `render-report` 子命令，报告中的最终净值、平均亏损、单笔最大亏损（按收益率/金额）、年度收益、退出分布、ETF 数量全部从 `summary.json`、`trades.csv`、`equity.csv`、`annual_returns.csv`、`exit_breakdown.csv`、`run_manifest.json` 重新计算，不再依赖手工叙述；新增 `tests/test_rebound_reporting.py` 校验报告数字与产物一致。T37 报告已按该渲染器重新生成：最终净值 $80,159.39、平均亏损 $-571.14、单笔最大亏损（收益率）OMI -26.86%、股票池 ETF 2520 只（与 Nasdaq 当前 ETF 清单交集，已退市 ETF 未计入）。
@@ -146,7 +148,7 @@ and this project adheres to [Semantic Versioning](https://semver.org/).
 - [测试] 单测构造收敛：新增 `tests/support/pipeline_factory.py` 的 `make_pipeline()`，为 `StockAnalysisPipeline` 提供一份与 `__init__` 对齐的惰性基线（协作者用 `MagicMock`、市场热点/结构/搜索/情绪服务保持 `None` 走生产惰性构造），17 个测试文件里直接 `StockAnalysisPipeline.__new__` 的手工拼装全部改走该入口；同时清理三处写死旧常量的失效断言（`PRIMARY_HISTORY_DAYS`、日线新鲜度依赖硬编码日期），`AGENTS.md` 1.2 补上「新能力必须有真实生产调用方」与「测试不得给现状拍照」两条底线。
 - [新功能] 新增 `docs/ai/` 五份常青文档：`CODEMAP.md`（脚本生成）、`FLOWS.md`（单股分析 / 问股一次提问 / 配置保存三条链路）、`DATA-FLOW.md`（抓取到页面）、`PITFALLS.md`、`STATUS.md`；配套 `scripts/gen_ai_codemap.py` 与 `--check` 模式，CI 的 `ai-governance` 步骤校验 `CODEMAP.md` 是否与源码同步。`AGENTS.md` 要求开始任务前先读 `CODEMAP.md` 与 `STATUS.md`。
 - [改进] `DESIGN.md` 的机器可读头部改为产品实际使用的变量（铜色 `hsl(15 69% 37%)`、暖纸画布、2–3px 圆角、系统字体栈、等宽数字），删除与上线界面不一致的 IBM Carbon 参考副本，改为指向官方文档。
-- [文档] 新增 [配置单一声明源方案](config-single-source.md)：量化 `config.py` / `config_registry.py` / `system_config_service.py` 三处共 101 个键需要手工同步的现状，给出声明表驱动的目标设计与分阶段迁移路径；按 Q1「继续跟上游」的决策，本项以提给上游的方案交付，本地只保留 `tests/test_config_env_loading.py` 作为过渡保护，不落地结构性拆除。
+- [文档] 新增 [配置单一声明源方案](config/config-single-source.md)：量化 `config.py` / `config_registry.py` / `system_config_service.py` 三处共 101 个键需要手工同步的现状，给出声明表驱动的目标设计与分阶段迁移路径；按 Q1「继续跟上游」的决策，本项以提给上游的方案交付，本地只保留 `tests/test_config_env_loading.py` 作为过渡保护，不落地结构性拆除。
 - [改进] 问股页面按区块拆分：`ChatPage` 的 2016 行单文件拆成会话侧栏、消息项、流式进度、输入区与引导卡五个组件（`components/chat/ChatSessionSidebar/ChatMessageItem/ChatLiveProgress/ChatInputArea/ChatGuideCards`），`ChatPage` 只保留状态编排；消息项与进度区加记忆化，输入框打字不再重渲染历史消息；Enter 发送忽略输入法组合状态；store 订阅改为 `useShallow` 选择器，不再整棵状态树变化就重渲染。
 - [改进] 报告对象构造收敛为 `api/v1/report_builder.build_analysis_report()` 单一入口：同步分析、任务状态数据库回退与历史详情三个接口对同一条记录返回一致的 `meta`/`summary`/`strategy`/`details`，重复的 `_extract_guardrail_reason` 等辅助逻辑合并。
 
@@ -315,7 +317,7 @@ and this project adheres to [Semantic Versioning](https://semver.org/).
 ### 新功能
 
 - 问股由服务端保存已确认的主讨论对象，刷新、重开和会话切换可恢复；Bot/Web 交替问股共享已确认对象，保留股票/指数、跨市场身份及严格工具范围（#2397、#2406）。
-- 新增 `python main.py --etf-rotation` 规则化 ETF 双动量轮动，输出最新调仓信号、扣成本回测、分年度对比、参数平原检验和数据质量告警；不调用 LLM，配置与数据边界见 [ETF 轮动](etf-rotation.md)（#2376）。
+- 新增 `python main.py --etf-rotation` 规则化 ETF 双动量轮动，输出最新调仓信号、扣成本回测、分年度对比、参数平原检验和数据质量告警；不调用 LLM，配置与数据边界见 [ETF 轮动](features/etf-rotation.md)（#2376）。
 - Web 新增只读数据中心，展示 Provider 能力、数据集质量和运行时优先级，不展示 API Key 或原始配置值；短窗口中的导航列表可滚动，并保留主题、语言与退出控件（#2304）。
 - Web 持仓页新增风险与暴露看板，聚合个股/行业集中度、回撤、止损、AI 信号、价格质量、市场及币种暴露（#2297）。
 - 选股候选新增后端生成的 Why Selected / Why Now 解释、来源与质量状态；保留模型 reason/thesis 和逐条 provenance，区分真实零值与缺失占位值，旧历史不重新评分或回写（#2305）。
@@ -368,7 +370,7 @@ and this project adheres to [Semantic Versioning](https://semver.org/).
 
 - **默认行为变化**：Web/API 调度硬超时后，`DSA_TIMEOUT_PARTIAL_NOTIFY` 默认开启，可能新增部分完成通知；设为 `false` 可关闭。该能力不保证通知送达，也不会自动重试已认领的整轮任务。
 - **历史行情**：科创板成交量修复不自动重写已有数据；修正旧记录时须限定 `data_source = 'TencentFetcher'` 及受影响的 688/689 股票，不能统一调整其他来源或市场。
-- **会话升级与回滚**：升级前备份数据库及配置；回滚时先停止新后端，保留新增可空列与数据库版本默认值，不删列或重建数据库，避免旧新写入后端并行。旧版写入后再次升级需重新确认讨论对象，已有消息及 Skill 保留，详见 [问股事件与回滚边界](agent-stream-events.md#rollback)。
+- **会话升级与回滚**：升级前备份数据库及配置；回滚时先停止新后端，保留新增可空列与数据库版本默认值，不删列或重建数据库，避免旧新写入后端并行。旧版写入后再次升级需重新确认讨论对象，已有消息及 Skill 保留，详见 [问股事件与回滚边界](agent/agent-stream-events.md#rollback)。
 - **功能范围**：新意图解析器仍为基础模块，尚未接入 Web SSE 执行入口；CLI 启动分析行为保持现状。ETF 轮动及可选数据/模型渠道按各自配置启用。
 
 ### 测试与文档
@@ -1577,7 +1579,7 @@ and this project adheres to [Semantic Versioning](https://semver.org/).
 ### 新功能
 
 - 💾 **桌面端 `.env` 备份/恢复入口**（#754）— 桌面模式下的系统设置页新增 `导出 .env` / `导入 .env` 按钮，可直接备份当前已保存配置，或把备份文件中的键值合并恢复到当前桌面端 `.env`；导入沿用现有 `config_version` 冲突保护与运行时重载链路，不改变现有桌面端便携模式路径。
-- 📊 **Tushare 股票列表获取工具** — 新增 `scripts/fetch_tushare_stock_list.py`，支持从 Tushare Pro 获取 A股、港股、美股列表信息并保存为 CSV，配有分页读取、智能限流、错误处理和进度提示；新增对应使用文档 `docs/TUSHARE_STOCK_LIST_GUIDE.md`。
+- 📊 **Tushare 股票列表获取工具** — 新增 `scripts/fetch_tushare_stock_list.py`，支持从 Tushare Pro 获取 A股、港股、美股列表信息并保存为 CSV，配有分页读取、智能限流、错误处理和进度提示；新增对应使用文档 `docs/config/TUSHARE_STOCK_LIST_GUIDE.md`。
 - 🔎 **索引生成脚本多市场支持** — `generate_index_from_csv.py` 重构为支持 Tushare 和 AkShare 双数据源，同时覆盖 A股、港股、美股三个市场；新增按市场分类的别名映射（A股、港股常见别名，美股常用股票英文缩写）；添加 `--source` 参数切换数据源、`--test` 参数验证模式；严格过滤美股 DUMMY 记录。
 - 🔎 **索引生成脚本增强** — `generate_stock_index.py` 新增 `--test`/`-t` 测试模式和 `--verbose`/`-v` 详细输出模式，添加市场分布统计，优化 JSON 输出格式。
 - 📋 **首页完整报告支持双模式复制** — 历史报告详情头部新增“复制 Markdown 源码”和“复制纯文本”工具按钮；前者保留原始 Markdown 结构，后者去除常见 Markdown 格式符号，方便分享、归档和跨报告比对。复制按钮文案会跟随 `REPORT_LANGUAGE` 保持中英文一致，避免英文报告页出现中文固定文案。
@@ -1609,7 +1611,7 @@ and this project adheres to [Semantic Versioning](https://semver.org/).
 
 ### 文档
 
-- 📘 **新增 Tushare 股票列表工具文档** — 新增 `docs/TUSHARE_STOCK_LIST_GUIDE.md`，说明股票列表抓取工具的使用方法、数据格式和常见问题。
+- 📘 **新增 Tushare 股票列表工具文档** — 新增 `docs/config/TUSHARE_STOCK_LIST_GUIDE.md`，说明股票列表抓取工具的使用方法、数据格式和常见问题。
 - 🌍 **补齐定时模式与关联板块的双语说明** — `docs/full-guide.md` / `docs/full-guide_EN.md` 现在明确说明 scheduled mode 会在每次执行前重新读取 `STOCK_LIST`，并同步补充个股关联板块展示能力说明，减少配置预期偏差。
 - 🧭 **调整 Agent 术语兼容文案** — README、双语文档、设置页与问股界面继续以“策略”作为用户入口主称呼，同时补充 `skill` 作为内部统一命名，降低迁移期理解成本。
 
@@ -1756,7 +1758,7 @@ and this project adheres to [Semantic Versioning](https://semver.org/).
 
 - 🗑️ **History batch deletion** — Web UI now supports multi-selection and batch deletion of analysis history; added `POST /api/v1/history/batch-delete` endpoint and `ConfirmDialog` component.
 - 🔐 **Auth settings API** — new `POST /api/v1/auth/settings` endpoint to enable or disable Web authentication at runtime and set the initial admin password when needed
-- openclaw Skill 集成指南 — 新增 [docs/openclaw-skill-integration.md](openclaw-skill-integration.md)，说明如何通过 openclaw Skill 调用 DSA API
+- openclaw Skill 集成指南 — 新增 [docs/agent/openclaw-skill-integration.md](agent/openclaw-skill-integration.md)，说明如何通过 openclaw Skill 调用 DSA API
 - ⚙️ **LLM channel protocol/test UX** — `.env` and Web settings now share the same channel shape (`LLM_CHANNELS` + `LLM_<NAME>_PROTOCOL/BASE_URL/API_KEY/MODELS/ENABLED`); settings page adds per-channel connection testing, primary/fallback/vision model selection, and protocol-aware model prefixing
 - 🤖 **Agent architecture Phase 0+1** — shared protocols (`AgentContext`, `AgentOpinion`, `StageResult`), extracted `run_agent_loop()` runner, `AGENT_ARCH` switch (`single`/`multi`), config registry entries
 - 🔍 **Bot NL routing** — two-layer natural-language routing: cheap regex pre-filter (stock codes + finance keywords) → lightweight LLM intent parsing; controlled by `AGENT_NL_ROUTING=true`; supports multi-stock and strategy extraction

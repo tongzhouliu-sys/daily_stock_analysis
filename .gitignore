@@ -105,3 +105,7 @@ static/
 /apps/dsa-desktop/node_modules/
 /node_modules/
 docs/specs/
+
+# 个人与本地草稿文档（仅本地保留，禁止提交）
+/docs/tyrone/
+/docs/notes/

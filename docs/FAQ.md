@@ -376,7 +376,7 @@ OPENAI_MODEL=deepseek-v4-flash
    open "/Applications/Daily Stock Analysis.app"
    ```
 
-如果应用不在 `/Applications`，请替换为实际 `.app` 路径。不要对整个 `/Applications` 目录执行 `xattr`。该命令只是临时放行受信任的 unsigned 应用，不等同于签名或公证；完整排查说明见 [桌面端打包与发布](desktop-package.md#macos-提示应用已损坏无法打开)。
+如果应用不在 `/Applications`，请替换为实际 `.app` 路径。不要对整个 `/Applications` 目录执行 `xattr`。该命令只是临时放行受信任的 unsigned 应用，不等同于签名或公证；完整排查说明见 [桌面端打包与发布](deploy/desktop-package.md#macos-提示应用已损坏无法打开)。
 
 > 📌 相关 Issue: [#2113](https://github.com/ZhuLinsen/daily_stock_analysis/issues/2113)
 

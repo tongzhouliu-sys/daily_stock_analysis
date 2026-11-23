@@ -16,7 +16,7 @@
 | --- | --- | --- |
 | 数据源选择与 fallback | `data_provider/base.py`（`DataFetcherManager`、`normalize_stock_code`） | 单源失败降级到下一源；`priority` 顺序决定首选 |
 | A 股 / ETF | `data_provider/akshare_fetcher.py`、`tushare_fetcher.py`、`efinance_fetcher.py` 等 | 成交量统一到「手 / 股」口径，港股与美股分别归一 |
-| 港美股 | 同上（`_is_hk_code`、`_is_us_code`） | 代码后缀规则见 `docs/market-support.md` |
+| 港美股 | 同上（`_is_hk_code`、`_is_us_code`） | 代码后缀规则见 `docs/data/market-support.md` |
 | 复权与拆股 | 抓取层 + `data10/splits.csv`（回测专用） | 回测按拆股复权；实时分析使用数据源口径 |
 
 **字段约定**：抓取层返回统一列名（`date/open/high/low/close/volume/amount`），下游不再判断数据源。

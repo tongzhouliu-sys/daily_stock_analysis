@@ -4,7 +4,7 @@
 > 基线：待实施前锁定（基于当前 `main` 的 `feishu_card.py` / `feishu_sender.py` / `formatters.py` 现状）
 > 任务类型：`feat` + `refactor` + `docs`
 > 影响面：飞书卡片渲染（`src/notification_sender/feishu_card.py`）、发送层（`feishu_sender.py`）、格式转换（`src/formatters.py`）、通知编排（`src/notification.py`）、测试、文档
-> 关联：飞书卡片与报告 HTML 共用同一份解析（`docs/report-html.md`、`docs/ai/PITFALLS.md` 第 14 条），改动必须联动
+> 关联：飞书卡片与报告 HTML 共用同一份解析（`docs/features/report-html.md`、`docs/ai/PITFALLS.md` 第 14 条），改动必须联动
 
 ---
 
@@ -144,7 +144,7 @@
 | 文件 | 改动 |
 | --- | --- |
 | `docs/notifications.md`「飞书消息卡片排版」节 | 补结构化信号区、长内容入口、交互 action、图片嵌入说明 |
-| `docs/report-html.md` | 说明卡片结构化渲染与 HTML 共用解析的新增共用点 |
+| `docs/features/report-html.md` | 说明卡片结构化渲染与 HTML 共用解析的新增共用点 |
 | `docs/bot/feishu-bot-config.md` | 补「长报告入口 / 图片嵌入」配置与效果说明 |
 | `docs/ai/PITFALLS.md` | 更新第 14 条，新增「结构化信号区与动作色板改动需联动 HTML 报告」 |
 | `docs/CHANGELOG.md` | `[Unreleased]` 扁平格式追加 `[改进]` / `[文档]` 条目 |

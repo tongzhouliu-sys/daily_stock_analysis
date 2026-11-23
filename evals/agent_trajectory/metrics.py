@@ -63,7 +63,7 @@ The original tool-name metrics (Refs #1956) remain unchanged. Stock-scope
 diagnostics (Refs #2394) are reported separately using runtime rules injected
 by the entry point. They do not reinterpret tool hits or violations. Codex
 ``arguments_summary`` and strict Chat identity validation remain out of scope
-(see ``docs/agent-trajectory-eval.md``).
+(see ``docs/agent/agent-trajectory-eval.md``).
 """
 
 from __future__ import annotations

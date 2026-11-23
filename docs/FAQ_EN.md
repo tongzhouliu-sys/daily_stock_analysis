@@ -351,7 +351,7 @@ Work through the following 5 checkpoints in order:
    open "/Applications/Daily Stock Analysis.app"
    ```
 
-Replace the path if the app is not in `/Applications`. Never run `xattr` against the entire `/Applications` directory. This is a temporary way to allow a trusted unsigned app; it is not a substitute for signing or notarization. See the [desktop packaging guide](desktop-package.md#macos-提示应用已损坏无法打开) for the complete troubleshooting notes.
+Replace the path if the app is not in `/Applications`. Never run `xattr` against the entire `/Applications` directory. This is a temporary way to allow a trusted unsigned app; it is not a substitute for signing or notarization. See the [desktop packaging guide](deploy/desktop-package.md#macos-提示应用已损坏无法打开) for the complete troubleshooting notes.
 
 > Related Issue: [#2113](https://github.com/ZhuLinsen/daily_stock_analysis/issues/2113)
 

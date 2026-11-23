@@ -4,7 +4,7 @@
 > 基线：`main` 当前 `src/notification_sender/feishu_card.py`（原生 table 方案已落地，见 `docs/tasks/feishu-message-redesign.md` P1 / P1.1）
 > 任务类型：`feat`（视觉打磨）+ `docs`
 > 影响面：`src/notification_sender/feishu_card.py`、`tests/test_feishu_card.py`、`docs/notifications.md`、`docs/CHANGELOG.md`
-> 关联：卡片与报告 HTML 共用解析（`docs/report-html.md`），本任务不改解析契约，仅改渲染呈现
+> 关联：卡片与报告 HTML 共用解析（`docs/features/report-html.md`），本任务不改解析契约，仅改渲染呈现
 
 ---
 

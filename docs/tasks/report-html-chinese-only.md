@@ -132,7 +132,7 @@ def get_markdown_report(
 ### C4 文档与收尾（0.5 天）
 
 - 本任务书。
-- `docs/report-html.md`：语言行为、已知限制。
+- `docs/features/report-html.md`：语言行为、已知限制。
 - `docs/CHANGELOG.md`：`[Unreleased]` 扁平条目。
 - `docs/ai/STATUS.md`、`docs/ai/FLOWS.md`、`docs/ai/PITFALLS.md` 视需要更新。
 - 执行 `python scripts/gen_ai_codemap.py --check` / `python scripts/check_ai_assets.py`。

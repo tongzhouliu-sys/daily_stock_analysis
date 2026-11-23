@@ -24,7 +24,7 @@
 
 | 能力 | 现有锚点 | 复用点 |
 | --- | --- | --- |
-| 资讯源采集/落库 | `intelligence_items` 表、`docs/intelligence-sources.md` | fail-open 拉取、去重、retention、`symbol/market` 作用域 |
+| 资讯源采集/落库 | `intelligence_items` 表、`docs/data/intelligence-sources.md` | fail-open 拉取、去重、retention、`symbol/market` 作用域 |
 | 个股情报注入 | `src/core/pipeline.py` `_load_persisted_intelligence_context()`（约 772）、`_build_legacy_analysis_artifacts()`（约 894）、`analyzer.analyze(news_context=...)`（约 933） | 预测市场上下文按同一条链路注入 |
 | 上下文包 | `src/services/analysis_context_builder.py` `PipelineAnalysisArtifacts`（约 58） | 新增字段 |
 | 大盘复盘 payload | `src/market_analyzer.py` `build_market_review_payload()`（约 1049） | 合并宏观事件 |
@@ -205,7 +205,7 @@ ALL_PREDICTION_MARKET_TOOLS = [search_prediction_markets_tool]
 | 9 | `src/analyzer.py` | `analyze()` 新增可选参数 `prediction_market_context: Optional[str] = None`；prompt 组装时作为独立数据块注入（含数据时间/来源/免责声明）。**最小、可解释、可回滚补丁，不做其它重构** |
 | 10 | `src/market_analyzer.py` | `build_market_review_payload()`（约 1049）合并同市场 `category=macro` 事件 |
 | 11 | `api/v1/endpoints/prediction_markets.py`（新） | §4.3 三个接口 |
-| 12 | 配置注册 | 新增 §6 键，同步 `.env.example` 与配置注册表（三处声明同步，见 `docs/config-single-source.md`） |
+| 12 | 配置注册 | 新增 §6 键，同步 `.env.example` 与配置注册表（三处声明同步，见 `docs/config/config-single-source.md`） |
 | 13 | `src/report_language.py`、`templates/report_markdown.j2`、`templates/report_wechat.j2` | 「预测市场」小节文案与免责声明（zh/en/ko） |
 | 14 | `tests/` | 见 §8 验证矩阵 |
 | 15 | `docs/ai/DATA-FLOW.md`、`docs/CHANGELOG.md` | 新数据源记录与变更说明 |
@@ -275,7 +275,7 @@ POLYMARKET_API_KEY=
 
 - **P1（本任务书范围）**：采集 + 落库 + 问股工具 + 个股/大盘注入 + 报告展示，全默认关闭，不参与评分权重。
 - **P1.5（可选）**：问股预测市场证据计数（`src/agent/news_evidence.py` 的 ContextVar 模式）；`/prediction-markets/events` 的 Web 只读视图。
-- **P2（后续单独评审）**：概率纳入决策/技能观点，需先建立「不把概率当确定性权重」的契约与反例，且不违反 `docs/multi-strategy-contract.md` Baseline 不变量。
+- **P2（后续单独评审）**：概率纳入决策/技能观点，需先建立「不把概率当确定性权重」的契约与反例，且不违反 `docs/features/multi-strategy-contract.md` Baseline 不变量。
 - **P3（可选）**：聚合中间层降级、多平台扩展、概率历史序列（price history）与走势图。
 
 ---

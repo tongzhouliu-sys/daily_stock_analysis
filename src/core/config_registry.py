@@ -144,7 +144,7 @@ _FIELD_DEFINITIONS: Dict[str, Dict[str, Any]] = {
             },
             {
                 "label": "Tushare 股票列表指南",
-                "href": "https://github.com/ZhuLinsen/daily_stock_analysis/blob/main/docs/TUSHARE_STOCK_LIST_GUIDE.md",
+                "href": "https://github.com/ZhuLinsen/daily_stock_analysis/blob/main/docs/config/TUSHARE_STOCK_LIST_GUIDE.md",
             },
         ],
         "warning_codes": [],
@@ -502,7 +502,7 @@ _FIELD_DEFINITIONS: Dict[str, Dict[str, Any]] = {
             },
             {
                 "label": "LLM 服务商配置速查",
-                "href": "https://github.com/ZhuLinsen/daily_stock_analysis/blob/main/docs/llm-providers.md",
+                "href": "https://github.com/ZhuLinsen/daily_stock_analysis/blob/main/docs/config/llm-providers.md",
             },
             {
                 "label": "LiteLLM OpenAI-compatible（官方）",
@@ -710,7 +710,7 @@ _FIELD_DEFINITIONS: Dict[str, Dict[str, Any]] = {
             },
             {
                 "label": "LLM 服务商配置速查",
-                "href": "https://github.com/ZhuLinsen/daily_stock_analysis/blob/main/docs/llm-providers.md",
+                "href": "https://github.com/ZhuLinsen/daily_stock_analysis/blob/main/docs/config/llm-providers.md",
             },
         ],
         "warning_codes": ["secret_value"],
@@ -785,7 +785,7 @@ _FIELD_DEFINITIONS: Dict[str, Dict[str, Any]] = {
             },
             {
                 "label": "LLM 服务商配置速查",
-                "href": "https://github.com/ZhuLinsen/daily_stock_analysis/blob/main/docs/llm-providers.md",
+                "href": "https://github.com/ZhuLinsen/daily_stock_analysis/blob/main/docs/config/llm-providers.md",
             },
         ],
         "warning_codes": ["secret_value"],
@@ -824,7 +824,7 @@ _FIELD_DEFINITIONS: Dict[str, Dict[str, Any]] = {
         "docs": [
             {
                 "label": "Tushare 股票列表指南",
-                "href": "https://github.com/ZhuLinsen/daily_stock_analysis/blob/main/docs/TUSHARE_STOCK_LIST_GUIDE.md",
+                "href": "https://github.com/ZhuLinsen/daily_stock_analysis/blob/main/docs/config/TUSHARE_STOCK_LIST_GUIDE.md",
             },
             {
                 "label": "完整指南：环境变量完整列表",
@@ -1049,7 +1049,7 @@ _FIELD_DEFINITIONS: Dict[str, Dict[str, Any]] = {
         "docs": [
             {
                 "label": "Tushare 股票列表指南",
-                "href": "https://github.com/ZhuLinsen/daily_stock_analysis/blob/main/docs/TUSHARE_STOCK_LIST_GUIDE.md",
+                "href": "https://github.com/ZhuLinsen/daily_stock_analysis/blob/main/docs/config/TUSHARE_STOCK_LIST_GUIDE.md",
             },
         ],
         "warning_codes": [],
@@ -1087,7 +1087,7 @@ _FIELD_DEFINITIONS: Dict[str, Dict[str, Any]] = {
             },
             {
                 "label": "选股说明",
-                "href": "https://github.com/ZhuLinsen/daily_stock_analysis/blob/main/docs/screening-engine.md",
+                "href": "https://github.com/ZhuLinsen/daily_stock_analysis/blob/main/docs/features/screening-engine.md",
             },
         ],
     },
@@ -1479,7 +1479,7 @@ _FIELD_DEFINITIONS: Dict[str, Dict[str, Any]] = {
             },
             {
                 "label": "LLM 服务商配置速查",
-                "href": "https://github.com/ZhuLinsen/daily_stock_analysis/blob/main/docs/llm-providers.md",
+                "href": "https://github.com/ZhuLinsen/daily_stock_analysis/blob/main/docs/config/llm-providers.md",
             },
         ],
         "warning_codes": ["secret_value"],
@@ -1566,7 +1566,7 @@ _FIELD_DEFINITIONS: Dict[str, Dict[str, Any]] = {
             },
             {
                 "label": "LLM 服务商配置速查",
-                "href": "https://github.com/ZhuLinsen/daily_stock_analysis/blob/main/docs/llm-providers.md",
+                "href": "https://github.com/ZhuLinsen/daily_stock_analysis/blob/main/docs/config/llm-providers.md",
             },
         ],
         "warning_codes": ["secret_value"],
@@ -1610,7 +1610,7 @@ _FIELD_DEFINITIONS: Dict[str, Dict[str, Any]] = {
             },
             {
                 "label": "LLM 服务商配置速查",
-                "href": "https://github.com/ZhuLinsen/daily_stock_analysis/blob/main/docs/llm-providers.md",
+                "href": "https://github.com/ZhuLinsen/daily_stock_analysis/blob/main/docs/config/llm-providers.md",
             },
         ],
         "warning_codes": ["base_url_must_match_provider"],
@@ -1682,7 +1682,7 @@ _FIELD_DEFINITIONS: Dict[str, Dict[str, Any]] = {
             },
             {
                 "label": "LLM 服务商配置速查",
-                "href": "https://github.com/ZhuLinsen/daily_stock_analysis/blob/main/docs/llm-providers.md",
+                "href": "https://github.com/ZhuLinsen/daily_stock_analysis/blob/main/docs/config/llm-providers.md",
             },
         ],
         "warning_codes": ["secret_value"],
@@ -3423,7 +3423,7 @@ _FIELD_DEFINITIONS: Dict[str, Dict[str, Any]] = {
         "docs": [
             {
                 "label": "登录日志",
-                "href": "https://github.com/ZhuLinsen/daily_stock_analysis/blob/main/docs/login-log.md",
+                "href": "https://github.com/ZhuLinsen/daily_stock_analysis/blob/main/docs/features/login-log.md",
             },
         ],
     },
@@ -3478,7 +3478,7 @@ _FIELD_DEFINITIONS: Dict[str, Dict[str, Any]] = {
             },
             {
                 "label": "云服务器访问 WebUI",
-                "href": "https://github.com/ZhuLinsen/daily_stock_analysis/blob/main/docs/deploy-webui-cloud.md",
+                "href": "https://github.com/ZhuLinsen/daily_stock_analysis/blob/main/docs/deploy/deploy-webui-cloud.md",
             },
         ],
         "warning_codes": ["restart_required"],
@@ -3508,7 +3508,7 @@ _FIELD_DEFINITIONS: Dict[str, Dict[str, Any]] = {
             },
             {
                 "label": "云服务器访问 WebUI",
-                "href": "https://github.com/ZhuLinsen/daily_stock_analysis/blob/main/docs/deploy-webui-cloud.md",
+                "href": "https://github.com/ZhuLinsen/daily_stock_analysis/blob/main/docs/deploy/deploy-webui-cloud.md",
             },
         ],
         "warning_codes": ["restart_required", "requires_built_web_assets"],
@@ -3534,7 +3534,7 @@ _FIELD_DEFINITIONS: Dict[str, Dict[str, Any]] = {
         "docs": [
             {
                 "label": "云服务器访问 WebUI",
-                "href": "https://github.com/ZhuLinsen/daily_stock_analysis/blob/main/docs/deploy-webui-cloud.md",
+                "href": "https://github.com/ZhuLinsen/daily_stock_analysis/blob/main/docs/deploy/deploy-webui-cloud.md",
             },
             {
                 "label": "完整指南：WebUI 与 API",
@@ -3564,7 +3564,7 @@ _FIELD_DEFINITIONS: Dict[str, Dict[str, Any]] = {
         "docs": [
             {
                 "label": "云服务器访问 WebUI",
-                "href": "https://github.com/ZhuLinsen/daily_stock_analysis/blob/main/docs/deploy-webui-cloud.md",
+                "href": "https://github.com/ZhuLinsen/daily_stock_analysis/blob/main/docs/deploy/deploy-webui-cloud.md",
             },
             {
                 "label": "完整指南：WebUI 与 API",
@@ -3651,7 +3651,7 @@ _FIELD_DEFINITIONS: Dict[str, Dict[str, Any]] = {
             },
             {
                 "label": "云服务器访问 WebUI",
-                "href": "https://github.com/ZhuLinsen/daily_stock_analysis/blob/main/docs/deploy-webui-cloud.md",
+                "href": "https://github.com/ZhuLinsen/daily_stock_analysis/blob/main/docs/deploy/deploy-webui-cloud.md",
             },
         ],
         "warning_codes": ["public_webui_requires_auth", "auth_settings_endpoint_required"],
@@ -3681,7 +3681,7 @@ _FIELD_DEFINITIONS: Dict[str, Dict[str, Any]] = {
             },
             {
                 "label": "云服务器访问 WebUI",
-                "href": "https://github.com/ZhuLinsen/daily_stock_analysis/blob/main/docs/deploy-webui-cloud.md",
+                "href": "https://github.com/ZhuLinsen/daily_stock_analysis/blob/main/docs/deploy/deploy-webui-cloud.md",
             },
         ],
         "warning_codes": ["trusted_proxy_only"],
@@ -4790,7 +4790,7 @@ _DOC_LLM_CONFIG = [
     },
     {
         "label": "LLM 服务商配置速查",
-        "href": "https://github.com/ZhuLinsen/daily_stock_analysis/blob/main/docs/llm-providers.md",
+        "href": "https://github.com/ZhuLinsen/daily_stock_analysis/blob/main/docs/config/llm-providers.md",
     },
 ]
 

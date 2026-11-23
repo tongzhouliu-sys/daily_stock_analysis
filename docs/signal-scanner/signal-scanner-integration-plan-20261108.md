@@ -314,11 +314,11 @@ scripts/                               导入核验、对照运行、迁移与�
 
 接收系统关键源码：
 
-- [选股服务](../src/services/screening_service.py)、[选股流水线](../src/services/screening/pipeline.py)。
-- [决策信号服务](../src/services/decision_signal_service.py)、[决策 API schema](../api/v1/schemas/decision_signals.py)、[存储模型](../src/storage.py)。
-- [研究产物投影](../src/services/research_artifact_service.py)、[研究产物 schema](../api/v1/schemas/research_artifact.py)、[分析上下文](../src/services/analysis_context_builder.py)。
-- [报告后验回测](../src/services/backtest_service.py)、[数据能力](../src/services/data_capability_service.py)、[任务队列](../src/services/task_queue.py)、[运行调度](../src/services/runtime_scheduler.py)、[交易日历](../src/core/trading_calendar.py)。
-- [Web 导航](../apps/dsa-web/src/components/layout/SidebarNav.tsx)、[设计规范](../DESIGN.md)、[Docker](../docker/Dockerfile)、[CI](../.github/workflows/ci.yml)、[后端验证入口](../scripts/ci_gate.sh)。
+- [选股服务](../../src/services/screening_service.py)、[选股流水线](../../src/services/screening/pipeline.py)。
+- [决策信号服务](../../src/services/decision_signal_service.py)、[决策 API schema](../../api/v1/schemas/decision_signals.py)、[存储模型](../../src/storage.py)。
+- [研究产物投影](../../src/services/research_artifact_service.py)、[研究产物 schema](../../api/v1/schemas/research_artifact.py)、[分析上下文](../../src/services/analysis_context_builder.py)。
+- [报告后验回测](../../src/services/backtest_service.py)、[数据能力](../../src/services/data_capability_service.py)、[任务队列](../../src/services/task_queue.py)、[运行调度](../../src/services/runtime_scheduler.py)、[交易日历](../../src/core/trading_calendar.py)。
+- [Web 导航](../../apps/dsa-web/src/components/layout/SidebarNav.tsx)、[设计规范](../../DESIGN.md)、[Docker](../../docker/Dockerfile)、[CI](../../.github/workflows/ci.yml)、[后端验证入口](../../scripts/ci_gate.sh)。
 
 来源系统关键源码（下列均相对来源根目录）：
 

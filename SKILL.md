@@ -114,4 +114,4 @@ if report:
 ## 模型与外部 Bot
 
 - 若把 **xAI Grok** 当作 DSA 分析模型：配置 `XAI_API_KEY` + `LITELLM_MODEL=xai/<官方模型ID>`（LiteLLM 直连，非托管渠道），并用 `python scripts/check_env.py --llm` 验证。示例见 [`docs/LLM_CONFIG_GUIDE.md`](docs/LLM_CONFIG_GUIDE.md)。
-- 2026-08-11 上线的 **[Grok Bot](https://x.ai/bot)** 是另一条路径：它是带 Skills / Routines / MCP / computer use 的 AI teammate，应通过 HTTP 调用本仓库的 `analyze_stock` / REST API，而不是把 Bot 本身配成 LiteLLM provider。对接说明见 [`docs/grok-bot-integration.md`](docs/grok-bot-integration.md)。
+- 2026-08-11 上线的 **[Grok Bot](https://x.ai/bot)** 是另一条路径：它是带 Skills / Routines / MCP / computer use 的 AI teammate，应通过 HTTP 调用本仓库的 `analyze_stock` / REST API，而不是把 Bot 本身配成 LiteLLM provider。对接说明见 [`docs/bot/grok-bot-integration.md`](docs/bot/grok-bot-integration.md)。

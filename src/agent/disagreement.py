@@ -27,7 +27,7 @@ def build_agent_disagreement_summary(
 ) -> Dict[str, Any]:
     """Build a structured, low-sensitivity summary of prior agent disagreement.
 
-    Per docs/multi-strategy-contract.md §"Disagreement": ctx.opinions is
+    Per docs/features/multi-strategy-contract.md §"Disagreement": ctx.opinions is
     already partitioned by the orchestrator, so invalid skill opinions
     never appear here. Invalid counts come from ctx.meta["invalid_opinions"]
     (Diagnostics), not from re-filtering.

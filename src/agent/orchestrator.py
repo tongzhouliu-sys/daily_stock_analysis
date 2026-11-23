@@ -1378,7 +1378,7 @@ class AgentOrchestrator:
     def _partition_skill_opinions(self, ctx: AgentContext) -> None:
         """Split skill opinions into Evidence Chain (valid) and Diagnostics (invalid).
 
-        Per docs/multi-strategy-contract.md §"Evidence Chain 与 Diagnostics 分离":
+        Per docs/features/multi-strategy-contract.md §"Evidence Chain 与 Diagnostics 分离":
         this is the ONLY partition point. After this method, ctx.opinions
         contains only valid skill opinions; invalid ones are moved to
         ctx.meta["invalid_opinions"] and never re-enter downstream evidence.

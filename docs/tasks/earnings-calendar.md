@@ -120,7 +120,7 @@
 | 4 | `src/analyzer.py` | `_build_fundamental_rows()`（约 1422）业绩区块新增「下次财报披露日期」行（label 走 `report_language`），值形如 `2026-03-28（预计，距今 126 天）`；无 `next_earnings_date` 时**不渲染**该行 |
 | 5 | `src/report_language.py` | 新增 `next_earnings_date_label` / `days_until_earnings_label` 等 label，补齐 `zh` / `en` / `ko` 三语 |
 | 6 | `src/agent/tools/data_tools.py` | `get_stock_info` 的 description 与（如存在）`src/agent/executor.py` 工具说明里点明「财报日历在下一次财报披露日期」位于 `get_stock_info` 返回的 `earnings.calendar`，提示模型可引用；`_compact_fundamental_context()` 已透传 `earnings.data`，无需改动结构 |
-| 7 | 配置 | 不新增配置键（复用 fundamental 取数、无密钥、fail-open，遵循「不配置也可运行」）；如需紧急关闭，走代码回滚。**若评审认为需要开关**，则新增 `EARNINGS_CALENDAR_ENABLED=true` 并同步 `.env.example` + 配置注册表三处声明（`docs/config-single-source.md`） |
+| 7 | 配置 | 不新增配置键（复用 fundamental 取数、无密钥、fail-open，遵循「不配置也可运行」）；如需紧急关闭，走代码回滚。**若评审认为需要开关**，则新增 `EARNINGS_CALENDAR_ENABLED=true` 并同步 `.env.example` + 配置注册表三处声明（`docs/config/config-single-source.md`） |
 | 8 | `docs/ai/DATA-FLOW.md` | 记录 earnings 新增 `calendar` 子块来源与字段；`docs/CHANGELOG.md` `[Unreleased]` 加一行 `- [新功能] 分析/问股接入财报日历（下一次财报披露日期）` |
 | 9 | `tests/` | 见 §8 验证矩阵 |
 

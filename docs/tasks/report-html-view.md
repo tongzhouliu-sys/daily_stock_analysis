@@ -7,7 +7,7 @@
 - 本次定稿范围：H0–H5、H9。H6 / H7 / H8 经确认**不在本任务内**，仅保留章节作为后续参考
 - 分支建议：`feat/report-html-view`（一个任务一个分支一个 PR，遵循 AGENTS.md 第 8 节）
 
-> 后续变更：T77（2026-11-22）已将 HTML 报告固定为中文，`render_report_html()` 不再接收 `report_language`，历史 HTML 接口按 `zh` 重建报告。以 [T77 任务书](report-html-chinese-only.md) 与 [飞书同源 HTML 报告](../report-html.md) 为准；本文保留为 T45 的历史设计记录。
+> 后续变更：T77（2026-11-22）已将 HTML 报告固定为中文，`render_report_html()` 不再接收 `report_language`，历史 HTML 接口按 `zh` 重建报告。以 [T77 任务书](report-html-chinese-only.md) 与 [飞书同源 HTML 报告](../features/report-html.md) 为准；本文保留为 T45 的历史设计记录。
 
 ---
 
@@ -128,7 +128,7 @@ Web 按需生成，不需要开关。本地落盘 `.html`（H6）如果要做，
 
 ### D6 涨跌颜色语义
 
-飞书卡片本身只用语义色标签，不涉及红涨绿跌。HTML 中凡是涨跌颜色，一律取报告里已有的颜色标记（`🟢🟡🔴` 与 `<font color>`），不按市场硬编码；与 `docs/share-images.md` 中"不按市场地区硬编码涨跌色"的口径一致。
+飞书卡片本身只用语义色标签，不涉及红涨绿跌。HTML 中凡是涨跌颜色，一律取报告里已有的颜色标记（`🟢🟡🔴` 与 `<font color>`），不按市场硬编码；与 `docs/features/share-images.md` 中"不按市场地区硬编码涨跌色"的口径一致。
 
 ---
 
@@ -388,11 +388,11 @@ GET /api/v1/history/{record_id}/report-html
 
 **文档**
 
-- 新增 `docs/report-html.md`：能力说明、数据流图（见 D1）、接口说明、安全边界（D4）、本地预览方法、已知限制、回滚。
+- 新增 `docs/features/report-html.md`：能力说明、数据流图（见 D1）、接口说明、安全边界（D4）、本地预览方法、已知限制、回滚。
 - `docs/notifications.md`「飞书消息卡片排版」一节末尾补一句交叉引用：飞书卡片与 HTML 报告共用 `parse_report_document()`，改卡片解析需同步评估 HTML。
-- `docs/share-images.md` 开头补一句区分：分享图是海报（PNG / PDF），HTML 报告是阅读视图。
+- `docs/features/share-images.md` 开头补一句区分：分享图是海报（PNG / PDF），HTML 报告是阅读视图。
 - `docs/INDEX.md`、`docs/INDEX_EN.md` 增加新文档入口。
-- 英文文档：`docs/report-html.md` 只写中文；在交付说明里写明"未提供英文版，原因：同 `docs/share-images.md`，当前仅中文"。若评审要求中英同步，另补 `docs/report-html_EN.md`。
+- 英文文档：`docs/features/report-html.md` 只写中文；在交付说明里写明"未提供英文版，原因：同 `docs/features/share-images.md`，当前仅中文"。若评审要求中英同步，另补 `docs/report-html_EN.md`。
 - `README.md` 不动（AGENTS.md 第 1 节）。
 
 **CHANGELOG**（`docs/CHANGELOG.md` 的 `[Unreleased]`，扁平格式）
@@ -430,8 +430,8 @@ GET /api/v1/history/{record_id}/report-html
 | 新 | `tests/test_report_html_renderer.py` | H2 |
 | 新 | `tests/test_history_report_html_api.py` | H4 |
 | 改/新 | `apps/dsa-web/src/components/report/__tests__/ShareReportButton.test.tsx`、`ReportHtmlDrawer.test.tsx` | H5 |
-| 新 | `docs/report-html.md` | H9 |
-| 改 | `docs/notifications.md`、`docs/share-images.md`、`docs/INDEX.md`、`docs/INDEX_EN.md`、`docs/CHANGELOG.md` | H9 |
+| 新 | `docs/features/report-html.md` | H9 |
+| 改 | `docs/notifications.md`、`docs/features/share-images.md`、`docs/INDEX.md`、`docs/INDEX_EN.md`、`docs/CHANGELOG.md` | H9 |
 | 改 | `docs/ai/STATUS.md`、`FLOWS.md`、`PITFALLS.md`、重新生成 `CODEMAP.md` | H9 |
 | 可选改 | `src/config.py`、`src/core/config_registry.py`、`src/services/system_config_service.py`、`.env.example`、`src/notification.py` | H6 |
 
@@ -556,7 +556,7 @@ GET /api/v1/history/{record_id}/report-html
 - [ ] 浅色 / 深色 / 手机 / 打印截图已附 PR（截图本地已验收，按 AGENTS.md 不入库；PR #9 合并后未回贴附件）
 - [x] `npm run lint`（本功能无错误，仅剩既有 `LoginLogCard.tsx` 4 个 `any`）、`npm run build`、vitest、`gen_ai_codemap.py --check`、`check_ai_assets.py` 通过
 - [x] 后端 syntax / flake8 / deterministic 通过；全量离线测试无新增失败（7 个失败经基线 worktree 复现确认既有）
-- [x] `docs/report-html.md`、`docs/CHANGELOG.md`（扁平格式）、`docs/ai/*` 已更新
+- [x] `docs/features/report-html.md`、`docs/CHANGELOG.md`（扁平格式）、`docs/ai/*` 已更新
 - [x] 未新增任何配置键；未改动 `src/config.py`、`config_registry.py`、`system_config_service.py`、`.env.example`、`src/notification.py`
 
 > 未执行：`./scripts/ci_gate.sh` 的 offline 全量段本地单次跑完约 12 分钟，改由 CI 执行；Docker / Electron 构建无本地环境，未执行。
