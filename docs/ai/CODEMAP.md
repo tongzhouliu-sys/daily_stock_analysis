@@ -24,7 +24,7 @@
 | `apps/dsa-desktop/` | Electron 桌面端壳与打包配置 | 8 | 8519 |
 | `scripts/` | 本地与 CI 脚本 | 54 | 10995 |
 | `.github/scripts/` | GitHub Actions 专用脚本 | 2 | 652 |
-| `tests/` | pytest 测试 | 402 | 196414 |
+| `tests/` | pytest 测试 | 402 | 196449 |
 
 ## 大文件（Python，≥400 行）
 
@@ -55,7 +55,7 @@
 | `src/services/run_diagnostics.py` | 1536 | `build_trace_id`:81, `sanitize_diagnostic_text`:86, `safe_diagnostic_key`:106, `sanitize_diagnostic_metadata`:112, `ProviderRun`:143, `LLMRun`:182 | 95 |
 | `api/v1/endpoints/analysis.py` | 1506 | `_get_task_trace_id`:96, `_task_asset_type`:106, `_task_stage`:132, `_task_progress_updated_at`:142, `_market_review_lock_path`:153, `_build_market_review_runtime`:155 | 17 |
 | `src/services/run_flow.py` | 1504 | `build_task_run_flow_snapshot`:77, `build_history_run_flow_snapshot`:183, `_append_provider_runs`:371, `_append_context_blocks`:474, `_append_llm_runs`:536, `_append_history_runs`:611 | 7 |
-| `src/notification_sender/feishu_card.py` | 1479 | `_Section`:154, `_config`:164, `_clamp`:168, `_clean_inline`:173, `_template_for`:181, `_split_count_tags`:197 | 22 |
+| `src/notification_sender/feishu_card.py` | 1500 | `_Section`:154, `_config`:164, `_clamp`:168, `_clean_inline`:173, `_template_for`:181, `_split_count_tags`:197 | 22 |
 | `api/v1/endpoints/agent.py` | 1476 | `ChatRequest`:74, `_intake_status_code`:121, `_public_answer_meta`:125, `_needs_object_intake`:136, `_reuse_session_brief`:143, `_build_agent_chat_context`:160 | 29 |
 | `data_provider/efinance_fetcher.py` | 1443 | `EfinanceRealtimeQuote`:95, `_lots_to_shares`:139, `_is_etf_code`:180, `_build_eastmoney_etf_secid`:197, `_is_us_code`:209, `_get_ef_executor`:221 | 16 |
 | `data_provider/tushare_fetcher.py` | 1427 | `_is_etf_code`:51, `_is_us_code`:63, `_resolve_tushare_http_url`:75, `_TushareHttpClient`:97, `TushareFetcher`:135 | 14 |
@@ -83,8 +83,8 @@
 
 ## 规模快照
 
-- Python 源码（不含测试）：521 个文件，239396 行
-- Python 测试：393 个文件，196024 行
+- Python 源码（不含测试）：521 个文件，239417 行
+- Python 测试：393 个文件，196059 行
 - 前端 TS/TSX：359 个文件，109672 行
 - ≥400 行的 Python 文件：162 个
 
