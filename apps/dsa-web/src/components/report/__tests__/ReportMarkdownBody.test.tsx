@@ -6,7 +6,7 @@ describe('ReportMarkdownBody', () => {
   it('drops the footer time when the report already shows it near the title', () => {
     render(
       <ReportMarkdownBody
-        content={'# 核心结论\n\n> 分析日期: **2026-11-23** | 报告生成时间: 10:00:00\n\n回调买入。\n\n---\n\n*报告生成时间: 2026-11-23 10:00:00*\n\n*本数据由 RHCLOUD PTE. LTD. 根据 AI 生成，不构成投资建议。*\n'}
+        content={'# 核心结论\n\n> 分析日期: **2026-11-23** | 报告生成时间: 10:00:00\n\n回调买入。\n\n---\n\n*报告生成时间: 2026-11-23 10:00:00*\n\n*内容由 RHCLOUD PTE. LTD. 根据 AI 生成，不构成投资建议。*\n'}
       />,
     );
 
@@ -14,7 +14,7 @@ describe('ReportMarkdownBody', () => {
     expect(screen.queryByText('*报告生成时间: 2026-11-23 10:00:00*')).not.toBeInTheDocument();
     const footer = screen.getByTestId('report-markdown-footer');
     expect(footer.textContent).not.toContain('报告生成时间');
-    expect(footer.textContent).toContain('本数据由 RHCLOUD PTE. LTD. 根据 AI 生成，不构成投资建议。');
+    expect(footer.textContent).toContain('内容由 RHCLOUD PTE. LTD. 根据 AI 生成，不构成投资建议。');
     expect(footer.className).toContain('text-[11px]');
   });
 

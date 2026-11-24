@@ -117,7 +117,7 @@ def test_language_heading_lang():
     english_markdown = "# AAPL Analysis\n\n## Core Conclusion\n\n- Hold.\n"
     html = render_report_html(english_markdown)
     assert '<html lang="zh">' in html
-    assert "本数据由 RHCLOUD PTE. LTD. 根据 AI 生成，不构成投资建议。" in html
+    assert "内容由 RHCLOUD PTE. LTD. 根据 AI 生成，不构成投资建议。" in html
 
 
 def test_renderer_does_not_accept_report_language():

@@ -5,9 +5,11 @@
 > 任务类型：`feat` + `refactor` + `docs`  
 > 影响面：分享图 / PDF / Markdown 报告 / 飞书通知 / 配置 / 打包 / 文档 / 测试
 
-> 定稿确认：统一文案为 `本数据由 RHCLOUD PTE. LTD. 根据 AI 生成，不构成投资建议。`；
+> 定稿确认：统一文案为 `内容由 RHCLOUD PTE. LTD. 根据 AI 生成，不构成投资建议。`；
 > 飞书仅分析报告推送追加声明；PDF 只在末尾/最后一页出现一次；页脚保留 RHCLOUD 品牌标题/标语，
 > 删除仓库地址与小红书区。
+>
+> 2026-11-24 调整：按用户要求将声明开头的“本数据”改为“内容”，其余文案、位置与范围不变。
 
 ## 1. 背景与现状
 
@@ -76,8 +78,8 @@
 | 版本 | 文案 | 说明 |
 | --- | --- | --- |
 | 用户原文 | `本数据有RHCLOUD PTE. LTD. 根据AI生成，不构成投资建议。` | 仅记录；“有”疑为“由”的笔误，不直接使用 |
-| 建议正式版 | `本数据由 RHCLOUD PTE. LTD. 根据 AI 生成，不构成投资建议。` | 默认实现；补“由”，英文实体与中文之间加空格，句末保留句号 |
-| 最小改动版 | `本数据由RHCLOUD PTE. LTD. 根据AI生成，不构成投资建议。` | 如要求尽量贴近原文空格，只改常量一处 |
+| 建议正式版 | `内容由 RHCLOUD PTE. LTD. 根据 AI 生成，不构成投资建议。` | 默认实现；补“由”，英文实体与中文之间加空格，句末保留句号 |
+| 最小改动版 | `内容由RHCLOUD PTE. LTD. 根据AI生成，不构成投资建议。` | 如要求尽量贴近原文空格，只改常量一处 |
 
 默认采用“建议正式版”。如法务要求逐字一致，以最终确认字符串为准；所有入口必须引用同一个常量，禁止各自拼接。
 
@@ -86,7 +88,7 @@
 在 `src/report_language.py` 增加模块级常量与幂等工具：
 
 ```python
-REPORT_AI_DISCLAIMER = "本数据由 RHCLOUD PTE. LTD. 根据 AI 生成，不构成投资建议。"
+REPORT_AI_DISCLAIMER = "内容由 RHCLOUD PTE. LTD. 根据 AI 生成，不构成投资建议。"
 
 _LEGACY_DISCLAIMER_MARKERS = (
     "AI生成，仅供参考，不构成投资建议",
@@ -172,7 +174,7 @@ def ensure_report_disclaimer(text: str) -> str:
   </div>
 </footer>
 <div class="poster-source">数据源：腾讯财经</div>
-<div class="disclaimer">本数据由 RHCLOUD PTE. LTD. 根据 AI 生成，不构成投资建议。</div>
+<div class="disclaimer">内容由 RHCLOUD PTE. LTD. 根据 AI 生成，不构成投资建议。</div>
 ```
 
 没有数据源时省略 `.poster-source`，不要把空字符串渲染成空行。
@@ -421,7 +423,7 @@ python -m pytest -m "not network" \
 
 | # | 问题 | 建议默认 | 影响 |
 | --- | --- | --- | --- |
-| 1 | 文案用“有”还是“由”？空格如何保留？ | 用“由”，采用建议正式版 `本数据由 RHCLOUD PTE. LTD. 根据 AI 生成，不构成投资建议。` | 全仓唯一常量；确认后只改一处 |
+| 1 | 文案用“有”还是“由”？空格如何保留？ | 用“由”，采用建议正式版 `内容由 RHCLOUD PTE. LTD. 根据 AI 生成，不构成投资建议。` | 全仓唯一常量；确认后只改一处 |
 | 2 | 飞书范围是仅分析报告，还是所有 `send_to_feishu()` 消息？ | 所有飞书通知消息；Stream Bot 交互回复不变 | 影响告警、测试消息是否带声明 |
 | 3 | PDF 是只在文档末尾出现一次，还是每张 A4 页都要有？ | 只在末尾/最后一页；当前 PDF 是长图切片 | 每页都要需另做 jsPDF 文字叠加和中文字体 |
 | 4 | 页脚是否保留 DSA 品牌标题和 tagline？ | 保留品牌区，只删 GitHub 仓库行和小红书区域 | 影响页脚高度和 PDF 分页 |

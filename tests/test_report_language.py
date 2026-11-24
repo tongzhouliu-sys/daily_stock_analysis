@@ -158,7 +158,7 @@ class ReportDisclaimerTestCase(unittest.TestCase):
     def test_unified_disclaimer_text(self) -> None:
         self.assertEqual(
             REPORT_AI_DISCLAIMER,
-            "本数据由 RHCLOUD PTE. LTD. 根据 AI 生成，不构成投资建议。",
+            "内容由 RHCLOUD PTE. LTD. 根据 AI 生成，不构成投资建议。",
         )
 
     def test_strip_only_trailing_standalone_disclaimers(self) -> None:

@@ -123,7 +123,7 @@ def test_report_html_uses_chinese_frame_for_english_markdown(monkeypatch):
     response = history_endpoint.get_history_report_html("17", db_manager=object())
     body = response.body.decode("utf-8")
     assert '<html lang="zh">' in body
-    assert "本数据由 RHCLOUD PTE. LTD. 根据 AI 生成，不构成投资建议。" in body
+    assert "内容由 RHCLOUD PTE. LTD. 根据 AI 生成，不构成投资建议。" in body
 
 
 def test_report_html_market_review(monkeypatch):

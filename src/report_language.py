@@ -361,7 +361,7 @@ _GENERIC_STOCK_NAME_BY_LANGUAGE = {
 
 
 # 全仓唯一的合规声明；报告、导出物料与飞书推送都引用该常量。
-REPORT_AI_DISCLAIMER = "本数据由 RHCLOUD PTE. LTD. 根据 AI 生成，不构成投资建议。"
+REPORT_AI_DISCLAIMER = "内容由 RHCLOUD PTE. LTD. 根据 AI 生成，不构成投资建议。"
 
 # 仅用于幂等替换的旧版独立声明行；不包含正文风险提示。
 _LEGACY_REPORT_DISCLAIMER_LINES = (
