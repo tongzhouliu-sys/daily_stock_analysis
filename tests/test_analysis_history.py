@@ -2276,6 +2276,51 @@ class AnalysisHistoryTestCase(unittest.TestCase):
         self.assertIn("**筹码**: 筹码分布未启用或数据源暂不可用，未纳入筹码判断。", markdown)
         self.assertEqual(markdown.count("数据缺失，无法判断"), 0)
 
+    def test_history_markdown_formats_raw_chip_ratios(self) -> None:
+        result = AnalysisResult(
+            code="NVDA",
+            name="NVIDIA",
+            sentiment_score=60,
+            trend_prediction="震荡",
+            operation_advice="持有",
+            analysis_summary="测试",
+            dashboard={
+                "data_perspective": {
+                    "chip_structure": {
+                        "profit_ratio": 0.21665,
+                        "avg_cost": 195.943,
+                        "concentration": 0.21911,
+                        "chip_health": "一般",
+                    }
+                }
+            },
+        )
+
+        saved = self.db.save_analysis_history(
+            result=result,
+            query_id="query_chip_raw_ratio_001",
+            report_type="full",
+            news_content="news",
+            context_snapshot=None,
+            save_snapshot=False,
+        )
+        self.assertGreater(saved, 0)
+
+        with self.db.get_session() as session:
+            row = session.query(AnalysisHistory).filter(
+                AnalysisHistory.query_id == "query_chip_raw_ratio_001"
+            ).first()
+            if row is None:
+                self.fail("未找到保存的历史记录")
+            record_id = row.id
+
+        markdown = HistoryService(self.db).get_markdown_report(str(record_id))
+
+        self.assertIsNotNone(markdown)
+        self.assertIn("**筹码**: 21.7% | 195.94 | 21.91%", markdown)
+        self.assertNotIn("0.21665", markdown)
+        self.assertNotIn("0.21911", markdown)
+
     def test_history_detail_returns_persisted_market_review_report(self) -> None:
         """Market review detail should surface the saved recap content for Web history clicks."""
         if get_history_detail is None:

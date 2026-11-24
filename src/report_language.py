@@ -4,6 +4,7 @@
 from __future__ import annotations
 
 import re
+import math
 from typing import Any, Dict, Optional
 
 from src.schemas.decision_scale import signal_key_for_score
@@ -958,6 +959,74 @@ def get_chip_not_supported_text(language: Optional[str]) -> str:
 def get_chip_estimated_text(language: Optional[str]) -> str:
     """Return the localized disclosure for volume-profile chip estimates."""
     return _CHIP_ESTIMATED_BY_LANGUAGE[normalize_report_language(language)]
+
+
+def _coerce_chip_number(value: Any) -> Optional[float]:
+    """Parse a numeric chip field without treating bools/percent strings as ratios."""
+    if value is None or isinstance(value, bool):
+        return None
+    if isinstance(value, (int, float)):
+        number = float(value)
+    elif isinstance(value, str):
+        text = value.strip()
+        if not text or text.endswith("%"):
+            return None
+        try:
+            number = float(text.replace(",", ""))
+        except ValueError:
+            return None
+    else:
+        return None
+    if not math.isfinite(number):
+        return None
+    return number
+
+
+def format_chip_ratio(value: Any, *, digits: int = 1) -> str:
+    """Render a chip ratio as a percent string, idempotently.
+
+    Values in ``[0, 1]`` are treated as fractions (``0.21665`` -> ``21.7%``);
+    larger numbers are treated as percentage points. Strings that already end
+    with ``%`` are returned unchanged so the report never shows ``%%``.
+    """
+    if value is None:
+        return "N/A"
+    text = str(value).strip()
+    if not text:
+        return "N/A"
+    if text.endswith("%"):
+        return text
+    number = _coerce_chip_number(value)
+    if number is None:
+        return text
+    if 0.0 <= number <= 1.0:
+        number *= 100.0
+    return f"{number:.{max(int(digits), 0)}f}%"
+
+
+def format_chip_profit_ratio(value: Any) -> str:
+    """Profit ratio uses one decimal place (e.g. ``21.7%``)."""
+    return format_chip_ratio(value, digits=1)
+
+
+def format_chip_concentration(value: Any) -> str:
+    """Chip concentration uses two decimal places (e.g. ``21.91%``)."""
+    return format_chip_ratio(value, digits=2)
+
+
+def format_chip_avg_cost(value: Any) -> str:
+    """Average cost keeps two decimal places; missing/zero stays ``N/A``."""
+    if value is None:
+        return "N/A"
+    text = str(value).strip()
+    if not text:
+        return "N/A"
+    number = _coerce_chip_number(value)
+    if number is None:
+        return text
+    if number == 0:
+        return "N/A"
+    return f"{number:.2f}"
 
 
 def _normalize_lookup_key(value: Any) -> str:

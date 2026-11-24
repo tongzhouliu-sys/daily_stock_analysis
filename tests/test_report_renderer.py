@@ -382,6 +382,28 @@ class TestReportRenderer(unittest.TestCase):
         self.assertIn("**筹码**: 筹码分布未启用或数据源暂不可用，未纳入筹码判断。", out)
         self.assertEqual(out.count("数据缺失，无法判断"), 0)
 
+    def test_render_markdown_formats_raw_chip_ratios(self) -> None:
+        r = _make_result(
+            dashboard={
+                "core_conclusion": {"one_sentence": "持有观望"},
+                "data_perspective": {
+                    "chip_structure": {
+                        "profit_ratio": 0.21665,
+                        "avg_cost": 195.943,
+                        "concentration": 0.21911,
+                        "chip_health": "一般",
+                    }
+                },
+            }
+        )
+
+        out = render("markdown", [r], summary_only=False)
+
+        self.assertIsNotNone(out)
+        self.assertIn("**筹码**: 21.7% | 195.94 | 21.91% 一般", out)
+        self.assertNotIn("0.21665", out)
+        self.assertNotIn("0.21911", out)
+
     def test_render_markdown_renders_strategy_synthesis_with_localized_labels(self) -> None:
         r = _make_result(
             dashboard={

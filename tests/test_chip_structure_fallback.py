@@ -25,6 +25,12 @@ from src.analyzer import (
     _derive_chip_health,
     _build_chip_structure_from_data,
 )
+from src.report_language import (
+    format_chip_avg_cost,
+    format_chip_concentration,
+    format_chip_profit_ratio,
+    format_chip_ratio,
+)
 
 
 class TestIsValuePlaceholder(unittest.TestCase):
@@ -93,15 +99,16 @@ class TestBuildChipStructureFromData(unittest.TestCase):
         )
         out = _build_chip_structure_from_data(chip)
         self.assertEqual(out["profit_ratio"], "56.7%")
-        self.assertEqual(out["avg_cost"], 1850.5)
+        self.assertEqual(out["avg_cost"], "1850.50")
         self.assertEqual(out["concentration"], "12.00%")
+        self.assertEqual(out["concentration_90"], "12.00%")
         self.assertEqual(out["chip_health"], "健康")
 
     def test_from_dict(self) -> None:
         d = {"profit_ratio": 0.9, "avg_cost": 100.0, "concentration_90": 0.08}
         out = _build_chip_structure_from_data(d)
         self.assertEqual(out["profit_ratio"], "90.0%")
-        self.assertEqual(out["avg_cost"], 100.0)
+        self.assertEqual(out["avg_cost"], "100.00")
         self.assertEqual(out["concentration"], "8.00%")
         self.assertEqual(out["chip_health"], "警惕")
 
@@ -109,7 +116,7 @@ class TestBuildChipStructureFromData(unittest.TestCase):
         d = {"profit_ratio": "0.5", "avg_cost": "25.6", "concentration_90": "0.15"}
         out = _build_chip_structure_from_data(d)
         self.assertEqual(out["profit_ratio"], "50.0%")
-        self.assertEqual(out["avg_cost"], "25.6")  # raw value preserved
+        self.assertEqual(out["avg_cost"], "25.60")
         self.assertEqual(out["concentration"], "15.00%")
 
     def test_avg_cost_zero_shows_na(self) -> None:
@@ -121,6 +128,33 @@ class TestBuildChipStructureFromData(unittest.TestCase):
         d = {"profit_ratio": 0.5, "avg_cost": None, "concentration_90": 0.1}
         out = _build_chip_structure_from_data(d)
         self.assertEqual(out["avg_cost"], "N/A")
+
+
+class TestChipFormattingHelpers(unittest.TestCase):
+    """Render-boundary formatters must be percent-safe and idempotent."""
+
+    def test_fraction_becomes_percent(self) -> None:
+        self.assertEqual(format_chip_profit_ratio(0.21665), "21.7%")
+        self.assertEqual(format_chip_concentration(0.21911), "21.91%")
+        self.assertEqual(format_chip_ratio(0.5, digits=2), "50.00%")
+
+    def test_existing_percent_string_is_not_doubled(self) -> None:
+        self.assertEqual(format_chip_profit_ratio("21.7%"), "21.7%")
+        self.assertEqual(format_chip_concentration("21.91%"), "21.91%")
+
+    def test_percentage_points_without_symbol_get_percent(self) -> None:
+        self.assertEqual(format_chip_profit_ratio(21.7), "21.7%")
+        self.assertEqual(format_chip_concentration(21.91), "21.91%")
+
+    def test_avg_cost_keeps_two_decimals(self) -> None:
+        self.assertEqual(format_chip_avg_cost(195.943), "195.94")
+        self.assertEqual(format_chip_avg_cost("195.9"), "195.90")
+        self.assertEqual(format_chip_avg_cost(None), "N/A")
+        self.assertEqual(format_chip_avg_cost(0), "N/A")
+
+    def test_placeholders_are_preserved(self) -> None:
+        self.assertEqual(format_chip_profit_ratio("N/A"), "N/A")
+        self.assertEqual(format_chip_concentration(None), "N/A")
 
 
 class TestFillChipStructureIfNeeded(unittest.TestCase):
@@ -164,7 +198,7 @@ class TestFillChipStructureIfNeeded(unittest.TestCase):
         fill_chip_structure_if_needed(result, chip)
         cs = result.dashboard["data_perspective"]["chip_structure"]
         self.assertEqual(cs["profit_ratio"], "67.0%")
-        self.assertEqual(cs["avg_cost"], 1850.0)
+        self.assertEqual(cs["avg_cost"], "1850.00")
         self.assertEqual(cs["concentration"], "11.00%")
         self.assertEqual(cs["chip_health"], "健康")
 
@@ -179,8 +213,8 @@ class TestFillChipStructureIfNeeded(unittest.TestCase):
         chip = self._make_chip()
         fill_chip_structure_if_needed(result, chip)
         cs = result.dashboard["data_perspective"]["chip_structure"]
-        self.assertEqual(cs["profit_ratio"], "65.0%")  # LLM value kept
-        self.assertEqual(cs["avg_cost"], 1850.0)  # filled from chip
+        self.assertEqual(cs["profit_ratio"], "67.0%")  # chip_data wins
+        self.assertEqual(cs["avg_cost"], "1850.00")  # filled from chip
         self.assertEqual(cs["concentration"], "11.00%")  # filled from chip
         self.assertEqual(cs["chip_health"], "健康")  # filled from chip
 
@@ -193,7 +227,7 @@ class TestFillChipStructureIfNeeded(unittest.TestCase):
         self.assertEqual(cs["profit_ratio"], "67.0%")
         self.assertEqual(cs["chip_health"], "健康")
 
-    def test_no_overwrite_valid_llm_values(self) -> None:
+    def test_chip_data_overwrites_valid_llm_values(self) -> None:
         result = self._make_result(
             dashboard={
                 "data_perspective": {
@@ -209,10 +243,41 @@ class TestFillChipStructureIfNeeded(unittest.TestCase):
         chip = self._make_chip()
         fill_chip_structure_if_needed(result, chip)
         cs = result.dashboard["data_perspective"]["chip_structure"]
-        self.assertEqual(cs["profit_ratio"], "70.0%")
-        self.assertEqual(cs["avg_cost"], 1900.0)
-        self.assertEqual(cs["concentration"], "10.00%")
+        self.assertEqual(cs["profit_ratio"], "67.0%")
+        self.assertEqual(cs["avg_cost"], "1850.00")
+        self.assertEqual(cs["concentration"], "11.00%")
         self.assertEqual(cs["chip_health"], "健康")
+
+    def test_fill_formats_llm_unformatted_decimals(self) -> None:
+        """The verified NVDA case: LLM wrote 0.21665 instead of 21.7%."""
+        result = self._make_result(
+            dashboard={
+                "data_perspective": {
+                    "chip_structure": {
+                        "profit_ratio": 0.21665,
+                        "avg_cost": 195.943,
+                        "concentration": 0.21911,
+                        "chip_health": "一般",
+                    }
+                }
+            }
+        )
+        chip = ChipDistribution(
+            code="NVDA",
+            profit_ratio=0.21665,
+            avg_cost=195.943,
+            concentration_90=0.21911,
+            source="volume_profile_estimate",
+            metadata={"is_estimated": True},
+        )
+
+        fill_chip_structure_if_needed(result, chip)
+
+        cs = result.dashboard["data_perspective"]["chip_structure"]
+        self.assertEqual(cs["profit_ratio"], "21.7%")
+        self.assertEqual(cs["avg_cost"], "195.94")
+        self.assertEqual(cs["concentration"], "21.91%")
+        self.assertEqual(cs["chip_health"], "一般")
 
     def test_data_perspective_null_handled(self) -> None:
         """When LLM returns data_perspective: null, fill should still work."""
@@ -264,7 +329,7 @@ class TestFillChipStructureIfNeeded(unittest.TestCase):
 
         cs = result.dashboard["data_perspective"]["chip_structure"]
         self.assertEqual(cs["profit_ratio"], "67.0%")
-        self.assertEqual(cs["avg_cost"], 1850.0)
+        self.assertEqual(cs["avg_cost"], "1850.00")
         self.assertEqual(cs["concentration"], "11.00%")
         self.assertEqual(cs["chip_health"], "健康")
 
@@ -317,7 +382,7 @@ class TestFillChipStructureIfNeeded(unittest.TestCase):
         dp = result.dashboard["data_perspective"]
         cs = dp["chip_structure"]
         self.assertEqual(cs["profit_ratio"], "52.0%")
-        self.assertEqual(cs["avg_cost"], 1850.0)
+        self.assertEqual(cs["avg_cost"], "1850.00")
         self.assertEqual(cs["concentration"], "0.00%")
         self.assertNotIn("chip_unavailable_reason", dp)
 

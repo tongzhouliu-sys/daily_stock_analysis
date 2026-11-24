@@ -1468,6 +1468,35 @@ class TestNotificationServiceReportGeneration(unittest.TestCase):
         self.assertEqual(out.count("数据缺失，无法判断"), 0)
 
     @mock.patch("src.notification.get_config")
+    def test_generate_dashboard_report_formats_raw_chip_ratios(self, mock_get_config: mock.MagicMock):
+        mock_get_config.return_value = _make_config(report_renderer_enabled=False)
+        service = NotificationService()
+        result = AnalysisResult(
+            code="NVDA",
+            name="NVIDIA",
+            sentiment_score=60,
+            trend_prediction="震荡",
+            operation_advice="持有",
+            analysis_summary="测试",
+            dashboard={
+                "data_perspective": {
+                    "chip_structure": {
+                        "profit_ratio": 0.21665,
+                        "avg_cost": 195.943,
+                        "concentration": 0.21911,
+                        "chip_health": "一般",
+                    }
+                }
+            },
+        )
+
+        out = service.generate_dashboard_report([result], report_date="2026-02-01")
+
+        self.assertIn("**筹码**: 21.7% | 195.94 | 21.91%", out)
+        self.assertNotIn("0.21665", out)
+        self.assertNotIn("0.21911", out)
+
+    @mock.patch("src.notification.get_config")
     def test_generate_reports_hide_model_when_disabled(self, mock_get_config: mock.MagicMock):
         mock_get_config.return_value = _make_config(
             report_renderer_enabled=False,

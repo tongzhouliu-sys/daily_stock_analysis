@@ -91,6 +91,9 @@ from src.report_language import (
     get_chip_unavailable_text,
     get_chip_not_supported_text,
     get_chip_estimated_text,
+    format_chip_avg_cost,
+    format_chip_concentration,
+    format_chip_profit_ratio,
     infer_decision_type_from_advice,
     is_chip_placeholder_value,
     localize_chip_health,
@@ -923,16 +926,20 @@ def _build_chip_structure_from_data(chip_data: Any, language: str = "zh") -> Dic
         pr = _safe_float(chip_data.profit_ratio)
         ac = chip_data.avg_cost
         c90 = _safe_float(chip_data.concentration_90)
+        c70 = _safe_float(getattr(chip_data, "concentration_70", None))
     else:
         d = chip_data if isinstance(chip_data, dict) else {}
         pr = _safe_float(d.get("profit_ratio"))
         ac = d.get("avg_cost")
         c90 = _safe_float(d.get("concentration_90"))
+        c70 = _safe_float(d.get("concentration_70"))
     chip_health = _derive_chip_health(pr, c90, language=language)
     return {
-        "profit_ratio": f"{pr:.1%}",
-        "avg_cost": ac if (ac is not None and _safe_float(ac) != 0.0) else "N/A",
-        "concentration": f"{c90:.2%}",
+        "profit_ratio": format_chip_profit_ratio(pr),
+        "avg_cost": format_chip_avg_cost(ac),
+        "concentration": format_chip_concentration(c90),
+        "concentration_90": format_chip_concentration(c90),
+        "concentration_70": format_chip_concentration(c70),
         "chip_health": chip_health,
     }
 
@@ -1062,7 +1069,12 @@ def normalize_chip_structure_availability(
 
 
 def fill_chip_structure_if_needed(result: "AnalysisResult", chip_data: Any) -> None:
-    """When chip_data exists, fill chip_structure placeholder fields from chip_data (in-place)."""
+    """Use chip_data as the authority and normalize chip_structure fields (in-place).
+
+    The LLM may return unformatted decimals (``0.21665``) or ignore the fetched
+    values entirely. When real chip data exists, overwrite the core metrics with
+    formatted values while preserving any extra keys the LLM added.
+    """
     if not result or not _has_meaningful_chip_data(chip_data):
         return
     try:
@@ -1080,11 +1092,16 @@ def fill_chip_structure_if_needed(result: "AnalysisResult", chip_data: Any) -> N
         # Start from a copy of cs to preserve any extra keys the LLM may have added
         merged = dict(cs)
         for k in _CHIP_KEYS:
-            if _is_value_placeholder(merged.get(k)):
+            merged[k] = filled[k]
+        # Normalize 90%/70% concentration only when the LLM used those keys.
+        for k in ("concentration_90", "concentration_70"):
+            if k in merged:
                 merged[k] = filled[k]
         if merged != cs:
             dp["chip_structure"] = merged
-            logger.info("[chip_structure] Filled placeholder chip fields from data source (Issue #589)")
+            logger.info(
+                "[chip_structure] Normalized chip fields from data source (Issue #589)"
+            )
     except Exception as e:
         logger.warning("[chip_structure] Fill failed, skipping: %s", e)
 

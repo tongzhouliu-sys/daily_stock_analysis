@@ -8,6 +8,7 @@ and this project adheres to [Semantic Versioning](https://semver.org/).
 > For user-friendly release highlights, see the [GitHub Releases](https://github.com/ZhuLinsen/daily_stock_analysis/releases) page.
 
 ## [Unreleased]
+- [修复] 筹码比例在报告正文统一格式化为百分数：存在官方或估算筹码数据时以数据源为准覆盖 `chip_structure`，`profit_ratio` / `concentration` / 70%、90% 集中度输出百分数字符串（如 `21.7%` / `21.91%`），`avg_cost` 保留两位小数；模板、历史报告与通知渲染对 0–1 的原始小数兜底转百分数，已是 `21.7%` 的字符串不会重复加 `%`，估算筹码标注保持不变。
 - [修复] 筹码分布区分「不支持」与「缺失」：美股 / 港股 / A 股或美股 ETF / A 股、美股、港股指数（含 SPX、NDX、sh000016 等）不再逐个数据源失败后显示为 `chip_distribution_missing`，而是直接跳过取数并在分析上下文标记 `chip_not_supported`（状态「不支持」）；Agent 路径筹码为空时也会按同样的「不支持 / 缺失」文案回填报告正文，A 股个股取数失败仍保持「缺失」。历史报告不追溯。
 - [新功能] 新增日线成交量估算筹码兜底（`ENABLE_CHIP_ESTIMATE`，默认关闭）：官方筹码源不可用或市场无官方源时，可用近 90 个交易日的 OHLCV 估算获利比例、平均成本与 90% 成本区间，输出 `source=volume_profile_estimate` 且标注「估算值，非交易所筹码数据」；指数与杠杆/反向 ETF 默认不估算，A 股官方源成功时不会被估算覆盖。
 - [改进] 飞书大盘复盘「指数结构」不再逐项换行：宽数据行（如指数表）按行标识拆成独立小块，指标与数值同行「指数：上证指数」「最新：3200.00」展示；窄表仍走原字段网格，正文长句不受影响。

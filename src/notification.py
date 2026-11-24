@@ -39,6 +39,9 @@ from src.notification_noise import (
 )
 from src.report_language import (
     ensure_report_disclaimer,
+    format_chip_avg_cost,
+    format_chip_concentration,
+    format_chip_profit_ratio,
     get_localized_stock_name,
     get_report_labels,
     get_signal_level,
@@ -1515,8 +1518,9 @@ class NotificationService(
                         else:
                             chip_health = localize_chip_health(chip_data.get('chip_health', 'N/A'), report_language)
                             report_lines.extend([
-                                f"**{labels['chip_label']}**: {chip_data.get('profit_ratio', 'N/A')} | {chip_data.get('avg_cost', 'N/A')} | "
-                                f"{chip_data.get('concentration', 'N/A')} {chip_health}",
+                                f"**{labels['chip_label']}**: {format_chip_profit_ratio(chip_data.get('profit_ratio', 'N/A'))} | "
+                                f"{format_chip_avg_cost(chip_data.get('avg_cost', 'N/A'))} | "
+                                f"{format_chip_concentration(chip_data.get('concentration', 'N/A'))} {chip_health}",
                                 "",
                             ])
                             chip_estimate_note = data_persp.get('chip_estimate_note')

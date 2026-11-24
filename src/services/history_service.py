@@ -22,6 +22,9 @@ from src.data.stock_index_loader import resolve_index_stock_code
 from src.services.stock_code_utils import resolve_daily_stock_identity
 from src.report_language import (
     ensure_report_disclaimer,
+    format_chip_avg_cost,
+    format_chip_concentration,
+    format_chip_profit_ratio,
     get_bias_status_emoji,
     get_localized_stock_name,
     get_report_labels,
@@ -1558,8 +1561,9 @@ class HistoryService:
                     else:
                         chip_emoji = "🚨"
                     report_lines.extend([
-                        f"**{labels['chip_label']}**: {chip_data.get('profit_ratio', 'N/A')} | {chip_data.get('avg_cost', 'N/A')} | "
-                        f"{chip_data.get('concentration', 'N/A')} {chip_emoji}{chip_health}",
+                        f"**{labels['chip_label']}**: {format_chip_profit_ratio(chip_data.get('profit_ratio', 'N/A'))} | "
+                        f"{format_chip_avg_cost(chip_data.get('avg_cost', 'N/A'))} | "
+                        f"{format_chip_concentration(chip_data.get('concentration', 'N/A'))} {chip_emoji}{chip_health}",
                         "",
                     ])
                     chip_estimate_note = data_persp.get('chip_estimate_note')
