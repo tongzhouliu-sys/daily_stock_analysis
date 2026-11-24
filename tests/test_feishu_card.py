@@ -652,6 +652,41 @@ def test_plain_text_columns_keep_no_lark_markup():
                     assert "<text_tag" not in str(value)
 
 
+def test_index_structure_fields_are_inline_without_line_breaks():
+    report = """# A股大盘复盘
+
+> 今日A股整体震荡，成交额放大，市场情绪修复，但上方抛压仍在，优先观察量能与权重股表现。
+
+### 二、指数结构
+
+| 指数 | 最新 | 涨跌幅 | 开盘 | 最高 | 最低 | 振幅 | 区间位置 | 成交额(亿) |
+|------|------|--------|------|------|------|------|----------|-----------|
+| 上证指数 | 3200.00 | ↑ +0.50% | 3185.00 | 3210.00 | 3180.00 | 0.94% | 高位 | 4500 |
+| 深证成指 | 10450.00 | ↑ +0.80% | 10380.00 | 10480.00 | 10360.00 | 1.16% | 高位 | 6200 |
+
+### 三、资金流向
+
+主力资金净流入，北向资金净买入，板块轮动加快。
+"""
+    card = build_feishu_card(format_feishu_markdown(report), max_bytes=30000)
+    field_contents = [
+        item["text"]["content"]
+        for element in card["elements"]
+        for item in element.get("fields", [])
+    ]
+
+    # 短数值与标签同行，不再「标签换行 + 值」
+    assert "**最新**：3200.00" in field_contents
+    assert "**涨跌幅**：↑ +0.50%" in field_contents
+    assert all("\n" not in content for content in field_contents)
+
+    # 每个指数自成一块，避免两只指数的数据混在同一个网格里
+    field_blocks = [element for element in card["elements"] if element.get("fields")]
+    assert len(field_blocks) == 2
+    assert field_blocks[0]["fields"][0]["text"]["content"] == "**指数**：上证指数"
+    assert field_blocks[1]["fields"][0]["text"]["content"] == "**指数**：深证成指"
+
+
 def test_market_review_section_titles_are_not_truncated():
     report = """# A股大盘复盘
 

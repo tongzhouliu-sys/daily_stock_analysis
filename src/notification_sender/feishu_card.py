@@ -940,6 +940,27 @@ def _render_blocks(
         cells = _parse_field_cells(stripped) if used_blocks < field_budget else None
         if cells:
             flush_text()
+            # 宽数据行（如大盘「指数结构」的指数表）以首列为行标识：自成一块、
+            # 行内「标签：值」展示，避免标识名与数值被换行拆开；窄表仍走原网格。
+            if (
+                len(cells) >= 5
+                and _clean_inline(cells[0][0]).strip() in _METRIC_SKIP_KEYS
+            ):
+                flush_fields()
+                if used_blocks >= field_budget:
+                    restored = " | ".join(f"{key}：{value}" for key, value in cells)
+                    text_buffer.append(f"• {restored}")
+                else:
+                    for start in range(0, len(cells), _FIELDS_PER_BLOCK):
+                        blocks.append(
+                            _fields_element(
+                                cells[start:start + _FIELDS_PER_BLOCK],
+                                short_limit=24,
+                                inline=True,
+                            )
+                        )
+                        used_blocks += 1
+                continue
             field_buffer.extend(cells)
             while len(field_buffer) >= _FIELDS_PER_BLOCK and used_blocks < field_budget:
                 blocks.append(
