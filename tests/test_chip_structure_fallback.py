@@ -320,3 +320,86 @@ class TestFillChipStructureIfNeeded(unittest.TestCase):
         self.assertEqual(cs["avg_cost"], 1850.0)
         self.assertEqual(cs["concentration"], "0.00%")
         self.assertNotIn("chip_unavailable_reason", dp)
+
+    def test_normalize_uses_not_supported_text_when_market_has_no_chip_source(self) -> None:
+        result = self._make_result(
+            dashboard={"data_perspective": {"chip_structure": {}}}
+        )
+
+        normalize_chip_structure_availability(result, None, not_supported=True)
+
+        dp = result.dashboard["data_perspective"]
+        self.assertEqual(dp["chip_structure"], {})
+        self.assertEqual(
+            dp["chip_unavailable_reason"],
+            "当前市场或标的不支持筹码数据，未纳入筹码判断。",
+        )
+        self.assertNotEqual(
+            dp["chip_unavailable_reason"],
+            "筹码分布未启用或数据源暂不可用，未纳入筹码判断。",
+        )
+
+    def test_normalize_preserves_agent_chip_metrics_when_prefetch_empty(self) -> None:
+        result = self._make_result(
+            dashboard={
+                "data_perspective": {
+                    "chip_structure": {
+                        "profit_ratio": "52.0%",
+                        "avg_cost": 1850.0,
+                        "concentration": "0.00%",
+                        "chip_health": "健康",
+                    }
+                }
+            }
+        )
+
+        normalize_chip_structure_availability(
+            result, None, preserve_existing_metrics=True
+        )
+
+        dp = result.dashboard["data_perspective"]
+        self.assertEqual(dp["chip_structure"]["profit_ratio"], "52.0%")
+        self.assertNotIn("chip_unavailable_reason", dp)
+
+    def test_normalize_collapses_existing_metrics_without_preserve_flag(self) -> None:
+        result = self._make_result(
+            dashboard={
+                "data_perspective": {
+                    "chip_structure": {
+                        "profit_ratio": "52.0%",
+                        "avg_cost": 1850.0,
+                        "concentration": "0.00%",
+                        "chip_health": "健康",
+                    }
+                }
+            }
+        )
+
+        normalize_chip_structure_availability(result, None)
+
+        dp = result.dashboard["data_perspective"]
+        self.assertEqual(dp["chip_structure"], {})
+        self.assertIn("chip_unavailable_reason", dp)
+
+    def test_normalize_marks_estimated_chip_with_disclosure(self) -> None:
+        result = self._make_result(
+            dashboard={"data_perspective": {"chip_structure": {}}}
+        )
+        estimated_chip = ChipDistribution(
+            code="NVDA",
+            profit_ratio=0.61,
+            avg_cost=120.0,
+            concentration_90=0.18,
+            source="volume_profile_estimate",
+            metadata={"is_estimated": True, "estimation_method": "volume_profile"},
+        )
+
+        normalize_chip_structure_availability(result, estimated_chip)
+
+        dp = result.dashboard["data_perspective"]
+        self.assertEqual(dp["chip_structure"]["profit_ratio"], "61.0%")
+        self.assertEqual(
+            dp["chip_estimate_note"],
+            "筹码为基于日线成交量的估算值，非交易所筹码数据。",
+        )
+        self.assertNotIn("chip_unavailable_reason", dp)

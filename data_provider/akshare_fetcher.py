@@ -45,7 +45,7 @@ from tenacity import (
 from src.patches.eastmoney_patch import eastmoney_patch
 from src.config import get_config
 from src.services.stock_list_parser import ParseStatus, parse_analysis_target
-from .base import BaseFetcher, DataFetchError, RateLimitError, STANDARD_COLUMNS, is_bse_code, is_st_stock, is_kc_cy_stock, normalize_stock_code, INTERACTIVE_MODE
+from .base import BaseFetcher, DataFetchError, RateLimitError, STANDARD_COLUMNS, is_bse_code, is_st_stock, is_kc_cy_stock, normalize_stock_code, INTERACTIVE_MODE, is_chip_distribution_supported
 from .realtime_types import (
     UnifiedRealtimeQuote, ChipDistribution, RealtimeSource,
     get_realtime_circuit_breaker,
@@ -1867,19 +1867,10 @@ class AkshareFetcher(BaseFetcher):
         """
         import akshare as ak
 
-        # 美股没有筹码分布数据（Akshare 不支持）
-        if _is_us_code(stock_code):
-            logger.debug('[API跳过] %s 是美股，无筹码分布数据', stock_code)
-            return None
-
-        # 港股没有筹码分布数据（stock_cyq_em 是 A 股专属接口）
-        if _is_hk_code(stock_code):
-            logger.debug('[API跳过] %s 是港股，无筹码分布数据', stock_code)
-            return None
-
-        # ETF/指数没有筹码分布数据
-        if _is_etf_code(stock_code):
-            logger.debug('[API跳过] %s 是 ETF/指数，无筹码分布数据', stock_code)
+        # 官方筹码接口是 A 股个股专属：美股/港股/ETF/指数统一在能力层拦截，
+        # 避免 SPX/NDX/sh000016 这类指数形态继续调用 ak.stock_cyq_em。
+        if not is_chip_distribution_supported(stock_code):
+            logger.debug('[API跳过] %s 当前市场或品种不支持筹码分布数据', stock_code)
             return None
         
         try:

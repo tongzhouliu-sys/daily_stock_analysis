@@ -1519,6 +1519,9 @@ class NotificationService(
                                 f"{chip_data.get('concentration', 'N/A')} {chip_health}",
                                 "",
                             ])
+                            chip_estimate_note = data_persp.get('chip_estimate_note')
+                            if chip_estimate_note:
+                                report_lines.extend([f"> *{chip_estimate_note}*", ""])
                     else:
                         chip_unavailable_reason = get_chip_unavailable_reason(data_persp, report_language)
                         if chip_unavailable_reason:

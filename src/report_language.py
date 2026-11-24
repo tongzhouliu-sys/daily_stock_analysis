@@ -322,6 +322,18 @@ _CHIP_UNAVAILABLE_BY_LANGUAGE = {
     "ko": "매물대가 비활성화되었거나 데이터 소스를 일시적으로 사용할 수 없어 매물대 신호를 반영하지 않았습니다.",
 }
 
+_CHIP_NOT_SUPPORTED_BY_LANGUAGE = {
+    "zh": "当前市场或标的不支持筹码数据，未纳入筹码判断。",
+    "en": "Chip data is not supported for this market or symbol; chip signals were not used.",
+    "ko": "현재 시장 또는 종목은 매물대 데이터를 지원하지 않아 매물대 신호를 반영하지 않았습니다.",
+}
+
+_CHIP_ESTIMATED_BY_LANGUAGE = {
+    "zh": "筹码为基于日线成交量的估算值，非交易所筹码数据。",
+    "en": "Chip metrics are estimated from daily volume profile, not exchange chip data.",
+    "ko": "매물대는 일봉 거래량 기반 추정치이며 거래소 매물대 데이터가 아닙니다.",
+}
+
 _CHIP_PLACEHOLDER_EXACT = {
     "",
     "n/a",
@@ -936,6 +948,16 @@ def get_no_data_text(language: Optional[str]) -> str:
 def get_chip_unavailable_text(language: Optional[str]) -> str:
     """Return the localized one-line chip distribution fallback text."""
     return _CHIP_UNAVAILABLE_BY_LANGUAGE[normalize_report_language(language)]
+
+
+def get_chip_not_supported_text(language: Optional[str]) -> str:
+    """Return the localized line for markets/symbols without chip data."""
+    return _CHIP_NOT_SUPPORTED_BY_LANGUAGE[normalize_report_language(language)]
+
+
+def get_chip_estimated_text(language: Optional[str]) -> str:
+    """Return the localized disclosure for volume-profile chip estimates."""
+    return _CHIP_ESTIMATED_BY_LANGUAGE[normalize_report_language(language)]
 
 
 def _normalize_lookup_key(value: Any) -> str:

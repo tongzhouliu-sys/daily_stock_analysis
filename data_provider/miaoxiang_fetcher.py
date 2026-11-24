@@ -29,6 +29,7 @@ from .base import (
     DataFetchError,
     _is_etf_code,
     _is_non_cn_request,
+    is_chip_distribution_supported,
     normalize_stock_code,
 )
 from .realtime_types import ChipDistribution
@@ -264,8 +265,11 @@ class MiaoxiangFetcher(BaseFetcher):
         Returns:
             ChipDistribution（source=miaoxiang），失败抛 DataFetchError。
         """
+        raw_code = stock_code
         stock_code = normalize_stock_code(stock_code)
-        if _is_non_cn_request(stock_code) or _is_etf_code(stock_code):
+        if not is_chip_distribution_supported(raw_code) or _is_non_cn_request(
+            stock_code
+        ) or _is_etf_code(stock_code):
             logger.debug('[API跳过] %s 非A股个股，无筹码分布数据', stock_code)
             return None
 

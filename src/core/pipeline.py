@@ -29,7 +29,12 @@ from src.config import FUNDAMENTAL_STAGE_TIMEOUT_SECONDS_DEFAULT, get_config, Co
 from src.core.task_cancellation import TaskCancelledError
 from src.storage import get_db
 from data_provider import DataFetcherManager
-from data_provider.base import is_bse_code, normalize_stock_code
+from data_provider.base import (
+    is_bse_code,
+    is_chip_distribution_supported,
+    is_chip_estimate_supported,
+    normalize_stock_code,
+)
 from data_provider.realtime_types import ChipDistribution
 from src.analyzer import (
     GeminiAnalyzer,
@@ -611,26 +616,64 @@ class StockAnalysisPipeline:
                 stock_name = f'股票{code}'
 
             # Step 2: 获取筹码分布 - 使用统一入口，带熔断保护
-            # 指数目标跳过筹码分布（INDEX_SKIP_MODULES 能力矩阵）
+            # 官方筹码源是 A 股个股专属。指数/ETF/港股/美股在能力层直接跳过，
+            # 不再让它们逐个数据源失败后统一打印「所有数据源均失败」。
+            chip_supported = is_chip_distribution_supported(
+                code,
+                asset_type=(
+                    analysis_target.asset_type
+                    if analysis_target is not None
+                    else None
+                ),
+            )
+            chip_estimate_enabled = (
+                getattr(self.config, "enable_chip_estimate", False) is True
+                and is_chip_estimate_supported(
+                    code,
+                    asset_type=(
+                        analysis_target.asset_type
+                        if analysis_target is not None
+                        else None
+                    ),
+                )
+            )
             chip_data = None
-            if is_index and "chip_distribution" in INDEX_SKIP_MODULES:
+            if not chip_supported and not chip_estimate_enabled:
+                logger.debug(
+                    '%s(%s) 当前市场或品种不支持筹码分布，跳过取数',
+                    stock_name,
+                    code,
+                )
+            elif is_index and "chip_distribution" in INDEX_SKIP_MODULES:
                 logger.debug('%s(%s) 指数目标跳过筹码分布', stock_name, code)
             else:
                 try:
                     with _measure_fetch_step(fetch_timings, "筹码"):
-                        chip_data = self.fetcher_manager.get_chip_distribution(code)
+                        chip_data = self.fetcher_manager.get_chip_distribution(
+                            code,
+                            current_price=getattr(realtime_quote, "price", None),
+                        )
                     if chip_data:
                         logger.info(
-                            "%s(%s) 筹码分布: 获利比例=%.1f%%, 90%%集中度=%.2f%%",
+                            "%s(%s) 筹码分布: 获利比例=%.1f%%, 90%%集中度=%.2f%%%s",
                             stock_name,
                             code,
                             chip_data.profit_ratio * 100,
                             chip_data.concentration_90 * 100,
+                            "（估算值）"
+                            if (getattr(chip_data, "metadata", None) or {}).get(
+                                "is_estimated"
+                            )
+                            else "",
                         )
                     else:
                         logger.debug('%s(%s) 筹码分布获取失败或已禁用', stock_name, code)
                 except Exception as e:
                     logger.warning('%s(%s) 获取筹码分布失败: %s', stock_name, code, e)
+
+            # 官方源不存在且没有拿到估算值时才标记「不支持」；A 股个股取数
+            # 失败仍按「缺失」处理，两者在分析上下文里诊断码不同。
+            chip_not_supported = (not chip_supported) and chip_data is None
 
             # If agent mode is explicitly enabled, or specific agent skills are configured, use the Agent analysis pipeline.
             # NOTE: use config.agent_mode (explicit opt-in) instead of
@@ -889,6 +932,7 @@ class StockAnalysisPipeline:
                 portfolio_context=portfolio_context,
             )
             enhanced_context["market_phase_context"] = market_phase_context_dict
+            enhanced_context["chip_not_supported"] = chip_not_supported
             self._attach_daily_market_context(
                 enhanced_context,
                 daily_market_context,
@@ -920,6 +964,7 @@ class StockAnalysisPipeline:
                     query_id=query_id,
                     portfolio_context=portfolio_context,
                     prediction_market_context=prediction_market_context,
+                    chip_not_supported=chip_not_supported,
                 ),
                 report_language=report_language,
                 code=code,
@@ -1002,7 +1047,11 @@ class StockAnalysisPipeline:
 
             # Step 7.6: chip_structure fallback (Issue #589) and unavailable collapse
             if result:
-                normalize_chip_structure_availability(result, chip_data)
+                normalize_chip_structure_availability(
+                    result,
+                    chip_data,
+                    not_supported=chip_not_supported,
+                )
 
             # Step 7.7: price_position fallback
             if result:
@@ -1192,6 +1241,8 @@ class StockAnalysisPipeline:
                 'concentration_70': chip_data.concentration_70,
                 'chip_status': chip_data.get_chip_status(current_price or 0),
             }
+            if (getattr(chip_data, 'metadata', None) or {}).get('is_estimated') is True:
+                enhanced['chip']['is_estimated'] = True
         
         # 添加趋势分析结果
         if trend_result:
@@ -1665,6 +1716,17 @@ class StockAnalysisPipeline:
                 analysis_target is not None
                 and analysis_target.asset_type == ParseStatus.INDEX
             )
+            chip_not_supported = (
+                not is_chip_distribution_supported(
+                    code,
+                    asset_type=(
+                        analysis_target.asset_type
+                        if analysis_target is not None
+                        else None
+                    ),
+                )
+                and not chip_data
+            )
 
             requested_skills = (
                 self.analysis_skills
@@ -1775,6 +1837,7 @@ class StockAnalysisPipeline:
                     query_id=query_id,
                     base_context=analysis_context,
                     portfolio_context=portfolio_context,
+                    chip_not_supported=chip_not_supported,
                 ),
                 report_language=report_language,
                 code=code,
@@ -1888,6 +1951,7 @@ class StockAnalysisPipeline:
                         portfolio_context=portfolio_context,
                         news_result_count=result.news_result_count,
                         news_source=news_evidence.source_label(),
+                        chip_not_supported=chip_not_supported,
                     ),
                     report_language=report_language,
                     code=code,
@@ -1938,9 +2002,16 @@ class StockAnalysisPipeline:
                         "[LLM完整性] integrity_mode=agent_weak 必填字段缺失 %s，已占位补全",
                         missing,
                     )
-            # chip_structure fallback (Issue #589), before save_analysis_history
-            if result and chip_data is not None:
-                normalize_chip_structure_availability(result, chip_data)
+            # chip_structure fallback (Issue #589), before save_analysis_history.
+            # Call even when chip_data is empty so the report body gets the same
+            # unavailable/not-supported text as the analysis context block.
+            if result:
+                normalize_chip_structure_availability(
+                    result,
+                    chip_data,
+                    not_supported=chip_not_supported,
+                    preserve_existing_metrics=True,
+                )
 
             # price_position fallback (same as non-agent path Step 7.7)
             if result:
@@ -3520,7 +3591,14 @@ class StockAnalysisPipeline:
         query_id: str,
         portfolio_context: Optional[Dict[str, Any]] = None,
         prediction_market_context: Optional[str] = None,
+        chip_not_supported: bool = False,
     ) -> PipelineAnalysisArtifacts:
+        metadata: Dict[str, Any] = {
+            "query_id": query_id,
+            "trigger_source": self.query_source,
+        }
+        if chip_not_supported:
+            metadata["chip_not_supported"] = True
         return PipelineAnalysisArtifacts(
             code=code,
             stock_name=stock_name,
@@ -3534,10 +3612,7 @@ class StockAnalysisPipeline:
             fundamental_context=fundamental_context,
             news_context=news_context,
             news_result_count=news_result_count,
-            metadata={
-                "query_id": query_id,
-                "trigger_source": self.query_source,
-            },
+            metadata=metadata,
             portfolio_context=dict(portfolio_context) if isinstance(portfolio_context, dict) else None,
             prediction_market_context=prediction_market_context,
         )
@@ -3587,6 +3662,7 @@ class StockAnalysisPipeline:
         portfolio_context: Optional[Dict[str, Any]] = None,
         news_result_count: Optional[int] = None,
         news_source: Optional[str] = None,
+        chip_not_supported: bool = False,
     ) -> PipelineAnalysisArtifacts:
         context_candidate = base_context
         if not isinstance(context_candidate, dict):
@@ -3605,6 +3681,13 @@ class StockAnalysisPipeline:
                 "yesterday": {},
             }
 
+        metadata: Dict[str, Any] = {
+            "query_id": query_id,
+            "trigger_source": self.query_source,
+        }
+        if chip_not_supported:
+            metadata["chip_not_supported"] = True
+
         return PipelineAnalysisArtifacts(
             code=code,
             stock_name=stock_name,
@@ -3618,10 +3701,7 @@ class StockAnalysisPipeline:
             fundamental_context=fundamental_context,
             news_context=initial_context.get("news_context"),
             news_result_count=news_result_count,
-            metadata={
-                "query_id": query_id,
-                "trigger_source": self.query_source,
-            },
+            metadata=metadata,
             portfolio_context=dict(portfolio_context) if isinstance(portfolio_context, dict) else None,
             prediction_market_context=initial_context.get("prediction_market_context"),
             news_source=news_source,

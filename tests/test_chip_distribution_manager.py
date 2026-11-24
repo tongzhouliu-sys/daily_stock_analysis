@@ -4,6 +4,8 @@
 from types import SimpleNamespace
 from unittest.mock import patch
 
+import pytest
+
 from data_provider.base import DataFetcherManager
 from data_provider.realtime_types import ChipDistribution, get_chip_circuit_breaker
 
@@ -91,6 +93,122 @@ def test_manager_skips_placeholder_chip_distribution_and_tries_next_fetcher():
     assert flow_events[2]["node_id"] == flow_events[3]["node_id"]
     assert flow_events[0]["node_id"] == "provider_chip_emptyfetcher_1"
     assert flow_events[2]["node_id"] == "provider_chip_validfetcher_2"
+
+
+def test_manager_skips_all_sources_for_unsupported_instrument():
+    get_chip_circuit_breaker().reset()
+    valid_chip = ChipDistribution(
+        code="SPX",
+        profit_ratio=0.61,
+        avg_cost=12.3,
+        concentration_90=0.13,
+    )
+    fetcher = _ChipFetcher("ValidFetcher", 0, valid_chip)
+    manager = DataFetcherManager(fetchers=[fetcher])
+
+    with patch(
+        "src.config.get_config",
+        return_value=SimpleNamespace(
+            enable_chip_distribution=True,
+            enable_chip_estimate=False,
+        ),
+    ):
+        chip = manager.get_chip_distribution("SPX")
+
+    assert chip is None
+    assert fetcher.calls == 0
+
+
+def test_manager_falls_back_to_estimate_when_enabled(monkeypatch):
+    get_chip_circuit_breaker().reset()
+    failed_fetcher = _ChipFetcher("EmptyFetcher", 0, None)
+    manager = DataFetcherManager(fetchers=[failed_fetcher])
+
+    estimated = ChipDistribution(
+        code="NVDA",
+        profit_ratio=0.55,
+        avg_cost=120.0,
+        concentration_90=0.2,
+        source="volume_profile_estimate",
+        metadata={"is_estimated": True},
+    )
+    monkeypatch.setattr(
+        manager, "_try_estimate_chip_distribution", lambda **kwargs: estimated
+    )
+
+    with patch(
+        "src.config.get_config",
+        return_value=SimpleNamespace(
+            enable_chip_distribution=True,
+            enable_chip_estimate=True,
+        ),
+    ):
+        chip = manager.get_chip_distribution("NVDA", current_price=125.0)
+
+    assert chip is estimated
+    # US stocks have no official chip source, so no provider attempt is made.
+    assert failed_fetcher.calls == 0
+
+
+def test_manager_does_not_estimate_unsupported_market_when_switch_disabled(monkeypatch):
+    get_chip_circuit_breaker().reset()
+    fetcher = _ChipFetcher("ValidFetcher", 0, None)
+    manager = DataFetcherManager(fetchers=[fetcher])
+
+    monkeypatch.setattr(
+        manager,
+        "_try_estimate_chip_distribution",
+        lambda **kwargs: (_ for _ in ()).throw(AssertionError("估算开关关闭时不应估算")),
+    )
+
+    with patch(
+        "src.config.get_config",
+        return_value=SimpleNamespace(
+            enable_chip_distribution=True,
+            enable_chip_estimate=False,
+        ),
+    ):
+        chip = manager.get_chip_distribution("NVDA")
+
+    assert chip is None
+    assert fetcher.calls == 0
+
+
+def test_manager_estimate_builds_from_daily_data(monkeypatch):
+    import pandas as pd
+
+    get_chip_circuit_breaker().reset()
+    manager = DataFetcherManager(fetchers=[])
+    rows = [
+        {
+            "date": f"2026-05-{index + 1:02d}",
+            "open": float((10, 20, 30)[index % 3]),
+            "high": float((10, 20, 30)[index % 3]),
+            "low": float((10, 20, 30)[index % 3]),
+            "close": float((10, 20, 30)[index % 3]),
+            "volume": 1000.0,
+        }
+        for index in range(30)
+    ]
+    monkeypatch.setattr(
+        manager,
+        "get_daily_data",
+        lambda *args, **kwargs: (pd.DataFrame(rows), "fixture"),
+    )
+
+    with patch(
+        "src.config.get_config",
+        return_value=SimpleNamespace(
+            enable_chip_distribution=True,
+            enable_chip_estimate=True,
+        ),
+    ):
+        chip = manager.get_chip_distribution("NVDA", current_price=25.0)
+
+    assert chip is not None
+    assert chip.source == "volume_profile_estimate"
+    assert chip.metadata["is_estimated"] is True
+    assert chip.profit_ratio == pytest.approx(2 / 3, abs=0.01)
 
 
 def test_manager_accepts_zero_concentration_chip_distribution():

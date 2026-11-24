@@ -214,6 +214,21 @@ const UNKNOWN_REASON_DETAILS: Record<ReportLanguage, string> = {
   ko: '명확한 원인이 기록되지 않았습니다. 상태, 출처 및 경고를 함께 확인하세요',
 };
 
+const WARNING_LABELS: Record<ReportLanguage, Record<string, string>> = {
+  zh: {
+    chip_estimated_volume_profile: '筹码为基于日线成交量的估算值，非交易所筹码数据',
+  },
+  en: {
+    chip_estimated_volume_profile: 'Chip metrics are estimated from daily volume profile, not exchange chip data',
+  },
+  ko: {
+    chip_estimated_volume_profile: '매물대는 일봉 거래량 기반 추정치이며 거래소 매물대 데이터가 아닙니다',
+  },
+};
+
+const formatWarning = (warning: string, language: ReportLanguage): string =>
+  WARNING_LABELS[language][warning] || warning;
+
 const STATUS_FALLBACK_GUIDANCE: Record<
   ReportLanguage,
   Partial<Record<AnalysisContextPackBlockStatus, string>>
@@ -412,7 +427,7 @@ export const AnalysisContextSummary: React.FC<AnalysisContextSummaryProps> = ({
           {overview.warnings?.length ? (
             <div className="mb-3 home-subpanel p-3 text-xs leading-5 text-warning">
               <span className="font-medium">{text.warnings}: </span>
-              {overview.warnings.join(', ')}
+              {overview.warnings.map((warning) => formatWarning(warning, reportLanguage)).join(', ')}
             </div>
           ) : null}
 
@@ -446,7 +461,7 @@ export const AnalysisContextSummary: React.FC<AnalysisContextSummaryProps> = ({
 
                   {block.warnings?.length ? (
                     <p className="mt-2 text-xs leading-5 text-warning">
-                      {text.warnings}: {block.warnings.join(', ')}
+                      {text.warnings}: {block.warnings.map((warning) => formatWarning(warning, reportLanguage)).join(', ')}
                     </p>
                   ) : null}
                   {detail ? (

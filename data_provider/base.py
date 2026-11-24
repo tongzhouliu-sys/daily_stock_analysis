@@ -358,6 +358,146 @@ def _capital_flow_unsupported_instrument(stock_code: str) -> bool:
     return _is_non_cn_request(normalized) or _is_etf_code(normalized)
 
 
+# 杠杆/反向美股 ETF：这些品种的价格路径不反映真实持仓成本，日线成交量估算
+# 筹码会给出误导性的获利比例，默认不参与 volume-profile 兜底。
+_LEVERAGED_OR_INVERSE_US_ETFS = frozenset({
+    "SOXL", "SOXS", "TQQQ", "SQQQ", "SPXL", "SPXS", "UPRO", "SPXU",
+    "TNA", "TZA", "LABU", "LABD", "FNGU", "FNGD", "BULZ", "BERZ",
+    "WEBL", "WEBS", "UDOW", "SDOW", "TECL", "TECS", "CURE", "YINN",
+    "YANG", "UVXY", "SVXY", "VXX", "VIXY", "UVIX", "SVIX",
+})
+
+_HK_INDEX_CODES = frozenset({
+    "HSI", "HSTECH", "HSCEI", "HSCCI", "HSCI", "HSC",
+})
+
+
+def _is_hk_index_code(stock_code: str) -> bool:
+    """Recognize common Hang Seng index tickers in prefixed/suffixed forms."""
+    raw = (stock_code or "").strip().upper()
+    if not raw:
+        return False
+    for prefix in ("HK", "^"):
+        if raw.startswith(prefix):
+            raw = raw[len(prefix):]
+            break
+    if raw.endswith(".HK"):
+        raw = raw[:-3]
+    return raw in _HK_INDEX_CODES
+
+
+def _looks_like_explicit_cn_index_code(stock_code: str) -> bool:
+    """按代码形态识别显式 A 股/中证指数，避免 normalize 丢掉交易所前缀。
+
+    只认确定性形态：``sh000xxx`` / ``sz399xxx`` / ``csi######`` /
+    ``######.CSI`` 以及裸 ``399xxx`` / ``899xxx``。裸 ``000xxx`` 同时可能是
+    深市个股（如 000001），按个股处理，指数身份由 ``analysis_target`` 提供。
+    """
+    raw = (stock_code or "").strip()
+    lower = raw.lower()
+    if not lower:
+        return False
+    if lower.startswith("csi") and lower[3:].isdigit() and len(lower[3:]) == 6:
+        return True
+    if lower.endswith(".csi"):
+        base = lower[:-4]
+        return base.isdigit() and len(base) == 6
+    for suffix in (".sh", ".sz"):
+        if lower.endswith(suffix):
+            base = lower[: -len(suffix)]
+            if not (base.isdigit() and len(base) == 6):
+                continue
+            if suffix == ".sh" and base.startswith("000"):
+                return True
+            if suffix == ".sz" and base.startswith("399"):
+                return True
+    for prefix in ("sh", "sz"):
+        if lower.startswith(prefix):
+            base = lower[len(prefix):]
+            if not (base.isdigit() and len(base) == 6):
+                continue
+            if prefix == "sh" and base.startswith("000"):
+                return True
+            if prefix == "sz" and base.startswith("399"):
+                return True
+    base = lower.split(".")[0]
+    return base.isdigit() and len(base) == 6 and base.startswith(("399", "899"))
+
+
+def chip_distribution_unsupported_reason(
+    stock_code: str,
+    *,
+    asset_type: Optional[str] = None,
+) -> Optional[str]:
+    """Return a stable reason when chip distribution has no official source.
+
+    ``None`` means the instrument is an A-share stock with an official chip
+    source. US stocks/ETFs, HK stocks, A-share/foreign indices and ETF/index
+    targets are all unsupported; the identity must be checked before
+    ``normalize_stock_code`` because normalization drops the exchange prefix
+    (``sh000016`` -> ``000016`` would collide with a Shenzhen stock).
+    """
+    if asset_type is not None and str(asset_type).strip().lower() == "index":
+        return "index_target"
+    raw = (stock_code or "").strip()
+    if not raw:
+        return "empty_code"
+    if _looks_like_explicit_cn_index_code(raw) or _is_ashare_index_target(raw):
+        return "cn_index"
+    if _is_hk_index_code(raw):
+        return "non_cn_market"
+    if _is_non_cn_request(raw):
+        return "non_cn_market"
+    normalized = normalize_stock_code(raw)
+    if _is_non_cn_request(normalized):
+        return "non_cn_market"
+    if _is_etf_code(normalized):
+        return "etf"
+    return None
+
+
+def is_chip_distribution_supported(
+    stock_code: str,
+    *,
+    asset_type: Optional[str] = None,
+) -> bool:
+    """Whether an official chip-distribution source exists for this symbol."""
+    return (
+        chip_distribution_unsupported_reason(stock_code, asset_type=asset_type)
+        is None
+    )
+
+
+def is_chip_estimate_supported(
+    stock_code: str,
+    *,
+    asset_type: Optional[str] = None,
+) -> bool:
+    """Whether a daily-OHLCV volume-profile estimate is meaningful here.
+
+    Indices and leveraged/inverse ETFs are excluded: their volume profile does
+    not represent holder cost.
+    """
+    if asset_type is not None and str(asset_type).strip().lower() == "index":
+        return False
+    raw = (stock_code or "").strip()
+    if not raw:
+        return False
+    if _looks_like_explicit_cn_index_code(raw) or _is_ashare_index_target(raw):
+        return False
+    if _is_hk_index_code(raw):
+        return False
+    upper = raw.upper()
+    from .us_index_mapping import is_us_index_code
+
+    if upper.startswith("^") or is_us_index_code(upper):
+        return False
+    ticker = upper[:-3] if upper.endswith(".US") else upper
+    if ticker in _LEVERAGED_OR_INVERSE_US_ETFS:
+        return False
+    return True
+
+
 def is_bse_code(code: str) -> bool:
     """
     Check if the code is a Beijing Stock Exchange (BSE) A-share code.
@@ -3067,24 +3207,67 @@ class DataFetcherManager:
         """Shortcut kept for backward-compat with A-share general loop."""
         return self._supplement_quote(stock_code, primary_quote, "LongbridgeFetcher")
 
-    def get_chip_distribution(self, stock_code: str):
+    def _try_estimate_chip_distribution(
+        self,
+        *,
+        raw_code: str,
+        normalized_code: str,
+        current_price: Optional[float] = None,
+    ):
+        """Best-effort volume-profile estimate from daily OHLCV; never raises."""
+        try:
+            from .volume_profile_chip import (
+                VOLUME_PROFILE_WINDOW,
+                build_volume_profile_chip,
+            )
+
+            df, _source = self.get_daily_data(
+                raw_code,
+                days=VOLUME_PROFILE_WINDOW * 2,
+            )
+            chip = build_volume_profile_chip(
+                code=normalized_code or raw_code,
+                bars=df,
+                current_price=current_price,
+            )
+            if chip is None:
+                logger.debug('[筹码分布] %s 日线样本不足，无法估算', raw_code)
+                return None
+            logger.info(
+                '[筹码分布] %s 使用日线成交量估算 (window=%s, source=%s)',
+                raw_code,
+                chip.metadata.get('window'),
+                chip.source,
+            )
+            return chip
+        except Exception as exc:  # noqa: BLE001 - estimation is a fallback
+            logger.debug('[筹码分布] %s 日线估算失败: %s', raw_code, exc)
+            return None
+
+    def get_chip_distribution(
+        self,
+        stock_code: str,
+        *,
+        current_price: Optional[float] = None,
+    ):
         """
         获取筹码分布数据（带熔断和多数据源降级）
 
         策略：
         1. 检查配置开关
-        2. 检查熔断器状态
-        3. 依次尝试多个数据源：数据源优先级与获取daily的数据优先级一致
-        4. 所有数据源失败则返回 None（降级兜底）
+        2. 先判定当前市场/品种是否存在官方筹码源；不支持时不遍历数据源
+        3. 支持时依次尝试多个数据源：数据源优先级与获取daily的数据优先级一致
+        4. 官方源失败且开启估算开关时，回退到日线成交量估算
+        5. 全部失败则返回 None（降级兜底）
 
         Args:
             stock_code: 股票代码
+            current_price: 当前价，用于估算获利比例；缺省用最后一根日线收盘价
 
         Returns:
             ChipDistribution 对象，失败则返回 None
         """
-        # Normalize code (strip SH/SZ prefix etc.)
-        stock_code = normalize_stock_code(stock_code)
+        raw_code = (stock_code or "").strip()
 
         from .realtime_types import get_chip_circuit_breaker
         from src.config import get_config
@@ -3093,7 +3276,29 @@ class DataFetcherManager:
 
         # 如果筹码分布功能被禁用，直接返回 None
         if not config.enable_chip_distribution:
-            logger.debug('[筹码分布] 功能已禁用，跳过 %s', stock_code)
+            logger.debug('[筹码分布] 功能已禁用，跳过 %s', raw_code)
+            return None
+
+        # 指数身份必须在 normalize 之前判定：normalize 会丢掉 sh/sz 前缀，
+        # sh000016 会退化成与深市个股同形的 000016。
+        supported = is_chip_distribution_supported(raw_code)
+        estimate_enabled = getattr(config, "enable_chip_estimate", False) is True
+        estimate_allowed = estimate_enabled and is_chip_estimate_supported(raw_code)
+
+        # Normalize code (strip SH/SZ prefix etc.) for official fetchers only.
+        stock_code = normalize_stock_code(raw_code)
+
+        if not supported:
+            if estimate_allowed:
+                return self._try_estimate_chip_distribution(
+                    raw_code=raw_code,
+                    normalized_code=stock_code,
+                    current_price=current_price,
+                )
+            logger.debug(
+                '[筹码分布] %s 当前市场或品种不支持筹码数据，跳过数据源',
+                raw_code,
+            )
             return None
 
         circuit_breaker = get_chip_circuit_breaker()
@@ -3177,6 +3382,15 @@ class DataFetcherManager:
                 logger.warning('[筹码分布] %s 获取 %s 失败: %s', fetcher_name, stock_code, e)
                 circuit_breaker.record_failure(source_key, str(e))
                 continue
+
+        if estimate_allowed:
+            estimated = self._try_estimate_chip_distribution(
+                raw_code=raw_code,
+                normalized_code=stock_code,
+                current_price=current_price,
+            )
+            if estimated is not None:
+                return estimated
 
         logger.warning('[筹码分布] %s 所有数据源均失败', stock_code)
         return None

@@ -31,7 +31,7 @@ from tenacity import (
     before_sleep_log,
 )
 
-from .base import BaseFetcher, DataFetchError, RateLimitError, STANDARD_COLUMNS,is_bse_code, is_st_stock, is_kc_cy_stock, normalize_stock_code, _is_hk_market
+from .base import BaseFetcher, DataFetchError, RateLimitError, STANDARD_COLUMNS,is_bse_code, is_st_stock, is_kc_cy_stock, normalize_stock_code, _is_hk_market, is_chip_distribution_supported
 from .realtime_types import UnifiedRealtimeQuote, ChipDistribution
 from src.config import get_config
 import os
@@ -1237,18 +1237,10 @@ class TushareFetcher(BaseFetcher):
             ChipDistribution 对象（最新交易日的数据），获取失败返回 None
 
         """
-        if _is_us_code(stock_code):
-            logger.warning('[Tushare] TushareFetcher 不支持美股 %s 的筹码分布', stock_code)
-            return None
-        
-        if _is_etf_code(stock_code):
-            logger.warning('[Tushare] TushareFetcher 不支持 ETF %s 的筹码分布', stock_code)
+        if not is_chip_distribution_supported(stock_code):
+            logger.debug('[Tushare] TushareFetcher 不支持 %s 的筹码分布', stock_code)
             return None
 
-        if _is_hk_market(stock_code):
-            logger.warning('[Tushare] TushareFetcher 不支持港股 %s 的筹码分布', stock_code)
-            return None
-        
         try:
             # 19点之后才有当天数据
             start_date = self.get_trade_time(early_time='00:00', late_time='19:00') 

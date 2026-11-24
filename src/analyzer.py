@@ -89,6 +89,8 @@ from src.report_language import (
     get_placeholder_text,
     get_unknown_text,
     get_chip_unavailable_text,
+    get_chip_not_supported_text,
+    get_chip_estimated_text,
     infer_decision_type_from_advice,
     is_chip_placeholder_value,
     localize_chip_health,
@@ -961,25 +963,102 @@ def _has_meaningful_chip_data(chip_data: Any) -> bool:
     )
 
 
-def _mark_chip_structure_unavailable(result: "AnalysisResult", language: str) -> None:
-    if not result or not isinstance(result.dashboard, dict):
+def _is_estimated_chip_data(chip_data: Any) -> bool:
+    """Return True when chip data is a volume-profile estimate."""
+    if not chip_data:
+        return False
+    metadata = getattr(chip_data, "metadata", None)
+    if isinstance(metadata, dict) and metadata.get("is_estimated") is True:
+        return True
+    if isinstance(chip_data, dict):
+        if chip_data.get("is_estimated") is True:
+            return True
+        nested = chip_data.get("metadata")
+        if isinstance(nested, dict) and nested.get("is_estimated") is True:
+            return True
+    return False
+
+
+def _has_meaningful_chip_structure(result: "AnalysisResult") -> bool:
+    """True when the result already carries real chip metrics (e.g. agent tool)."""
+    dashboard = getattr(result, "dashboard", None)
+    if not isinstance(dashboard, dict):
+        return False
+    data_perspective = dashboard.get("data_perspective")
+    if not isinstance(data_perspective, dict):
+        return False
+    chip_structure = data_perspective.get("chip_structure")
+    if not isinstance(chip_structure, dict) or not chip_structure:
+        return False
+    return any(
+        not _is_value_placeholder(chip_structure.get(key))
+        for key in _CHIP_KEYS
+    )
+
+
+def _mark_chip_structure_unavailable(
+    result: "AnalysisResult",
+    language: str,
+    *,
+    not_supported: bool = False,
+) -> None:
+    dashboard = getattr(result, "dashboard", None) if result else None
+    if not isinstance(dashboard, dict):
         return
-    data_perspective = result.dashboard.get("data_perspective")
+    data_perspective = dashboard.get("data_perspective")
     if not isinstance(data_perspective, dict):
         return
     data_perspective["chip_structure"] = {}
-    data_perspective["chip_unavailable_reason"] = get_chip_unavailable_text(language)
+    data_perspective.pop("chip_estimate_note", None)
+    data_perspective["chip_unavailable_reason"] = (
+        get_chip_not_supported_text(language)
+        if not_supported
+        else get_chip_unavailable_text(language)
+    )
 
 
-def normalize_chip_structure_availability(result: "AnalysisResult", chip_data: Any) -> None:
-    """Fill valid chip metrics or collapse placeholder-only chip fields to one fallback line."""
+def _mark_chip_estimate_note(result: "AnalysisResult", language: str) -> None:
+    dashboard = getattr(result, "dashboard", None) if result else None
+    if not isinstance(dashboard, dict):
+        return
+    data_perspective = dashboard.get("data_perspective")
+    if not isinstance(data_perspective, dict):
+        return
+    data_perspective.pop("chip_unavailable_reason", None)
+    data_perspective["chip_estimate_note"] = get_chip_estimated_text(language)
+
+
+def normalize_chip_structure_availability(
+    result: "AnalysisResult",
+    chip_data: Any,
+    *,
+    not_supported: bool = False,
+    preserve_existing_metrics: bool = False,
+) -> None:
+    """Fill valid chip metrics or collapse placeholder-only chip fields to one fallback line.
+
+    ``not_supported`` distinguishes "this market has no chip source" from
+    "the source failed": the report body must not describe a structurally
+    unsupported instrument as a transient data outage.
+
+    ``preserve_existing_metrics`` is used by the Agent path, where the agent
+    may have fetched chip data through its own tool even when the prefetch
+    passed here is empty; real metrics must not be erased.
+    """
     if not result:
         return
     language = getattr(result, "report_language", "zh")
     if _has_meaningful_chip_data(chip_data):
         fill_chip_structure_if_needed(result, chip_data)
+        if _is_estimated_chip_data(chip_data):
+            _mark_chip_estimate_note(result, language)
         return
-    _mark_chip_structure_unavailable(result, language)
+    if preserve_existing_metrics and not not_supported and _has_meaningful_chip_structure(result):
+        data_perspective = result.dashboard.get("data_perspective", {})
+        if isinstance(data_perspective, dict):
+            data_perspective.pop("chip_unavailable_reason", None)
+        return
+    _mark_chip_structure_unavailable(result, language, not_supported=not_supported)
 
 
 def fill_chip_structure_if_needed(result: "AnalysisResult", chip_data: Any) -> None:
@@ -5030,7 +5109,11 @@ Output strictly in the following JSON format. This is a complete Decision Dashbo
 | 筹码状态 | {chip.get('chip_status', unknown_text)} | |
 """
         else:
-            chip_unavailable_text = get_chip_unavailable_text(report_language)
+            chip_unavailable_text = (
+                get_chip_not_supported_text(report_language)
+                if context.get("chip_not_supported") is True
+                else get_chip_unavailable_text(report_language)
+            )
             chip_instruction = (
                 "Do not fabricate profit ratio, average cost, or concentration. Mention chip data "
                 "unavailability only once in the report; do not repeat per-field no-data text in `chip_structure`."
@@ -5045,7 +5128,11 @@ Output strictly in the following JSON format. This is a complete Decision Dashbo
 > {chip_unavailable_text}
 > {chip_instruction}
 """
-        
+
+        chip_context = context.get('chip')
+        if isinstance(chip_context, dict) and chip_context.get('is_estimated') is True:
+            prompt += f"\n> {get_chip_estimated_text(report_language)}\n"
+
         # 添加趋势分析结果（仅隐式内建 bull_trend 默认回退保留旧口径）
         if 'trend_analysis' in context:
             trend = _sanitize_trend_analysis_for_prompt(

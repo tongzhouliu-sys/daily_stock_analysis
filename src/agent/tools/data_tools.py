@@ -432,6 +432,8 @@ def _handle_get_chip_distribution(stock_code: str) -> dict:
         "cost_70_low": chip.cost_70_low,
         "cost_70_high": chip.cost_70_high,
         "concentration_70": chip.concentration_70,
+        "is_estimated": bool((getattr(chip, "metadata", None) or {}).get("is_estimated")),
+        "metadata": dict(getattr(chip, "metadata", None) or {}),
     }
 
 

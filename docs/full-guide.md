@@ -191,6 +191,7 @@ daily_stock_analysis/
 | `LONGBRIDGE_PUSH_CANDLESTICK_MODE` | K 线推送模式：`realtime` 或 `confirmed`（默认 `realtime`） | 可选 |
 | `LONGBRIDGE_PRINT_QUOTE_PACKAGES` | 连接时是否打印行情包（未设置时默认 `false`；设为 `1`/`true`/`yes` 开启） | 可选 |
 | `ENABLE_CHIP_DISTRIBUTION` | 启用筹码分布（Actions 默认 false；需筹码数据时在 Variables 中设为 true，接口可能不稳定） | 可选 |
+| `ENABLE_CHIP_ESTIMATE` | 官方筹码源不可用时用日线成交量估算筹码（默认 `false`；输出标记为估算值，指数与杠杆/反向 ETF 不估算） | 可选 |
 
 妙想筹码/资金流在同一进程内共享网络请求准入锁：进入查询方法时若已有请求未结束，新查询直接跳过，不在此锁上排队。资金流补充的超时隔离保持到实际后台请求退出，其他数据源仍可回退；不取消已经发出的请求，也不改变管理器原有的筹码调用串行化。该补充源通过能力检查排除所有日线请求，并在选表和解析时统一支持字典/列表形式的 `nameMap`。
 
@@ -459,6 +460,7 @@ daily_stock_analysis/
 | `ENABLE_REALTIME_QUOTE` | 启用实时行情（关闭后使用历史收盘价分析） | `true` | 可选 |
 | `ENABLE_REALTIME_TECHNICAL_INDICATORS` | 盘中实时技术面：启用时用实时价计算 MA5/MA10/MA20 与多头排列（Issue #234）；关闭则用昨日收盘 | `true` | 可选 |
 | `ENABLE_CHIP_DISTRIBUTION` | 启用筹码分布分析（该接口不稳定，云端部署建议关闭）。GitHub Actions 用户需在 Repository Variables 中设置 `ENABLE_CHIP_DISTRIBUTION=true` 方可启用；workflow 默认关闭。 | `true` | 可选 |
+| `ENABLE_CHIP_ESTIMATE` | 官方筹码源不可用时用日线成交量估算筹码（默认 `false`）。估算结果会明确标注「估算值，非交易所筹码数据」，指数与杠杆/反向 ETF 默认不估算；A 股官方源成功时不会被估算覆盖。 | `false` | 可选 |
 | `ENABLE_EASTMONEY_PATCH` | 东财接口补丁：东财接口频繁失败（如 RemoteDisconnected、连接被关闭）时建议设为 `true`，注入 NID 令牌与随机 User-Agent 以降低被限流概率 | `false` | 可选 |
 | `REALTIME_SOURCE_PRIORITY` | 实时行情源优先级，逗号分隔；Actions 未设置此 Variable 时保留空值，由运行时按已配置的 Key 自动选择 TickPlus / Tushare / 免费源；显式配置保持用户顺序。需要显式加入 `tickflow` 才会使用 TickFlow 实时行情。 | 见 `.env.example` | 可选 |
 | `ENABLE_FUNDAMENTAL_PIPELINE` | 基本面聚合总开关；关闭时仅返回 `not_supported` 块，不改变原分析链路 | `true` | 可选 |

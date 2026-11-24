@@ -17,7 +17,7 @@
 import logging
 import time
 from threading import RLock
-from dataclasses import dataclass
+from dataclasses import dataclass, field
 from typing import Optional, Dict, Any
 from enum import Enum
 
@@ -218,10 +218,13 @@ class ChipDistribution:
     cost_70_low: float = 0.0      # 70%筹码成本下限
     cost_70_high: float = 0.0     # 70%筹码成本上限
     concentration_70: float = 0.0  # 70%筹码集中度
+
+    # 来源元数据。官方源为空；日线成交量估算会带 is_estimated=True。
+    metadata: Dict[str, Any] = field(default_factory=dict)
     
     def to_dict(self) -> Dict[str, Any]:
         """转换为字典"""
-        return {
+        result = {
             'code': self.code,
             'date': self.date,
             'source': self.source,
@@ -232,6 +235,11 @@ class ChipDistribution:
             'concentration_90': self.concentration_90,
             'concentration_70': self.concentration_70,
         }
+        if self.metadata:
+            result['metadata'] = dict(self.metadata)
+            if self.metadata.get('is_estimated') is True:
+                result['is_estimated'] = True
+        return result
     
     def get_chip_status(self, current_price: float) -> str:
         """

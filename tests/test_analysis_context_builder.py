@@ -350,6 +350,37 @@ def test_chip_missing_defaults_to_missing_and_explicit_not_supported() -> None:
     )
 
 
+def test_chip_estimated_volume_profile_is_not_marked_available() -> None:
+    block = AnalysisContextBuilder.build(
+        _artifacts(
+            chip_data=_FakeChip(
+                {
+                    "code": "NVDA",
+                    "date": "2026-05-24",
+                    "source": "volume_profile_estimate",
+                    "profit_ratio": 0.61,
+                    "avg_cost": 120.0,
+                    "concentration_90": 0.18,
+                    "metadata": {
+                        "is_estimated": True,
+                        "estimation_method": "volume_profile",
+                        "window": 90,
+                    },
+                }
+            )
+        )
+    ).blocks["chip"]
+
+    assert block.status == ContextFieldStatus.ESTIMATED
+    assert block.items["profit_ratio"].status == ContextFieldStatus.ESTIMATED
+    assert block.warnings == ["chip_estimated_volume_profile"]
+    assert block.metadata["is_estimated"] is True
+    assert block.metadata["estimation_method"] == "volume_profile"
+    assert block.metadata["estimation_window"] == 90
+    assert "metadata" not in block.items
+    assert "is_estimated" not in block.items
+
+
 @pytest.mark.parametrize(
     ("payload_status", "expected_status"),
     (

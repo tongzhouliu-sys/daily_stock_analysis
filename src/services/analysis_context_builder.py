@@ -365,19 +365,39 @@ def _build_chip_block(artifacts: PipelineAnalysisArtifacts) -> AnalysisContextBl
         )
 
     source = _source_text(chip.get("source"))
+    chip_metadata = chip.get("metadata") if isinstance(chip.get("metadata"), dict) else {}
+    is_estimated = bool(
+        chip.get("is_estimated") is True
+        or chip_metadata.get("is_estimated") is True
+    )
+    # An estimate is useful but must never be presented as real exchange data.
+    status = (
+        ContextFieldStatus.ESTIMATED
+        if is_estimated
+        else ContextFieldStatus.AVAILABLE
+    )
+    warnings = ["chip_estimated_volume_profile"] if is_estimated else []
+    metadata: Dict[str, Any] = {"date": chip.get("date")} if chip.get("date") else {}
+    if is_estimated:
+        metadata["is_estimated"] = True
+        metadata["estimation_method"] = chip_metadata.get("estimation_method")
+        metadata["estimation_window"] = chip_metadata.get("window")
+
     return AnalysisContextBlock(
-        status=ContextFieldStatus.AVAILABLE,
+        status=status,
         items={
             key: AnalysisContextItem(
-                status=ContextFieldStatus.AVAILABLE,
+                status=status,
                 value=value,
                 source=source,
+                warnings=list(warnings),
             )
             for key, value in chip.items()
-            if value is not None
+            if value is not None and key not in {"metadata", "is_estimated"}
         },
         source=source,
-        metadata={"date": chip.get("date")} if chip.get("date") else {},
+        warnings=warnings,
+        metadata={key: value for key, value in metadata.items() if value is not None},
     )
 
 
