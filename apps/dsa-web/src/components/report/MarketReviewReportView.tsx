@@ -474,24 +474,25 @@ export const MarketReviewReportView: React.FC<MarketReviewReportViewProps> = ({
   return (
     <div className={`animate-fade-in space-y-4 pb-8 ${className}`}>
       <Card variant="gradient" padding="md" className="home-report-hero text-left">
-        <div className="flex items-start justify-between gap-3">
-          <div className="min-w-0">
-            <div className="mb-2 inline-flex items-center gap-2 text-xs font-semibold text-secondary-text">
+        {/* 手机端：标题列保底宽度，操作按钮整体换行到标题下方，避免标题/时间被挤成竖排。 */}
+        <div className="flex flex-wrap items-start justify-between gap-x-3 gap-y-3">
+          <div className="min-w-56 flex-1">
+            <div className="mb-2 inline-flex items-center gap-2 whitespace-nowrap text-xs font-semibold text-secondary-text">
               <BarChart3 className="h-4 w-4" aria-hidden="true" />
               <span>MARKET REVIEW</span>
             </div>
             <h2 className="text-[26px] font-bold leading-tight text-foreground sm:text-[30px]">
               {displayTitle}
             </h2>
-            <div className="mt-2 flex flex-wrap items-center gap-2 text-xs text-muted-text">
+            <div className="mt-2 flex flex-wrap items-center gap-x-2 gap-y-1 text-xs text-muted-text">
               {meta?.stockCode ? (
                 <span className="home-accent-chip px-2 py-0.5 font-mono">{meta.stockCode}</span>
               ) : null}
-              {meta?.createdAt ? <span>{new Date(meta.createdAt).toLocaleString()}</span> : null}
+              {meta?.createdAt ? <span className="whitespace-nowrap">{new Date(meta.createdAt).toLocaleString()}</span> : null}
             </div>
           </div>
 
-          <div className="flex shrink-0 items-center gap-2">
+          <div className="ml-auto flex shrink-0 flex-wrap items-center gap-2">
             <ShareReportButton
               recordId={recordId}
               reportTitle={displayTitle}
