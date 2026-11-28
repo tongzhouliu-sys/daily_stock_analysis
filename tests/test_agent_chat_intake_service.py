@@ -202,6 +202,31 @@ def test_revision_cas_conflict():
         )
 
 
+def _object_question_with_candidates():
+    from src.agent.intake_questions import _object_question
+    return _object_question({"candidates": [], "recommended": None})
+
+
+@pytest.mark.parametrize("token", ["苹果", "随便写", "中文", "600519abc", "你好世界"])
+def test_free_text_object_selection_is_rejected(token):
+    question = _object_question_with_candidates()
+    with pytest.raises(IntakeServiceError) as exc:
+        AgentChatIntakeService._validate_object_selection(
+            [question],
+            [_answer("object", token)],
+        )
+    assert exc.value.code == "invalid_intake_answer"
+
+
+@pytest.mark.parametrize("token", ["600519", "600519.SH", "AAPL", "123456", "510300", "HK00700"])
+def test_code_shaped_object_selection_is_accepted(token):
+    question = _object_question_with_candidates()
+    AgentChatIntakeService._validate_object_selection(
+        [question],
+        [_answer("object", token)],
+    )
+
+
 def test_preview_never_consumes_and_keeps_unknown_dimensions():
     service = _service()
     intake_id = _create(service)
@@ -230,7 +255,6 @@ def test_skipped_draft_freezes_an_all_unknown_brief():
     assert set(brief.unknown_fields) >= {"object", "goal", "horizon", "position", "risk_focus"}
 
 
-
 def test_cancelled_draft_is_not_restored_after_refresh():
     # The card's "cancel" must also retire the server draft; otherwise a page
     # refresh restores the card the user dismissed.
@@ -243,6 +267,7 @@ def test_cancelled_draft_is_not_restored_after_refresh():
     assert service.find_pending_intake(SESSION_ID, GENERATION) is None
 
 # ── One-shot acceptance ──────────────────────────────────────────────────────
+
 
 def _confirmed(service) -> str:
     intake_id = _create(service)

@@ -325,7 +325,13 @@ class AgentChatIntakeService:
 
     @staticmethod
     def _validate_object_selection(questions: List[Question], answers: List[Answer]) -> None:
-        """A searched object must exist in the local stock index."""
+        """A searched object must be a real code, never arbitrary free text.
+
+        The frontend search box submits the picked stock's ``canonical_id``;
+        when the client is a script, anything outside the candidate list must
+        still parse as a code shape ("600519.SH", "AAPL", "123456", an
+        unlisted ETF …). Free text like "随便写" must not become an object.
+        """
         object_question = next((q for q in questions if q.id == "object"), None)
         if object_question is None:
             return
@@ -333,17 +339,23 @@ class AgentChatIntakeService:
         if answer is None or not answer.option_ids:
             return
         allowed = {option.id for option in object_question.options}
-        if answer.option_ids[0] in allowed:
+        token = answer.option_ids[0]
+        if token in allowed:
             return
         from src.agent.chat_object_decision import validate_chat_identity
         from src.services.agent_chat_session_service import _stock_lookup
+        from src.services.stock_code_utils import is_code_like
 
+        if not is_code_like(token):
+            raise IntakeServiceError(
+                "无效的股票选择", code="invalid_intake_answer",
+            )
         registry, lookup = _stock_lookup()
         try:
-            validate_chat_identity(answer.option_ids[0], registry, lookup)
+            validate_chat_identity(token, registry, lookup)
         except Exception as exc:  # noqa: BLE001 - any failure is a user input error
             raise IntakeServiceError(
-                "Unknown stock selection", code="invalid_intake_answer",
+                "无效的股票选择", code="invalid_intake_answer",
             ) from exc
 
     def get_intake(self, intake_id: str, session_id: Optional[str] = None) -> Optional[IntakeDraft]:
