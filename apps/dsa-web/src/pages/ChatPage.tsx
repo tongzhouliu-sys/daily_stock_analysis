@@ -69,7 +69,9 @@ import {
 import { useStockIndex } from '../hooks/useStockIndex';
 import { useCompactLayout } from '../hooks/useMediaQuery';
 import { useUiLanguage } from '../contexts/UiLanguageContext';
+import type { UiTextKey } from '../i18n/uiText';
 import { extractIntentHints } from '../utils/chatIntentHints';
+import { formatStockMention } from '../utils/stockMention';
 
 // Quick question examples shown on empty state
 type ActiveStockContext = Pick<ChatFollowUpContext, 'stock_code' | 'stock_name'>;
@@ -92,16 +94,16 @@ interface ReportFollowUpDraft {
 }
 
 const QUICK_QUESTIONS: Array<{
-  label: string;
-  skill: string;
+  labelKey: UiTextKey;
+  skill?: string;
   stockContext?: ActiveStockContext;
 }> = [
-  { label: '用缠论分析茅台', skill: 'chan_theory', stockContext: { stock_code: '600519', stock_name: '贵州茅台' } },
-  { label: '波浪理论看宁德时代', skill: 'wave_theory', stockContext: { stock_code: '300750', stock_name: '宁德时代' } },
-  { label: '分析比亚迪趋势', skill: 'bull_trend', stockContext: { stock_code: '002594', stock_name: '比亚迪' } },
-  { label: '用箱体震荡分析 A 股中芯国际 688981', skill: 'box_oscillation', stockContext: { stock_code: '688981', stock_name: '中芯国际' } },
-  { label: '分析腾讯 hk00700', skill: 'bull_trend', stockContext: { stock_code: 'HK00700', stock_name: '腾讯控股' } },
-  { label: '用情绪周期分析东方财富', skill: 'emotion_cycle', stockContext: { stock_code: '300059', stock_name: '东方财富' } },
+  { labelKey: 'chat.guideQuestions.0' },
+  { labelKey: 'chat.guideQuestions.1', stockContext: { stock_code: 'HK00700', stock_name: '腾讯控股' } },
+  { labelKey: 'chat.guideQuestions.2', stockContext: { stock_code: 'NVDA', stock_name: 'NVIDIA' } },
+  { labelKey: 'chat.guideQuestions.3' },
+  { labelKey: 'chat.guideQuestions.4' },
+  { labelKey: 'chat.guideQuestions.5', skill: 'chan_theory', stockContext: { stock_code: '600519', stock_name: '贵州茅台' } },
 ];
 
 const MAX_SELECTED_SKILLS = 3;
@@ -238,6 +240,7 @@ const ChatPage: React.FC = () => {
   const [agentStatusError, setAgentStatusError] = useState<string | null>(null);
   const [agentStatusChecking, setAgentStatusChecking] = useState(true);
   const [legacyIntakeNotice, setLegacyIntakeNotice] = useState(false);
+  const [openPickerSignal, setOpenPickerSignal] = useState(0);
   // The registry is used only to validate report hints, never to confirm Chat state.
   const { index: stockIndex, loading: stockIndexLoading } = useStockIndex();
 
@@ -394,6 +397,7 @@ const ChatPage: React.FC = () => {
     startIntakeAnalysis,
     clearIntake,
     cancelIntake,
+    skipIntake,
     setSelectedSkillIds,
     loadSessions,
     setSessionPinned,
@@ -430,6 +434,7 @@ const ChatPage: React.FC = () => {
     startIntakeAnalysis: state.startIntakeAnalysis,
     clearIntake: state.clearIntake,
     cancelIntake: state.cancelIntake,
+    skipIntake: state.skipIntake,
     setSelectedSkillIds: state.setSelectedSkillIds,
     loadSessions: state.loadSessions,
     setSessionPinned: state.setSessionPinned,
@@ -869,7 +874,20 @@ const ChatPage: React.FC = () => {
   );
 
   const availableSkillIds = new Set(skills.map((skill) => skill.id));
-  const quickQuestions = QUICK_QUESTIONS.filter((question) => availableSkillIds.size === 0 || availableSkillIds.has(question.skill));
+  const quickQuestions = QUICK_QUESTIONS
+    .filter((question) => !question.skill || availableSkillIds.size === 0 || availableSkillIds.has(question.skill))
+    .map((question) => ({
+      label: t(question.labelKey),
+      skill: question.skill,
+      stockContext: question.stockContext,
+    }));
+
+  const watchlistGuideItems = useMemo(() => {
+    const upper = new Set(watchlistCodes.map((code) => code.toUpperCase()));
+    return stockIndex.filter((item) => (
+      upper.has(item.displayCode.toUpperCase()) || upper.has(item.canonicalCode.toUpperCase())
+    )).slice(0, 6);
+  }, [stockIndex, watchlistCodes]);
   // A pending report draft blocks every send entry until it is ready or removed.
   const reportDraftBlocked = reportDraft !== null && reportDraft.status !== 'ready';
   // Pre-accept report failures are already explained by the report card.
@@ -1288,8 +1306,9 @@ const ChatPage: React.FC = () => {
   const handleFollowUpQuestion = useCallback((question: string) => {
     void handleSendRef.current(question);
   }, []);
-  const focusComposer = useCallback(() => {
-    composerRef.current?.focus();
+
+  const openPicker = useCallback(() => {
+    setOpenPickerSignal((n) => n + 1);
   }, []);
 
   const clarificationDecisionRef = useRef(handleStockClarificationDecision);
@@ -1315,9 +1334,11 @@ const ChatPage: React.FC = () => {
     && agentAvailable
     && !input.trim();
 
-  const handleQuickQuestion = (q: (typeof QUICK_QUESTIONS)[0]) => {
-    setSelectedSkillIds([q.skill]);
-    handleSend(q.label, [q.skill], q.stockContext);
+  const handleQuickQuestion = (q: (typeof quickQuestions)[number]) => {
+    if (q.skill) {
+      setSelectedSkillIds([q.skill]);
+    }
+    handleSend(q.label, q.skill ? [q.skill] : undefined, q.stockContext);
   };
 
   const showSendFeedback = useCallback((nextToast: { type: 'success' | 'error'; message: string }, durationMs: number) => {
@@ -1530,12 +1551,6 @@ const ChatPage: React.FC = () => {
     />
   );
 
-
-  const objectStatusText = activeStockContext
-    ? t('chat.currentObject', {
-        object: `${activeStockContext.stock_name ? `${activeStockContext.stock_name} · ` : ''}${activeStockContext.stock_code}`,
-      })
-    : t(stateContract === 'legacy' ? 'chat.objectUnconfirmedLegacy' : 'chat.objectUnconfirmed');
 
   return (
     <div data-testid="chat-workspace" className="research-chat chat-workspace">
@@ -1893,6 +1908,11 @@ const ChatPage: React.FC = () => {
                     const question = quickQuestions[index];
                     if (question) handleQuickQuestion(question);
                   }}
+                  watchlistItems={watchlistGuideItems}
+                  onPickWatchlist={(item) => {
+                    setInput((current) => `${current}${formatStockMention(item, language)} `);
+                    requestAnimationFrame(() => composerRef.current?.focus());
+                  }}
                 />
               ) : (
                 <>
@@ -1916,6 +1936,10 @@ const ChatPage: React.FC = () => {
                         void cancelIntake();
                         composerRef.current?.focus();
                       }}
+                      onSkip={() => { void skipIntake(); }}
+                      error={intakeError}
+                      watchlistItems={watchlistGuideItems}
+                      stockIndex={stockIndex}
                     />
                   )}
                   {understanding && loading && !intakeDraft ? (
@@ -1958,7 +1982,7 @@ const ChatPage: React.FC = () => {
                       onCopy={copyMessageToClipboard}
                       onExport={downloadMessageAsMarkdown}
                       onEdit={msg.role === 'user' ? handleEditMessage : undefined}
-                      onRequestComposerFocus={focusComposer}
+                      onOpenPicker={openPicker}
                       onClarificationDecision={handleMessageClarificationDecision}
                     />
                   );
@@ -2042,12 +2066,17 @@ const ChatPage: React.FC = () => {
 
         <ChatInputArea
           t={t}
+          language={language}
           composerRef={composerRef}
           input={input}
           onInputChange={setInput}
           onSend={() => { void handleSend(); }}
           onStop={() => { void stopStream(); }}
-          placeholder={intakeDraft ? t('chat.intake.composerHint') : t('chat.composerPlaceholder')}
+          placeholder={intakeDraft
+            ? t('chat.intake.composerHint')
+            : activeStockContext
+              ? t('chat.composerPlaceholderWithObject', { name: activeStockContext.stock_name || activeStockContext.stock_code })
+              : t('chat.composerPlaceholder')}
           disabled={loading || !agentAvailable || intakeBusy || reportDraftBlocked}
           loading={loading}
           advancedOptionsOpen={advancedOptionsOpen}
@@ -2066,12 +2095,16 @@ const ChatPage: React.FC = () => {
           contextCompressionError={contextCompressionError}
           onToggleContextCompression={(enabled) => { void updateContextCompressionEnabled(enabled); }}
           activeStockCode={activeStockCode}
+          activeStockName={activeStockContext?.stock_name ?? null}
+          stateContractLegacy={stateContract === 'legacy'}
           canToggleWatchlist={activeStockContext?.asset_type === 'stock'}
           watchlistBusy={isWatchlistActioning}
           inWatchlist={activeStockCode ? stockInWatchlist(activeStockCode) : false}
           onToggleWatchlist={() => { if (activeStockCode) void handleToggleWatchlist(activeStockCode); }}
           watchlistMessage={watchlistMessage}
-          objectStatusText={objectStatusText}
+          stockIndex={stockIndex}
+          watchlistCodes={watchlistCodes}
+          openPickerSignal={openPickerSignal}
         >
               {intakeBusy && (
                 <div className="chat-intake-composer-hint" role="status" data-testid="chat-intake-pending">

@@ -141,8 +141,8 @@ describe('ChatUnderstandingCard', () => {
 
     render(<ChatUnderstandingCard draft={draft} onConfirm={vi.fn()} onCancel={vi.fn()} />);
 
-    expect(screen.getByText('没能确定你想分析的股票')).toBeInTheDocument();
-    expect(screen.getAllByPlaceholderText('搜索股票名称或代码').length).toBeGreaterThan(0);
+    expect(screen.getByText('没在问题里找到具体股票')).toBeInTheDocument();
+    expect(screen.getAllByPlaceholderText('名称、代码或拼音首字母，如 茅台 / 600519 / gzmt / AAPL').length).toBeGreaterThan(0);
     expect(screen.getByText('修改问题')).toBeInTheDocument();
     expect(screen.getByTestId('chat-understanding-confirm')).toBeDisabled();
   });

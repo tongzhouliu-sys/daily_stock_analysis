@@ -435,7 +435,7 @@ describe('ChatPage', () => {
       </StrictMode>,
     );
 
-    const input = await screen.findByPlaceholderText(/分析 600519/);
+    const input = await screen.findByTestId('chat-composer-input');
     await waitFor(() => expect(input).toBeEnabled());
     expect(screen.queryByText('正在确认问股运行环境')).not.toBeInTheDocument();
   });
@@ -457,9 +457,9 @@ describe('ChatPage', () => {
     );
 
     expect(await screen.findByText('正在确认问股运行环境')).toBeInTheDocument();
-    const input = screen.getByPlaceholderText(/分析 600519/);
+    const input = screen.getByTestId('chat-composer-input');
     expect(input).toBeDisabled();
-    expect(screen.getByRole('button', { name: '分析比亚迪趋势' })).toBeDisabled();
+    expect(screen.getByRole('button', { name: '茅台现在能买吗' })).toBeDisabled();
     expect(screen.getByText(/不会调用模型或读取股票数据/)).toBeInTheDocument();
     status.resolve({
       backend: 'litellm',
@@ -470,7 +470,7 @@ describe('ChatPage', () => {
     });
 
     await waitFor(() => expect(input).toBeEnabled());
-    expect(screen.getByRole('button', { name: '分析比亚迪趋势' })).toBeEnabled();
+    expect(screen.getByRole('button', { name: '茅台现在能买吗' })).toBeEnabled();
     expect(mockGetStatus).toHaveBeenCalledTimes(1);
   });
 
@@ -491,7 +491,7 @@ describe('ChatPage', () => {
     );
     render(<RouterProvider router={router} />);
 
-    const input = await screen.findByPlaceholderText(/分析 600519/);
+    const input = await screen.findByTestId('chat-composer-input');
     expect(input).toBeDisabled();
     fireEvent.click(await screen.findByRole('button', { name: '前往 Agent 设置' }, { timeout: 5000 }));
     expect(await screen.findByText('Agent settings destination')).toBeInTheDocument();
@@ -511,11 +511,11 @@ describe('ChatPage', () => {
     );
 
     expect(await screen.findByText('暂时无法读取问股运行状态')).toBeInTheDocument();
-    expect(screen.getByPlaceholderText(/分析 600519/)).toBeDisabled();
+    expect(screen.getByTestId('chat-composer-input')).toBeDisabled();
     expect(mockGetStatus).toHaveBeenCalledTimes(1);
 
     fireEvent.click(screen.getByRole('button', { name: '重新检查' }));
-    await waitFor(() => expect(screen.getByPlaceholderText(/分析 600519/)).toBeEnabled());
+    await waitFor(() => expect(screen.getByTestId('chat-composer-input')).toBeEnabled());
     expect(mockGetStatus).toHaveBeenCalledTimes(2);
   });
 
@@ -538,7 +538,7 @@ describe('ChatPage', () => {
       </MemoryRouter>,
     );
 
-    const input = await screen.findByPlaceholderText(/分析 600519/);
+    const input = await screen.findByTestId('chat-composer-input');
     fireEvent.change(input, { target: { value: '分析 AAPL' } });
     fireEvent.click(screen.getByRole('button', { name: '发送' }));
     await waitFor(() => expect(mockStartStream).toHaveBeenCalledTimes(1));
@@ -568,14 +568,14 @@ describe('ChatPage', () => {
       mockStockIndexState.index = [];
       mockStockIndexState.loading = true;
       render(<MemoryRouter initialEntries={['/chat']}><ChatPage /></MemoryRouter>);
-      const input = await screen.findByPlaceholderText(/分析 600519/);
+      const input = await screen.findByTestId('chat-composer-input');
       for (const message of ['分析上证指数', '分析 005930.KS', '换成 000001', '比较 sh000001 和 000001']) {
         fireEvent.change(input, { target: { value: message } });
         fireEvent.click(screen.getByRole('button', { name: '发送' }));
         await waitFor(() => expect(mockStartStream).toHaveBeenLastCalledWith(
           expect.objectContaining({ message, context: undefined }), expect.anything()));
       }
-      expect(screen.getByLabelText('当前讨论对象')).toHaveTextContent('未确认');
+      expect(screen.queryByLabelText('当前讨论对象')).not.toBeInTheDocument();
     },
   );
 
@@ -594,7 +594,7 @@ describe('ChatPage', () => {
     expect(await screen.findByLabelText('当前讨论对象')).toHaveTextContent(name);
     if (type === 'index') expect(screen.queryByText('加入自选')).not.toBeInTheDocument();
     else expect(await screen.findByText('加入自选')).toBeInTheDocument();
-    fireEvent.change(screen.getByPlaceholderText(/分析 600519/), { target: { value: '风险呢' } });
+    fireEvent.change(screen.getByTestId('chat-composer-input'), { target: { value: '风险呢' } });
     fireEvent.click(screen.getByRole('button', { name: '发送' }));
     await waitFor(() => expect(mockStartStream).toHaveBeenLastCalledWith(
       expect.objectContaining({ message: '风险呢', context: undefined }), expect.anything()));
@@ -606,7 +606,7 @@ describe('ChatPage', () => {
     });
     mockStartStream.mockImplementationOnce(async () => undefined);
     render(<MemoryRouter initialEntries={['/chat']}><ChatPage /></MemoryRouter>);
-    const input = await screen.findByPlaceholderText(/分析 600519/);
+    const input = await screen.findByTestId('chat-composer-input');
     fireEvent.change(input, { target: { value: '风险呢' } });
     fireEvent.click(screen.getByRole('button', { name: '发送' }));
     await waitFor(() => expect(mockStartStream).toHaveBeenCalledTimes(1));
@@ -622,7 +622,7 @@ describe('ChatPage', () => {
       code: 'backend_removed', status: 400, category: 'http_error' });
     mockStartStream.mockImplementationOnce(async () => undefined);
     render(<MemoryRouter initialEntries={['/chat']}><ChatPage /></MemoryRouter>);
-    const input = await screen.findByPlaceholderText(/分析 600519/);
+    const input = await screen.findByTestId('chat-composer-input');
     fireEvent.change(input, { target: { value: '风险呢' } });
     fireEvent.click(screen.getByRole('button', { name: '发送' }));
     await waitFor(() => expect(mockStartStream).toHaveBeenCalledTimes(1));
@@ -1020,7 +1020,7 @@ describe('ChatPage', () => {
     expect(await screen.findByRole('checkbox', { name: '均线金叉' })).toBeChecked();
     expect(screen.getByRole('checkbox', { name: '趋势分析' })).not.toBeChecked();
 
-    fireEvent.change(screen.getByPlaceholderText(/分析 600519/), {
+    fireEvent.change(screen.getByTestId('chat-composer-input'), {
       target: { value: '继续分析' },
     });
     fireEvent.click(screen.getByRole('button', { name: '发送' }));
@@ -1045,7 +1045,7 @@ describe('ChatPage', () => {
     fireEvent.click(advancedToggle);
 
     expect(await screen.findByRole('checkbox', { name: '趋势分析' })).toBeChecked();
-    fireEvent.change(screen.getByPlaceholderText(/分析 600519/), {
+    fireEvent.change(screen.getByTestId('chat-composer-input'), {
       target: { value: '分析 AAPL' },
     });
     fireEvent.click(screen.getByRole('button', { name: '发送' }));
@@ -1072,7 +1072,7 @@ describe('ChatPage', () => {
     fireEvent.click(advancedToggle);
 
     expect(await screen.findByRole('checkbox', { name: '趋势分析' })).toBeChecked();
-    fireEvent.change(screen.getByPlaceholderText(/分析 600519/), {
+    fireEvent.change(screen.getByTestId('chat-composer-input'), {
       target: { value: '继续分析' },
     });
     fireEvent.click(screen.getByRole('button', { name: '发送' }));
@@ -1105,7 +1105,7 @@ describe('ChatPage', () => {
     fireEvent.click(await screen.findByRole('button', { name: '高级选项' }));
 
     fireEvent.click(await screen.findByRole('checkbox', { name: '均线金叉' }));
-    fireEvent.change(screen.getByPlaceholderText(/分析 600519/), {
+    fireEvent.change(screen.getByTestId('chat-composer-input'), {
       target: { value: '分析 600519' },
     });
     fireEvent.click(screen.getByRole('button', { name: '发送' }));
@@ -1180,7 +1180,7 @@ describe('ChatPage', () => {
     expect(skillPanel).toBeInTheDocument();
 
     fireEvent.click(screen.getByRole('checkbox', { name: '均线金叉' }));
-    fireEvent.change(screen.getByPlaceholderText(/分析 600519/), {
+    fireEvent.change(screen.getByTestId('chat-composer-input'), {
       target: { value: '分析 600519' },
     });
     fireEvent.click(screen.getByRole('button', { name: '发送' }));
@@ -1210,7 +1210,7 @@ describe('ChatPage', () => {
     fireEvent.click(await screen.findByRole('checkbox', { name: '趋势分析' }));
     expect(screen.getByRole('checkbox', { name: '通用分析' })).toBeChecked();
 
-    fireEvent.change(screen.getByPlaceholderText(/分析 600519/), {
+    fireEvent.change(screen.getByTestId('chat-composer-input'), {
       target: { value: '分析 AAPL' },
     });
     fireEvent.click(screen.getByRole('button', { name: '发送' }));
@@ -1312,10 +1312,10 @@ describe('ChatPage', () => {
     fireEvent.click(quickQuestion);
 
     await waitFor(() => expect(mockStartStream).toHaveBeenCalledTimes(1));
-    expect(screen.getByPlaceholderText(/分析 600519/)).toHaveValue('用缠论分析茅台');
+    expect(screen.getByTestId('chat-composer-input')).toHaveValue('用缠论分析茅台');
   });
 
-  it('submits the A-share SMIC quick question with an unambiguous stock context', async () => {
+  it('submits the chan-theory Moutai quick question with an unambiguous stock context', async () => {
     mockGetStatus.mockResolvedValueOnce({
       backend: 'litellm',
       available: true,
@@ -1324,8 +1324,8 @@ describe('ChatPage', () => {
       message: null,
     });
     mockGetSkills.mockResolvedValue({
-      skills: [{ id: 'box_oscillation', name: '箱体震荡', description: '震荡区间' }],
-      default_skill_id: 'box_oscillation',
+      skills: [{ id: 'chan_theory', name: '缠论', description: '结构分析' }],
+      default_skill_id: 'chan_theory',
     });
 
     render(
@@ -1335,21 +1335,21 @@ describe('ChatPage', () => {
     );
 
     await screen.findByText('默认模型');
-    fireEvent.click(await screen.findByRole('button', { name: '用箱体震荡分析 A 股中芯国际 688981' }));
+    fireEvent.click(await screen.findByRole('button', { name: '用缠论分析茅台' }));
 
     await waitFor(() => {
       expect(mockStartStream).toHaveBeenCalledWith(
         expect.objectContaining({
-          message: '用箱体震荡分析 A 股中芯国际 688981',
-          skills: ['box_oscillation'],
+          message: '用缠论分析茅台',
+          skills: ['chan_theory'],
           context: {
-            stock_code: '688981',
-            stock_name: '中芯国际',
+            stock_code: '600519',
+            stock_name: '贵州茅台',
           },
         }),
         expect.objectContaining({
-          skillNames: ['箱体震荡'],
-          skillName: '箱体震荡',
+          skillNames: ['缠论'],
+          skillName: '缠论',
         }),
       );
     });
@@ -1358,7 +1358,7 @@ describe('ChatPage', () => {
   it('does not send a client-selected identity for a name-only question', async () => {
     mockGetStatus.mockResolvedValueOnce({ backend: 'litellm', available: true, experimental: false, errorCode: null, message: null });
     render(<MemoryRouter initialEntries={['/chat']}><ChatPage /></MemoryRouter>);
-    const input = await screen.findByPlaceholderText(/分析 600519/);
+    const input = await screen.findByTestId('chat-composer-input');
     fireEvent.change(input, { target: { value: '分析茅台' } });
     fireEvent.click(screen.getByRole('button', { name: '发送' }));
     await waitFor(() => expect(mockStartStream).toHaveBeenCalledWith(
@@ -1379,7 +1379,7 @@ describe('ChatPage', () => {
       </MemoryRouter>
     );
 
-    fireEvent.change(await screen.findByPlaceholderText(/分析 600519/), {
+    fireEvent.change(await screen.findByTestId('chat-composer-input'), {
       target: { value: '分析阿里巴巴' },
     });
     fireEvent.click(screen.getByRole('button', { name: '发送' }));
@@ -1557,7 +1557,7 @@ describe('ChatPage', () => {
       );
     });
 
-    fireEvent.change(screen.getByPlaceholderText(/分析 600519/), {
+    fireEvent.change(screen.getByTestId('chat-composer-input'), {
       target: { value: '继续分析成交量' },
     });
     fireEvent.click(screen.getByRole('button', { name: '发送' }));
@@ -1574,7 +1574,7 @@ describe('ChatPage', () => {
       );
     });
 
-    fireEvent.change(screen.getByPlaceholderText(/分析 600519/), {
+    fireEvent.change(screen.getByTestId('chat-composer-input'), {
       target: { value: '如果不考虑 TTM 呢' },
     });
     fireEvent.click(screen.getByRole('button', { name: '发送' }));
@@ -1694,7 +1694,7 @@ describe('ChatPage', () => {
     });
     expect(historyApi.getDetail).not.toHaveBeenCalled();
 
-    fireEvent.change(screen.getByPlaceholderText(/分析 600519/), {
+    fireEvent.change(screen.getByTestId('chat-composer-input'), {
       target: { value: '继续看估值' },
     });
     fireEvent.click(screen.getByRole('button', { name: '发送' }));
@@ -1721,7 +1721,7 @@ describe('ChatPage', () => {
     mockStoreState.stateContract = 'authoritative';
     render(<MemoryRouter initialEntries={['/chat?stock=AAPL&name=Apple']}><ChatPage /></MemoryRouter>);
     const input = await screen.findByDisplayValue('请深入分析 Apple(AAPL)');
-    expect(screen.getByLabelText('当前讨论对象')).toHaveTextContent('未确认');
+    expect(screen.queryByLabelText('当前讨论对象')).not.toBeInTheDocument();
     fireEvent.click(screen.getByRole('button', { name: '发送' }));
     await waitFor(() => expect(mockStartStream).toHaveBeenCalledTimes(1));
     expect(mockStartStream.mock.calls[0][0].context).toEqual({ stock_code: 'AAPL', stock_name: 'Apple' });
@@ -1729,7 +1729,7 @@ describe('ChatPage', () => {
     fireEvent.click(screen.getByRole('button', { name: '发送' }));
     await waitFor(() => expect(mockStartStream).toHaveBeenCalledTimes(2));
     expect(mockStartStream.mock.calls[1][0].context).toBeUndefined();
-    expect(screen.getByLabelText('当前讨论对象')).toHaveTextContent('未确认');
+    expect(screen.queryByLabelText('当前讨论对象')).not.toBeInTheDocument();
   });
 
   it.each(['风险呢', '改看300750', '比较600519和AAPL', 'AAPL与600519哪个更好'])(
@@ -1738,7 +1738,7 @@ describe('ChatPage', () => {
         stock_name: '贵州茅台', asset_type: 'stock' };
       mockStoreState.stateContract = 'authoritative';
       render(<MemoryRouter initialEntries={['/chat']}><ChatPage /></MemoryRouter>);
-      const input = await screen.findByPlaceholderText(/分析 600519/);
+      const input = await screen.findByTestId('chat-composer-input');
       fireEvent.change(input, { target: { value: message } });
       fireEvent.click(screen.getByRole('button', { name: '发送' }));
       await waitFor(() => expect(mockStartStream).toHaveBeenCalledWith(
@@ -1755,7 +1755,7 @@ describe('ChatPage', () => {
     );
 
     expect(await screen.findByRole('heading', { name: '问股' })).toBeInTheDocument();
-    expect(screen.getByPlaceholderText(/分析 600519/)).toHaveValue('');
+    expect(screen.getByTestId('chat-composer-input')).toHaveValue('');
     expect(historyApi.getDetail).not.toHaveBeenCalled();
   });
 
@@ -1973,8 +1973,8 @@ describe('ChatPage', () => {
       mockStoreState.stateContract = contract;
       mockStoreState.messages = [{ id: 'm-1', role: 'user', content: '分析 sh000016' }];
       render(<MemoryRouter initialEntries={['/chat']}><ChatPage /></MemoryRouter>);
-      const input = await screen.findByPlaceholderText(/分析 600519/);
-      expect(screen.getByLabelText('当前讨论对象')).toHaveTextContent('未确认');
+      const input = await screen.findByTestId('chat-composer-input');
+      expect(screen.queryByLabelText('当前讨论对象')).not.toBeInTheDocument();
       expect(screen.queryByText('加入自选')).not.toBeInTheDocument();
       fireEvent.change(input, { target: { value: '继续看支撑位' } });
       fireEvent.click(screen.getByRole('button', { name: '发送' }));
@@ -2103,7 +2103,7 @@ describe('ChatPage', () => {
 
     fireEvent.scroll(viewport);
 
-    fireEvent.change(screen.getByPlaceholderText(/分析 600519/), {
+    fireEvent.change(screen.getByTestId('chat-composer-input'), {
       target: { value: '继续看支撑位' },
     });
     fireEvent.click(screen.getByRole('button', { name: '发送' }));
@@ -2307,7 +2307,7 @@ describe('watchlist button with code variants', () => {
       </MemoryRouter>,
     );
 
-    const textarea = await screen.findByPlaceholderText(/例如/);
+    const textarea = await screen.findByTestId('chat-composer-input');
     fireEvent.change(textarea, { target: { value: '分析 600519.SH' } });
     fireEvent.keyDown(textarea, { key: 'Enter' });
 
@@ -2324,7 +2324,7 @@ describe('watchlist button with code variants', () => {
       </MemoryRouter>,
     );
 
-    const textarea = await screen.findByPlaceholderText(/例如/);
+    const textarea = await screen.findByTestId('chat-composer-input');
     fireEvent.change(textarea, { target: { value: '分析 1810.HK' } });
     fireEvent.keyDown(textarea, { key: 'Enter' });
 
@@ -2341,7 +2341,7 @@ describe('watchlist button with code variants', () => {
       </MemoryRouter>,
     );
 
-    const textarea = await screen.findByPlaceholderText(/例如/);
+    const textarea = await screen.findByTestId('chat-composer-input');
     fireEvent.change(textarea, { target: { value: '分析 1810.HK' } });
     fireEvent.keyDown(textarea, { key: 'Enter' });
 
@@ -2359,7 +2359,7 @@ describe('watchlist button with code variants', () => {
       </MemoryRouter>,
     );
 
-    const textarea = await screen.findByPlaceholderText(/例如/);
+    const textarea = await screen.findByTestId('chat-composer-input');
     fireEvent.change(textarea, { target: { value: '分析 00700.HK' } });
     fireEvent.keyDown(textarea, { key: 'Enter' });
     fireEvent.click(await screen.findByText('从自选删除'));
@@ -2472,7 +2472,7 @@ describe('watchlist button with code variants', () => {
       </MemoryRouter>,
     );
 
-    const input = await screen.findByPlaceholderText(/分析 600519/);
+    const input = await screen.findByTestId('chat-composer-input');
     fireEvent.change(input, { target: { value: '茅台最近为什么跌' } });
     fireEvent.keyDown(input, { key: 'Enter' });
 
@@ -2490,7 +2490,7 @@ describe('watchlist button with code variants', () => {
     );
 
     expect(await screen.findByTestId('chat-intake-pending')).toHaveTextContent('正在理解问题…');
-    const input = screen.getByPlaceholderText(/分析 600519/);
+    const input = screen.getByTestId('chat-composer-input');
     expect(input).toBeDisabled();
     // The send button lives next to the composer and is disabled while the
     // intake request is in flight.
@@ -2545,7 +2545,7 @@ describe('watchlist button with code variants', () => {
     expect(mockChatAnswerRenderSpy).toHaveBeenCalled();
     mockChatAnswerRenderSpy.mockClear();
 
-    const input = screen.getByPlaceholderText(/分析 600519/);
+    const input = screen.getByTestId('chat-composer-input');
     for (const value of ['分', '分析', '分析一', '分析一下', '分析一下茅']) {
       fireEvent.change(input, { target: { value } });
     }

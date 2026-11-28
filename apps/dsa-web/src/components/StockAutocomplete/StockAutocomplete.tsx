@@ -5,7 +5,7 @@
  * Supports keyboard navigation, IME input method, graceful degradation
  */
 
-import { Component, useRef, useEffect, useState } from 'react';
+import { Component, useRef, useEffect, useState, useId } from 'react';
 import type { KeyboardEvent } from 'react';
 import type { ErrorInfo, ReactNode } from 'react';
 import { createPortal } from 'react-dom';
@@ -131,6 +131,7 @@ function StockAutocompleteInner({
 
   const inputRef = useRef<HTMLInputElement>(null);
   const prevValueRef = useRef(value);
+  const listId = useId();
   const [dropdownStyle, setDropdownStyle] = useState<{ top: number; left: number; width: string } | null>(null);
 
   const updateDropdownPosition = () => {
@@ -275,11 +276,14 @@ function StockAutocompleteInner({
           isOpen && "rounded-b-none",
           className
         )}
-        aria-autocomplete="none"
+        aria-autocomplete="list"
         role="combobox"
         aria-expanded={isOpen}
         aria-haspopup="listbox"
-        aria-controls="suggestions-list"
+        aria-controls={listId}
+        aria-activedescendant={
+          isOpen && highlightedIndex >= 0 ? `${listId}-option-${highlightedIndex}` : undefined
+        }
       />
 
       {/* Loading indicator */}
@@ -306,6 +310,7 @@ function StockAutocompleteInner({
             });
           }}
           onMouseEnter={(index) => setHighlightedIndex(index)}
+          listId={listId}
           style={{ position: 'fixed', ...dropdownStyle }}
         />,
         document.body

@@ -33,20 +33,20 @@ function renderCard(overrides: {
   clarification?: StockClarification;
   autoConfirmEnabled?: boolean;
   onConfirm?: (decision: 'switch' | 'keep', target: StockClarificationIdentity | null) => void;
-  onRequestInput?: () => void;
+  onOpenPicker?: () => void;
 } = {}) {
   const onConfirm = overrides.onConfirm ?? vi.fn();
-  const onRequestInput = overrides.onRequestInput ?? vi.fn();
+  const onOpenPicker = overrides.onOpenPicker ?? vi.fn();
   const result = render(
     <StockClarificationCard
       messageId="message-1"
       clarification={overrides.clarification ?? switchClarification}
       autoConfirmEnabled={overrides.autoConfirmEnabled ?? true}
       onConfirm={onConfirm}
-      onRequestInput={onRequestInput}
+      onOpenPicker={onOpenPicker}
     />,
   );
-  return { onConfirm, onRequestInput, ...result };
+  return { onConfirm, onOpenPicker, ...result };
 }
 
 const advance = (ms: number) => act(() => {
@@ -128,11 +128,11 @@ describe('StockClarificationCard', () => {
     expect(onConfirm).toHaveBeenCalledWith('switch', smicHk);
   });
 
-  it('pauses the default reply when the user asks to type a code', () => {
-    const { onConfirm, onRequestInput } = renderCard();
+  it('pauses the default reply when the user opens the picker to switch', () => {
+    const { onConfirm, onOpenPicker } = renderCard();
 
-    fireEvent.click(screen.getByRole('button', { name: '输入股票代码' }));
-    expect(onRequestInput).toHaveBeenCalledTimes(1);
+    fireEvent.click(screen.getByRole('button', { name: '换一只股票' }));
+    expect(onOpenPicker).toHaveBeenCalledTimes(1);
 
     for (let second = 0; second < 20; second += 1) {
       advance(1000);

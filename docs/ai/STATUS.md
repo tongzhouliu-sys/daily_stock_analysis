@@ -11,7 +11,8 @@
 | 通知统一分发 | 所有渠道走 `send_with_results()`，逐渠道隔离失败并写诊断 | `src/notification.py` |
 | 问股守卫规则层 | 规则判不出时直接放行，不再默认调模型分类 | `api/v1/endpoints/agent.py`（`_check_domain_guard`） |
 | 问股标的绑定 | 会话已有标的时，只有显式切换词、股票代码或「名称 + 提问谓语」（如「宁德时代怎么样」）才触发切换确认；仅提及其他名称按对比对象处理，不替换当前标的。口径已定（R9），由 `tests/test_agent_active_stock_integration.py::test_established_object_subject_question_contract` 固定 | `src/agent/chat_object_decision.py` |
-| 首问引导（intake v2） | 新会话首问在创建草稿时用本地索引解析标的、推断背景；标的明确或不需要标的时直接开流，只有标的不明确才问一道带候选的题；旧页面仍可发 `interaction_version=1` | `api/v1/endpoints/agent.py` `/chat/intake`、`src/agent/object_resolution.py`、`src/agent/intake_questions.py` |
+| 首问引导（intake v2） | 新会话首问在创建草稿时用本地索引解析标的、推断背景；标的明确或不需要标的时直接开流，只有标的不明确才问一道带候选的题；小写代码等价、港股短码补零、索引外代码转 `unknown_code` 确认、行情/板块/选股类问题不拦截；旧页面仍可发 `interaction_version=1` | `api/v1/endpoints/agent.py` `/chat/intake`、`src/agent/object_resolution.py`、`src/agent/intake_questions.py` |
+| 问股输入标的引导 | 输入框「选股票」面板与被动联想、空状态自选 chip 与格式提示、理解卡按原因分形态 + 不指定股票出口、会话中「讨论中」chip 换股 | `apps/dsa-web/src/components/chat/ChatStockPicker.tsx`、`ChatInputArea.tsx`、`ChatUnderstandingCard.tsx`、`utils/stockMention.ts` |
 | 首页运行反馈 | 主阅读区运行卡 + 任务面板：五阶段、当前步骤、已用时、取消；失败停留可重试，断线提示并加密轮询 | `apps/dsa-web/src/components/tasks/AnalysisRunCard.tsx`、`src/services/analysis_progress.py` |
 | 问股运行反馈 | 发送即上屏；进行中面板三阶段 + 步骤时间线 + 停止；心跳静默 3 个周期转入进度恢复 | `apps/dsa-web/src/components/chat/ChatLiveProgress.tsx`、`src/stores/agentChatStore.ts` |
 | 数据新鲜度标注 | 日线落后时报告写「截至 X（落后 N 个交易日）」并降级数据块 | `src/analyzer.py`、`src/core/pipeline.py` |

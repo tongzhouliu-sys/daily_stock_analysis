@@ -12,19 +12,19 @@
 | 目录 | 职责 | 文件数 | 行数 |
 | --- | --- | --- | --- |
 | `src/core/` | 主流程编排：pipeline、配置装配、调度入口 | 14 | 14587 |
-| `src/services/` | 业务服务层：分析、筛选、通知、系统配置、任务与诊断 | 219 | 87373 |
+| `src/services/` | 业务服务层：分析、筛选、通知、系统配置、任务与诊断 | 219 | 87385 |
 | `src/repositories/` | 数据访问层：数据库读写封装 | 14 | 4268 |
 | `src/schemas/` | API / 报告数据结构定义 | 10 | 2114 |
-| `src/agent/` | 问股 Agent：意图解析、编排、工具与流式事件 | 66 | 27289 |
+| `src/agent/` | 问股 Agent：意图解析、编排、工具与流式事件 | 66 | 27460 |
 | `src/llm/` | LLM 调用封装与本地 CLI 生成后端 | 12 | 6466 |
 | `data_provider/` | 多数据源适配、优先级与 fallback | 26 | 20822 |
 | `api/` | FastAPI 应用与 v1 路由 | 47 | 13970 |
 | `bot/` | IM / 机器人接入 | 22 | 5507 |
-| `apps/dsa-web/src/` | Web 前端（React + Vite） | 367 | 120591 |
+| `apps/dsa-web/src/` | Web 前端（React + Vite） | 369 | 121627 |
 | `apps/dsa-desktop/` | Electron 桌面端壳与打包配置 | 8 | 8519 |
-| `scripts/` | 本地与 CI 脚本 | 54 | 10995 |
+| `scripts/` | 本地与 CI 脚本 | 54 | 11127 |
 | `.github/scripts/` | GitHub Actions 专用脚本 | 2 | 652 |
-| `tests/` | pytest 测试 | 405 | 197060 |
+| `tests/` | pytest 测试 | 405 | 197227 |
 
 ## 大文件（Python，≥400 行）
 
@@ -44,7 +44,7 @@
 | `src/notification.py` | 3382 | `_share_image_payload`:98, `_structured_payload_for`:112, `_safe_float`:120, `_format_strategy_skill_items`:140, `_append_strategy_synthesis_block`:160, `NotificationChannel`:211 | 87 |
 | `src/llm/local_cli_backend.py` | 2966 | `_diagnostic_field_name_pattern`:256, `_diagnostic_field_assignment_pattern`:286, `_diagnostic_json_assignment_pattern`:301, `_diagnostic_line_field_pattern`:315, `_diagnostic_double_quoted_yaml_line_pattern`:337, `_diagnostic_yaml_explicit_key_pattern`:357 | 25 |
 | `data_provider/akshare_fetcher.py` | 2631 | `_lots_to_shares`:64, `_is_etf_code`:120, `_is_hk_code`:139, `_normalize_tencent_volume`:171, `_normalize_cn_daily_volume`:203, `_parse_tencent_amount`:240 | 52 |
-| `src/agent/orchestrator.py` | 2628 | `_stage_trajectory_snapshot`:93, `_skipped_stage_trajectory`:124, `OrchestratorResult`:139, `PreparedOrchestratorChatTurn`:159, `AgentOrchestrator`:169, `_is_denied_ticker_candidate`:2420 | 78 |
+| `src/agent/orchestrator.py` | 2628 | `_stage_trajectory_snapshot`:93, `_skipped_stage_trajectory`:124, `OrchestratorResult`:139, `PreparedOrchestratorChatTurn`:159, `AgentOrchestrator`:169, `_is_denied_ticker_candidate`:2420 | 80 |
 | `src/market_analyzer.py` | 2317 | `MarketIndex`:61, `MarketOverview`:93, `MarketLightReviewResult`:113, `MarketAnalyzer`:122 | 167 |
 | `main.py` | 2186 | `_get_active_env_path`:137, `_log_startup_auth_state`:144, `_resolve_web_service_bind`:151, `_read_active_env_values`:158, `_bootstrap_environment`:186, `_setup_bootstrap_logging`:210 | 14 |
 | `src/agent/web_intent_resolver.py` | 2176 | `_dedup_stocks`:218, `_stock_payload`:225, `_stock_from_payload`:229, `_payload_stocks`:239, `_group_payload`:243, `_group_codes`:255 | 30 |
@@ -68,12 +68,12 @@
 
 | 文件 | 行数 |
 | --- | --- |
-| `apps/dsa-web/src/i18n/uiText.ts` | 3435 |
+| `apps/dsa-web/src/i18n/uiText.ts` | 3479 |
 | `apps/dsa-web/src/components/settings/LLMChannelEditor.tsx` | 2845 |
 | `apps/dsa-web/src/locales/settingsHelp.ts` | 2574 |
 | `apps/dsa-web/src/pages/StockScreeningPage.tsx` | 2354 |
 | `apps/dsa-web/src/pages/PortfolioPage.tsx` | 2252 |
-| `apps/dsa-web/src/pages/ChatPage.tsx` | 2194 |
+| `apps/dsa-web/src/pages/ChatPage.tsx` | 2227 |
 | `apps/dsa-web/src/pages/HomePage.tsx` | 2163 |
 | `apps/dsa-web/src/pages/SettingsPage.tsx` | 1742 |
 | `apps/dsa-web/src/pages/DecisionSignalsPage.tsx` | 1633 |
@@ -83,9 +83,9 @@
 
 ## 规模快照
 
-- Python 源码（不含测试）：522 个文件，240146 行
-- Python 测试：396 个文件，196670 行
-- 前端 TS/TSX：359 个文件，109687 行
+- Python 源码（不含测试）：522 个文件，240495 行
+- Python 测试：396 个文件，196837 行
+- 前端 TS/TSX：361 个文件，110499 行
 - ≥400 行的 Python 文件：162 个
 
 规模数字只用于判断改动影响面，不是质量指标。

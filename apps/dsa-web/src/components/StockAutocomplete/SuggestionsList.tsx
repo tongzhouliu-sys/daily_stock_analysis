@@ -18,6 +18,10 @@ export interface SuggestionsListProps {
   onMouseEnter: (index: number) => void;
   /** Custom style (for Portal fixed positioning) */
   style?: CSSProperties;
+  /** Show the match-type badge; the chat picker hides it. */
+  showMatchType?: boolean;
+  /** Unique listbox id (avoids duplicate `suggestions-list` ids). */
+  listId?: string;
 }
 
 export function SuggestionsList({
@@ -26,6 +30,8 @@ export function SuggestionsList({
   onSelect,
   onMouseEnter,
   style,
+  showMatchType = true,
+  listId = 'suggestions-list',
 }: SuggestionsListProps) {
   if (suggestions.length === 0) {
     return null;
@@ -33,7 +39,7 @@ export function SuggestionsList({
 
   return (
     <ul
-      id="suggestions-list"
+      id={listId}
       className="z-[100] max-h-60 overflow-auto border border-border bg-popover shadow-lg"
       style={style}
       role="listbox"
@@ -41,6 +47,7 @@ export function SuggestionsList({
       {suggestions.map((suggestion, index) => (
         <li
           key={suggestion.canonicalCode}
+          id={`${listId}-option-${index}`}
           role="option"
           aria-selected={index === highlightedIndex}
           className={cn(
@@ -64,7 +71,7 @@ export function SuggestionsList({
             </div>
           </div>
 
-          <MatchTypeBadge matchType={suggestion.matchType} />
+          {showMatchType && <MatchTypeBadge matchType={suggestion.matchType} />}
         </li>
       ))}
     </ul>

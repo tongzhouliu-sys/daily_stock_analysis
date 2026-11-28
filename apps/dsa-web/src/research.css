@@ -4822,3 +4822,227 @@ details[open] > .report-collapse .report-collapse-chevron {
 .chat-understanding-cancel:hover {
   color: var(--text-primary);
 }
+
+/* --- Stock input guidance (chat composer picker + passive autocomplete) --- */
+
+.chat-input-formats {
+  margin-top: 8px;
+  color: var(--text-muted-text);
+  font-family: var(--font-mono);
+  font-size: 11px;
+  letter-spacing: 0.03em;
+}
+
+.chat-guide-watchlist {
+  width: 100%;
+  max-width: 860px;
+  margin-top: 18px;
+}
+
+.chat-guide-watchlist-row {
+  display: flex;
+  flex-wrap: wrap;
+  gap: 8px;
+}
+
+.chat-guide-watchlist-chip {
+  display: inline-flex;
+  height: 32px;
+  align-items: center;
+  gap: 6px;
+  padding: 0 10px;
+  border: 1px solid hsl(var(--border) / 0.9);
+  border-radius: 999px;
+  background: hsl(var(--card) / 0.6);
+  color: var(--text-secondary-text);
+  font-size: 12px;
+  transition: background-color 150ms ease, border-color 150ms ease, color 150ms ease;
+}
+
+.chat-guide-watchlist-chip code {
+  color: var(--text-muted-text);
+  font-size: 11px;
+}
+
+.chat-guide-watchlist-chip:hover:not(:disabled) {
+  border-color: hsl(var(--primary) / 0.34);
+  background: hsl(var(--primary) / 0.05);
+  color: var(--text-primary);
+}
+
+.chat-guide-watchlist-chip:disabled {
+  cursor: not-allowed;
+  opacity: 0.55;
+}
+
+.chat-object-chip {
+  max-width: 260px;
+}
+
+.chat-switch-preview {
+  padding: 6px 10px;
+  border: 1px solid hsl(var(--primary) / 0.25);
+  border-radius: 10px;
+  background: hsl(var(--primary) / 0.06);
+  color: hsl(var(--primary));
+  font-size: 12px;
+}
+
+.chat-autocomplete-chips {
+  display: flex;
+  flex-wrap: wrap;
+  gap: 6px;
+}
+
+.chat-autocomplete-chip code {
+  color: var(--text-muted-text);
+  font-size: 11px;
+}
+
+.chat-autocomplete-popover {
+  width: 100%;
+  max-width: 1020px;
+  margin: -4px auto 0;
+  padding: 6px;
+  border: 1px solid hsl(var(--border));
+  border-radius: 12px;
+  background: var(--bg-card);
+  box-shadow: 0 12px 30px hsl(0 0% 0% / 0.12);
+  z-index: 30;
+}
+
+.chat-autocomplete-row {
+  display: flex;
+  width: 100%;
+  min-height: 38px;
+  align-items: center;
+  justify-content: space-between;
+  gap: 10px;
+  padding: 6px 10px;
+  border-radius: 8px;
+  color: var(--text-secondary-text);
+  font-size: 0.875rem;
+  text-align: start;
+  cursor: pointer;
+}
+
+.chat-autocomplete-row.is-highlighted {
+  background: var(--bg-hover);
+  color: var(--text-primary);
+}
+
+.chat-autocomplete-name {
+  min-width: 0;
+  overflow: hidden;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+}
+
+.chat-autocomplete-code {
+  flex: none;
+  color: var(--text-muted-text);
+  font-size: 0.8125rem;
+}
+
+/* --- Stock picker --- */
+
+.chat-stock-picker {
+  display: flex;
+  flex-direction: column;
+  gap: 8px;
+}
+
+.chat-stock-picker-popover {
+  width: 100%;
+  max-width: 1020px;
+  margin: 0 auto;
+  padding: 10px;
+  border: 1px solid hsl(var(--border));
+  border-radius: 14px;
+  background: var(--bg-card);
+  box-shadow: 0 12px 34px hsl(0 0% 0% / 0.14);
+  z-index: 40;
+}
+
+.chat-stock-picker-search {
+  display: flex;
+  align-items: center;
+  gap: 8px;
+  padding: 8px 10px;
+  border: 1px solid hsl(var(--border));
+  border-radius: 10px;
+  color: var(--text-muted-text);
+}
+
+.chat-stock-picker-input {
+  flex: 1;
+  min-width: 0;
+  border: 0;
+  outline: none;
+  background: transparent;
+  color: var(--text-primary);
+  font-size: 16px;
+}
+
+.chat-stock-picker-section {
+  color: var(--text-muted-text);
+  font-family: var(--font-mono);
+  font-size: 11px;
+  letter-spacing: 0.06em;
+}
+
+.chat-stock-picker-list {
+  display: flex;
+  max-height: 300px;
+  flex-direction: column;
+  gap: 2px;
+  overflow-y: auto;
+}
+
+.chat-stock-picker-row {
+  display: flex;
+  width: 100%;
+  min-height: 44px;
+  align-items: center;
+  gap: 10px;
+  padding: 6px 10px;
+  border-radius: 8px;
+  color: var(--text-secondary-text);
+  font-size: 0.875rem;
+  text-align: start;
+  cursor: pointer;
+}
+
+.chat-stock-picker-row.is-highlighted {
+  background: var(--bg-hover);
+}
+
+.chat-stock-picker-market {
+  flex: none;
+  padding: 2px 7px;
+  border: 1px solid hsl(var(--border));
+  border-radius: 6px;
+  color: var(--text-muted-text);
+  font-size: 11px;
+}
+
+.chat-stock-picker-name {
+  min-width: 0;
+  flex: 1;
+  overflow: hidden;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+  color: var(--text-primary);
+}
+
+.chat-stock-picker-code {
+  flex: none;
+  color: var(--text-muted-text);
+  font-size: 0.8125rem;
+}
+
+.chat-stock-picker-empty {
+  padding: 10px;
+  color: var(--text-muted-text);
+  font-size: 12px;
+}

@@ -31,7 +31,7 @@ interface ChatMessageItemProps {
   onCopy: (messageId: string, content: string) => void;
   onExport: (message: Message) => void;
   onEdit?: (message: Message) => void;
-  onRequestComposerFocus: () => void;
+  onOpenPicker: () => void;
   onClarificationDecision: (
     message: Message,
     decision: ClarificationDecision,
@@ -66,7 +66,7 @@ function ChatMessageItem({
   editLabel,
   highlighted,
   onEdit,
-  onRequestComposerFocus,
+  onOpenPicker,
   onClarificationDecision,
   onMessageContextMenu,
 }: ChatMessageItemProps) {
@@ -132,7 +132,7 @@ function ChatMessageItem({
               autoConfirmEnabled={clarificationAutoConfirmEnabled}
               language={language}
               onConfirm={(decision, target) => onClarificationDecision(message, decision, target)}
-              onRequestInput={onRequestComposerFocus}
+              onOpenPicker={onOpenPicker}
             />
           )}
           <div className="chat-message-actions">

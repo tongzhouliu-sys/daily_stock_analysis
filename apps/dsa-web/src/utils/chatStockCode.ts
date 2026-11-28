@@ -9,7 +9,7 @@ const INDICATOR_CONTEXT_RE = /指标|均线|移动平均|排列|多头|空头|�
 
 // Mirrors backend _COMMON_WORDS for #1596 free-text extraction only.
 // Explicit validation via validateStockCode() intentionally keeps its original contract.
-const FREE_TEXT_TICKER_DENYLIST = new Set([
+export const FREE_TEXT_TICKER_DENYLIST = new Set([
   'AM', 'AS', 'AT', 'BE', 'BY', 'DO', 'GO', 'HE', 'IF', 'IN',
   'IS', 'IT', 'ME', 'MY', 'NO', 'OF', 'ON', 'OR', 'SO', 'TO',
   'UP', 'US', 'WE',

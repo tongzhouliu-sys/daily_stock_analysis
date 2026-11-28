@@ -235,7 +235,7 @@ describe('StockAutocomplete', () => {
     );
 
     const input = screen.getByRole('combobox');
-    expect(input).toHaveAttribute('aria-autocomplete', 'none');
+    expect(input).toHaveAttribute('aria-autocomplete', 'list');
     expect(input).toHaveAttribute('role', 'combobox');
   });
 

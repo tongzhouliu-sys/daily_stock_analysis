@@ -46,7 +46,7 @@ function buildProps() {
     onCopy: vi.fn(),
     onExport: vi.fn(),
     onEdit: vi.fn(),
-    onRequestComposerFocus: vi.fn(),
+    onOpenPicker: vi.fn(),
     onClarificationDecision: vi.fn(),
   };
 }

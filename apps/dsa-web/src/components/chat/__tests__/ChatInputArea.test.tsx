@@ -3,6 +3,7 @@ import { fireEvent, render, screen } from '@testing-library/react';
 import { describe, expect, it, vi } from 'vitest';
 import ChatInputArea from '../ChatInputArea';
 import { TOUCH_LAYOUT_QUERY } from '../../../hooks/useMediaQuery';
+import type { StockIndexItem } from '../../../types/stockIndex';
 
 const t = ((key: string) => key) as unknown as Parameters<typeof ChatInputArea>[0]['t'];
 
@@ -11,6 +12,7 @@ function renderInput(overrides: Partial<Parameters<typeof ChatInputArea>[0]> = {
   const onInputChange = vi.fn();
   const props = {
     t,
+    language: 'zh' as const,
     composerRef: createRef<HTMLTextAreaElement>(),
     input: '分析茅台',
     onInputChange,
@@ -35,12 +37,15 @@ function renderInput(overrides: Partial<Parameters<typeof ChatInputArea>[0]> = {
     contextCompressionError: null as string | null,
     onToggleContextCompression: vi.fn(),
     activeStockCode: null as string | null,
+    activeStockName: null as string | null,
+    stateContractLegacy: false,
     canToggleWatchlist: false,
     watchlistBusy: false,
     inWatchlist: false,
     onToggleWatchlist: vi.fn(),
     watchlistMessage: null as string | null,
-    objectStatusText: '',
+    stockIndex: [] as StockIndexItem[],
+    watchlistCodes: [] as string[],
     ...overrides,
   };
   const result = render(<ChatInputArea {...props} />);

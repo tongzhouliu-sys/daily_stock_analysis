@@ -4,6 +4,8 @@ import { cn } from '../../utils/cn';
 import { StockAutocomplete } from '../StockAutocomplete';
 import { useUiLanguage } from '../../contexts/UiLanguageContext';
 import { Button } from '../common';
+import { looksLikeStockCode } from '../../utils/validation';
+import type { StockIndexItem } from '../../types/stockIndex';
 import type {
   Answer,
   IntakeDraft,
@@ -18,6 +20,14 @@ interface ChatUnderstandingCardProps {
   onConfirm: (answers: Answer[]) => void | Promise<unknown>;
   /** Return to the composer and retire the draft. */
   onCancel: () => void;
+  /** Ask without a specific stock (missing form only). */
+  onSkip?: () => void;
+  /** Inline error to show inside the card (keeps selections). */
+  error?: string | null;
+  /** Watchlist entries to offer as one-tap choices (missing form). */
+  watchlistItems?: StockIndexItem[];
+  /** Stock index for resolving a searched item's market/asset type. */
+  stockIndex?: StockIndexItem[];
 }
 
 const DIM_LABEL_KEYS = {
@@ -36,21 +46,37 @@ const dimLabelKey = (dimension: string): (typeof DIM_LABEL_KEYS)[keyof typeof DI
 const optionLabel = (question: Question, optionId: string): string =>
   question.options.find((option) => option.id === optionId)?.label ?? optionId;
 
+const MARKET_LABELS: Record<string, string> = {
+  CN: 'A股', HK: '港股', US: '美股', JP: '日股', KR: '韩股',
+  INDEX: '指数', ETF: 'ETF', BSE: '北交所', UNKNOWN: '',
+};
+
+function marketLabel(market: string | undefined | null, fallback: string = ''): string {
+  return MARKET_LABELS[market ?? ''] ?? fallback;
+}
+
 /**
  * v2 first-question card.
  *
  * The server has already resolved the object and inferred the background. This
  * card shows what it understood; it only asks when the object is ambiguous or
- * missing. Preference questions are chips, never a questionnaire.
+ * missing. The ``missing`` form now explains why, offers watchlist chips and an
+ * "ask without a stock" escape; the ``unknown_code`` / ``short_code`` reasons
+ * get their own title and confirmation copy.
  */
 export function ChatUnderstandingCard({
   draft,
   isLoading = false,
   onConfirm,
   onCancel,
+  onSkip,
+  error = null,
+  watchlistItems = [],
+  stockIndex = [],
 }: ChatUnderstandingCardProps) {
   const { t } = useUiLanguage();
   const resolution = draft.resolution ?? null;
+  const reason = resolution?.reason ?? null;
   const blocking = resolution?.status === 'ambiguous' || resolution?.status === 'missing';
   const candidates = useMemo(() => resolution?.candidates ?? [], [resolution]);
 
@@ -61,6 +87,7 @@ export function ChatUnderstandingCard({
     return candidates.find((item) => item.canonical_id === recommended) ?? candidates[0] ?? null;
   });
   const [searchValue, setSearchValue] = useState('');
+  const [searchMiss, setSearchMiss] = useState<string | null>(null);
 
   const questionsById = useMemo(
     () => new Map(draft.questions.map((question) => [question.id, question])),
@@ -85,17 +112,54 @@ export function ChatUnderstandingCard({
     void onConfirm([...preferenceAnswers.filter((answer) => answer.question_id !== 'object'), ...objectAnswer]);
   }, [onConfirm, preferenceAnswers, selectedObject]);
 
-  const handleSearchSubmit = useCallback((code: string, name?: string) => {
+  const handleSearchSubmit = (code: string, name?: string) => {
+    if (!looksLikeStockCode(code)) {
+      setSearchMiss(code);
+      setSearchValue('');
+      return;
+    }
+    const indexed = stockIndex.find((item) => item.canonicalCode === code);
     setSelectedObject({
       stock_code: code,
-      stock_name: name ?? null,
+      stock_name: name ?? indexed?.nameZh ?? null,
       canonical_id: code,
-      asset_type: 'stock',
-      market: 'UNKNOWN',
-      market_label: '',
+      asset_type: indexed?.assetType ?? 'stock',
+      market: indexed?.market ?? 'UNKNOWN',
+      market_label: marketLabel(indexed?.market),
     });
     setSearchValue('');
-  }, []);
+    setSearchMiss(null);
+  };
+
+  const resolveTitle = () => {
+    if (reason === 'unknown_code') {
+      const code = candidates[0]?.stock_code ?? '';
+      return t('chat.understanding.unknownCodeTitle', { code });
+    }
+    if (reason === 'short_code') {
+      const candidate = candidates[0];
+      const name = candidate?.stock_name || candidate?.stock_code || '';
+      const code = candidate?.stock_code || '';
+      return t('chat.understanding.shortCodeTitle', { name, code });
+    }
+    if (blocking) {
+      return resolution?.status === 'missing'
+        ? t('chat.understanding.missingTitle')
+        : t('chat.understanding.askObject');
+    }
+    return t('chat.understanding.title');
+  };
+
+  const resolveHelp = () => {
+    if (reason === 'unknown_code') return t('chat.understanding.unknownCodeHelp');
+    if (blocking && resolution?.status === 'missing') return t('chat.understanding.missingHelp');
+    return null;
+  };
+
+  const showWatchlist = blocking && resolution?.status === 'missing' && watchlistItems.length > 0;
+  const showSkip = blocking && resolution?.status === 'missing' && Boolean(onSkip);
+  const title = resolveTitle();
+  const help = resolveHelp();
 
   if (!draft) return null;
 
@@ -108,11 +172,7 @@ export function ChatUnderstandingCard({
     >
       <header className="chat-understanding-head">
         <Sparkles size={14} className="chat-understanding-icon" aria-hidden="true" />
-        <span className="chat-understanding-title">
-          {blocking ? (resolution?.status === 'missing'
-            ? t('chat.understanding.missingTitle')
-            : t('chat.understanding.askObject')) : t('chat.understanding.title')}
-        </span>
+        <span className="chat-understanding-title">{title}</span>
         {resolution?.identity ? (
           <span className="chat-understanding-object" data-testid="chat-understanding-object">
             {resolution.identity.stock_name || resolution.identity.stock_code}
@@ -121,6 +181,8 @@ export function ChatUnderstandingCard({
           </span>
         ) : null}
       </header>
+
+      {help ? <p className="chat-understanding-note">{help}</p> : null}
 
       {blocking && candidates.length > 0 ? (
         <div className="chat-understanding-candidates" role="radiogroup" aria-label={t('chat.understanding.askObject')}>
@@ -155,19 +217,76 @@ export function ChatUnderstandingCard({
         </div>
       ) : null}
 
+      {showWatchlist ? (
+        <div className="chat-understanding-watchlist" aria-label={t('chat.picker.watchlist')}>
+          {watchlistItems.slice(0, 6).map((item) => (
+            <button
+              key={item.canonicalCode}
+              type="button"
+              className="chat-understanding-watchlist-chip"
+              disabled={isLoading}
+              onClick={() => {
+                setSelectedObject({
+                  stock_code: item.canonicalCode,
+                  stock_name: item.nameZh,
+                  canonical_id: item.canonicalCode,
+                  asset_type: item.assetType,
+                  market: item.market,
+                  market_label: marketLabel(item.market),
+                });
+                setSearchMiss(null);
+              }}
+            >
+              <span>{item.nameZh}</span>
+              <code>{item.displayCode}</code>
+            </button>
+          ))}
+        </div>
+      ) : null}
+
+      {selectedObject && (blocking || reason === 'unknown_code') ? (
+        <div className="chat-understanding-selected" data-testid="chat-understanding-selected">
+          <span className="chat-understanding-selected-label">{t('chat.understanding.selected')}</span>
+          <span className="chat-understanding-selected-name">
+            {selectedObject.stock_name || selectedObject.stock_code}
+          </span>
+          <code>{selectedObject.stock_code}</code>
+          {selectedObject.market_label ? (
+            <span className="chat-understanding-candidate-market">{selectedObject.market_label}</span>
+          ) : null}
+          <button
+            type="button"
+            className="chat-understanding-selected-remove"
+            aria-label={t('chat.understanding.remove')}
+            disabled={isLoading}
+            onClick={() => setSelectedObject(null)}
+          >
+            <X size={12} aria-hidden="true" />
+          </button>
+        </div>
+      ) : null}
+
       {blocking ? (
         <div className="chat-understanding-search">
           <label className="chat-understanding-search-label">
             <Search size={13} aria-hidden="true" />
-            <span>{t('chat.understanding.searchPlaceholder')}</span>
+            <span>{t('chat.understanding.searchLabel')}</span>
           </label>
           <StockAutocomplete
             value={searchValue}
-            onChange={setSearchValue}
+            onChange={(value) => {
+              setSearchValue(value);
+              setSearchMiss(null);
+            }}
             onSubmit={(code, name) => handleSearchSubmit(code, name)}
             placeholder={t('chat.understanding.searchPlaceholder')}
             disabled={isLoading}
           />
+          {searchMiss ? (
+            <p className="chat-understanding-search-miss" role="status">
+              {t('chat.picker.noResult', { query: searchMiss })}
+            </p>
+          ) : null}
         </div>
       ) : null}
 
@@ -209,6 +328,12 @@ export function ChatUnderstandingCard({
         <p className="chat-understanding-note">{t('chat.understanding.autoStarted')}</p>
       ) : null}
 
+      {error ? (
+        <p className="chat-understanding-error" role="alert" data-testid="chat-understanding-error">
+          {error === 'invalid_intake_answer' ? t('chat.understanding.invalidSelection') : error}
+        </p>
+      ) : null}
+
       <div className="chat-understanding-actions">
         {draft.status === 'confirmed' && !blocking ? (
           <Button
@@ -231,9 +356,23 @@ export function ChatUnderstandingCard({
             disabled={isLoading || !selectedObject}
             data-testid="chat-understanding-confirm"
           >
-            {selectedObject
-              ? t('chat.understanding.start', { name: selectedObject.stock_name || selectedObject.stock_code })
-              : t('chat.understanding.pickOne')}
+            {reason === 'unknown_code' && selectedObject
+              ? t('chat.understanding.analyzeAnyway', { code: selectedObject.stock_code })
+              : selectedObject
+                ? t('chat.understanding.start', { name: selectedObject.stock_name || selectedObject.stock_code })
+                : t('chat.understanding.pickOne')}
+          </Button>
+        ) : null}
+        {showSkip ? (
+          <Button
+            type="button"
+            variant="secondary"
+            size="sm"
+            onClick={onSkip}
+            disabled={isLoading}
+            data-testid="chat-understanding-skip"
+          >
+            {t('chat.understanding.askWithoutStock')}
           </Button>
         ) : null}
         <button

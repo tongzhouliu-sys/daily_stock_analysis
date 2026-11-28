@@ -24,9 +24,9 @@ interface StockClarificationCardProps {
   autoConfirmEnabled: boolean;
   language?: 'zh' | 'en';
   onConfirm: (decision: ClarificationDecision, target: StockClarificationIdentity | null) => void;
-  onRequestInput: () => void;
+  /** Open the stock picker (the "换一只股票" button). */
+  onOpenPicker: () => void;
 }
-
 const copyFor = (language: 'zh' | 'en') => {
   const zh = language !== 'en';
   return {
@@ -53,14 +53,14 @@ const copyFor = (language: 'zh' | 'en') => {
     switchButton: zh ? '切换并分析' : 'Switch & analyze',
     keepButton: zh ? '保持当前' : 'Keep current',
     continueButton: zh ? '继续分析' : 'Continue analysis',
-    inputButton: zh ? '输入股票代码' : 'Enter a code',
+    inputButton: zh ? '换一只股票' : 'Pick another stock',
     autoReply: (seconds: number) => zh
       ? `默认回复「确认」 · ${seconds}s 后自动发送`
       : `Default reply “Confirm” · auto-sends in ${seconds}s`,
     confirmNow: zh ? '立即确认' : 'Confirm now',
     resolvedSwitch: zh ? '已确认，正在切换分析标的…' : 'Confirmed. Switching the analysis target…',
     resolvedKeep: zh ? '已确认，正在继续分析…' : 'Confirmed. Continuing the analysis…',
-    resolvedAsk: zh ? '请在上方输入股票或指数代码。' : 'Enter a stock or index code above.',
+    resolvedAsk: zh ? '已确认' : 'Confirmed',
   };
 };
 
@@ -70,7 +70,7 @@ const StockClarificationCard: React.FC<StockClarificationCardProps> = ({
   autoConfirmEnabled,
   language = 'zh',
   onConfirm,
-  onRequestInput,
+  onOpenPicker,
 }) => {
   const copy = useMemo(() => copyFor(language), [language]);
   const [resolved, setResolved] = useState(false);
@@ -109,8 +109,8 @@ const StockClarificationCard: React.FC<StockClarificationCardProps> = ({
 
   const handleRequestInput = useCallback(() => {
     setPaused(true);
-    onRequestInput();
-  }, [onRequestInput]);
+    onOpenPicker();
+  }, [onOpenPicker]);
 
   const title = resolved
     ? action === 'switch'
