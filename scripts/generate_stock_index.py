@@ -15,6 +15,7 @@ Usage:
 """
 
 import argparse
+import csv
 import json
 import re
 import sys
@@ -81,6 +82,11 @@ def generate_stock_index_from_map() -> List[Dict[str, Any]]:
 
         # Generate short aliases.
         aliases = generate_aliases(name)
+        for alias in _stock_alias_seed_lookup().get(build_canonical_code(code, market).upper(), ()):
+            if alias != name and alias not in aliases:
+                aliases.append(alias)
+
+        popularity = 10 if market == "US" and "(OTC)" in name else 100
 
         index.append({
             "canonicalCode": build_canonical_code(code, market),
@@ -92,10 +98,37 @@ def generate_stock_index_from_map() -> List[Dict[str, Any]]:
             "market": market,
             "assetType": asset_type,
             "active": True,
-            "popularity": 100,  # Default popularity
+            "popularity": popularity,
         })
 
     return index
+
+
+_STOCK_ALIAS_SEED_PATH = (
+    Path(__file__).parent / "stock_index_seeds" / "stock_aliases.csv"
+)
+
+
+def _stock_alias_seed_lookup() -> Dict[str, tuple]:
+    """Load ``stock_aliases.csv`` into ``canonical_code -> aliases``.
+
+    Shared with ``src/data/stock_index_loader`` so the frontend index and the
+    backend resolver never disagree. Missing/invalid rows are ignored.
+    """
+    merged: Dict[str, List[str]] = {}
+    try:
+        with _STOCK_ALIAS_SEED_PATH.open("r", encoding="utf-8-sig") as fh:
+            for row in csv.DictReader(fh):
+                canonical = str(row.get("canonical_code") or "").strip()
+                alias = str(row.get("alias") or "").strip()
+                if not canonical or not alias:
+                    continue
+                merged.setdefault(canonical.upper(), [])
+                if alias not in merged[canonical.upper()]:
+                    merged[canonical.upper()].append(alias)
+    except (OSError, csv.Error):
+        return {}
+    return {key: tuple(values) for key, values in merged.items()}
 
 
 def determine_market_and_type(code: str) -> tuple:

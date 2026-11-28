@@ -97,6 +97,12 @@ function calculateMatchScore(query: string, item: StockIndexItem): number {
   // 1. Exact match (96-100 points)
   if (q === normalizedCanonicalCode) return 100;
   if (q === normalizedDisplayCode) return 99;
+  // HK short-code exact match: "700" must rank the padded "00700" row as an
+  // exact code hit, not a weak substring (S3).
+  if (item.market === 'HK') {
+    const hkShort = normalizedDisplayCode.replace(/^0+/, '');
+    if (hkShort && hkShort === q) return 99;
+  }
   if (q === normalizedName) return 98;
   if (normalizedAliases.some(a => a === q)) return 97;
   if (q === normalizedPinyinAbbr) return 96;

@@ -739,5 +739,58 @@ class TestStockIndexLoader(unittest.TestCase):
             self.assertEqual({r[0] for r in rows}, {"sh000300", "sh000016", "csi930955"})
 
 
+class TestStockAliasSeed(unittest.TestCase):
+    def setUp(self):
+        stock_index_loader._clear_stock_index_cache_for_tests()
+
+    def tearDown(self):
+        stock_index_loader._clear_stock_index_cache_for_tests()
+
+    def test_stock_name_map_foreign_tickers_all_have_chinese_alias(self):
+        """The alias seed must cover every foreign ticker STOCK_NAME_MAP names in
+        Chinese, otherwise a US stock keeps its English-only name and first-question
+        Chinese-name search misses it."""
+        from src.data.stock_mapping import STOCK_NAME_MAP
+
+        seed_aliases = stock_index_loader._seeded_aliases_for_code  # noqa: F841
+        lookup = {}
+        for canonical, aliases in self._read_seed().items():
+            for alias in aliases:
+                lookup.setdefault(alias, set()).add(canonical)
+        foreign_codes = [code for code in STOCK_NAME_MAP if code[:1].isalpha()]
+        missing = []
+        for code in foreign_codes:
+            zh_name = STOCK_NAME_MAP[code]
+            if zh_name and not any("一" <= ch <= "鿿" for ch in zh_name):
+                continue
+            owners = {owner for a in (zh_name,) if a in lookup for owner in lookup[a]}
+            if code not in owners:
+                missing.append(code)
+        self.assertEqual(missing, [], f"seed missing a Chinese alias for {missing}")
+
+    def test_seeded_aliases_land_in_chat_lookup_names(self):
+        """The chat resolver must see the seeded US Chinese aliases."""
+        import importlib
+        importlib.reload(stock_index_loader)
+        lookup = stock_index_loader.get_chat_stock_lookup()
+        self.assertIn("苹果", lookup["names"])
+        self.assertIn("英伟达", lookup["names"])
+
+    @staticmethod
+    def _read_seed():
+        import csv
+
+        path = stock_index_loader._STOCK_ALIAS_SEED_PATH
+        merged = {}
+        with path.open("r", encoding="utf-8-sig") as fh:
+            for row in csv.DictReader(fh):
+                canonical = str(row.get("canonical_code") or "").strip()
+                alias = str(row.get("alias") or "").strip()
+                if not canonical or not alias:
+                    continue
+                merged.setdefault(canonical.upper(), set()).add(alias)
+        return merged
+
+
 if __name__ == "__main__":
     unittest.main()

@@ -1,6 +1,7 @@
 # -*- coding: utf-8 -*-
 from __future__ import annotations
 
+import csv
 import json
 import logging
 import math
@@ -524,6 +525,7 @@ def get_chat_stock_lookup() -> dict:
                 continue
             identity = (code, name, "index" if row[7] == "index" else "stock")
             aliases = [alias for alias in row[5] if isinstance(alias, str)]
+            aliases.extend(_seeded_aliases_for_code(code))
             # Search aliases are not universally name aliases. Code-shaped
             # aliases must not introduce a second name-confirmation route.
             for label in [name] + [alias for alias in aliases if not is_code_like(alias)
@@ -540,6 +542,36 @@ def get_chat_stock_lookup() -> dict:
             "index_rows": index_rows,
         }
         return _CHAT_STOCK_LOOKUP_CACHE
+
+
+_STOCK_ALIAS_SEED_PATH = Path(__file__).resolve().parents[2] / "scripts" / "stock_index_seeds" / "stock_aliases.csv"
+_STOCK_ALIAS_SEED_CACHE: dict[str, tuple[str, ...]] | None = None
+
+
+def _seeded_aliases_for_code(code: str) -> tuple[str, ...]:
+    """Return the aliases the ``stock_aliases.csv`` seed adds for ``code``.
+
+    The seed is the single source of truth for Chinese/English US-stock aliases
+    and shared by the frontend index builder, so both sides stay in lock-step.
+    Loading is lazy and cached; a missing seed degrades to no extra aliases.
+    """
+    global _STOCK_ALIAS_SEED_CACHE
+    if _STOCK_ALIAS_SEED_CACHE is None:
+        merged: dict[str, set[str]] = {}
+        try:
+            with _STOCK_ALIAS_SEED_PATH.open("r", encoding="utf-8-sig") as fh:
+                for row in csv.DictReader(fh):
+                    canonical = str(row.get("canonical_code") or "").strip()
+                    alias = str(row.get("alias") or "").strip()
+                    if not canonical or not alias:
+                        continue
+                    merged.setdefault(canonical.upper(), set()).add(alias)
+        except (OSError, csv.Error):
+            merged = {}
+        _STOCK_ALIAS_SEED_CACHE = {
+            key: tuple(sorted(values)) for key, values in merged.items()
+        }
+    return _STOCK_ALIAS_SEED_CACHE.get(code.strip().upper(), ())
 
 
 def _get_bundled_stock_index_path(
@@ -703,6 +735,7 @@ def clear_stock_index_cache() -> None:
     global _REMOTE_INDEX_VALIDITY_CACHE
     global _STOCK_CODE_CANDIDATES_CACHE, _STOCK_CODE_LOOKUP_CACHE, _STOCK_INDEX_CACHE
     global _ACTIVE_INDEX_ROWS_CACHE, _CHAT_INDEX_PAYLOAD_CACHE, _CHAT_STOCK_LOOKUP_CACHE
+    global _STOCK_ALIAS_SEED_CACHE
     with _STOCK_INDEX_CACHE_LOCK:
         _STOCK_INDEX_CACHE = None
         _STOCK_CODE_LOOKUP_CACHE = None
@@ -711,6 +744,7 @@ def clear_stock_index_cache() -> None:
         _CHAT_INDEX_PAYLOAD_CACHE = None
         _CHAT_STOCK_LOOKUP_CACHE = None
         _REMOTE_INDEX_VALIDITY_CACHE = None
+        _STOCK_ALIAS_SEED_CACHE = None
     try:
         from src.services.agent_domain_guard_service import clear_known_stock_name_cache
 

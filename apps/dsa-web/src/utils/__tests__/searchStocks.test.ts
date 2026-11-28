@@ -160,6 +160,14 @@ describe('searchStocks', () => {
     expect(results[0].matchType).toBe('exact');
   });
 
+  test('港股短码精确命中补零代码', () => {
+    // "700" must rank 腾讯控股 (00700) as an exact code hit, not a substring.
+    const results = searchStocks('700', mockIndex);
+    expect(results[0].canonicalCode).toBe('00700.HK');
+    expect(results[0].matchType).toBe('exact');
+    expect(results[0].matchField).toBe('code');
+  });
+
   test('前缀匹配代码', () => {
     const results = searchStocks('600', mockIndex);
     expect(results.length).toBeGreaterThan(0);

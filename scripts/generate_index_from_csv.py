@@ -577,6 +577,13 @@ def build_stock_index(stocks: List[Dict[str, Any]]) -> List[Dict[str, Any]]:
         for alias in stock.get('aliases', []):
             if alias != name and alias not in aliases:
                 aliases.append(alias)
+        for alias in _stock_alias_seed_lookup().get(str(ts_code).upper(), ()):
+            if alias != name and alias not in aliases:
+                aliases.append(alias)
+
+        # OTC US symbols are low-quality autocomplete noise; rank them below
+        # main-board listings so "alibaba" surfaces BABA before ALBBY/ALBHF.
+        popularity = 10 if market == "US" and "(OTC)" in name else 100
 
         index.append({
             "canonicalCode": ts_code,    # Example: 000001.SZ, AAPL
@@ -588,10 +595,38 @@ def build_stock_index(stocks: List[Dict[str, Any]]) -> List[Dict[str, Any]]:
             "market": market,
             "assetType": "stock",
             "active": True,
-            "popularity": 100,
+            "popularity": popularity,
         })
 
     return index
+
+
+_STOCK_ALIAS_SEED_PATH = (
+    Path(__file__).parent / "stock_index_seeds" / "stock_aliases.csv"
+)
+
+
+def _stock_alias_seed_lookup() -> Dict[str, tuple]:
+    """Load ``stock_aliases.csv`` into ``canonical_code -> aliases``.
+
+    The seed is the single source of truth for Chinese/English US-stock aliases,
+    shared with ``src/data/stock_index_loader`` at runtime so the frontend index
+    and the backend resolver never disagree. Missing/invalid rows are ignored.
+    """
+    merged: Dict[str, List[str]] = {}
+    try:
+        with _STOCK_ALIAS_SEED_PATH.open("r", encoding="utf-8-sig") as fh:
+            for row in csv.DictReader(fh):
+                canonical = str(row.get("canonical_code") or "").strip()
+                alias = str(row.get("alias") or "").strip()
+                if not canonical or not alias:
+                    continue
+                merged.setdefault(canonical.upper(), [])
+                if alias not in merged[canonical.upper()]:
+                    merged[canonical.upper()].append(alias)
+    except (OSError, csv.Error):
+        return {}
+    return {key: tuple(values) for key, values in merged.items()}
 
 
 def compress_index(index: List[Dict[str, Any]]) -> List[List]:
@@ -970,6 +1005,54 @@ def run_index_only(output_path: Path, *, test: bool = False) -> List[List[Any]]:
     return merged
 
 
+def run_aliases_only(output_path: Path, *, test: bool = False) -> List[List[Any]]:
+    """Patch the existing compressed JSON with seed aliases and OTC deprioritization.
+
+    Preserves every tuple's identity and order, only appending ``stock_aliases.csv``
+    aliases to the matching canonical rows and demoting ``(OTC)`` US names to
+    ``popularity=10``. Used when the full rebuild cannot run (no Tushare/AkShare
+    CSVs locally) so the seed still reaches the frontend index.
+    """
+    existing = _load_existing_payload(output_path)
+    validate_stock_index_payload(existing, min_items=0)
+
+    aliases_by_code = _stock_alias_seed_lookup()
+    touched = 0
+    merged: List[List[Any]] = []
+    for item in existing:
+        if not isinstance(item, list) or len(item) < 10:
+            merged.append(item)
+            continue
+        canonical = str(item[0] or "").strip().upper()
+        name = str(item[2] or "")
+        market = str(item[6] or "").strip()
+        updated = False
+
+        existing_aliases = [a for a in (item[5] or []) if isinstance(a, str)]
+        for alias in aliases_by_code.get(canonical, ()):
+            if alias != name and alias not in existing_aliases:
+                existing_aliases.append(alias)
+                updated = True
+
+        popularity = item[9]
+        if market == "US" and "(OTC)" in name and popularity != 10:
+            popularity = 10
+            updated = True
+
+        if updated:
+            row = list(item)
+            row[5] = existing_aliases
+            row[9] = popularity
+            merged.append(row)
+            touched += 1
+        else:
+            merged.append(item)
+
+    if not test:
+        _atomic_write_json(output_path, merged)
+    return merged
+
+
 def main():
     """主函数"""
     parser = argparse.ArgumentParser(description='从 CSV 生成股票自动补全索引')
@@ -983,6 +1066,11 @@ def main():
         '--index-only',
         action='store_true',
         help='仅合并指数注册表 seed 到现有压缩 JSON，不重建股票索引'
+    )
+    parser.add_argument(
+        '--aliases-only',
+        action='store_true',
+        help='仅把 stock_aliases.csv 别名与 OTC 降热度 patch 到现有压缩 JSON，不重建股票索引'
     )
     parser.add_argument(
         '--test', '-t',
@@ -1003,6 +1091,17 @@ def main():
         Path(__file__).parent.parent / "apps" / "dsa-web" / "public" / "stocks.index.json"
     )
     output_path.parent.mkdir(parents=True, exist_ok=True)
+
+    # --aliases-only: patch 存量文件（别名 + OTC 降热度），不重建股票索引。
+    if args.aliases_only:
+        merged = run_aliases_only(output_path, test=args.test)
+        print(f"      处理后共 {len(merged)} 条记录")
+        if args.test:
+            print("      测试模式：跳过写入文件")
+        else:
+            print(f"      写入文件：{output_path}")
+            print(f"      文件大小：{output_path.stat().st_size / 1024:.2f} KB")
+        return 0
 
     # --index-only: 只合并指数 seed，不重建股票索引。
     if args.index_only:
